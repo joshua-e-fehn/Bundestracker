@@ -43,6 +43,7 @@ export const PUBLIC_PATHS = [
   "/rankings",
   "/feed",
   "/seating",
+  "/votes",
   // Not built on this branch — the MP pages belong to `frontend-mp-profiles` —
   // but listed because the feed and every leaderboard row links to
   // `/mps/<internalId>`, and a link that redirects to a 404 is worse than one
