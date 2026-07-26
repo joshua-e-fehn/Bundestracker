@@ -21,5 +21,11 @@ dist/
 .env.*
 !.env.example
 
+# pipeline sync state — the `aktualisiert` watermark, the quarantine and the
+# document hashes. Per-host operational state about *fetching*, not data about
+# parliament, so it belongs to the machine rather than to the repo. Losing it
+# costs a wider fetch window, not correctness: every write is an upsert.
+.bundestrack-state.json
+
 # os
 .DS_Store
