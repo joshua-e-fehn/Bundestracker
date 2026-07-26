@@ -10,6 +10,12 @@ const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 /**
  * Convex client + Better Auth session, for the whole tree.
  *
+ * Note this lives in `providers/`, while the other four providers live in
+ * `components/providers/`. Both paths were specified for the scaffold, so the
+ * split is deliberate rather than accidental — but it is still two homes for
+ * one kind of thing, and consolidating on `components/providers/` would be a
+ * one-import change (only app/layout.tsx names this module).
+ *
  * One provider rather than two because they are not independent: the Convex
  * client needs the auth token to attach it to queries, and `initialToken` is
  * how the server-rendered pass hands it over so the first paint is not

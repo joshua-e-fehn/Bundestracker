@@ -3,11 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import {
   DEFAULT_LOCALE,
+  getTranslator,
   isLocale,
   type Locale,
   type TranslationKey,
   type TranslationValues,
-  t as translate,
 } from "@/lib/i18n"
 
 const STORAGE_KEY = "bundestrack.locale"
@@ -65,7 +65,11 @@ export function LocaleProvider({
     () => ({
       locale,
       setLocale,
-      t: (key, values) => translate(key, locale, values),
+      // `getTranslator` rather than an inline `(key, values) => t(key, locale,
+      // values)`: binding a locale to `t` is one operation, and it should have
+      // one implementation whether the caller is a client component or a
+      // server one.
+      t: getTranslator(locale),
     }),
     [locale, setLocale],
   )

@@ -6,16 +6,17 @@
  * requires an account. Signing in only adds personalisation — custom score
  * weightings and a follow list — so there is nothing here to gate.
  *
- * The list is kept, rather than collapsed to a `return true`, because the two
- * consumers still need somewhere to ask the question:
- *
- *  - `proxy.ts` (Next.js middleware) — passes everything through today.
- *  - `components/providers/auth-guard.tsx` — the client-side complement, which
- *    also handles session expiry while the app is open.
+ * The list is kept, rather than collapsed to a `return true`, because the
+ * decision needs one home. Its consumer today is
+ * `components/providers/auth-guard.tsx`, which does the actual session check
+ * and also catches a session expiring while the app is open. `proxy.ts` does
+ * not import it — with every path public there is nothing for middleware to
+ * ask, and a call whose answer is always the same reads as a gate that works.
  *
  * When a genuinely private route arrives (an account settings page, say), it
- * is added by *omission*: drop "/" from this list, enumerate the public ones,
- * and both layers start gating without either being edited.
+ * is added by *omission*: drop "/" from this list and enumerate the public
+ * ones. The guard starts gating with no change; `proxy.ts` is where the
+ * import goes back if the redirect should also happen before render.
  *
  * Note the matcher only treats "/" as an exact match: for path "/" the prefix
  * test becomes startsWith("//"), which never fires for a normal pathname. So
