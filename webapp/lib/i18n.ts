@@ -344,6 +344,70 @@ const de = {
   "vote.invalid": "Ungültig",
   "vote.absent": "Nicht abgegeben",
 
+  // --- voting explorer (list, detail, per-MP table) ---
+  "votes.title": "Namentliche Abstimmungen",
+  "votes.subtitle":
+    "Jede namentliche Abstimmung des Bundestages — mit dem Stimmverhalten jedes einzelnen Mandats.",
+  // The caveat that governs every figure on both pages. Namentliche
+  // Abstimmungen are the exception in the Bundestag, not the rule
+  // (docs/api-research.md §4.4): the ordinary vote is by show of hands and
+  // leaves no per-MP record at all. A reader counting rows here is counting
+  // the recorded minority, so this is said before they start rather than
+  // footnoted after.
+  "votes.namedOnlyNotice":
+    "Nur namentliche Abstimmungen werden pro Abgeordneter erfasst. Die meisten Beschlüsse fallen per Handzeichen und hinterlassen kein individuelles Stimmergebnis — diese Liste ist deshalb kein vollständiges Abstimmungsverhalten.",
+  "votes.sitting": "Sitzung {sitzungnr}, Abstimmung {abstimmnr}",
+  "votes.searchPlaceholder": "Abstimmung suchen …",
+  "votes.filterResult": "Ergebnis",
+  "votes.allResults": "Alle Ergebnisse",
+  "votes.filterYear": "Jahr",
+  "votes.allYears": "Alle Jahre",
+  "votes.empty": "Keine Abstimmung passt zu diesen Filtern.",
+  "votes.emptyAll": "Es wurden noch keine namentlichen Abstimmungen geladen.",
+  "votes.columnDate": "Datum",
+  "votes.columnTitle": "Gegenstand",
+  "votes.columnResult": "Ergebnis",
+  "votes.columnBreakdown": "Stimmverteilung",
+  "votes.count": "{count} von {total} Abstimmungen",
+
+  // --- vote detail ---
+  "votes.backToList": "Zurück zu den Abstimmungen",
+  "votes.notFound": "Diese Abstimmung existiert nicht oder wurde noch nicht geladen.",
+  // Shown when the tallies printed on the sheet do not add up to the rows
+  // counted from it. Surfaced rather than silently corrected: a mismatch is a
+  // fact about the source document, and picking one number over the other
+  // would hide it.
+  "votes.tallyMismatch":
+    "Die veröffentlichten Summen weichen von den gezählten Stimmen ab.",
+  "votes.tallyPublished": "veröffentlicht",
+  "votes.tallyCounted": "gezählt",
+  "votes.turnout": "Beteiligung",
+  "votes.eligible": "Stimmberechtigt",
+  "votes.rebels": "Abweichler:innen",
+  "votes.sourceSheet": "Original-Abstimmungsliste (XLSX)",
+  "votes.breakdownTitle": "Nach Fraktion",
+  "votes.breakdownEmpty": "Für diese Abstimmung liegt keine Fraktionsauswertung vor.",
+  "votes.groupMajority": "Mehrheit",
+  "votes.groupMajorityNone": "keine",
+  "votes.groupShare": "({share})",
+  "votes.rebelsNote":
+    "Als Abweichung zählt eine Stimme, die von der Mehrheit der eigenen Fraktion abweicht. Enthaltungen und nicht abgegebene Stimmen bleiben dabei außer Betracht.",
+  "votes.recordsTitle": "Einzelstimmen",
+  "votes.recordsEmpty": "Für diese Abstimmung sind keine Einzelstimmen erfasst.",
+
+  // --- per-MP vote table ---
+  "votes.searchMembers": "Abgeordnete suchen …",
+  "votes.filterFraktion": "Fraktion",
+  "votes.allFraktionen": "Alle Fraktionen",
+  "votes.filterVote": "Stimme",
+  "votes.allVotes": "Alle Stimmen",
+  "votes.noMembers": "Keine Abgeordneten passen zu diesen Filtern.",
+  "votes.columnMember": "Abgeordnete:r",
+  "votes.columnVote": "Stimme",
+  "votes.columnRemark": "Anmerkung",
+  "votes.rebel": "Abweichung",
+  "votes.rebelTooltip": "Hat gegen die Mehrheit der eigenen Fraktion gestimmt.",
+
   // --- site chrome, homepage and footer ---
   "nav.votes": "Abstimmungen",
   "nav.motions": "Anträge",
@@ -721,6 +785,62 @@ const en: Dictionary = {
   "vote.abstain": "Abstained",
   "vote.invalid": "Invalid",
   "vote.absent": "Did not vote",
+
+  // --- voting explorer (list, detail, per-MP table) ---
+  // "Namentliche Abstimmung" is kept as "recorded vote" rather than "roll-call
+  // vote": the Bundestag's own English materials use the former, and the
+  // latter suggests names being read aloud, which is not what happens.
+  "votes.title": "Recorded votes",
+  "votes.subtitle":
+    "Every recorded vote in the Bundestag — including how each individual member voted.",
+  "votes.namedOnlyNotice":
+    "Only recorded votes are captured per member. Most decisions are taken by show of hands and leave no individual result, so this list is not a complete picture of voting behaviour.",
+  "votes.sitting": "Sitting {sitzungnr}, vote {abstimmnr}",
+  "votes.searchPlaceholder": "Search votes …",
+  "votes.filterResult": "Result",
+  "votes.allResults": "All results",
+  "votes.filterYear": "Year",
+  "votes.allYears": "All years",
+  "votes.empty": "No vote matches these filters.",
+  "votes.emptyAll": "No recorded votes have been loaded yet.",
+  "votes.columnDate": "Date",
+  "votes.columnTitle": "Subject",
+  "votes.columnResult": "Result",
+  "votes.columnBreakdown": "Distribution",
+  "votes.count": "{count} of {total} votes",
+
+  // --- vote detail ---
+  "votes.backToList": "Back to votes",
+  "votes.notFound": "This vote does not exist, or has not been loaded yet.",
+  "votes.tallyMismatch": "The published totals differ from the counted votes.",
+  "votes.tallyPublished": "published",
+  "votes.tallyCounted": "counted",
+  "votes.turnout": "Turnout",
+  "votes.eligible": "Eligible to vote",
+  "votes.rebels": "Rebels",
+  "votes.sourceSheet": "Original vote sheet (XLSX)",
+  "votes.breakdownTitle": "By parliamentary group",
+  "votes.breakdownEmpty": "No group breakdown is available for this vote.",
+  "votes.groupMajority": "Majority",
+  "votes.groupMajorityNone": "none",
+  "votes.groupShare": "({share})",
+  "votes.rebelsNote":
+    "A vote counts as a rebellion when it differs from the majority of the member's own parliamentary group. Abstentions and votes not cast are disregarded.",
+  "votes.recordsTitle": "Individual votes",
+  "votes.recordsEmpty": "No individual votes are recorded for this ballot.",
+
+  // --- per-MP vote table ---
+  "votes.searchMembers": "Search members …",
+  "votes.filterFraktion": "Parliamentary group",
+  "votes.allFraktionen": "All groups",
+  "votes.filterVote": "Vote",
+  "votes.allVotes": "All votes",
+  "votes.noMembers": "No members match these filters.",
+  "votes.columnMember": "Member",
+  "votes.columnVote": "Vote",
+  "votes.columnRemark": "Remark",
+  "votes.rebel": "Rebel vote",
+  "votes.rebelTooltip": "Voted against the majority of their own parliamentary group.",
 
   // --- site chrome, homepage and footer ---
   "nav.votes": "Votes",

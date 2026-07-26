@@ -27,5 +27,10 @@ dist/
 # costs a wider fetch window, not correctness: every write is an upsert.
 .bundestrack-state.json
 
+# cron run artefacts (scripts/daily-sync.sh) — the log it appends to and the
+# lock that stops two syncs overlapping. Both are per-host, like the state file.
+.logs/
+.daily-sync.lock
+
 # os
 .DS_Store
