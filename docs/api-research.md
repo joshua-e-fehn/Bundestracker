@@ -24,7 +24,7 @@ identifier spaces.
 Optional fifth source: **abgeordnetenwatch.de API v2** (community-run, CC0,
 no key) — per-MP votes as clean JSON with stable IDs.
 
-### The five things most likely to bite you
+### The eight things most likely to bite you
 
 1. **Three ID spaces, no shared key.** DIP `/person` id (`1013`), Stammdaten
    `<MDB><ID>` (`11004011`), and the vote sheets (**no ID column at all**).
@@ -37,6 +37,20 @@ no key) — per-MP votes as clean JSON with stable IDs.
    Structured speeches only come from the protocol XML. See §5.
 5. **Committee membership in Stammdaten exists only for the *current*
    Wahlperiode.** Historical committee work is not in the dump. See §6.4.
+6. **One `<rede>` is not one speaker** — Zwischenfragen put several distinct
+   MPs inside a single element. Re-attribute on every `klasse="redner"`
+   paragraph or you credit interveners' words to the main speaker. See §5.2.
+7. **Never rank speeches by count.** Question-time answers fragment one
+   minister's turn into 30+ short `<rede>` elements. Rank by words. See §5.2.
+8. **`aktivitaetsart` is an open string, not an enum** — no published value
+   list exists, so a closed mapping will silently drop whole activity classes.
+   See §3.5.
+
+Two more that are cheap to get right and expensive to get wrong: always pass
+**`f.zuordnung=BT`** (unfiltered queries mix in Bundesrat documents, which have
+no XML and a different `dokumentnummer` format, §5.1), and never read counts off
+the `*_anzeige` arrays — they are **capped at 4 items**; the true total is in the
+matching `*_anzahl` field (§3.4).
 
 ---
 
@@ -87,18 +101,27 @@ in blog posts and GitHub repos are **expired** — all of these returned `401`:
 
 ### 1.3 Passing the key
 
-Two mechanisms are documented:
+Two mechanisms are documented, and **both work**:
 
 ```bash
-# Query parameter — VERIFIED WORKING
+# Query parameter — VERIFIED WORKING (200)
 curl "https://search.dip.bundestag.de/api/v1/person?apikey=$KEY&format=json"
 
-# Header — documented in spec, returned 401 in testing
-curl -H "Authorization: ApiKey $KEY" "https://search.dip.bundestag.de/api/v1/person"
+# Header — VERIFIED WORKING (200). Note the literal "ApiKey " prefix.
+curl -H "Authorization: ApiKey $KEY" \
+     "https://search.dip.bundestag.de/api/v1/person?format=json"
 ```
 
-**Use the query parameter.** The header form is specified as
-`Authorization: ApiKey <key>` but did not authenticate successfully in testing.
+Both were re-verified in an independent pass on 2026-07-26: the header form
+returned `HTTP 200` against `/person?f.wahlperiode=21` with no `apikey` query
+parameter present. An earlier note in this document claimed the header form
+returned 401; that was a testing artefact — most likely the WAF challenge of
+§2.6 (which returns `303`, and `000`/timeout once escalated) being read as an
+auth failure. **If you see an apparent auth failure, check for `/.enodia/` in
+the `Location` header before concluding the key or scheme is wrong.**
+
+**Prefer the header.** A key in the query string leaks into access logs, proxy
+logs, browser history and any error report that echoes the request URL.
 
 ### 1.4 Error taxonomy
 
@@ -138,8 +161,14 @@ Every list response is:
 { "numFound": 803, "cursor": "AoJwkJLRxJ8DK1BlcnNvbi04MDc2", "documents": [ ... ] }
 ```
 
-- **Page size is 100** and is **not configurable** — there is no `limit`/`rows`
-  parameter in the spec.
+- **Page size is not configurable** — there is no `limit`/`rows` parameter in
+  the spec. It is **100 for most endpoints but only 10 for the two `-text`
+  endpoints**, and this is declared in the spec as `maxItems` on each
+  `*ListResponse` schema (`DrucksacheTextListResponse` and
+  `PlenarprotokollTextListResponse` both cap `documents` at 10; the other six
+  cap at 100). Verified live: `/plenarprotokoll-text?f.wahlperiode=21` returned
+  exactly 10 documents against `numFound: 105`. Do not hardcode 100 as the page
+  size when estimating request counts — see §5.1.
 - The cursor is an **opaque base64-ish token**, not an offset. Do not construct
   or decode it.
 
@@ -179,14 +208,22 @@ semantics differ per parameter**, which is easy to get wrong:
 
 | Semantics | Parameters |
 |-----------|-----------|
-| **OR** (repeat = union) | `f.wahlperiode`, `f.vorgangstyp`, `f.beratungsstand`, `f.dokumentnummer`, `f.id`, `f.person`, `f.frage_nummer`, `f.titel`, `f.vorgangstyp_notation` |
-| **AND** (repeat = intersection) | `f.urheber`, `f.deskriptor`, `f.sachgebiet`, `f.initiative` |
+| **OR** (repeat = union) | `f.wahlperiode`, `f.id`, `f.person`, `f.person_id`, `f.dokumentnummer`, `f.drucksachetyp`, `f.vorgangstyp`, `f.vorgangstyp_notation`, `f.beratungsstand`, `f.titel`, `f.frage_nummer`, `f.gesta`, `f.kom`, `f.ratsdok`, `f.vorgangsposition_id`, `f.verkuendung_fundstelle` |
+| **AND** (repeat = intersection) | `f.urheber`, `f.deskriptor`, `f.sachgebiet`, `f.initiative`, `f.ressort_fdf` |
+
+(Both lists are complete as of spec 1.5, taken from each parameter's own
+`description`. `f.ressort_fdf` is easy to miss in the AND group.)
 
 The spec explicitly notes that an OR-search over multiple `f.urheber` /
 `f.deskriptor` / `f.sachgebiet` / `f.initiative` values **is not possible in a
 single request** — issue separate requests and union client-side.
 
 #### Endpoint × parameter matrix
+
+Complete matrix, generated mechanically from the `parameters` `$ref`s of every
+list operation in `openapi.yaml` (so it is exhaustive rather than sampled). The
+two `-text` endpoints take **exactly** the same filters as their metadata
+siblings, so they share a column.
 
 | Parameter | vorgang | vorgangsposition | drucksache(-text) | plenarprotokoll(-text) | aktivitaet | person |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -195,16 +232,37 @@ single request** — issue separate requests and union client-side.
 | `f.wahlperiode` | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `f.id` | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `f.zuordnung` | — | ✔ | ✔ | ✔ | ✔ | — |
-| `f.person` / `f.person_id` | — | — | — | — | ✔ | ✔ / — |
+| `f.person` | — | — | — | — | ✔ | ✔ |
+| `f.person_id` | — | — | — | — | ✔ | — |
 | `f.dokumentnummer` | ✔ | ✔ | ✔ | ✔ | ✔ | — |
+| `f.dokumentart` | ✔ | ✔ | — | — | ✔ | — |
 | `f.drucksachetyp` | ✔ | ✔ | ✔ | — | ✔ | — |
+| `f.drucksache` | ✔ | ✔ | — | — | ✔ | — |
+| `f.plenarprotokoll` | ✔ | ✔ | — | — | ✔ | — |
 | `f.vorgangstyp` | ✔ | ✔ | ✔ | ✔ | ✔ | — |
+| `f.vorgangstyp_notation` | ✔ | ✔ | ✔ | ✔ | ✔ | — |
+| `f.titel` | ✔ | ✔ | ✔ | — | — | — |
 | `f.urheber` | ✔ | ✔ | ✔ | — | ✔ | — |
-| `f.deskriptor` / `f.sachgebiet` | ✔ | — | — | — | ✔ | — |
+| `f.deskriptor` | ✔ | — | — | — | ✔ | — |
+| `f.sachgebiet` | ✔ | — | — | — | ✔ | — |
+| `f.ressort_fdf` | ✔ | ✔ | ✔ | — | — | — |
+| `f.frage_nummer` | ✔ | ✔ | — | — | ✔ | — |
+| `f.kom` | ✔ | ✔ | — | — | ✔ | — |
+| `f.ratsdok` | ✔ | ✔ | — | — | ✔ | — |
 | `f.beratungsstand` | ✔ | — | — | — | — | — |
+| `f.gesta` | ✔ | — | — | — | — | — |
+| `f.initiative` | ✔ | — | — | — | — | — |
+| `f.verkuendung_fundstelle` | ✔ | — | — | — | — | — |
 | `f.vorgang` | — | ✔ | — | — | — | — |
 | `f.vorgangsposition_id` | — | — | — | — | ✔ | — |
 | `f.aktivitaet` | — | ✔ | — | — | — | — |
+
+Parameter counts per list endpoint (incl. `cursor` + `format`): `/vorgang` 27,
+`/vorgangsposition` 24, `/aktivitaet` 25, `/drucksache` and `/drucksache-text`
+16 each, `/plenarprotokoll` and `/plenarprotokoll-text` 12 each, `/person` 9.
+
+Note `f.titel` is **not** available on `/plenarprotokoll*` — you cannot search
+protocols by title, only by `dokumentnummer`, date, or Wahlperiode.
 
 `f.zuordnung` enum: **`BT`** (Bundestag), `BR` (Bundesrat), `BV`
 (Bundesversammlung), `EK` (Europakammer).
@@ -371,6 +429,21 @@ Real record (WP21):
 - Query one MP's whole activity: `/aktivitaet?f.person_id=<id>&f.wahlperiode=21`.
 - **Note `titel` is the person's name**, not a description of the action — the
   document title is in `vorgangsbezug[].titel`.
+
+> **`aktivitaetsart` is an open string, not an enum.** The OpenAPI spec types it
+> as a bare `string` with `"Rede"` as the only example — there is no enum, no
+> value list, and no catalogue endpoint to enumerate the possible values. The
+> observed samples in this document (`Rede`, `Kleine Anfrage`, `Zwischenfrage`,
+> `Schriftliche Erklärung gem. § 31 GO BT`, `Rede (zu Protokoll gegeben)`) are
+> **not exhaustive** — they come from at most a few hundred sampled records out
+> of 80 537.
+>
+> Bundestrack's metric taxonomy therefore cannot be a closed mapping. The
+> pipeline must **log and surface unrecognised `aktivitaetsart` values rather
+> than dropping them** — a silently-dropped value means an entire class of
+> parliamentary activity vanishes from every MP's score with no error. Run a
+> full census (page all of WP21, tallying the field) before finalising the
+> scoring weights, and re-check it each period.
 
 ---
 
@@ -715,6 +788,20 @@ credit Warken with all four.
 **You must re-attribute on every `klasse="redner"` paragraph**, walking direct
 children in document order.
 
+Independently reproduced on **20177.xml (WP20)**, confirming this is not
+specific to one sitting: 191 `<rede>` but 247 `klasse="redner"` paragraphs,
+distribution `{1: 157, 2: 23, 3: 5, 4: 3, 5: 1, 6: 2}` — of the 34 `<rede>` with
+more than one speaker paragraph, **27 repeat the same speaker** and **7 contain
+genuinely distinct speakers** (e.g. `ID2017707200` → `11005074`, `11004659`).
+So the trap is present in both sampled periods, at a similar ~4 % rate of
+`<rede>` elements.
+
+Also verified on 20177.xml: `root.iter('rede')` = 191 = `.//tagesordnungspunkt/rede`,
+with **0 under `<anlagen>`** — consistent with §5.2's note that the *zu Protokoll
+gegebene Reden* share varies by sitting (17/112 in 21/90, 0/191 here). Using
+`iter()` is correct in both cases; the ancestry check is what tells you whether a
+speech was delivered aloud.
+
 #### Extraction recipe (corrected)
 
 ```python
@@ -749,6 +836,30 @@ for rede in root.iter("rede"):              # iter() also catches <anlagen> spee
 
 Aggregate on `(rede_id, redner_id)` for the "one speech" unit; on `redner_id`
 alone for per-MP daily totals.
+
+#### ⚠ Rank by words, not speech count — question time badly skews counts
+
+Independently measured on 20177.xml, attributing each `<rede>` to its primary
+speaker:
+
+| Speaker | `<rede>` | Words |
+|---|---|---|
+| Robert Habeck | **36** | 4 826 |
+| Bettina Stark-Watzinger | **30** | 3 906 |
+| Olaf Scholz | **1** | 3 874 |
+| Friedrich Merz | **1** | 2 109 |
+
+Habeck and Stark-Watzinger were answering *Regierungsbefragung* questions, which
+fragments into dozens of ~130-word replies; Scholz gave one long
+Regierungserklärung. A "most active speaker" metric keyed on speech **count**
+would rank Habeck 36× above Scholz for delivering 25 % more words — and would
+systematically favour ministers at question time over backbenchers, for reasons
+that have nothing to do with parliamentary activity.
+
+**Use word count (or duration, if it ever becomes available) as the primary
+speech measure.** If speech count is displayed at all, segment it by
+`aktivitaetsart` / agenda context so question-time answers are not pooled with
+debate speeches.
 
 **Validated output:**
 
@@ -833,31 +944,143 @@ the Mediathek player's XHR calls could not be inspected due to the WAF block.
 
 ### 6.1 DIP `/person`
 
-`numFound` unfiltered: **5 623**. For `f.wahlperiode=21`: **803**.
+`GET /person` takes only **9 parameters** — far fewer than `/aktivitaet`. There
+is **no `f.fraktion`, no `f.funktion`, no `f.bundesland`** and no `f.person_id`
+(that exists only on `/aktivitaet`). Filtering MPs by party means enumerating
+and filtering client-side.
 
-> **803 ≫ 630 actual MdBs.** `/person` is *not* a roster of MPs — it indexes
-> every person appearing in parliamentary documents, including federal
-> ministers, Bundesrat members, state secretaries and guests. Filter on
-> `funktion == "MdB"` if you want members only. **Do not treat `/person` as the
-> MP list** — use MdB-Stammdaten (§6.2) for that.
+`numFound` by Wahlperiode (all fully enumerated, pagination lossless):
+
+| Filter | numFound | Pages @100 |
+|---|---|---|
+| *(unfiltered)* | **5 623** | 57 |
+| `f.wahlperiode=18` | 860 | 9 |
+| `f.wahlperiode=19` | 959 | 10 |
+| `f.wahlperiode=20` | 1 017 | 11 |
+| `f.wahlperiode=21` | **803** | 9 |
+
+The whole corpus is only 5 623 records / 57 requests — **fetch it once and
+cache it**, then sync deltas via `f.aktualisiert.start`.
 
 ```json
 { "id": "8190", "nachname": "Roth", "vorname": "Claudia",
   "funktion": ["MdB"], "fraktion": ["BÜNDNIS 90/DIE GRÜNEN"],
   "typ": "Person", "wahlperiode": [14,15,16,17,18,19,20,21],
   "aktualisiert": "2025-09-02T14:58:12+02:00",
+  "titel": "Claudia Roth, MdB, BÜNDNIS 90/DIE GRÜNEN",
+  "basisdatum": "1998-11-13", "datum": "2026-07-24",
   "person_roles": [ ... ] }
 ```
 
-`person_roles[]` holds secondary entries with differing functions or names:
-`funktion`, `funktionszusatz`, `fraktion`, `nachname`, `vorname`,
-`namenszusatz`, `wahlperiode_nummer[]`, `wahlkreiszusatz`, `ressort_titel`,
-`bundesland`. This is how a person who was both an MdB and a minister is
-represented, and how mid-mandate name changes are recorded.
+`basisdatum` / `datum` are the dates of the person's **first / last related
+document** — not mandate dates.
 
-`f.person` matches a **whole word** against given or surname; multiple terms are
-treated as the phrase `"Nachname Vorname"`. Verified:
-`f.person=Bilger Steffen` → 1 result, id `1013`.
+#### ⚠ Two spec bugs that will break generated clients
+
+1. **Five fields declared `type: string` are returned as arrays** at the top
+   level: `funktion`, `funktionszusatz`, `fraktion`, `ressort`, `bundesland`.
+   Across all 5 623 records they are always length 1 — but you must unwrap them.
+   Note the asymmetry: `wahlkreiszusatz` and `namenszusatz` *are* plain strings,
+   and **inside `person_roles` all of these are plain strings**.
+2. **`PersonRole.funktion` is declared `required` but appears in 0 of 2 503
+   live role objects.** A strict validator rejects every real response.
+
+Also: `wahlperiode`, `datum` and `basisdatum` are **absent** on 8 records — code
+assuming they exist will `KeyError`. And there is **no academic-title field**;
+`Dr.`/`Prof.` appear only inside the `titel` string (1 454 of 5 623 records).
+
+#### `person_roles[]` — secondary entries
+
+Fields (presence over 2 503 live role objects): `nachname` 100%, `vorname` 100%,
+`wahlperiode_nummer[]` 98.7%, `fraktion` 45.1%, `funktionszusatz` 27.2%,
+`bundesland` 27.2%, `ressort_titel` 21.1%, `wahlkreiszusatz` 7.6%,
+`namenszusatz` 2.1%.
+
+Since `funktion` is never present, **infer the role kind from which fields are
+set**:
+
+| Fields present | Role kind |
+|---|---|
+| `fraktion` | MdB / parliamentary |
+| `ressort_titel` | Federal government (minister, Parl. Staatssekretär) |
+| `funktionszusatz` + `bundesland` | Land government / Bundesrat |
+| names + `wahlperiode_nummer` only | bare name/WP validity window, no role info |
+
+Claudia Roth (id 8190) shows the pattern: top level says only `MdB`, and her
+Kulturstaatsministerin office is discoverable **only** via `person_roles[1]`
+(`ressort_titel: "Beauftr. der Bundesregierung für Kultur und Medien"`,
+`wahlperiode_nummer: [20,21]`).
+
+> **`person_roles` has no date fields at all.** Validity is expressed only as a
+> coarse list of Wahlperiode numbers. Day-level precision requires Stammdaten
+> `MDBINS_VON`/`MDBINS_BIS` (§6.3). Roles are also **not deduplicated**.
+
+#### ⚠ Why 803 ≠ 630 — three distinct reasons
+
+**(a) `/person` is not an MP register.** Only **579** of the 803 WP21 records
+have `funktion == "MdB"`. Observed WP21 distribution:
+
+| funktion | n | | funktion | n |
+|---|---|---|---|---|
+| MdB | 579 | | Staatsmin. | 10 |
+| Stellv. MdBR | 74 | | Bundestagsvizepräs. | 4 |
+| MdBR | 61 | | Bundeskanzl. | 1 |
+| Parl. Staatssekr. | 34 | | Bundesratspräs. | 1 |
+| Bundesmin. | 18 | | Wehrbeauftr. | 1 |
+| Staatssekr. | 17 | | *(+ 3 more singletons)* | |
+
+Corpus-wide there are **43 distinct `funktion` values**, including `Gast` (21),
+`Bundespräs.` (5), `MdVK` (2, GDR Volkskammer), and legacy variants such as
+`MdB 13. Wahlperiode` (9) that are semantically MdB but **won't match
+`== "MdB"`**.
+
+**(b) `funktion == "MdB"` also *under*counts.** Ministers who are sitting MPs
+lose the `MdB` label: **57 people who are WP21 MdBs are labelled non-MdB in
+DIP** (29 Parl. Staatssekr., 13 Bundesmin., 8 Staatsmin., 4 Vizepräs., plus the
+Bundeskanzler). Philipp Amthor (id 8154) is `funktion: ["Parl. Staatssekr."]`
+yet is a sitting MP.
+
+**(c) `f.wahlperiode` is document-scoped, not membership-scoped.** It matches
+anyone appearing in a WP21 *document*. Eva Högl (id 962) carries WP21 and
+`funktion: ["MdB"]` but left after WP19 and is now a Bremen senator.
+
+> **Rule: never use `/person` to determine the MP roster.** Use MdB-Stammdaten
+> (§6.2), which yields exactly 630. Use `/person` only to obtain the DIP ID
+> needed for activity queries.
+
+#### ⚠ One human can have several DIP IDs
+
+IDs are decimal ints serialised as strings, range 1–8247 with 2 624 gaps (do not
+iterate blindly), allocated monotonically over time, and stable across WPs for a
+given entry. **But 27 name collisions exist, and several are the same human
+split across records when their role changed:**
+
+```
+Lars Castellucci  id=1537 [MdB]                      id=8247 [Beauftr. d. Bundesregierung]
+Henning Otte      id=615  [MdB]                      id=8226 [Wehrbeauftragter]
+Jan Wenzel Schmidt id=7406 [MdB, AfD]                id=8220 [MdB, fraktionslos]
+```
+
+Others are genuinely different people (`Alois Rainer` the 2025 minister vs the
+1965–1980 MdB). **Aggregating activity per human requires merging IDs**, or one
+MP's record will be split. Note `Aktivitaet.person_id` links to the
+*Haupteintrag* (primary entry) — another reason duplicates matter.
+
+#### The `f.person` filter
+
+Per the spec: whole-token matching ("vollständig ausgeschriebener
+Namensbestandteil"), a single token matches given **or** surname, multiple
+tokens are a phrase in **`"Nachname Vorname"`** order, and repeating the
+parameter ORs. The spec's own example value is `["Steinmeier Frank Walter"]` —
+space-separated, no comma, hyphenated forenames split.
+
+Verified: `f.person=Bilger Steffen` → 1 result, id `1013`.
+
+> ⚠ **Umlaut hazard:** DIP does not normalise consistently. 818 of 5 623
+> surnames contain non-ASCII, yet specific records are stripped — DIP has
+> `Özoguz` / `Salihovic` / `Ahmetovic` where Stammdaten has `Özoğuz` /
+> `Salihović` / `Ahmetović` (note `Özoguz` keeps `Ö` but loses `ğ`). Try
+> several spellings, or fold diacritics (§7.1b).
 
 ### 6.2 MdB-Stammdaten — the authoritative MP roster
 
@@ -897,7 +1120,7 @@ replacements.) WP21 mandate split: **276 Direktwahl, 359 Landesliste**.
     <GESCHLECHT>männlich</GESCHLECHT><FAMILIENSTAND>verheiratet, 3 Kinder</FAMILIENSTAND>
     <RELIGION>evangelisch</RELIGION><BERUF>Volljurist</BERUF>
     <PARTEI_KURZ>CDU</PARTEI_KURZ><VITA_KURZ>...</VITA_KURZ>
-    <VEROEFFENTLICHUNGSPFLICHTIGES>...</VEROEFFENTLICHUNGSPFLICHTIGES>
+    <VEROEFFENTLICHUNGSPFLICHTIGES/>   <!-- always empty, see below -->
   </BIOGRAFISCHE_ANGABEN>
   <WAHLPERIODEN>
     <WAHLPERIODE>
@@ -919,14 +1142,43 @@ replacements.) WP21 mandate split: **276 Direktwahl, 359 Landesliste**.
 ```
 
 Notes:
-- `<NAMEN>` may contain **multiple `<NAME>`** entries — name changes during a
-  mandate, with `HISTORIE_VON`/`HISTORIE_BIS` validity. Index all of them (§7).
-- `<ORTSZUSATZ>` **already includes its parentheses**: `(Fulda)`.
+- **Every child element is always emitted**, empty when unset — absence is
+  `<TAG/>`, never a missing node.
+- `<NAMEN>` may contain **multiple `<NAME>`** entries — 267 MDBs have more than
+  one (marriage, forename change), with `HISTORIE_VON`/`HISTORIE_BIS` validity.
+  The **current** name is the one with empty `HISTORIE_BIS`. Index all of them
+  for joining (§7).
+- `<ORTSZUSATZ>` **already includes its parentheses**: `(Fulda)`. It maps to
+  DIP's `wahlkreiszusatz` (which has *no* parentheses) — useful as a tie-break.
 - All dates are `TT.MM.JJJJ`.
-- `<VEROEFFENTLICHUNGSPFLICHTIGES>` holds declared outside interests
-  (Nebeneinkünfte) — current WP only.
-- The dump has a `<VERSION>` element (observed `1777449783`) usable for
-  change detection.
+- The dump has a `<VERSION>` element — observed `1777449783`, a **Unix
+  timestamp** (2026-04-29), usable for change detection.
+- ⚠ **`<VEROEFFENTLICHUNGSPFLICHTIGES>` is empty in all 4 614 records.** The DTD
+  documents 8 categories of mandatory side-income/lobbying disclosure, but the
+  data is **not in the ZIP**. Do not plan a transparency feature around it.
+
+#### Field-value gotchas (real distributions)
+
+- `GESCHLECHT`: `männlich` 3 567, `weiblich` 1 046, `divers` 1.
+- `RELIGION`: **24 uncontrolled values**, not an enum — `katholisch` (890) and
+  `römisch-katholisch` (406) are separate, as are `konfessionslos` /
+  `religionslos` / `Atheistin`. Merge manually if you use it.
+- `FAMILIENSTAND`: 60 free-text values conflating marital status *and* child
+  count (`verheiratet, 2 Kinder`).
+- `GEBURTSLAND`: **empty means Germany** for historical records (15.7 %
+  populated overall, but 99.7 % for WP21).
+- ⚠ `WKR_LAND` / `LISTE`: **codes are not stable across time** — 35 distinct
+  values because historical WPs use `BWG/NDS/NRW/BLN/…` while modern WPs use
+  ISO-style `BW/NI/NW/BE/…`. WP21 uses only the modern set. `LISTE` also uses
+  `*` (Saarland accession), `**` (Berlin West), `***` (elected by Volkskammer).
+
+#### Reconstructing the roster at any date
+
+WP21 has 635 `WAHLPERIODE` rows, of which 5 have `MDBWP_BIS` set (departures)
+and 5 began after 25.03.2025 (replacements). So `635 − 5 = **630**` currently
+serving, and `635 − 5 late joiners = **630**` at WP start — **exactly the 630
+statutory seats.** This confirms Stammdaten is the authoritative roster, and
+shows that `MDBWP_VON`/`MDBWP_BIS` let you rebuild the roster for any date.
 
 ### 6.3 `<INSTITUTIONEN>` — committee membership
 
@@ -953,14 +1205,68 @@ Distribution across all 4 614 records:
 </INSTITUTION>
 ```
 
-`FKT_LANG` distinguishes `Ordentliches Mitglied` / `Stellvertretendes Mitglied`
-/ `Vorsitzender` etc., with date ranges.
+**This is the only machine-readable committee source in existence.** The DIP
+`/person` record contains no committee field whatsoever (verified against the
+complete top-level key list across all 5 623 records), and `person_roles` has
+none either.
+
+**576 of 635 WP21 MdBs have ≥1 `Ausschuss` entry.** Per-MP committee count:
+0→59, 1→36, 2→164, 3→195, 4→125, 5→42, 6→13, 7→1.
+
+WP21 has **24 standing committees**. Largest: Auswärtiger Ausschuss (98
+entries), Haushaltsausschuss (95), Innenausschuss (95), Wirtschaft und Energie
+(94), Arbeit und Soziales (94). Smallest: Sport und Ehrenamt (36),
+Menschenrechte (36), Wahlprüfung/Immunität/GO (37), Tourismus (38).
+
+#### `FKT_LANG` — the role, which makes activity-weighting possible
+
+```
+848  Stellvertretendes Mitglied        14  Vorsitzender
+845  Ordentliches Mitglied             12  Stellvertretender Vorsitzender
+109  (empty)                           11  Vorsitzende
+ 79  Obmann                             6  Stellvertretende Vorsitzende
+ 55  Obfrau                             2  Beratendes Mitglied (§ 57 Abs 2 GOBT)
+```
+
+Full members and substitutes are cleanly separated — essential for not
+over-crediting `Stellvertretendes Mitglied`.
+
+> ⚠ **Deduplicate.** A committee chair appears **twice** — once as
+> `Vorsitzender`, once as `Ordentliches Mitglied` (verified on Armin Laschet,
+> Auswärtiger Ausschuss). Deduplicate on `(INS_LANG, MDBINS_VON)` or you will
+> double-count committee seats.
+
+`MDBINS_VON`/`MDBINS_BIS` (membership) and `FKTINS_VON`/`FKTINS_BIS` (role
+within it) give **day-level precision** — far better than DIP's WP-granularity
+`person_roles`, and the two date pairs genuinely differ (an MP can join a
+committee on one date and become deputy chair later).
+
+#### Other institution types (all WP21)
+
+- **`Ministerium`** (51) — a government office held by a sitting MP, e.g.
+  `Bundeskanzleramt | Bundeskanzler`. **This is the clean way to identify
+  MP-ministers**, and it fixes the `funktion != "MdB"` problem in §6.1(b).
+- **`Unterausschuss`** (9 distinct) — incl. `Rechnungsprüfungsausschuss`,
+  `Wahlprüfungsausschuss`, `Kinderkommission`.
+- **`Enquete-Kommission`** (1) — *Aufarbeitung der Corona-Pandemie*, 32 members.
+- **`Sonstiges Gremium`** (98 distinct) — Vermittlungsausschuss,
+  Richterwahlausschuss, PV of Europarat/OSZE/NATO, etc.
+- **`Deutscher Bundestag`** (10 distinct) — `Schriftführer` 87, `Ältestenrat`
+  28, `Präsidium` 6.
+- ⚠ **`Parlamentariergruppen`** (46 distinct) — **leadership only, not full
+  membership.** Every `FKT_LANG` is a chair/deputy role. Do not treat these
+  counts as membership.
+- **`Fraktion/Gruppe` `FKT_LANG`** gives group leadership across *all* WPs
+  (`Vorsitzender` 67, `Erster Parlamentarischer Geschäftsführer` 41, …).
 
 ### 6.4 ⚠ Committee data covers the current WP only
 
-Verified: **all 1 744 `Ausschuss` entries belong to WP21.** The DTD confirms
-this by design — `<INSTITUTIONEN>` is documented as *"hier: nur Fraktion, außer
-aktuelle Wahlperiode"* (only Fraktion, except for the current WP).
+Verified: **all 1 744 `Ausschuss` entries belong to WP21.** WP1–20 carry
+`Fraktion/Gruppe` entries **only**. The DTD says so by design —
+`<INSTITUTIONEN>` is annotated *"hier: nur Fraktion, außer aktuelle
+Wahlperiode"* — and that parenthetical is load-bearing: for the current WP the
+file carries the complete institutional graph (4 017 entries for WP21 vs
+~600–860 Fraktion-only entries for each earlier WP).
 
 **Consequence:** historical committee membership is **not available** from
 Stammdaten. A committee-work metric can only be computed for the current WP,
@@ -974,6 +1280,40 @@ time is fully available. In WP21, 6 MPs have more than one Fraktion entry
 ⚠ Fraktion naming differs by source: Stammdaten uses long form (`Fraktion der
 Christlich Demokratischen Union/Christlich - Sozialen Union`), vote sheets use
 short form (`CDU/CSU`), DIP uses `CDU/CSU`. You need an explicit mapping table.
+
+### 6.5 MP portraits
+
+**No official Bundestag portrait API or bulk image source was found.** The
+`bundestag.de/abgeordnete` profile pages could not be inspected (WAF 303), so
+the URL pattern is **unverified** — and bundestag.de portraits are typically
+photographer-credited rather than open-licensed, so **do not assume reuse
+rights**.
+
+**Verified working alternative — Wikimedia Commons via Wikidata.** Wikidata
+property **P528** ("catalog code") with qualifier **P972 = Q51850225** holds the
+exact 8-digit **Stammdaten ID**, giving a clean join:
+
+```bash
+curl -sS -G --data-urlencode \
+ 'query=SELECT ?id ?person ?img WHERE { ?person p:P528 ?s .
+    ?s ps:P528 ?id ; pq:P972 wd:Q51850225 . OPTIONAL { ?person wdt:P18 ?img } }' \
+ -H "Accept: application/sparql-results+json" https://query.wikidata.org/sparql
+```
+
+Measured coverage:
+
+| | Count | of 635 WP21 MdBs |
+|---|---|---|
+| Wikidata items carrying a Stammdaten ID | 4 089 | — |
+| WP21 MdBs with a Wikidata item | 252 | **39.7 %** |
+| WP21 MdBs with a Commons portrait (P18) | 232 | **36.5 %** |
+
+> ⚠ **36.5 % is not enough for a full 630-MP grid.** Wikidata is well-populated
+> for prominent MPs and sparse for first-term backbenchers. Design the UI with a
+> graceful initials/placeholder fallback.
+
+This P528/P972 property is also the **cleanest available broker** between
+Wikidata and Stammdaten IDs, if you want external enrichment.
 
 ---
 
@@ -1055,6 +1395,36 @@ protocols resolve in MdB-Stammdaten (IDs range `11000001`–`11005627`, all
 prefixed `11` — exactly the `redner id` space). The DIP `/person` record
 contains **no external identifier field of any kind**, so the crosswalk must be
 name-derived.
+
+#### Measured match rates for DIP ↔ Stammdaten
+
+Matching on diacritic-folded `(NACHNAME, VORNAME)`, indexing all historic name
+variants:
+
+```python
+def fold(s):
+    s = (s or "").strip().lower().replace("ß", "ss")
+    s = unicodedata.normalize("NFD", s)
+    return "".join(c for c in s if not unicodedata.combining(c))
+```
+
+| Scope | Result |
+|---|---|
+| DIP WP21 `funktion=="MdB"` (579), exact match | 571 / 579 = 98.6 % |
+| …same, **with diacritic folding** | **574 / 579 = 99.1 %** |
+| DIP `funktion=="MdB"` all WPs (4 130) | 4 092 unique (99.1 %), 26 ambiguous, 12 unmatched |
+| Ambiguous keys **within WP21** | **0** — name alone is unique per period |
+| Ambiguous keys across all 4 687 Stammdaten name keys | 15 |
+
+Folding recovers `Özoğuz→Özoguz`, `Ahmetović→Ahmetovic`, `Salihović→Salihovic`.
+**The residual misses are not matching failures** — they are semantic (people in
+WP21 documents who aren't WP21 MPs) or temporal (MPs who joined after the
+snapshot).
+
+**Recommended:** fold, scope to a single Wahlperiode, tie-break with Stammdaten
+`ORTSZUSATZ` ↔ DIP `wahlkreiszusatz` (same disambiguator, parentheses differ),
+and fall back to `GEBURTSDATUM` for the 15 historical collisions (e.g.
+`('muller','karl')` → 3 IDs).
 
 ### 7.2 Stammdaten staleness
 
