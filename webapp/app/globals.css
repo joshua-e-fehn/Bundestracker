@@ -45,6 +45,18 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Party colours as Tailwind tokens, so `text-party-spd` works alongside the
+   * inline `var()` form `lib/parties.ts` returns. Both read the same custom
+   * properties below — one palette, two ways to reach it. */
+  --color-party-cdu-csu: var(--party-cdu-csu);
+  --color-party-spd: var(--party-spd);
+  --color-party-gruene: var(--party-gruene);
+  --color-party-fdp: var(--party-fdp);
+  --color-party-afd: var(--party-afd);
+  --color-party-linke: var(--party-linke);
+  --color-party-fraktionslos: var(--party-fraktionslos);
+  --color-party-unknown: var(--party-unknown);
 }
 
 :root {
@@ -80,40 +92,94 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* --- party colours (light) ---------------------------------------------
+   *
+   * Each Fraktion's own colour, darkened enough to hold a 4.5:1 contrast ratio
+   * against a white background — a badge nobody can read is not an accessible
+   * badge, and these are the only colours on the site carrying meaning rather
+   * than decoration. The dark-theme values below are the same hues lifted, not
+   * different colours: an MP's badge must be recognisably the same in both.
+   *
+   * CDU/CSU is black by convention. Rendered as a very dark grey rather than a
+   * true black so it reads as a deliberate colour beside the others, and so it
+   * is distinguishable from the text around it.
+   *
+   * `--party-unknown` is deliberately a plain neutral: a Fraktion this codebase
+   * does not recognise should look unstyled, which is the visible prompt to add
+   * it (see the header of lib/parties.ts). */
+  --party-cdu-csu: oklch(0.28 0.005 285);
+  --party-spd: oklch(0.53 0.21 26);
+  --party-gruene: oklch(0.52 0.14 150);
+  --party-fdp: oklch(0.62 0.15 88);
+  --party-afd: oklch(0.55 0.15 240);
+  --party-linke: oklch(0.52 0.2 350);
+  --party-fraktionslos: oklch(0.55 0.01 285);
+  --party-unknown: oklch(0.6 0 0);
 }
 
+/**
+ * The dark theme, and the default one.
+ *
+ * Carries a slight blue cast (hue 265, chroma 0.01–0.02) rather than the
+ * scaffold's pure greyscale: the surfaces read as deep space rather than as
+ * switched-off white, which is the intended register for a chamber-wide data
+ * view. The cast is kept low enough not to tint the party colours sitting on
+ * top of it — those are the only hues on the page that mean anything.
+ *
+ * Contrast is the constraint, not the mood. `--muted-foreground` sits at 0.72
+ * lightness so the secondary text carrying most of the figures stays above
+ * 4.5:1 on `--background`.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.16 0.012 265);
+  --foreground: oklch(0.97 0.004 265);
+  --card: oklch(0.205 0.014 265);
+  --card-foreground: oklch(0.97 0.004 265);
+  --popover: oklch(0.205 0.014 265);
+  --popover-foreground: oklch(0.97 0.004 265);
+  --primary: oklch(0.93 0.006 265);
+  --primary-foreground: oklch(0.2 0.014 265);
+  --secondary: oklch(0.27 0.015 265);
+  --secondary-foreground: oklch(0.97 0.004 265);
+  --muted: oklch(0.27 0.015 265);
+  --muted-foreground: oklch(0.72 0.014 265);
+  --accent: oklch(0.29 0.018 265);
+  --accent-foreground: oklch(0.97 0.004 265);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.58 0.03 265);
+  /* A single-hue ramp for the contribution heatmap: dim to bright at one hue,
+   * so cell intensity reads as *more* rather than as a different category. */
+  --chart-1: oklch(0.3 0.03 265);
+  --chart-2: oklch(0.44 0.07 262);
+  --chart-3: oklch(0.58 0.11 258);
+  --chart-4: oklch(0.72 0.14 254);
+  --chart-5: oklch(0.85 0.16 250);
+  --sidebar: oklch(0.205 0.014 265);
+  --sidebar-foreground: oklch(0.97 0.004 265);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-accent: oklch(0.29 0.018 265);
+  --sidebar-accent-foreground: oklch(0.97 0.004 265);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.58 0.03 265);
+
+  /* --- party colours (dark) ----------------------------------------------
+   *
+   * The same hues as the light theme, lifted in lightness and eased in chroma
+   * so each clears 4.5:1 against `--background` without glowing. CDU/CSU
+   * inverts: black on white becomes bone on near-black, because a black badge
+   * on a dark background is not a badge. */
+  --party-cdu-csu: oklch(0.88 0.008 285);
+  --party-spd: oklch(0.68 0.2 25);
+  --party-gruene: oklch(0.72 0.16 148);
+  --party-fdp: oklch(0.84 0.16 92);
+  --party-afd: oklch(0.7 0.14 238);
+  --party-linke: oklch(0.7 0.19 350);
+  --party-fraktionslos: oklch(0.72 0.012 285);
+  --party-unknown: oklch(0.7 0 0);
 }
 
 @layer base {

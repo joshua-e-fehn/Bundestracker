@@ -1,6 +1,12 @@
+<<<<<<< HEAD
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 import type * as React from "react"
+=======
+import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
+import { Slot } from "radix-ui"
+>>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
 
 import { cn } from "@/lib/utils"
 
@@ -38,7 +44,11 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
+<<<<<<< HEAD
   },
+=======
+  }
+>>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
 )
 
 function Button({

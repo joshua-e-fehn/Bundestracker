@@ -92,6 +92,27 @@ export async function mpLabel(
 }
 
 /**
+ * The newest Wahlperiode on the roster, or null before the first ingest.
+ *
+ * Derived rather than configured, and this function is the single place that
+ * derivation lives — `convex/scoreSweep.ts` calls it for the nightly sweep and
+ * `getCurrentWahlperiode` below exposes it to the frontend. Two copies would be
+ * two answers to "which Bundestag are we looking at", and they would diverge
+ * silently on the day a new one is elected.
+ *
+ * One row: the index's first column is `wahlperiode`, so descending order puts
+ * the current period first and `.first()` stops there.
+ */
+export async function newestWahlperiode(ctx: QueryCtx): Promise<number | null> {
+  const newest = await ctx.db
+    .query("mps")
+    .withIndex("by_wahlperiode_and_fraktion")
+    .order("desc")
+    .first()
+  return newest?.wahlperiode ?? null
+}
+
+/**
  * Resolves an MP reference used by another ingestion mutation.
  *
  * Every table keyed by `mpInternalId` calls this before writing, so a speech or
@@ -205,6 +226,26 @@ export const listUnlinkedMPs = internalQuery({
 })
 
 // --- public queries -------------------------------------------------------
+
+/**
+ * Which Wahlperiode the site is showing — the frontend's first read.
+ *
+ * Every public query here takes `wahlperiode` as a required argument, so a page
+ * has to learn it before it can ask anything else. It is answered from the data
+ * (see `newestWahlperiode`) rather than from a constant in the frontend: a
+ * hardcoded `21` would keep serving the previous Bundestag for months after the
+ * next one was sworn in, and it would do it without erroring — the pages would
+ * simply show a chamber that no longer sits.
+ *
+ * Null means nothing has been ingested yet. That is the state of a fresh
+ * deployment, not a failure, and the UI renders it as "no data" rather than as
+ * an error or as period zero.
+ */
+export const getCurrentWahlperiode = query({
+  args: {},
+  returns: v.union(v.null(), v.number()),
+  handler: async (ctx) => await newestWahlperiode(ctx),
+})
 
 /** One MP's mandate in one period. The profile page's first read. */
 export const getMP = query({

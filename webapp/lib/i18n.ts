@@ -59,24 +59,36 @@ export const LOCALE_LABELS: Record<Locale, string> = {
  * dots still group things for a human scanning the file.
  */
 const de = {
-  "app.name": "Bundestrack",
-  "app.tagline": "Parlamentarische Aktivität, objektiv gemessen.",
+  // "Bundestracker", not "Bundestrack": the rename in 26b564a updated the
+  // README and AGENTS.md but missed this dictionary, which is what the UI
+  // actually renders. The package name stays `bundestrack`.
+  "app.name": "Bundestracker",
+  "app.tagline": "Objektiver Aktivitäts-Tracker für den Deutschen Bundestag",
   "app.description":
     "Nachvollziehbare, messbare Aktivität der Mitglieder des Deutschen Bundestages — aus offiziellen Daten.",
 
   "nav.home": "Startseite",
   "nav.members": "Abgeordnete",
+  "nav.votes": "Abstimmungen",
+  "nav.motions": "Anträge",
+  "nav.rankings": "Rangliste",
   "nav.activity": "Aktivität",
-  "nav.rankings": "Ranglisten",
-  "nav.feed": "Aktivitätsfeed",
   "nav.about": "Über",
   "nav.language": "Sprache",
   "nav.theme": "Design",
+  "nav.menu": "Menü",
+  "nav.openMenu": "Menü öffnen",
+  "nav.closeMenu": "Menü schließen",
+
+  "theme.light": "Hell",
+  "theme.dark": "Dunkel",
+  "theme.system": "System",
 
   "auth.signIn": "Anmelden",
   "auth.signOut": "Abmelden",
   "auth.signInWithGoogle": "Mit Google anmelden",
   "auth.signInWithGitHub": "Mit GitHub anmelden",
+  "auth.account": "Konto",
   // The sign-in page has to answer "why would I?", because the answer is not
   // "to see the data" — all of it is public without an account.
   "auth.optionalNotice":
@@ -87,16 +99,10 @@ const de = {
   "common.retry": "Erneut versuchen",
   "common.notFound": "Nicht gefunden",
   "common.search": "Suchen",
-  "common.all": "Alle",
-  "common.none": "Keine",
-  "common.empty": "Keine Einträge gefunden.",
-  "common.loadMore": "Mehr laden",
-  "common.showingCount": "{shown} von {total}",
-  "common.previous": "Zurück",
-  "common.next": "Weiter",
-  "common.page": "Seite {page} von {pages}",
-  "common.reset": "Zurücksetzen",
-  "common.filters": "Filter",
+  // Distinct from `common.loading` on purpose: an empty section and a loading
+  // one look alike, and only one of them is worth waiting for.
+  "common.noData": "Noch keine Daten",
+  "common.noDataHint": "Die Datenpipeline hat für diesen Bereich noch nichts geladen.",
 
   "mp.motions": "Anträge",
   "mp.speeches": "Reden",
@@ -108,100 +114,36 @@ const de = {
   "mp.electoralPeriod": "Wahlperiode",
   "mp.activityScore": "Aktivitätswert",
 
-  // --- rankings -----------------------------------------------------------
+  "home.heroLead":
+    "Wie ein Beitragsdiagramm für Abgeordnete: Anträge, Reden, Abstimmungen, Anfragen und Ausschussarbeit — jede Zahl belegt durch ein offizielles Dokument des Bundestages.",
+  "home.browseAllMPs": "Alle Abgeordneten ansehen",
+  "home.viewRankings": "Rangliste ansehen",
 
-  "rankings.title": "Ranglisten",
-  "rankings.subtitle": "Wer im Bundestag was tut — gemessen an offiziellen Aufzeichnungen.",
-  "rankings.rank": "Rang",
-  "rankings.member": "Abgeordnete:r",
-  "rankings.metric": "Wert",
-  "rankings.score": "Aktivitätswert",
-  "rankings.empty": "Für diese Auswahl liegen keine Werte vor.",
+  "home.statsTitle": "Der Bundestag in Zahlen",
+  "home.statMPs": "Abgeordnete",
+  "home.statNamedVotes": "Namentliche Abstimmungen",
+  "home.statMotions": "Anträge & Gesetzentwürfe",
+  // "Redebeiträge", not "Reden": a row is one speaker's turn, and §5.2 counts
+  // 197 speaker paragraphs against 112 `<rede>` elements in one sitting. A card
+  // headed "Reden" would read about 75 % high.
+  "home.statSpeeches": "Redebeiträge",
+  // The one caveat that belongs on the front page rather than buried: a named
+  // ballot is the exception in the Bundestag, not the rule, so this figure is
+  // not "how often they voted".
+  "home.statNamedVotesNote":
+    "Nur namentliche Abstimmungen — für alle übrigen Abstimmungen existiert kein Einzelnachweis.",
 
-  // Board names. Each is a leaderboard tab; the description sits under the
-  // heading and says what the number actually counts.
-  "rankings.board.mostActive": "Aktivste",
-  "rankings.board.mostActive.desc":
-    "Gesamter Aktivitätswert der Wahlperiode, gewichtet nach den Standardgewichten.",
-  "rankings.board.speeches": "Meiste Reden",
-  "rankings.board.speeches.desc":
-    "Redebeiträge im Plenum. Die Wortzahl steht daneben — sie ist der Wert, den die Bewertung nutzt.",
-  "rankings.board.motions": "Meiste Anträge",
-  "rankings.board.motions.desc": "Anträge und Entschließungsanträge, gezählt aus DIP-Aktivitäten.",
-  "rankings.board.questions": "Meiste Anfragen",
-  "rankings.board.questions.desc": "Kleine und Große Anfragen an die Bundesregierung.",
-  "rankings.board.voteParticipation": "Höchste Abstimmungsbeteiligung",
-  "rankings.board.voteParticipation.desc":
-    "Anteil der namentlichen Abstimmungen, an denen abgestimmt wurde. Enthaltung zählt als Teilnahme.",
-  "rankings.board.crossParty": "Meiste Abweichung von der Fraktion",
-  "rankings.board.crossParty.desc":
-    "Namentliche Abstimmungen, in denen anders als die Mehrheit der eigenen Fraktion gestimmt wurde.",
-  "rankings.board.committees": "Meiste Ausschussarbeit",
-  "rankings.board.committees.desc":
-    "Ausschusssitze in der laufenden Wahlperiode. Frühere Perioden sind nicht veröffentlicht.",
-  "rankings.board.bills": "Meiste Gesetzentwürfe",
-  "rankings.board.bills.desc": "Gesetzentwürfe, die die Abgeordneten mitgezeichnet haben.",
-  "rankings.board.rising": "Aufsteiger:innen des Monats",
-  "rankings.board.rising.desc":
-    "Größter Zuwachs des Aktivitätswerts gegenüber dem Vormonat, in Punkten.",
+  "home.topMPsTitle": "Aktivste Abgeordnete",
+  "home.topMPsSubtitle": "Nach Aktivitätswert in der laufenden Wahlperiode",
+  "home.latestVotesTitle": "Neueste namentliche Abstimmungen",
+  "home.feedTitle": "Zuletzt geschehen",
+  "home.showAll": "Alle ansehen",
 
-  // Column headers, kept short enough for a table head.
-  "rankings.column.speeches": "Reden",
-  "rankings.column.words": "Wörter",
-  "rankings.column.motions": "Anträge",
-  "rankings.column.questions": "Anfragen",
-  "rankings.column.participation": "Beteiligung",
-  "rankings.column.ballots": "Abstimmungen",
-  "rankings.column.dissent": "Abweichungen",
-  "rankings.column.committees": "Ausschüsse",
-  "rankings.column.bills": "Gesetzentwürfe",
-  "rankings.column.change": "Veränderung",
-  "rankings.column.previous": "Vormonat",
-
-  "rankings.filter.fraktion": "Fraktion",
-  "rankings.filter.state": "Bundesland",
-  "rankings.filter.ageGroup": "Altersgruppe",
-  "rankings.filter.allFraktionen": "Alle Fraktionen",
-  "rankings.filter.allStates": "Alle Bundesländer",
-  "rankings.filter.allAges": "Alle Altersgruppen",
-  "rankings.filter.month": "Zeitraum",
-  "rankings.filter.wholePeriod": "Gesamte Wahlperiode",
-
-  "rankings.age.u30": "unter 30",
-  "rankings.age.30s": "30–39",
-  "rankings.age.40s": "40–49",
-  "rankings.age.50s": "50–59",
-  "rankings.age.60s": "60–69",
-  "rankings.age.70plus": "70+",
-
-  // The caveats. These are structural limits of the sources (docs/api-research.md
-  // §4.4, §5.2, §6.4), not provisional gaps, so they are shown beside the number
-  // rather than filed under "about".
-  "rankings.caveat.namedVotesOnly":
-    "Nur namentliche Abstimmungen — rund 1 015 in der Geschichte des Bundestages. Alle übrigen Abstimmungen sind Handzeichen ohne personenbezogene Aufzeichnung.",
-  "rankings.caveat.speechCount":
-    "Redebeiträge sind Segmente, keine Reden: die Fragestunde zerlegt einen Ministerbeitrag in Dutzende Antworten. Die Bewertung nutzt deshalb die Wortzahl.",
-  "rankings.caveat.committeesCurrentOnly":
-    "Ausschussdaten liegen nur für die laufende Wahlperiode vor — frühere Perioden sind nirgends maschinenlesbar veröffentlicht.",
-  "rankings.caveat.crossParty":
-    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
-  "rankings.caveat.rising":
-    "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
-  "rankings.noPreviousMonth":
-    "Für die gesamte Wahlperiode gibt es keinen Vormonat. Wählen Sie einen Monat.",
-
-  "rankings.scoreExplainer":
-    "Der Aktivitätswert ist eine gewichtete Summe messbarer Vorgänge. Die Gewichtung ist eine Setzung, keine Wertung — jede Komponente ist einzeln ausgewiesen.",
-
-  // --- activity feed ------------------------------------------------------
-
-  "feed.title": "Aktivitätsfeed",
-  "feed.subtitle": "Was zuletzt im Bundestag passiert ist.",
-  "feed.empty": "Keine Aktivitäten für diese Auswahl.",
-  "feed.filterByType": "Nach Art filtern",
-  "feed.allTypes": "Alle Arten",
-  "feed.reference": "Zum Nachweis",
-  "feed.end": "Keine weiteren Einträge.",
+  "vote.yes": "Ja",
+  "vote.no": "Nein",
+  "vote.abstain": "Enthaltung",
+  "vote.invalid": "Ungültig",
+  "vote.absent": "Nicht abgegeben",
 
   "event.motion": "Antrag",
   "event.speech": "Rede",
@@ -211,21 +153,12 @@ const de = {
   "event.committee": "Ausschuss",
   "event.activity": "Aktivität",
 
-  // Relative timestamps. `{count}` is the number; the caller picks singular or
-  // plural by key, because German and English split at different counts.
-  "time.justNow": "gerade eben",
-  "time.minuteAgo": "vor einer Minute",
-  "time.minutesAgo": "vor {count} Minuten",
-  "time.hourAgo": "vor einer Stunde",
-  "time.hoursAgo": "vor {count} Stunden",
-  "time.yesterday": "gestern",
-  "time.daysAgo": "vor {count} Tagen",
-  "time.weekAgo": "vor einer Woche",
-  "time.weeksAgo": "vor {count} Wochen",
-  "time.monthAgo": "vor einem Monat",
-  "time.monthsAgo": "vor {count} Monaten",
-  "time.yearAgo": "vor einem Jahr",
-  "time.yearsAgo": "vor {count} Jahren",
+  "footer.dataSource": "Datenquelle",
+  "footer.dataSourceName": "Deutscher Bundestag — Open Data",
+  "footer.sourceCode": "Quellcode",
+  "footer.builtBy": "Erstellt von Joshua Fehn",
+  "footer.disclaimer":
+    "Kein offizielles Angebot des Deutschen Bundestages. Alle Angaben stammen aus öffentlich zugänglichen amtlichen Daten.",
 } as const
 
 /**
@@ -238,24 +171,33 @@ export type Dictionary = Record<keyof typeof de, string>
 export type TranslationKey = keyof typeof de
 
 const en: Dictionary = {
-  "app.name": "Bundestrack",
-  "app.tagline": "Parliamentary activity, objectively measured.",
+  "app.name": "Bundestracker",
+  "app.tagline": "Objective Activity Tracker for the German Bundestag",
   "app.description":
     "Transparent, measurable activity of the members of the German Bundestag — from official records.",
 
   "nav.home": "Home",
   "nav.members": "Members",
-  "nav.activity": "Activity",
+  "nav.votes": "Votes",
+  "nav.motions": "Motions",
   "nav.rankings": "Rankings",
-  "nav.feed": "Activity feed",
+  "nav.activity": "Activity",
   "nav.about": "About",
   "nav.language": "Language",
   "nav.theme": "Theme",
+  "nav.menu": "Menu",
+  "nav.openMenu": "Open menu",
+  "nav.closeMenu": "Close menu",
+
+  "theme.light": "Light",
+  "theme.dark": "Dark",
+  "theme.system": "System",
 
   "auth.signIn": "Sign in",
   "auth.signOut": "Sign out",
   "auth.signInWithGoogle": "Sign in with Google",
   "auth.signInWithGitHub": "Sign in with GitHub",
+  "auth.account": "Account",
   "auth.optionalNotice":
     "Signing in is optional. All data is viewable without an account; an account saves your own score weightings and followed members.",
 
@@ -264,16 +206,8 @@ const en: Dictionary = {
   "common.retry": "Try again",
   "common.notFound": "Not found",
   "common.search": "Search",
-  "common.all": "All",
-  "common.none": "None",
-  "common.empty": "No entries found.",
-  "common.loadMore": "Load more",
-  "common.showingCount": "{shown} of {total}",
-  "common.previous": "Previous",
-  "common.next": "Next",
-  "common.page": "Page {page} of {pages}",
-  "common.reset": "Reset",
-  "common.filters": "Filters",
+  "common.noData": "No data yet",
+  "common.noDataHint": "The data pipeline has not loaded anything for this section yet.",
 
   "mp.motions": "Motions",
   "mp.speeches": "Speeches",
@@ -285,94 +219,30 @@ const en: Dictionary = {
   "mp.electoralPeriod": "Electoral period",
   "mp.activityScore": "Activity score",
 
-  // --- rankings -----------------------------------------------------------
+  "home.heroLead":
+    "A contributions graph for members of parliament: motions, speeches, votes, questions and committee work — every figure backed by an official Bundestag record.",
+  "home.browseAllMPs": "Browse all MPs",
+  "home.viewRankings": "View rankings",
 
-  "rankings.title": "Rankings",
-  "rankings.subtitle": "Who does what in the Bundestag — measured against official records.",
-  "rankings.rank": "Rank",
-  "rankings.member": "Member",
-  "rankings.metric": "Value",
-  "rankings.score": "Activity score",
-  "rankings.empty": "No figures available for this selection.",
+  "home.statsTitle": "The Bundestag in numbers",
+  "home.statMPs": "Members",
+  "home.statNamedVotes": "Named votes",
+  "home.statMotions": "Motions & bills",
+  "home.statSpeeches": "Speech contributions",
+  "home.statNamedVotesNote":
+    "Named ballots only — for every other vote, no per-member record exists.",
 
-  "rankings.board.mostActive": "Most active",
-  "rankings.board.mostActive.desc":
-    "Total activity score for the electoral period, under the default weights.",
-  "rankings.board.speeches": "Most speeches",
-  "rankings.board.speeches.desc":
-    "Plenary speech segments. The word count sits alongside — that is the figure scoring uses.",
-  "rankings.board.motions": "Most motions",
-  "rankings.board.motions.desc": "Motions and resolutions, counted from DIP activity records.",
-  "rankings.board.questions": "Most questions",
-  "rankings.board.questions.desc": "Minor and major written questions to the federal government.",
-  "rankings.board.voteParticipation": "Highest voting participation",
-  "rankings.board.voteParticipation.desc":
-    "Share of named ballots in which a vote was cast. An abstention counts as participation.",
-  "rankings.board.crossParty": "Most cross-party voting",
-  "rankings.board.crossParty.desc":
-    "Named ballots voted against the majority of the member's own parliamentary group.",
-  "rankings.board.committees": "Most committee work",
-  "rankings.board.committees.desc":
-    "Committee seats in the current electoral period. Earlier periods are unpublished.",
-  "rankings.board.bills": "Most bills introduced",
-  "rankings.board.bills.desc": "Bills the member put their name to.",
-  "rankings.board.rising": "Rising this month",
-  "rankings.board.rising.desc":
-    "Largest increase in activity score against the previous month, in points.",
+  "home.topMPsTitle": "Most active members",
+  "home.topMPsSubtitle": "By activity score in the current electoral period",
+  "home.latestVotesTitle": "Latest named votes",
+  "home.feedTitle": "Latest activity",
+  "home.showAll": "Show all",
 
-  "rankings.column.speeches": "Speeches",
-  "rankings.column.words": "Words",
-  "rankings.column.motions": "Motions",
-  "rankings.column.questions": "Questions",
-  "rankings.column.participation": "Participation",
-  "rankings.column.ballots": "Ballots",
-  "rankings.column.dissent": "Dissents",
-  "rankings.column.committees": "Committees",
-  "rankings.column.bills": "Bills",
-  "rankings.column.change": "Change",
-  "rankings.column.previous": "Previous month",
-
-  "rankings.filter.fraktion": "Parliamentary group",
-  "rankings.filter.state": "Federal state",
-  "rankings.filter.ageGroup": "Age group",
-  "rankings.filter.allFraktionen": "All groups",
-  "rankings.filter.allStates": "All states",
-  "rankings.filter.allAges": "All ages",
-  "rankings.filter.month": "Period",
-  "rankings.filter.wholePeriod": "Whole electoral period",
-
-  "rankings.age.u30": "under 30",
-  "rankings.age.30s": "30–39",
-  "rankings.age.40s": "40–49",
-  "rankings.age.50s": "50–59",
-  "rankings.age.60s": "60–69",
-  "rankings.age.70plus": "70+",
-
-  "rankings.caveat.namedVotesOnly":
-    "Named ballots only — roughly 1,015 in the Bundestag's entire history. Every other vote is a show of hands with no per-member record.",
-  "rankings.caveat.speechCount":
-    "Speech entries are segments, not speeches: question time splits a minister's turn into dozens of replies. Scoring therefore uses the word count.",
-  "rankings.caveat.committeesCurrentOnly":
-    "Committee data exists for the current electoral period only — earlier periods are published nowhere in machine-readable form.",
-  "rankings.caveat.crossParty":
-    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
-  "rankings.caveat.rising":
-    "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
-  "rankings.noPreviousMonth":
-    "The whole electoral period has no previous month. Pick a month instead.",
-
-  "rankings.scoreExplainer":
-    "The activity score is a weighted sum of measurable records. The weighting is a choice, not a verdict — every component is shown separately.",
-
-  // --- activity feed ------------------------------------------------------
-
-  "feed.title": "Activity feed",
-  "feed.subtitle": "What has just happened in the Bundestag.",
-  "feed.empty": "No activity for this selection.",
-  "feed.filterByType": "Filter by type",
-  "feed.allTypes": "All types",
-  "feed.reference": "Source record",
-  "feed.end": "No further entries.",
+  "vote.yes": "Yes",
+  "vote.no": "No",
+  "vote.abstain": "Abstained",
+  "vote.invalid": "Invalid",
+  "vote.absent": "Did not vote",
 
   "event.motion": "Motion",
   "event.speech": "Speech",
@@ -382,19 +252,12 @@ const en: Dictionary = {
   "event.committee": "Committee",
   "event.activity": "Activity",
 
-  "time.justNow": "just now",
-  "time.minuteAgo": "a minute ago",
-  "time.minutesAgo": "{count} minutes ago",
-  "time.hourAgo": "an hour ago",
-  "time.hoursAgo": "{count} hours ago",
-  "time.yesterday": "yesterday",
-  "time.daysAgo": "{count} days ago",
-  "time.weekAgo": "a week ago",
-  "time.weeksAgo": "{count} weeks ago",
-  "time.monthAgo": "a month ago",
-  "time.monthsAgo": "{count} months ago",
-  "time.yearAgo": "a year ago",
-  "time.yearsAgo": "{count} years ago",
+  "footer.dataSource": "Data source",
+  "footer.dataSourceName": "Deutscher Bundestag — Open Data",
+  "footer.sourceCode": "Source code",
+  "footer.builtBy": "Built by Joshua Fehn",
+  "footer.disclaimer":
+    "Not an official service of the German Bundestag. All figures come from publicly available official data.",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }
