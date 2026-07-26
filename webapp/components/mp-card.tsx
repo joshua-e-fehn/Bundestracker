@@ -1,7 +1,7 @@
 "use client"
 
-import Link from "next/link"
 import { useQuery } from "convex/react"
+import Link from "next/link"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"

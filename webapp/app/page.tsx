@@ -3,12 +3,7 @@
 import { useQuery } from "convex/react"
 import { ArrowRightIcon } from "lucide-react"
 import Link from "next/link"
-import {
-  ActivityFeedPreview,
-  LatestVotes,
-  SummaryStats,
-  TopMPs,
-} from "@/components/home-sections"
+import { ActivityFeedPreview, LatestVotes, SummaryStats, TopMPs } from "@/components/home-sections"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
@@ -82,9 +77,7 @@ function Hero() {
 
       <div className="grid max-w-3xl gap-5">
         <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">{t("app.name")}</h1>
-        <p className="text-balance text-lg text-muted-foreground sm:text-xl">
-          {t("app.tagline")}
-        </p>
+        <p className="text-balance text-lg text-muted-foreground sm:text-xl">{t("app.tagline")}</p>
         <p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
           {t("home.heroLead")}
         </p>

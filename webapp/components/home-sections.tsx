@@ -63,9 +63,7 @@ function SectionHeading({
         <h2 id={id} className="font-semibold text-lg tracking-tight">
           {t(titleKey)}
         </h2>
-        {subtitleKey ? (
-          <p className="text-muted-foreground text-sm">{t(subtitleKey)}</p>
-        ) : null}
+        {subtitleKey ? <p className="text-muted-foreground text-sm">{t(subtitleKey)}</p> : null}
       </div>
       {href ? (
         <Button asChild variant="ghost" size="sm" className="shrink-0">
@@ -315,11 +313,7 @@ const EVENT_LABEL_KEYS: Record<string, TranslationKey> = {
   activity: "event.activity",
 }
 
-export function ActivityFeedPreview({
-  wahlperiode,
-}: {
-  wahlperiode: number | null | undefined
-}) {
+export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | null | undefined }) {
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const feed = useQuery(

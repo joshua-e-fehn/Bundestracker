@@ -29,8 +29,11 @@
  * failure does not look like an auth problem: `AuthGuard` redirects to
  * `/sign-in`, which does not exist yet, so the page renders a 404 and the
  * obvious suspect is the route itself. `/rankings` and `/feed` each spent a
- * debugging session on it. Until a genuinely private route exists, every
- * content route belongs on this list.
+ * debugging session on it, and `/seating` then spent a third — which is why
+ * lib/auth-routes.test.ts now reads `app/` and asserts that every directory
+ * with a `page.tsx` is listed here, rather than trusting anyone to remember.
+ * Until a genuinely private route exists, every content route belongs on this
+ * list.
  */
 export const PUBLIC_PATHS = [
   "/",
@@ -39,6 +42,7 @@ export const PUBLIC_PATHS = [
   "/api",
   "/rankings",
   "/feed",
+  "/seating",
   // Not built on this branch — the MP pages belong to `frontend-mp-profiles` —
   // but listed because the feed and every leaderboard row links to
   // `/mps/<internalId>`, and a link that redirects to a 404 is worse than one

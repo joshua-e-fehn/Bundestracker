@@ -68,12 +68,7 @@ export function UserMenu({ className }: { className?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={className}
-          aria-label={t("auth.account")}
-        >
+        <Button variant="ghost" size="icon-sm" className={className} aria-label={t("auth.account")}>
           <Avatar size="sm">
             {image ? <AvatarImage src={image} alt="" /> : null}
             <AvatarFallback>{initials(user.name || user.email)}</AvatarFallback>

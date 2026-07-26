@@ -55,9 +55,9 @@ describe("partyFor", () => {
   test("does not mistake 'Christlich - Sozialen' for the SPD", () => {
     // The long CDU/CSU form contains "Sozialen"; `spd` matches on
     // "sozialdemokrat", and the union is checked first regardless.
-    expect(partyFor("Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union").key).not.toBe(
-      "spd",
-    )
+    expect(
+      partyFor("Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union").key,
+    ).not.toBe("spd")
   })
 
   test("an MP without a group is fraktionslos, not unknown", () => {

@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { getToken } from "@/lib/auth-server"
 import { DEFAULT_LOCALE, localeFromAcceptLanguage, t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -121,13 +122,24 @@ export default async function RootLayout({
           <QueryProvider>
             <ThemeProvider>
               <LocaleProvider initialLocale={locale}>
-                {/* Header and footer sit inside LocaleProvider — they are
-                    translated — but outside AuthGuard, so the chrome stays on
-                    screen if a future private route redirects. */}
-                <SiteHeader />
-                <AuthGuard>{children}</AuthGuard>
-                <SiteFooter />
-                <Toaster />
+                {/* Radix requires a `Tooltip` to have a provider above it, and
+                    throws at *render* if it does not — which the typecheck
+                    cannot see, so the page that forgot one blanks to the error
+                    boundary. Both the seating map and the profile heatmap did.
+
+                    Once, here, rather than per component: the alternative is
+                    every consumer wrapping its own, which is both the bug
+                    itself and a nest of providers whose `delayDuration` would
+                    drift apart. */}
+                <TooltipProvider>
+                  {/* Header and footer sit inside LocaleProvider — they are
+                      translated — but outside AuthGuard, so the chrome stays on
+                      screen if a future private route redirects. */}
+                  <SiteHeader />
+                  <AuthGuard>{children}</AuthGuard>
+                  <SiteFooter />
+                  <Toaster />
+                </TooltipProvider>
               </LocaleProvider>
             </ThemeProvider>
           </QueryProvider>
