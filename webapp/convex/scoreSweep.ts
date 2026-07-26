@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { internalMutation, internalQuery } from "./_generated/server"
+import { newestWahlperiode } from "./mps"
 
 /**
  * The nightly score sweep: rescoring the whole chamber, a slice at a time.
@@ -33,6 +34,11 @@ const SWEEP_BATCH = 25
  * keep scoring the previous period for months after WP22 began — the kind of
  * staleness that produces a plausible, wrong number rather than an error.
  *
+ * The derivation itself lives in `newestWahlperiode` (convex/mps.ts), because
+ * the frontend needs the same answer — `mps.getCurrentWahlperiode` is its public
+ * face. This wrapper stays because the sweep wants it as a query it can call
+ * through the scheduler, not because it is a second implementation.
+ *
  * Returns null when the roster is empty, which is the state before the first
  * ingest. The sweep then does nothing rather than scoring a period that does
  * not exist.
@@ -41,13 +47,8 @@ export const currentPeriod = internalQuery({
   args: {},
   returns: v.union(v.null(), v.object({ wahlperiode: v.number() })),
   handler: async (ctx) => {
-    // Ordered by the index's first column, so the newest period is one row.
-    const newest = await ctx.db
-      .query("mps")
-      .withIndex("by_wahlperiode_and_fraktion")
-      .order("desc")
-      .first()
-    return newest ? { wahlperiode: newest.wahlperiode } : null
+    const wahlperiode = await newestWahlperiode(ctx)
+    return wahlperiode === null ? null : { wahlperiode }
   },
 })
 
