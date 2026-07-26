@@ -243,6 +243,15 @@ export const getMPMandates = query({
  * Sorting happens here because the index orders by `_creationTime` within a
  * group, which is ingestion order — meaningless to a reader. The result set is
  * one Fraktion at most (209 rows at the largest, §9) so the sort is bounded.
+ *
+ * The default takes the whole chamber — 630 seats (§6.2), plus room for the
+ * mid-period overhang §6.2 reconciles to 635. That is deliberate rather than
+ * generous: this query has no cursor, so an unreturned row is not on a later
+ * page, it is gone. At the previous default of 200 the roster stopped at "M"
+ * and the largest Fraktion lost nine members, and because the sort runs *after*
+ * the take, what went missing was the tail of the alphabet rather than a
+ * visibly short list. Paging belongs here eventually; until it does, the
+ * ceiling has to sit above the real answer.
  */
 export const getMPs = query({
   args: {
@@ -258,7 +267,7 @@ export const getMPs = query({
         const scoped = q.eq("wahlperiode", args.wahlperiode)
         return args.fraktion === undefined ? scoped : scoped.eq("fraktion", args.fraktion)
       })
-      .take(pageLimit(args.limit, 200))
+      .take(pageLimit(args.limit, 700))
     return rows
       .sort(
         (a, b) =>

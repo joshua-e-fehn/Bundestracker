@@ -12,7 +12,7 @@ import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_gen
 import { activityTallies } from "./activities"
 import { committeeCount } from "./committees"
 import { pageLimit, upsertRow, withId } from "./lib/ingest"
-import { mpLabel } from "./mps"
+import { mpLabel, requireMandate } from "./mps"
 import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
 import { speechVolume } from "./speeches"
 import { voteParticipation } from "./votes"
@@ -60,13 +60,27 @@ const toScoreDoc = withId<"activityScores">
  * `2026-02-31` sort correctly even though it is not a date, but it would also
  * silently include a `2026-02-30` typo from the source. Asking `Date` for the
  * real last day costs nothing and keeps the bound meaningful.
+ *
+ * The shape is checked before the numbers, and zero-padding is part of the
+ * shape. `"2026-6"` parses to a perfectly valid year and month, so a numeric
+ * check alone passes it — and then every bound built from it (`"2026-6-01"` …
+ * `"2026-6-30"`) sorts *above* every real date in that year, because `"6" >
+ * "1"` lexicographically. The window matches nothing, the MP scores zero for a
+ * month they worked, and nothing anywhere errors. `month` is also the stored
+ * key, so the zero row is written under a spelling no reader will ever query.
  */
-function monthWindow(month: string | null): { from: string; to: string } {
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
+
+/** Exported for convex/activityScores.test.ts. Not a Convex function, so it
+ * costs nothing at the API surface — and the padding rule above is the kind of
+ * bug that produces a plausible zero rather than an error, which is exactly
+ * what a test is for. */
+export function monthWindow(month: string | null): { from: string; to: string } {
   if (month === null) return { from: "1949-01-01", to: "2999-12-31" }
-  const [year, monthIndex] = month.split("-").map(Number)
-  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 1 || monthIndex > 12) {
-    throw new Error(`Invalid month "${month}": expected YYYY-MM`)
+  if (!MONTH_PATTERN.test(month)) {
+    throw new Error(`Invalid month "${month}": expected zero-padded YYYY-MM, e.g. 2026-06`)
   }
+  const [year, monthIndex] = month.split("-").map(Number)
   // Day 0 of the next month is the last day of this one.
   const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate()
   return {
@@ -264,11 +278,19 @@ export const recomputeScores = internalMutation({
  * holds. `computeScore` is the in-Convex path and the one the cron uses; this
  * exists so a backfill does not have to round-trip every MP through the
  * database to score a period it just ingested.
+ *
+ * `requireMandate` for the same reason every other ingestion mutation calls it
+ * (§7.3): a score naming an MP who is not on the roster has nobody to be a
+ * score *of*. It is worse here than elsewhere, though, because this row is not
+ * inert — `getRankings` reads the score index directly, so an orphan lands on
+ * the public leaderboard, and `mpLabel`'s missing-mandate fallback renders it
+ * under its own `internalId` as if that were a name.
  */
 export const upsertScore = internalMutation({
   args: activityScoreInput,
   returns: v.object({ id: v.id("activityScores"), created: v.boolean() }),
   handler: async (ctx, args) => {
+    await requireMandate(ctx, args.mpInternalId, args.wahlperiode)
     const existing = await ctx.db
       .query("activityScores")
       .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
