@@ -1,0 +1,103 @@
+## Bundestrack — monorepo root.
+##
+## Pixi owns the Python environment and is the single entry point for every
+## task in the repo, Python or JS. It does not manage JS packages: the webapp
+## has its own `package.json` and Bun resolves it, so the JS tasks here are
+## thin `bun run` delegations. That way `pixi run lint` covers both languages
+## while `cd webapp && bun run lint` still works on its own.
+##
+##   pixi run dev / build / pipeline / lint / format / typecheck / test
+
+[workspace]
+name = "bundestrack"
+version = "0.1.0"
+description = "Objective activity tracker for members of the German Bundestag."
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+
+[dependencies]
+python = ">=3.12,<3.14"
+# Bun is not on conda-forge, so it is not listed here. The JS tasks call the
+# `bun` on PATH; see the README for installation.
+nodejs = ">=20"
+
+[pypi-dependencies]
+# Editable install: `pixi run pipeline` imports the working tree, so an edit to
+# pipeline/src is live without a reinstall.
+bundestrack-pipeline = { path = "pipeline", editable = true, extras = ["dev"] }
+
+# --- tasks ------------------------------------------------------------------
+
+[tasks.dev]
+cmd = "bun run dev"
+cwd = "webapp"
+description = "Next.js dev server (Turbopack)."
+
+[tasks.build]
+cmd = "bun run build"
+cwd = "webapp"
+description = "Production build of the webapp (deploys Convex if a key is set)."
+
+[tasks.pipeline]
+cmd = "python -m bundestrack.cli"
+cwd = "pipeline"
+description = "Run the Python data pipeline, e.g. `pixi run pipeline sync`."
+
+[tasks.lint-python]
+cmd = "ruff check ."
+cwd = "pipeline"
+description = "Ruff lint over the pipeline."
+
+[tasks.lint-web]
+cmd = "bun run lint"
+cwd = "webapp"
+description = "Biome lint over the webapp."
+
+[tasks.lint]
+depends-on = ["lint-python", "lint-web"]
+description = "Lint everything: Ruff (Python) + Biome (TS)."
+
+[tasks.format-python]
+cmd = "ruff format . && ruff check --fix ."
+cwd = "pipeline"
+description = "Ruff format + autofix over the pipeline."
+
+[tasks.format-web]
+cmd = "bun run check"
+cwd = "webapp"
+# `biome check --write` rather than `biome format --write`: it formats *and*
+# applies safe lint fixes and organises imports, which is what `format` means
+# on the Python side too. Keeping the two halves symmetrical matters more than
+# matching Biome's own naming.
+description = "Biome format + safe fixes over the webapp."
+
+[tasks.format]
+depends-on = ["format-python", "format-web"]
+description = "Format everything: Ruff format (Python) + Biome (TS)."
+
+[tasks.typecheck]
+cmd = "bun run typecheck"
+cwd = "webapp"
+description = "TypeScript type check (tsc --noEmit)."
+
+[tasks.test-python]
+cmd = "pytest"
+cwd = "pipeline"
+description = "pytest over the pipeline."
+
+[tasks.test-web]
+cmd = "bun test"
+cwd = "webapp"
+# Note `bun test` exits non-zero when it matches no files, so this task needs
+# the webapp to keep at least one test — deleting the last one breaks
+# `pixi run test` rather than skipping it.
+description = "JS tests (bun test)."
+
+[tasks.test]
+depends-on = ["test-python", "test-web"]
+description = "Run all tests (Python + JS)."
+
+[tasks.install-web]
+cmd = "bun install"
+cwd = "webapp"
+description = "Install JS dependencies (bun only — never npm/pnpm/yarn)."

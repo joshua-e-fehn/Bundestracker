@@ -1,2 +1,25 @@
 .worktrees/
 .vibe/sources/
+
+# pixi
+# `pixi.lock` is *not* ignored — it pins the solved environment, so committing
+# it is what makes `pixi run` reproducible across machines and the cron host.
+.pixi/
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+
+# env
+.env
+.env.*
+!.env.example
+
+# os
+.DS_Store
