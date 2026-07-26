@@ -1,14 +1,20 @@
-# Task — frontend-voting-pages
+# Task — frontend-trend-graphs
 
-Build vote pages for Bundestracker. Do NOT ask questions. Read webapp/convex/votes.ts and webapp/convex/schema.ts, then build:
+Build trend graphs for Bundestracker MP profiles. Do NOT ask questions — proceed autonomously.
 
-1. webapp/app/votes/page.tsx — vote list with table (date, title, result bar), filters, pagination. Query getVoteSheets from convex/votes.ts.
-2. webapp/app/votes/[id]/page.tsx — vote detail: title, date, result badge, stacked vote bar (yes/no/abstain/absent), per-MP table with Fraktion filter and search, rebel vote highlighting.
-3. webapp/components/vote-bar.tsx — horizontal stacked bar.
-4. webapp/components/vote-table.tsx — per-MP vote table.
-5. webapp/components/rebel-vote-badge.tsx — badge for MPs voting against party.
-6. Add Convex queries to webapp/convex/votes.ts: getVoteSheetById (with voteRecords joined to MP data), getVoteSheets (paginated list with filters), getFraktionVoteBreakdown.
+Read webapp/convex/schema.ts and webapp/convex/activityScores.ts first.
 
-Use existing lib/i18n.ts for translations, lib/parties.ts for Fraktion colors. Bilingual DE/EN, German default.
+Tasks:
+1. Install recharts: cd webapp && bun add recharts
+2. Create webapp/components/trend-graphs.tsx — container with tabs for:
+   - Activity over time (line chart: total score per month)
+   - Speeches per month (bar chart)
+   - Motions per month (bar chart)
+   - Questions submitted (cumulative area chart)
+   - Votes attended (stacked bar: yes/no/abstain/absent)
+3. Add Convex query getMonthlyScoresByMP to activityScores.ts (or a new file) — returns monthly score breakdown for an MP
+4. Use recharts for all charts. Dark theme compatible (use Tailwind CSS variables).
+5. Bilingual labels (DE/EN) via lib/i18n.ts
+6. Integrate into the MP profile page (webapp/app/mps/[id]/page.tsx) — add a 'Trends' tab/section
 
 Commit and push. Do NOT wait for input.

@@ -8,6 +8,7 @@ import { MPPhoto } from "@/components/mp-photo"
 import { MPRecentRecords } from "@/components/mp-recent-records"
 import { MPScorePanel } from "@/components/mp-score-panel"
 import { useLocale } from "@/components/providers/locale-provider"
+import { TrendGraphs } from "@/components/trend-graphs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDate } from "@/lib/bundestag"
 import type { Locale } from "@/lib/i18n"
@@ -99,19 +100,13 @@ export function MPProfile({
             </CardContent>
           </Card>
 
-          <MPRecentRecords mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
+          {/* Above the "latest five" panels, not below them: the heatmap says
+              which days were busy and this says whether that is rising or
+              falling, so the two graphs sit together and the record lists
+              follow. */}
+          <TrendGraphs mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
 
-          {/* The Wave 4 placeholder the task asks for. Stated as "planned"
-              rather than drawn as an empty chart: an axis with no line reads as
-              an MP with no activity, which is the opposite of "not built yet". */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("mp.trends")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground text-sm">{t("mp.trendsComingSoon")}</p>
-            </CardContent>
-          </Card>
+          <MPRecentRecords mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
         </div>
       </div>
     </div>

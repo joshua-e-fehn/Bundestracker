@@ -231,6 +231,59 @@ export async function voteParticipation(
   return { rate: eligible === 0 ? null : cast / eligible, cast, eligible }
 }
 
+/**
+ * One MP's ballot positions in a period, tallied per calendar month.
+ *
+ * The same read as `voteParticipation` above — one MP's records, each resolved
+ * to the ballot that carries its date — aggregated the other way: that one
+ * answers "what share of one window did they vote in", this one answers "how did
+ * each month break down". Kept as a second function rather than folded into the
+ * first because the scorer calls `voteParticipation` once per window and would
+ * gain nothing from a histogram, while a chart asking it 48 times would repeat
+ * this whole scan 48 times over.
+ *
+ * The scoping rule is `voteParticipation`'s, and is why the sheet is fetched at
+ * all: a `voteRecords` row carries neither a period nor a date, so the ballot is
+ * the only thing that knows when it happened and which Bundestag it belonged to.
+ *
+ * Absences are tallied, not dropped. §4.1's sheets encode `nichtabgegeben` as
+ * its own column and convex/schema.ts keeps it distinct from `Enthaltung`, so a
+ * month an MP missed entirely must render as a bar of absences rather than as a
+ * month with no ballots — those are opposite claims about the same MP.
+ *
+ * ⚠ Unbounded by design, and safe for the reason §4.4 gives: named ballots are
+ * roughly 1 015 in the Bundestag's *entire history*, so one MP's records plus
+ * one sheet lookup each is a few thousand documents at the very worst — an order
+ * of magnitude inside Convex's ~16 000 read limit. That bound is a property of
+ * the corpus rather than of this query, which is why it is stated here: it does
+ * not hold for any other table, and `getCrossPartyRankings` in convex/rankings.ts
+ * bounds itself explicitly because it reads *every* MP's records rather than one's.
+ */
+export async function voteTallyByMonth(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+): Promise<Map<string, Record<Vote, number>>> {
+  const records = await ctx.db
+    .query("voteRecords")
+    .withIndex("by_mpInternalId", (q) => q.eq("mpInternalId", mpInternalId))
+    .collect()
+
+  const byMonth = new Map<string, Record<Vote, number>>()
+  for (const record of records) {
+    const sheet = await ctx.db.get(record.voteSheetId)
+    if (!sheet || sheet.wahlperiode !== wahlperiode) continue
+    // Dates are ISO `YYYY-MM-DD` (schema header), so the month is a slice rather
+    // than a parse — and the slice is already the zero-padded `YYYY-MM` that
+    // `activityScores.month` is keyed on, so the two line up without conversion.
+    const month = sheet.date.slice(0, 7)
+    const counts = byMonth.get(month) ?? { yes: 0, no: 0, abstain: 0, invalid: 0, absent: 0 }
+    counts[record.vote]++
+    byMonth.set(month, counts)
+  }
+  return byMonth
+}
+
 // --- group majority -------------------------------------------------------
 
 /**

@@ -8,6 +8,7 @@ import {
   type ScoreInputs,
   type ScoreWeights,
 } from "../lib/scoring"
+import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
 import { activityTallies } from "./activities"
 import { committeeCount } from "./committees"
@@ -15,7 +16,7 @@ import { pageLimit, upsertRow, withId } from "./lib/ingest"
 import { mpLabel, requireMandate } from "./mps"
 import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
 import { speechVolume } from "./speeches"
-import { voteParticipation } from "./votes"
+import { voteParticipation, voteTallyByMonth } from "./votes"
 
 /**
  * Computed activity scores and the rankings over them.
@@ -390,6 +391,132 @@ export const getRankings = query({
       })
     }
     return ranked
+  },
+})
+
+/**
+ * One MP's activity month by month — what the trend charts draw.
+ *
+ * ## Why this is not `getScores` filtered in the browser
+ *
+ * `getScores` returns the stored rows as they are, period total included, and
+ * that is right for the score panel, which wants exactly one of them. A chart
+ * wants three things that query cannot give it:
+ *
+ *  - **The period row excluded.** It is a total, not a month, and plotting it
+ *    alongside the monthly rows would draw one bar taller than the rest of the
+ *    chart put together — the sum of the series, rendered as a member of it.
+ *  - **Ballot positions per month.** `activityScores` stores
+ *    `voteParticipationRate`, a 0…1 share, which cannot be taken apart into the
+ *    yes/no/abstain/absent bars the vote chart stacks. Those come from
+ *    `voteTallyByMonth`, which reads the ballots themselves.
+ *  - **Months with ballots but no score row.** See below — the two sources
+ *    disagree about which months exist, and the union is the honest answer.
+ *
+ * ## The two sources, and why months are unioned rather than joined
+ *
+ * `startNightlySweep` recomputes the *current* calendar month and the period
+ * total, nothing else (convex/scoreSweep.ts explains why: an older month's
+ * inputs change only on a retroactive amendment). So a deployment whose backfill
+ * never called `POST /api/pipeline/scores/recompute` per month has score rows
+ * for one month and ballots for four years.
+ *
+ * Joining on the score rows would silently drop every ballot in those months and
+ * draw a voting record that starts the month the sweep first ran. So the months
+ * are unioned: a month with ballots and no score contributes its bars with zero
+ * counts elsewhere, which is what the sources actually say. `scored` marks which
+ * is which, so the UI can state it rather than presenting a gap in the score line
+ * as a quiet month.
+ *
+ * ## Read cost
+ *
+ * One indexed range over this MP's score rows — ~48 for a whole Wahlperiode —
+ * plus `voteTallyByMonth`'s scan of their vote records. Both are bounded by the
+ * corpus rather than by a limit, and §4.4 is why that is safe: named ballots
+ * number ~1 015 in the Bundestag's entire history. Deliberately per-MP; the
+ * chamber-wide form of this question would not be.
+ */
+export const getMonthlyScoresByMP = query({
+  args: { mpInternalId: v.string(), wahlperiode: v.number() },
+  returns: v.array(
+    v.object({
+      /** Zero-padded `YYYY-MM`. Never null: the period total is excluded, and
+       * a chart's x-axis has no place to put it. */
+      month: v.string(),
+      motionCount: v.number(),
+      speechCount: v.number(),
+      speechWordCount: v.number(),
+      questionCount: v.number(),
+      reportCount: v.number(),
+      committeeCount: v.number(),
+      billSponsorshipCount: v.number(),
+      voteParticipationRate: v.number(),
+      totalScore: v.number(),
+      /** Named ballots this month, by position — the stacked bar's segments.
+       * `absent` is carried rather than dropped for the reason §4.1 separates
+       * it from `abstain`: a month an MP missed and a month with no ballot are
+       * opposite claims. */
+      voteYes: v.number(),
+      voteNo: v.number(),
+      voteAbstain: v.number(),
+      voteInvalid: v.number(),
+      voteAbsent: v.number(),
+      /** Whether a score row exists for this month. False means the sweep has
+       * not run for it — see the header. A zero score on an unscored month is
+       * an absence of computation, not a measurement of idleness, and the UI
+       * has to be able to tell the reader which. */
+      scored: v.boolean(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const [rows, ballots] = await Promise.all([
+      ctx.db
+        .query("activityScores")
+        .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
+          q.eq("mpInternalId", args.mpInternalId).eq("wahlperiode", args.wahlperiode),
+        )
+        .collect(),
+      voteTallyByMonth(ctx, args.mpInternalId, args.wahlperiode),
+    ])
+
+    // The period total is the `month: null` row (see this file's header), and it
+    // is a sum of the rest — not a point on the axis.
+    //
+    // Built with an explicit key/value type and a loop rather than
+    // `new Map(rows.filter(…).map(…))`: inferring a `Map` from an array of
+    // two-element arrays needs the callback to return a *tuple*, and TypeScript
+    // widens it to `(string | Doc)[]` unless the target type says otherwise —
+    // so the map infers as `Map<{}, {}>` and every field read below becomes an
+    // error on `{}`. Stating the type is what makes `scored.get(month)` come
+    // back as the row it is.
+    const scored = new Map<string, Doc<"activityScores">>()
+    for (const row of rows) {
+      if (row.month !== null) scored.set(row.month, row)
+    }
+
+    const months = [...new Set([...scored.keys(), ...ballots.keys()])].sort()
+    return months.map((month) => {
+      const row = scored.get(month)
+      const votes = ballots.get(month) ?? { yes: 0, no: 0, abstain: 0, invalid: 0, absent: 0 }
+      return {
+        month,
+        motionCount: row?.motionCount ?? 0,
+        speechCount: row?.speechCount ?? 0,
+        speechWordCount: row?.speechWordCount ?? 0,
+        questionCount: row?.questionCount ?? 0,
+        reportCount: row?.reportCount ?? 0,
+        committeeCount: row?.committeeCount ?? 0,
+        billSponsorshipCount: row?.billSponsorshipCount ?? 0,
+        voteParticipationRate: row?.voteParticipationRate ?? 0,
+        totalScore: row?.totalScore ?? 0,
+        voteYes: votes.yes,
+        voteNo: votes.no,
+        voteAbstain: votes.abstain,
+        voteInvalid: votes.invalid,
+        voteAbsent: votes.absent,
+        scored: row !== undefined,
+      }
+    })
   },
 })
 

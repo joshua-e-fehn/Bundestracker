@@ -284,8 +284,49 @@ const de = {
   "mp.partyLineWith": "auf Fraktionslinie",
   "mp.partyLineAgainst": "gegen die Fraktionsmehrheit",
   "mp.partyLineUnknown": "Fraktionsmehrheit unbekannt",
-  "mp.trends": "Entwicklung",
-  "mp.trendsComingSoon": "Verlaufsgrafiken folgen in einer späteren Ausbaustufe.",
+  // --- trend charts ---
+  //
+  // `mp.trends` and `mp.trendsComingSoon` were here until the charts landed:
+  // the first is now `trends.title`, and the second described a placeholder
+  // panel that no longer exists. Both are removed rather than left behind —
+  // this dictionary is the schema (see the header), so an unused key is a
+  // string a future reader would reasonably assume something renders.
+  //
+  // The five charts on the profile's Entwicklung panel. Each description says
+  // what the chart counts, because "Reden pro Monat" and "Redebeiträge pro
+  // Monat" are different figures and §5.2 is the reason the distinction matters.
+  "trends.title": "Entwicklung",
+  "trends.subtitle": "Monatliche Aktivität in der laufenden Wahlperiode.",
+  "trends.chart.activity": "Aktivitätswert",
+  "trends.chart.activity.desc": "Gesamter Aktivitätswert je Monat, nach den Standardgewichten.",
+  "trends.chart.speeches": "Reden",
+  "trends.chart.speeches.desc":
+    "Redebeiträge je Monat, mit der Wortzahl daneben — sie ist der Wert, den die Bewertung nutzt.",
+  "trends.chart.motions": "Anträge",
+  "trends.chart.motions.desc": "Anträge und Gesetzentwürfe je Monat, gezählt aus DIP-Aktivitäten.",
+  "trends.chart.questions": "Anfragen",
+  "trends.chart.questions.desc":
+    "Kleine und Große Anfragen, aufsummiert über die Wahlperiode. Die Kurve steigt monoton — ein flacher Abschnitt ist ein Monat ohne Anfrage.",
+  "trends.chart.votes": "Abstimmungen",
+  "trends.chart.votes.desc":
+    "Namentliche Abstimmungen je Monat, nach abgegebener Stimme. „Nicht abgegeben“ ist eigens ausgewiesen und keine Enthaltung.",
+  "trends.cumulative": "Kumuliert",
+  "trends.month": "Monat",
+
+  // An empty chart and an empty *dataset* look alike — an axis with a line
+  // along zero reads as a measured result. Both are named rather than drawn.
+  "trends.empty": "Für diese Wahlperiode liegen noch keine Monatswerte vor.",
+  "trends.emptyChart": "Für diese Auswahl wurde in dieser Wahlperiode nichts erfasst.",
+  // The gap the nightly sweep leaves: it recomputes only the current month, so
+  // an earlier month can hold ballots and no score. A zero there is an absence
+  // of computation, not of work — see `getMonthlyScoresByMP`.
+  "trends.unscoredNotice":
+    "{count} Monate sind noch nicht bewertet: Die nächtliche Berechnung erfasst nur den laufenden Monat. Ein Wert von 0 bedeutet dort „noch nicht berechnet“, nicht „keine Aktivität“.",
+
+  "trends.caveat.score":
+    "Der Aktivitätswert ist eine gewichtete Summe — die Gewichtung ist eine Setzung, keine Wertung. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
+  "trends.caveat.namedVotes":
+    "Nur namentliche Abstimmungen. Ein Monat ohne Balken ist fast immer ein Monat ohne namentliche Abstimmung — nicht einer ohne Abstimmungen.",
 
   // --- score breakdown ---
   "score.total": "Gesamtwert",
@@ -666,8 +707,34 @@ const en: Dictionary = {
   "mp.partyLineWith": "with the group majority",
   "mp.partyLineAgainst": "against the group majority",
   "mp.partyLineUnknown": "group majority unknown",
-  "mp.trends": "Trends",
-  "mp.trendsComingSoon": "Trend charts are planned for a later release.",
+  // --- trend charts ---
+  "trends.title": "Trends",
+  "trends.subtitle": "Monthly activity across the current electoral period.",
+  "trends.chart.activity": "Activity score",
+  "trends.chart.activity.desc": "Total activity score per month, under the default weights.",
+  "trends.chart.speeches": "Speeches",
+  "trends.chart.speeches.desc":
+    "Speech segments per month, with the word count alongside — that is the figure scoring uses.",
+  "trends.chart.motions": "Motions",
+  "trends.chart.motions.desc": "Motions and bills per month, counted from DIP activity records.",
+  "trends.chart.questions": "Questions",
+  "trends.chart.questions.desc":
+    "Minor and major written questions, accumulated across the electoral period. The curve only rises — a flat stretch is a month with no question.",
+  "trends.chart.votes": "Votes",
+  "trends.chart.votes.desc":
+    "Named ballots per month, by the vote cast. “Did not vote” is shown separately and is not an abstention.",
+  "trends.cumulative": "Cumulative",
+  "trends.month": "Month",
+
+  "trends.empty": "No monthly figures are available for this electoral period yet.",
+  "trends.emptyChart": "Nothing was recorded for this selection in this electoral period.",
+  "trends.unscoredNotice":
+    "{count} months are not scored yet: the nightly computation covers only the current month. A 0 there means “not computed yet”, not “no activity”.",
+
+  "trends.caveat.score":
+    "The activity score is a weighted sum — the weighting is a choice, not a verdict. A month without a sitting week reads low without anyone having done less.",
+  "trends.caveat.namedVotes":
+    "Named ballots only. A month with no bar is almost always a month with no named ballot — not one without votes.",
 
   // --- score breakdown ---
   "score.total": "Total score",
