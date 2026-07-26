@@ -15,9 +15,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
-from bundestrack.models.dip import Aktivitaet
+from bundestrack.models.dip import Aktivitaet, Person, Plenarprotokoll
 from bundestrack.models.votes import VoteSheetLink
 from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
@@ -30,7 +31,14 @@ from bundestrack.pipeline.state import (
     load_state,
     save_state,
 )
-from bundestrack.pipeline.sync import Pipeline, RunReport, _within, backfill, sync
+from bundestrack.pipeline.sync import (
+    Pipeline,
+    RunReport,
+    _safe_watermark,
+    _within,
+    backfill,
+    sync,
+)
 from tests.conftest import fixture_bytes, fixture_json
 
 
@@ -59,7 +67,22 @@ class StubDIP(StubClient):
         self.since: list[str | None] = []
 
     def iter_personen(self, wahlperiode=None, *, updated_since=None, **extra):
-        return iter(())
+        # One DIP person, matching the roster excerpt, so the crosswalk
+        # resolves and the activities below are actually *stored*. Without it
+        # they are skipped, and a skipped record correctly holds the watermark
+        # back — which would make the watermark tests measure the wrong thing.
+        yield Person.model_validate(
+            {
+                "id": "1013",
+                "vorname": "Steffen",
+                "nachname": "Bilger",
+                "typ": "Person",
+                "titel": "Steffen Bilger, MdB",
+                "aktualisiert": "2026-07-24T12:03:00+02:00",
+                "wahlperiode": [21],
+                "funktion": ["MdB"],
+            }
+        )
 
     def iter_aktivitaeten(self, wahlperiode=None, *, updated_since=None, **extra):
         self.since.append(updated_since)
@@ -416,6 +439,79 @@ def test_the_quarantine_count_reaches_the_summary(tmp_path) -> None:
 
     assert report.quarantined >= 1
     assert "quarantine" in report.summary()
+
+
+def test_a_protocol_that_failed_to_download_is_listed_again_next_time(
+    tmp_path,
+) -> None:
+    """The watermark may not move past a sitting whose speeches never landed.
+
+    Otherwise the next window starts after it, `/plenarprotokoll` never lists
+    it again, and the speeches are gone with no error anywhere — the XML is the
+    only speaker-attributed source there is (§5.1).
+    """
+
+    class BlockedDownload(StubDIP):
+        def iter_plenarprotokolle(self, wahlperiode=None, *, updated_since=None, **extra):
+            yield from [
+                Plenarprotokoll.model_validate(doc)
+                for doc in fixture_json("dip", "plenarprotokoll_page.json")["documents"]
+            ]
+
+    class RefusingProtocols(StubClient):
+        def fetch(self, url):
+            raise BundestagAPIError("the WAF is blocking dserver")
+
+    pipeline, _loader = build(dip=BlockedDownload(), tmp_path=tmp_path)
+    pipeline.protocols = RefusingProtocols()
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+    pipeline.load_speeches(report, since=None)
+
+    assert pipeline.state.watermark(21, STREAM_PROTOCOLS) is None
+    (stage,) = [s for s in report.stages if s.name == "speeches"]
+    assert any("watermark is held back" in note for note in stage.notes)
+
+
+def test_a_download_failure_still_banks_everything_older_than_it(tmp_path) -> None:
+    """A failure pins the mark just below itself — it does not freeze it.
+
+    Refusing to advance at all would re-read the whole period every night,
+    which is its own way of getting IP-blocked (§2.6).
+    """
+    stored = [
+        datetime.fromisoformat("2026-07-01T00:00:00+02:00"),
+        datetime.fromisoformat("2026-07-20T00:00:00+02:00"),
+    ]
+    failed = [datetime.fromisoformat("2026-07-10T00:00:00+02:00")]
+
+    assert _safe_watermark(stored, failed) == stored[0]
+    assert _safe_watermark(stored, []) == stored[1]
+    assert _safe_watermark([], failed) is None
+    # A failure older than everything stored banks nothing.
+    assert _safe_watermark(stored, [datetime.fromisoformat("2026-06-01T00:00:00+02:00")]) is None
+
+
+def test_an_activity_whose_mp_is_unlinked_is_re_read_on_a_later_sync(
+    tmp_path,
+) -> None:
+    """§7.2: an activity naming a DIP person the crosswalk has not resolved is
+    skipped — and its `aktualisiert` never changes when the *person* is linked
+    later, so a watermark past it means that MP's work is lost for good."""
+
+    class UnlinkedDIP(StubDIP):
+        def iter_personen(self, wahlperiode=None, *, updated_since=None, **extra):
+            return iter(())  # no crosswalk at all
+
+    dip = UnlinkedDIP(aktivitaeten=[aktivitaet("2026-07-25T09:00:00+02:00")])
+    pipeline, _loader = build(dip=dip, tmp_path=tmp_path)
+
+    report = sync(21, pipeline=pipeline)
+
+    assert pipeline.state.watermark(21, STREAM_ACTIVITIES) is None
+    (stage,) = [s for s in report.stages if s.name == "activities"]
+    assert stage.result.skipped == 1
+    assert any("watermark is held back" in note for note in stage.notes)
 
 
 # --- votes ----------------------------------------------------------------

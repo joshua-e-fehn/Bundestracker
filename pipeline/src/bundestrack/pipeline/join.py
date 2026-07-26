@@ -153,9 +153,17 @@ class Quarantine(BaseModel):
         resolved: list[QuarantinedName] = []
         remaining: list[QuarantinedName] = []
         for entry in self.entries:
-            match = resolver.resolve_printed_name(
-                entry.nachname, entry.vorname, entry.particle, entry.wahlperiode
-            )
+            # By the id space the entry was recorded in, not by name for all of
+            # them: a `speech` entry holds a `<redner id>` in `nachname`
+            # (there is no name to hold — the protocol gave an id the dump did
+            # not know), and feeding that to the name index can never match, so
+            # those entries would accumulate forever.
+            if entry.source == "speech":
+                match = resolver.from_stammdaten_id(entry.nachname)
+            else:
+                match = resolver.resolve_printed_name(
+                    entry.nachname, entry.vorname, entry.particle, entry.wahlperiode
+                )
             (resolved if match else remaining).append(entry)
         self.entries = remaining
         return resolved
@@ -200,12 +208,24 @@ class MPResolver:
         # Ortszusatz, so the surname *variants* that make the vote-sheet join
         # work would only add ways for the wrong MP to match here.
         self._dip_name_index = _build_person_name_index(dump.for_wahlperiode(wahlperiode))
+        #: Stammdaten ids the sources proved belong to this period although the
+        #: dump does not record a mandate for it — see `promote`.
+        self._promoted: dict[str, MP] = {}
+        #: The subset of `_promoted` not yet written to the roster table.
+        self._pending_promotions: dict[str, MP] = {}
 
     # -- the roster --------------------------------------------------------
 
     def roster(self) -> list[MP]:
-        """Every MP with a mandate in this Wahlperiode."""
-        return self.dump.for_wahlperiode(self.wahlperiode)
+        """Every MP this run will write a mandate row for.
+
+        The dump's own list for the period, plus anyone promoted into it — so
+        that "the roster" means one thing to the ingest and to every id this
+        resolver hands out.
+        """
+        recorded = self.dump.for_wahlperiode(self.wahlperiode)
+        known = {mp.id for mp in recorded}
+        return recorded + [mp for mp in self._promoted.values() if mp.id not in known]
 
     def mp(self, stammdaten_id: str) -> MP | None:
         return self._by_stammdaten_id.get(stammdaten_id)
@@ -213,29 +233,80 @@ class MPResolver:
     def internal_ids(self) -> set[str]:
         """Every internal id this roster can vouch for.
 
-        The membership test the load stage uses before posting a row: the
-        Convex ingestion mutations reject a record naming an MP who is not on
-        the roster (`requireMandate` in webapp/convex/mps.ts), and a rejected
-        batch fails the whole request rather than the one row.
+        The membership test that keeps a batch postable: the Convex ingestion
+        mutations reject a record naming an MP who is not on the roster
+        (`requireMandate` in webapp/convex/mps.ts), and a rejected row fails
+        the whole 500-row request rather than just itself.
         """
         return {internal_id(mp.id) for mp in self.roster()}
+
+    def promote(self, stammdaten_id: str) -> str | None:
+        """Add an MP to this period's roster on the strength of a source record.
+
+        §7.3: the dump lags reality. An MP appears with WP20 only while sitting
+        in WP21 (Michael Breilmann, by name in the research), and two MPs in a
+        July 2026 ballot were missing outright. But a WP21 ballot listing
+        someone, or a WP21 protocol quoting them, *is* the evidence that they
+        held the mandate — the source is more current than the snapshot.
+
+        So rather than refuse the row — which would send a sitting MP to
+        quarantine for a defect in the snapshot rather than in the data — the
+        mandate is minted from that evidence. Without this the id resolves,
+        Convex has no `mps` row for it, and `requireMandate` throws: one such
+        vote 400s the entire batch it travelled in, and `load` does not retry a
+        400 because it is normally deterministic.
+
+        Returns None for an id the dump does not know at all, which is a
+        different failure: there is no MP to promote.
+        """
+        mp = self._by_stammdaten_id.get(stammdaten_id)
+        if mp is None:
+            return None
+        if stammdaten_id not in self._promoted:
+            self._promoted[stammdaten_id] = mp
+            self._pending_promotions[stammdaten_id] = mp
+            logger.info(
+                "Promoting %s into the WP%d roster — the source records them in this "
+                "period although the Stammdaten dump does not (§7.3)",
+                mp.current_name.display_name if mp.current_name else stammdaten_id,
+                self.wahlperiode,
+            )
+        return internal_id(mp.id)
+
+    def take_pending_promotions(self) -> list[MP]:
+        """The promotions not yet written, clearing the pending set.
+
+        The roster is written first (§11.1) but promotions are discovered by
+        the later stages, so those stages flush this before posting a batch
+        that references one. Draining rather than reading keeps a stage from
+        re-posting the same rows on every batch.
+        """
+        pending = list(self._pending_promotions.values())
+        self._pending_promotions.clear()
+        return pending
 
     # -- id-space joins ----------------------------------------------------
 
     def from_stammdaten_id(self, stammdaten_id: str | None) -> str | None:
         """The internal id for a Stammdaten id — the protocol XML's join (§5.2).
 
-        Returns None for an id absent from the roster rather than minting one
-        blindly: a `<redner id>` that no MP holds is a speech attributed to
-        nobody, and inventing an internal id for it would create a row that
-        every Convex mutation then rejects.
+        Returns None for an id no MP in the dump holds, rather than minting one
+        blindly: a `<redner id>` nobody holds is a speech attributed to nobody,
+        and inventing an internal id for it would create a row that every
+        Convex mutation then rejects.
+
+        An MP the dump knows but does not record in *this* period is promoted
+        rather than refused — the protocol quoting them is the evidence, and
+        `promote` explains why the snapshot loses that argument (§7.3).
         """
         if not stammdaten_id:
             return None
         mp = self._by_stammdaten_id.get(stammdaten_id)
         if mp is None:
             return None
-        return internal_id(mp.id)
+        if mp.served_in(self.wahlperiode) or mp.id in self._promoted:
+            return internal_id(mp.id)
+        return self.promote(mp.id)
 
     def from_dip_person_id(self, dip_person_id: str | None) -> str | None:
         """The internal id for a DIP person id — the `/aktivitaet` join (§3.5).
@@ -284,14 +355,10 @@ class MPResolver:
             return None
         if match.stale:
             # The MP exists but this mandate is not in the snapshot (§7.3,
-            # Michael Breilmann). Still the right human, so it resolves — and
-            # is logged, because it means the dump is behind.
-            logger.info(
-                "Resolved %s %s from outside WP%d — the Stammdaten snapshot is stale (§7.3)",
-                vorname,
-                nachname,
-                self.wahlperiode,
-            )
+            # Michael Breilmann). Still the right human, so it resolves — but
+            # it must also be *promoted*, or the id names an MP the roster
+            # ingest never wrote and Convex rejects the whole batch it rides in.
+            return self.promote(match.id)
         return internal_id(match.id)
 
     def resolve_vote_record(self, record: VoteRecord) -> str | None:

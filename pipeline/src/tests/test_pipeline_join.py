@@ -273,6 +273,84 @@ def test_quarantined_names_clear_once_the_roster_catches_up(resolver) -> None:
     assert [entry.nachname for entry in resolver.quarantine.entries] == ["Glaser"]
 
 
+# --- promotion ------------------------------------------------------------
+
+
+def test_a_stale_match_is_promoted_into_the_roster_rather_than_left_danglng(
+    resolver,
+) -> None:
+    """§7.3, and the failure it would otherwise cause downstream.
+
+    `NameIndex` deliberately falls back to the unscoped index so a sitting MP
+    the snapshot has not caught up with still resolves — but the id it returns
+    then names an MP the roster ingest never wrote. Convex's `requireMandate`
+    throws on that row, and because a batch is one transaction the whole 500
+    rows fail with a 400 that `load` deliberately does not retry.
+    """
+    # Siegbert Alber is in the dump with a WP8 mandate and no WP21 one.
+    assert "bt-11000019" not in resolver.internal_ids()
+
+    internal = resolver.resolve_printed_name("Alber", "Siegbert")
+
+    assert internal == "bt-11000019"
+    assert internal in resolver.internal_ids(), "the id must be one the roster will write"
+    assert [mp.id for mp in resolver.take_pending_promotions()] == ["11000019"]
+
+
+def test_an_out_of_period_speaker_id_is_promoted_too(resolver) -> None:
+    # Same hazard by the other route: `<redner id>` resolves through the whole
+    # dump, not through this period's roster.
+    internal = resolver.resolve_speaker_id("11000019")
+
+    assert internal == "bt-11000019"
+    assert internal in resolver.internal_ids()
+
+
+def test_a_promoted_mp_gets_a_mandate_row_for_the_period_they_sat_in(resolver) -> None:
+    """Described from their most recent recorded mandate, keyed to *this*
+    period — a row carrying WP8's constituency beats no row, which is a vote
+    that cannot be stored at all."""
+    from bundestrack.pipeline import transform
+
+    resolver.resolve_printed_name("Alber", "Siegbert")
+    row = next(p for p in transform.roster_payloads(resolver) if p["internalId"] == "bt-11000019")
+
+    assert row["wahlperiode"] == 21
+    assert row["name"] == "Siegbert Alber"
+    assert row["fraktion"] == "CDU/CSU"
+
+
+def test_promotions_drain_so_a_stage_does_not_repost_them(resolver) -> None:
+    resolver.resolve_speaker_id("11000019")
+
+    assert [mp.id for mp in resolver.take_pending_promotions()] == ["11000019"]
+    assert resolver.take_pending_promotions() == []
+    # …but the MP stays on the roster.
+    assert "bt-11000019" in resolver.internal_ids()
+
+
+def test_an_id_the_dump_does_not_know_at_all_is_not_promoted(resolver) -> None:
+    # A different failure: there is no MP to promote, so this stays a
+    # quarantine case rather than becoming an invented roster row.
+    assert resolver.promote("11999999") is None
+    assert resolver.resolve_speaker_id("11999999") is None
+
+
+def test_a_quarantined_speaker_id_clears_by_id_not_by_name(resolver) -> None:
+    """A `speech` entry holds a `<redner id>` where a vote entry holds a name.
+
+    Feeding that id to the name index can never match, so those entries would
+    accumulate forever and the speeches behind them would never be recovered.
+    """
+    resolver.quarantine.add(QuarantinedName(source="speech", nachname="11004011", wahlperiode=21))
+    resolver.quarantine.add(QuarantinedName(source="speech", nachname="11999999", wahlperiode=21))
+
+    recovered = resolver.quarantine.clear_resolved(resolver)
+
+    assert [entry.nachname for entry in recovered] == ["11004011"]
+    assert [entry.nachname for entry in resolver.quarantine.entries] == ["11999999"]
+
+
 def test_the_resolver_reports_every_internal_id_the_roster_vouches_for(resolver) -> None:
     # What the load stage checks before posting: Convex rejects a record naming
     # an MP who is not on the roster, and a rejected batch fails as a whole

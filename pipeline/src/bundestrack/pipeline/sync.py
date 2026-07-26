@@ -323,11 +323,11 @@ class Pipeline:
         questions = BatchResult("questions")
         events = BatchResult("feed events")
         seen: list[datetime] = []
+        deferred: list[datetime] = []
 
         for batch in _batched(
             self.dip.iter_aktivitaeten(self.wahlperiode, updated_since=since), STREAM_BATCH
         ):
-            seen.extend(a.aktualisiert for a in batch)
             # Sponsorships are accumulated as they stream past, not by keeping
             # the activities: 80 537 models held to be re-read one stage later
             # is the whole backfill in memory at once, and only the
@@ -335,6 +335,13 @@ class Pipeline:
             self._collect_sponsorships(batch, resolver)
 
             payloads = list(transform.activity_payloads(batch, resolver))
+            stored = {p["dipAktivitaetId"] for p in payloads}
+            # A record whose DIP person has not been linked is not stored, so
+            # it must not be banked either: its `aktualisiert` never changes
+            # when the *person* is linked later, so a watermark past it means
+            # the activity is never re-read and that MP's work is lost.
+            seen.extend(a.aktualisiert for a in batch if a.id in stored)
+            deferred.extend(a.aktualisiert for a in batch if a.id not in stored)
             result.skipped += len(batch) - len(payloads)
             if payloads:
                 result.merge(self.loader.upsert_activities(payloads))
@@ -353,9 +360,10 @@ class Pipeline:
         if result.skipped:
             stage.notes.append(
                 f"{result.skipped} activities name a DIP person with no roster match — "
-                "they attach on a later sync once the crosswalk resolves (§7.2)"
+                "the watermark is held back so a later sync re-reads them once the "
+                "crosswalk resolves (§7.2)"
             )
-        self.state.advance(self.wahlperiode, STREAM_ACTIVITIES, max(seen) if seen else None)
+        self.state.advance(self.wahlperiode, STREAM_ACTIVITIES, _safe_watermark(seen, deferred))
 
     def _collect_sponsorships(self, batch: Sequence[Aktivitaet], resolver: MPResolver) -> None:
         """Fold a batch of activities into the pending sponsorship map.
@@ -460,9 +468,9 @@ class Pipeline:
         events = BatchResult("feed events")
         seen: list[datetime] = []
         skipped_unchanged = 0
+        failed: list[datetime] = []
 
         for protocol_meta in self.dip.iter_plenarprotokolle(self.wahlperiode, updated_since=since):
-            seen.append(protocol_meta.aktualisiert)
             url = protocol_meta.xml_url
             if not url:
                 # Bundesrat rows have no XML at all, which is one of the
@@ -470,20 +478,30 @@ class Pipeline:
                 continue
             if self._protocol_unchanged(protocol_meta):
                 skipped_unchanged += 1
+                seen.append(protocol_meta.aktualisiert)
                 continue
 
             try:
                 protocol = self.protocols.fetch(url)
             except BundestagAPIError as error:
                 # One unreadable sitting does not end the run; the rest of the
-                # period is still worth having, and the next sync retries it
-                # because its hash was never recorded.
+                # period is still worth having. Deliberately *not* added to
+                # `seen`: the watermark must not move past a sitting whose
+                # speeches were never stored, or the next sync's window starts
+                # after it and the API never lists it again.
                 stage.notes.append(f"{protocol_meta.dokumentnummer}: {error}")
+                failed.append(protocol_meta.aktualisiert)
                 continue
 
             payloads = transform.speech_payloads(protocol, resolver, protocol_id=protocol_meta.id)
             if not payloads:
+                # Parsed, but nobody in it resolved. The hash is still recorded
+                # — the download succeeded, and re-fetching 1.2 MB nightly to
+                # re-derive nothing would be a WAF cost for no gain (§2.6).
+                self._record_protocol_hash(protocol_meta)
+                seen.append(protocol_meta.aktualisiert)
                 continue
+            self._flush_promotions()
             result.merge(self.loader.upsert_speeches(payloads))
             events.merge(
                 self.loader.add_activity_events(
@@ -491,12 +509,21 @@ class Pipeline:
                 )
             )
             self._record_protocol_hash(protocol_meta)
+            seen.append(protocol_meta.aktualisiert)
 
         stage.result = result
         stage.notes.append(str(events))
         if skipped_unchanged:
             stage.notes.append(f"{skipped_unchanged} protocols unchanged since the last sync")
-        self.state.advance(self.wahlperiode, STREAM_PROTOCOLS, max(seen) if seen else None)
+        if failed:
+            stage.notes.append(
+                f"{len(failed)} protocols could not be downloaded — the watermark is held back "
+                "so the next sync lists them again"
+            )
+        # `seen` holds only protocols that were stored or verified unchanged, so
+        # a failed download keeps the window open rather than being skipped
+        # forever (§11.2).
+        self.state.advance(self.wahlperiode, STREAM_PROTOCOLS, _safe_watermark(seen, failed))
 
     # -- stage 7: votes ----------------------------------------------------
 
@@ -602,9 +629,11 @@ class Pipeline:
                 transform.vote_sheet_payload(sheet, title=title, sheet_date=link.date)
             )
         )
-        records.merge(
-            self.loader.upsert_vote_records(transform.vote_record_payloads(sheet, resolver))
-        )
+        vote_records = transform.vote_record_payloads(sheet, resolver)
+        # Built before it is posted, because building it is what discovers a
+        # promoted MP — and the roster row has to exist before the vote does.
+        self._flush_promotions()
+        records.merge(self.loader.upsert_vote_records(vote_records))
         events.merge(
             self.loader.add_activity_events(
                 transform.vote_event_payloads(sheet, resolver, title=title)
@@ -649,6 +678,30 @@ class Pipeline:
         if since is not None:
             return since
         return self.state.since(self.wahlperiode, stream)
+
+    def _flush_promotions(self) -> int:
+        """Write the mandate rows for MPs promoted since the last flush (§7.3).
+
+        The roster goes first (§11.1), but a promotion is discovered *later* —
+        by a ballot or a protocol naming someone the snapshot does not record
+        in this period. Convex rejects any row naming an MP it has no mandate
+        for, and a rejected row fails the whole 500-row batch it travelled in,
+        so the roster row has to land before the record that references it.
+
+        Cheap in the normal case: nothing is pending, and this returns without
+        a request.
+        """
+        resolver = self._require_resolver()
+        pending = {mp.id for mp in resolver.take_pending_promotions()}
+        if not pending:
+            return 0
+        # Built through `roster_payloads` rather than assembled here, so a
+        # promoted MP's row is shaped by exactly the same rules as everyone
+        # else's — one definition of what an `mps` row looks like.
+        payloads = [p for p in transform.roster_payloads(resolver) if p["stammdatenId"] in pending]
+        if payloads:
+            self.loader.upsert_mps(payloads)
+        return len(payloads)
 
     def _mandate_window(self) -> tuple[date | None, date | None]:
         """When this Wahlperiode ran, from the roster's own mandate dates.
@@ -909,6 +962,31 @@ def _batched[T](items: Iterable[T], size: int) -> Iterator[list[T]]:
             batch = []
     if batch:
         yield batch
+
+
+def _safe_watermark(stored: list[datetime], failed: list[datetime]) -> datetime | None:
+    """How far the watermark may move given what actually landed.
+
+    The rule §11.2 implies but does not spell out: the mark may advance to the
+    newest record *stored*, but never past the oldest record that **failed**.
+
+    Both halves matter. Advancing to the newest fetched record would skip a
+    sitting whose download the WAF blocked — the next window starts after it,
+    the API never lists it again, and the speeches are gone with no error
+    anywhere. Refusing to advance at all would re-read the whole period every
+    night, which is its own way of being blocked (§2.6).
+
+    So a failure pins the mark just below itself, and everything older than it
+    is banked. `None` means nothing may be banked yet.
+    """
+    if not stored:
+        return None
+    highest = max(stored)
+    if not failed:
+        return highest
+    oldest_failure = min(failed)
+    banked = [when for when in stored if when < oldest_failure]
+    return max(banked) if banked else None
 
 
 def _within(when: date | None, window: tuple[date | None, date | None]) -> bool:

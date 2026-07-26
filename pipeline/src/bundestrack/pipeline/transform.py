@@ -226,28 +226,51 @@ def mp_payload(
 
 
 def roster_payloads(resolver: MPResolver) -> list[Payload]:
-    """The whole roster for the resolver's period.
+    """A mandate row for every MP the resolver will hand out an id for.
 
     First in §11.1's dependency order, and enforced as such by Convex: every
-    other ingestion mutation rejects a record naming an MP who is not here.
+    other ingestion mutation rejects a record naming an MP who is not here, and
+    a rejected row fails the whole 500-row batch it travelled in.
+
+    That equivalence is the point — this must cover `resolver.roster()`
+    exactly, promotions included. An MP the dump does not record in this period
+    but a ballot or a protocol does (§7.3) is described from their most recent
+    recorded mandate, with the Wahlperiode set to the one the source proved.
+    Skipping them instead is what makes an id unwritable.
     """
     payloads: list[Payload] = []
     for mp in resolver.roster():
-        mandate = mp.mandate_for(resolver.wahlperiode)
-        if mandate is None:  # pragma: no cover - `roster()` filters on this
-            continue
         internal = resolver.from_stammdaten_id(mp.id)
-        if internal is None:  # pragma: no cover - same
+        if internal is None:  # pragma: no cover - `roster()` guarantees one
             continue
-        payloads.append(
-            mp_payload(
-                mp,
-                mandate,
-                internal,
-                dip_person_id=resolver.dip_person_id_for(internal),
-            )
+        mandate = mp.mandate_for(resolver.wahlperiode) or _latest_mandate(mp)
+        if mandate is None:
+            # No mandate anywhere in the dump — nothing to describe the MP
+            # with, and `mp_payload` would have no Fraktion or dates to write.
+            logger.warning("Stammdaten MP %s has no mandate at all — skipped", mp.id)
+            continue
+        payload = mp_payload(
+            mp,
+            mandate,
+            internal,
+            dip_person_id=resolver.dip_person_id_for(internal),
         )
+        # A promoted MP's row is keyed on the period they actually sat in, not
+        # on the one the borrowed mandate came from.
+        payload["wahlperiode"] = resolver.wahlperiode
+        payloads.append(payload)
     return payloads
+
+
+def _latest_mandate(mp: MP) -> Mandate | None:
+    """The most recent mandate the dump records for an MP.
+
+    Describes a promoted MP, whose mandate for the current period the snapshot
+    does not have (§7.3): their previous period's constituency and election
+    method are the best available description, and a row carrying them beats no
+    row — which is a vote that cannot be stored at all.
+    """
+    return max(mp.mandates, key=lambda m: m.wahlperiode) if mp.mandates else None
 
 
 def dip_link_payloads(resolver: MPResolver) -> list[Payload]:
