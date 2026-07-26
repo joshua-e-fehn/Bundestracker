@@ -3,6 +3,8 @@ import { type Validator, v } from "convex/values"
 // Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
 import type { Locale } from "../lib/i18n"
 import type { ScoreComponent } from "../lib/scoring"
+import { EVENT_TYPES, type EventType } from "../lib/taxonomy"
+import { literalUnion } from "./lib/validators"
 
 /**
  * The application schema.
@@ -57,16 +59,19 @@ export const vote = v.union(
   v.literal("absent"),
 )
 
-/** What kind of parliamentary record an entry in the unified feed came from. */
-export const eventType = v.union(
-  v.literal("motion"),
-  v.literal("speech"),
-  v.literal("vote"),
-  v.literal("question"),
-  v.literal("bill"),
-  v.literal("committee"),
-  v.literal("activity"),
-)
+/**
+ * What kind of parliamentary record an entry in the unified feed came from.
+ *
+ * Built from `EVENT_TYPES` in lib/taxonomy.ts rather than restated, in the same
+ * spirit as `scoreWeights` below being constrained by `SCORE_COMPONENTS`: the
+ * feed's filter chips render that list, so a kind the database accepts is a
+ * kind the filter can select. Restating it here is how you get an event type
+ * that exists in the data and cannot be filtered to.
+ *
+ * The annotation is what makes that a compile error rather than a convention —
+ * a literal dropped from either side stops satisfying `Validator<EventType>`.
+ */
+export const eventType: Validator<EventType> = literalUnion(EVENT_TYPES)
 
 /**
  * Große Anfrage (`major`) vs Kleine Anfrage (`minor`).
@@ -542,7 +547,15 @@ const schema = defineSchema({
     // it.
     .index("by_eventType_and_referenceId", ["eventType", "referenceId"])
     // The chamber-wide feed.
-    .index("by_wahlperiode_and_date", ["wahlperiode", "date"]),
+    .index("by_wahlperiode_and_date", ["wahlperiode", "date"])
+    // Its type-filtered form, for the same reason the per-MP pair above is two
+    // indexes and not one: a page taken from the mixed feed and then filtered
+    // by kind comes back short, and a short page is indistinguishable from
+    // "there are no more". Chamber-wide the effect is worse than per-MP —
+    // Kleine Anfragen dominate the feed (§3.5), so filtering to a rarer kind
+    // would empty the first page and read as "no committee work happened".
+    // convex/feed.ts is the consumer.
+    .index("by_wahlperiode_and_eventType_and_date", ["wahlperiode", "eventType", "date"]),
 
   activityScores: defineTable({
     ...activityScoreInput,
