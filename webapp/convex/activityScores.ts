@@ -1,0 +1,380 @@
+import { v } from "convex/values"
+// Aliased so the exported mutation below can be `computeScore` — the name the
+// pipeline and the cron call it by — without shadowing the pure function it
+// delegates to.
+import {
+  computeScore as applyWeights,
+  DEFAULT_WEIGHTS,
+  type ScoreInputs,
+  type ScoreWeights,
+} from "../lib/scoring"
+import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
+import { activityTallies } from "./activities"
+import { committeeCount } from "./committees"
+import { pageLimit, upsertRow, withId } from "./lib/ingest"
+import { mpLabel } from "./mps"
+import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
+import { speechVolume } from "./speeches"
+import { voteParticipation } from "./votes"
+
+/**
+ * Computed activity scores and the rankings over them.
+ *
+ * The maths is not here — it is in lib/scoring.ts, outside `convex/`, because
+ * both sides need it: this module computes and stores a score under the default
+ * weights, while a signed-in user re-weights their own view live in the browser
+ * (`userPreferences.customWeights`). One formula, two callers.
+ *
+ * One row per (MP, Wahlperiode, month), `month` being `YYYY-MM` or **null for
+ * the whole period** — the monthly rows feed the contribution graph, the null
+ * row is the total the rankings sort on. Both come from the same computation,
+ * so they cannot disagree the way a cached total and its parts can.
+ *
+ * Three limits on what a score claims are structural and no weighting removes
+ * them (named ballots only; committee work for the current period only; words,
+ * not speech count). lib/scoring.ts sets them out; they belong in the UI.
+ */
+
+// --- read models ----------------------------------------------------------
+
+const activityScoreDoc = v.object({
+  id: v.id("activityScores"),
+  ...activityScoreInput,
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+
+const toScoreDoc = withId<"activityScores">
+
+// --- the window -----------------------------------------------------------
+
+/**
+ * The ISO date range a `month` argument covers.
+ *
+ * Null means the whole Wahlperiode, expressed as a range wide enough to contain
+ * any of them rather than as an absent bound. Every read downstream is an index
+ * range with both ends closed — an open-ended range is the shape that eventually
+ * scans a table, so there is no code path here that produces one.
+ *
+ * The end date is computed rather than "the 31st": comparing ISO strings makes
+ * `2026-02-31` sort correctly even though it is not a date, but it would also
+ * silently include a `2026-02-30` typo from the source. Asking `Date` for the
+ * real last day costs nothing and keeps the bound meaningful.
+ */
+function monthWindow(month: string | null): { from: string; to: string } {
+  if (month === null) return { from: "1949-01-01", to: "2999-12-31" }
+  const [year, monthIndex] = month.split("-").map(Number)
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 1 || monthIndex > 12) {
+    throw new Error(`Invalid month "${month}": expected YYYY-MM`)
+  }
+  // Day 0 of the next month is the last day of this one.
+  const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate()
+  return {
+    from: `${month}-01`,
+    to: `${month}-${String(lastDay).padStart(2, "0")}`,
+  }
+}
+
+// --- computation ----------------------------------------------------------
+
+/**
+ * Gathers one MP's measured activity for a window.
+ *
+ * Each source contributes through its own module's helper rather than through a
+ * query re-written here, so "how many speeches" has one definition wherever it
+ * is asked. The counts come from the source tables, not from `activityEvents`:
+ * the feed is derived and may lag, and a score built on derived data would
+ * compound any gap in it.
+ */
+async function gatherInputs(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  month: string | null,
+): Promise<{
+  inputs: ScoreInputs
+  speechCount: number
+  participation: { cast: number; eligible: number }
+}> {
+  const { from, to } = monthWindow(month)
+
+  const [tallies, speech, votes, committees] = await Promise.all([
+    activityTallies(ctx, mpInternalId, wahlperiode, from, to),
+    speechVolume(ctx, mpInternalId, wahlperiode, from, to),
+    voteParticipation(ctx, mpInternalId, wahlperiode, from, to),
+    committeeCount(ctx, mpInternalId, wahlperiode),
+  ])
+
+  return {
+    inputs: {
+      motions: tallies.motions ?? 0,
+      // Words, not segments — see the header note.
+      speeches: speech.wordCount,
+      questions: tallies.questions ?? 0,
+      reports: tallies.reports ?? 0,
+      // Null (no ballot fell in the window) scores as 0 rather than as a
+      // penalty for a month the Bundestag held no named vote. The distinction
+      // survives in `voteParticipationRate`, which the UI reads to decide
+      // between "0 %" and "no votes".
+      voteParticipation: votes.rate ?? 0,
+      committees,
+      billSponsorships: tallies.billSponsorships ?? 0,
+    },
+    speechCount: speech.speechCount,
+    participation: { cast: votes.cast, eligible: votes.eligible },
+  }
+}
+
+/** Computes and writes one (MP, period, month) score. */
+async function computeAndStore(
+  ctx: MutationCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  month: string | null,
+  weights: ScoreWeights,
+  now: number,
+): Promise<{ totalScore: number; created: boolean }> {
+  const { inputs, speechCount, participation } = await gatherInputs(
+    ctx,
+    mpInternalId,
+    wahlperiode,
+    month,
+  )
+  const { totalScore, breakdown } = applyWeights(inputs, weights)
+
+  const existing = await ctx.db
+    .query("activityScores")
+    .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
+      q.eq("mpInternalId", mpInternalId).eq("wahlperiode", wahlperiode).eq("month", month),
+    )
+    .unique()
+
+  const { created } = await upsertRow(
+    ctx,
+    "activityScores",
+    existing,
+    {
+      mpInternalId,
+      wahlperiode,
+      month,
+      motionCount: inputs.motions,
+      speechCount,
+      speechWordCount: inputs.speeches,
+      questionCount: inputs.questions,
+      reportCount: inputs.reports,
+      voteParticipationRate:
+        participation.eligible === 0 ? 0 : participation.cast / participation.eligible,
+      committeeCount: inputs.committees,
+      billSponsorshipCount: inputs.billSponsorships,
+      totalScore,
+      scoreBreakdown: breakdown,
+    },
+    now,
+    { touchUpdatedAt: true },
+  )
+  return { totalScore, created }
+}
+
+/**
+ * Recomputes one MP's scores: the period total, and one month.
+ *
+ * Idempotent, which is what makes it safe as a cron target — a run that dies
+ * partway leaves correct rows for the MPs it reached and stale ones for the
+ * rest, and the next run fixes those without double-counting anything.
+ */
+export const computeScore = internalMutation({
+  args: {
+    mpInternalId: v.string(),
+    wahlperiode: v.number(),
+    month: v.union(v.null(), v.string()),
+  },
+  returns: v.object({ totalScore: v.number(), created: v.boolean() }),
+  handler: async (ctx, args) =>
+    await computeAndStore(
+      ctx,
+      args.mpInternalId,
+      args.wahlperiode,
+      args.month,
+      DEFAULT_WEIGHTS,
+      Date.now(),
+    ),
+})
+
+/**
+ * Recomputes a slice of the roster — the cron's unit of work.
+ *
+ * Batched by MP rather than run for the whole chamber in one transaction:
+ * scoring one MP reads their activities, speeches, votes and committees, so 630
+ * of them in one function would blow through Convex's per-transaction read
+ * limit. `crons.ts` walks the roster in slices of this size, and `cursor`/
+ * `hasMore` is how it knows where it got to.
+ *
+ * `month` null recomputes only the period total; passing a month recomputes
+ * both it and the total, because a month's data changing changes the total too.
+ */
+export const recomputeScores = internalMutation({
+  args: {
+    wahlperiode: v.number(),
+    month: v.union(v.null(), v.string()),
+    cursor: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    scored: v.number(),
+    nextCursor: v.union(v.null(), v.number()),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = pageLimit(args.batchSize, 50)
+    const cursor = args.cursor ?? 0
+
+    // The roster is bounded (630-odd for WP21) so collecting ids is cheap; it
+    // is the per-MP scoring reads that need slicing, not this.
+    const roster = await ctx.db
+      .query("mps")
+      .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .collect()
+
+    const slice = roster.slice(cursor, cursor + batchSize)
+    const now = Date.now()
+    for (const mp of slice) {
+      if (args.month !== null) {
+        await computeAndStore(
+          ctx,
+          mp.internalId,
+          args.wahlperiode,
+          args.month,
+          DEFAULT_WEIGHTS,
+          now,
+        )
+      }
+      await computeAndStore(ctx, mp.internalId, args.wahlperiode, null, DEFAULT_WEIGHTS, now)
+    }
+
+    const nextCursor = cursor + slice.length
+    const hasMore = nextCursor < roster.length
+    return { scored: slice.length, nextCursor: hasMore ? nextCursor : null, hasMore }
+  },
+})
+
+/**
+ * Writes a precomputed score.
+ *
+ * For the pipeline, which can compute a score offline over data it already
+ * holds. `computeScore` is the in-Convex path and the one the cron uses; this
+ * exists so a backfill does not have to round-trip every MP through the
+ * database to score a period it just ingested.
+ */
+export const upsertScore = internalMutation({
+  args: activityScoreInput,
+  returns: v.object({ id: v.id("activityScores"), created: v.boolean() }),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("activityScores")
+      .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
+        q
+          .eq("mpInternalId", args.mpInternalId)
+          .eq("wahlperiode", args.wahlperiode)
+          .eq("month", args.month),
+      )
+      .unique()
+    return await upsertRow(ctx, "activityScores", existing, args, Date.now(), {
+      touchUpdatedAt: true,
+    })
+  },
+})
+
+// --- public queries -------------------------------------------------------
+
+/** One MP's scores: the period total, and every month with one. */
+export const getScores = query({
+  args: {
+    mpInternalId: v.string(),
+    wahlperiode: v.number(),
+    month: v.optional(v.union(v.null(), v.string())),
+  },
+  returns: v.array(activityScoreDoc),
+  handler: async (ctx, args) => {
+    const rows =
+      args.month === undefined
+        ? await ctx.db
+            .query("activityScores")
+            .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
+              q.eq("mpInternalId", args.mpInternalId).eq("wahlperiode", args.wahlperiode),
+            )
+            .collect()
+        : await ctx.db
+            .query("activityScores")
+            .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
+              q
+                .eq("mpInternalId", args.mpInternalId)
+                .eq("wahlperiode", args.wahlperiode)
+                .eq("month", args.month ?? null),
+            )
+            .collect()
+    return rows.map(toScoreDoc)
+  },
+})
+
+/**
+ * The leaderboard: highest scores first.
+ *
+ * Read straight off `by_wahlperiode_and_month_and_totalScore` in descending
+ * order. Sorting in memory would mean collecting all 630 MPs to return ten, and
+ * would break the moment the roster outgrew one transaction's read limit.
+ *
+ * The scores are the stored ones, under default weights. A signed-in user's
+ * custom weights re-rank in the browser from each row's `scoreBreakdown`, which
+ * carries the raw counts — see `rescore` in lib/scoring.ts. Storing a ranking
+ * per user would mean recomputing 630 rows per weight change.
+ */
+export const getRankings = query({
+  args: {
+    wahlperiode: v.number(),
+    month: v.union(v.null(), v.string()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(
+    v.object({
+      rank: v.number(),
+      mpInternalId: v.string(),
+      name: v.string(),
+      fraktion: v.string(),
+      photoUrl: v.union(v.null(), v.string()),
+      totalScore: v.number(),
+      scoreBreakdown,
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("activityScores")
+      .withIndex("by_wahlperiode_and_month_and_totalScore", (q) =>
+        q.eq("wahlperiode", args.wahlperiode).eq("month", args.month),
+      )
+      .order("desc")
+      .take(pageLimit(args.limit, 50))
+
+    const ranked = []
+    for (const [index, row] of rows.entries()) {
+      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
+      ranked.push({
+        rank: index + 1,
+        mpInternalId: row.mpInternalId,
+        name: mp.name,
+        fraktion: mp.fraktion,
+        photoUrl: mp.photoUrl,
+        totalScore: row.totalScore,
+        scoreBreakdown: row.scoreBreakdown,
+      })
+    }
+    return ranked
+  },
+})
+
+/** The default weights, so the browser can show what a score was computed with
+ * and offer them as the reset for a custom set. */
+export const getDefaultWeights = query({
+  args: {},
+  returns: scoreWeights,
+  handler: async () => DEFAULT_WEIGHTS,
+})
