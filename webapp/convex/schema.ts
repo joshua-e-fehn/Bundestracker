@@ -473,7 +473,14 @@ const schema = defineSchema({
     // `voteSheetId` prefix, the "everyone who voted on this" read.
     .index("by_voteSheetId_and_mpInternalId", ["voteSheetId", "mpInternalId"])
     // The other direction: one MP's record, which participation is computed on.
-    .index("by_mpInternalId", ["mpInternalId"]),
+    .index("by_mpInternalId", ["mpInternalId"])
+    // "How did this MP's own group vote on this ballot" — see `groupMajority`
+    // in convex/votes.ts. Keyed on `partyAtVote` rather than on the roster's
+    // current `fraktion` because that is the question: §6.4 records six WP21
+    // MPs who changed group mid-period, and a ballot should be read as it was
+    // printed. Without this index the tally would read all 630 records of a
+    // sheet to look at one group of at most 209 (§9).
+    .index("by_voteSheetId_and_partyAtVote", ["voteSheetId", "partyAtVote"]),
 
   motions: defineTable({ ...motionInput, createdAt: v.number() })
     // Two candidate keys, tried in this order — see the note on `motionInput`.

@@ -23,8 +23,16 @@
  * "/" alone would not make the whole site public — the explicit `PUBLIC_PATHS`
  * entries below do that, and "/api" is among them because Better Auth's own
  * callback routes live under it and must stay reachable while signed out.
+ *
+ * **That exactness is why every new public section must be added here.** It is
+ * not a formality: an omitted path is not merely ungated, it is *gated*. The
+ * guard renders a spinner instead of the page and redirects a signed-out
+ * visitor to /sign-in — so the roster and the profiles, which are the public
+ * record this site exists to publish, would have demanded an account. That is
+ * what happened when /mps was added, and it is invisible from the server-
+ * rendered HTML: the page 200s with an empty body.
  */
-export const PUBLIC_PATHS = ["/", "/sign-in", "/sign-up", "/api"]
+export const PUBLIC_PATHS = ["/", "/mps", "/sign-in", "/sign-up", "/api"]
 
 export function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
