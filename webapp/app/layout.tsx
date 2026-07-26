@@ -5,7 +5,7 @@ import { AuthGuard } from "@/components/providers/auth-guard"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { ThemeProvider } from "@/components/providers/theme-provider"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { SiteNav } from "@/components/site-nav"
 import { getToken } from "@/lib/auth-server"
 import { DEFAULT_LOCALE, localeFromAcceptLanguage, t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -60,13 +60,10 @@ export default async function RootLayout({
           <QueryProvider>
             <ThemeProvider>
               <LocaleProvider initialLocale={locale}>
-                {/* Radix requires one provider above every Tooltip. It lives at
-                    the root rather than around the heatmap because a tooltip is
-                    a page-wide affordance, and two providers in one tree make
-                    the delay behaviour depend on which subtree you hover. */}
-                <TooltipProvider>
-                  <AuthGuard>{children}</AuthGuard>
-                </TooltipProvider>
+                {/* Placeholder nav — see components/site-nav.tsx. The real one
+                    belongs to the layout branch, which replaces this line. */}
+                <SiteNav />
+                <AuthGuard>{children}</AuthGuard>
               </LocaleProvider>
             </ThemeProvider>
           </QueryProvider>
