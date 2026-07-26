@@ -26,8 +26,18 @@ type SystemFields = "_id" | "_creationTime"
 export const MAX_BATCH = 500
 
 /** Ceiling on any client-supplied `limit`. A list query with an unbounded
- * `take` is one bad query string away from reading a whole table. */
-export const MAX_PAGE = 200
+ * `take` is one bad query string away from reading a whole table.
+ *
+ * 700 rather than a round 200 because the roster is the one read whose natural
+ * unit is the whole chamber, and the chamber is 630 seats (§6.2) with 209 in
+ * the largest Fraktion (§9). A 200 ceiling silently truncated both: `getMPs`
+ * pages by `.take()` alone with no cursor, so rows past the cutoff were not
+ * merely a page away, they were unreachable — the roster would end at "M" and
+ * the CDU/CSU list would be short by nine with nothing to say so. The bound
+ * still exists for its original purpose; it is now set above the largest
+ * legitimate answer rather than below it.
+ */
+export const MAX_PAGE = 700
 
 /**
  * Clamps a caller-supplied limit into `1…MAX_PAGE`.
