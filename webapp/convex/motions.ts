@@ -10,20 +10,19 @@ import {
   withId,
 } from "./lib/ingest"
 import { mpLabel, requireMandate } from "./mps"
-import { motionInput, type motionSponsorInput } from "./schema"
+import { motionInput } from "./schema"
 
 /**
  * Motions, bills and the MPs who put their names to them.
  *
  * ## Why sponsors are a table and not an array
  *
- * The obvious modelling — `sponsors: v.array(...)` on the motion — cannot be
- * populated correctly from the source. DIP's `autoren_anzeige` is capped at
- * **four** entries with the real total in `autoren_anzahl` (§3.4 of
- * docs/api-research.md), so a motion with forty co-signatories arrives as four
- * names and a number. Per-MP authorship has to come from `/aktivitaet`, one
- * record per MP per document — so one row here per sponsor, arriving over time
- * rather than all at once.
+ * The obvious modelling — `sponsors: v.array(...)` — cannot be populated
+ * correctly from the source. DIP's `autoren_anzeige` is capped at **four**
+ * entries with the real total in `autoren_anzahl` (§3.4), so a motion with
+ * forty co-signatories arrives as four names and a number. Per-MP authorship
+ * has to come from `/aktivitaet`, one record per MP per document — so one row
+ * here per sponsor, arriving over time rather than at once.
  *
  * §3.4 states the consequence plainly: authorship computed from
  * `autoren_anzeige` systematically under-counts. So `getMotionSponsors` returns
@@ -234,6 +233,3 @@ export const getMotionSponsors = query({
     return joined.sort((a, b) => a.name.localeCompare(b.name, "de"))
   },
 })
-
-export type MotionArgs = ObjectType<typeof motionInput>
-export type MotionSponsorArgs = ObjectType<typeof motionSponsorInput>

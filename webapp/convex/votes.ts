@@ -1,5 +1,5 @@
-import { type ObjectType, v } from "convex/values"
-import type { Doc, Id } from "./_generated/dataModel"
+import { v } from "convex/values"
+import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type QueryCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
@@ -10,7 +10,7 @@ import {
   withId,
 } from "./lib/ingest"
 import { mpLabel, requireMandate } from "./mps"
-import { vote, type voteRecordInput, voteSheetInput } from "./schema"
+import { vote, voteSheetInput } from "./schema"
 
 /**
  * Named votes (namentliche Abstimmungen) — ballots and per-MP records.
@@ -21,12 +21,11 @@ import { vote, type voteRecordInput, voteSheetInput } from "./schema"
  * named ballots and the UI has to say so — an MP who voted in every named
  * ballot has not "attended every vote", and no source can say whether they did.
  *
- * The published tallies live on the sheet and the rows live in `voteRecords`,
+ * The published tallies live on the sheet and the rows in `voteRecords`,
  * deliberately un-derived from each other: `getVoteSheet` returns both, so a
- * half-finished ingest shows up as a disagreement rather than as a different
- * result. Absences are the reason it matters which source a sheet came from —
- * the protocol XML lists only MPs who *cast* a vote (§4.2), so only the XLSX
- * (§4.1) can supply `absentCount`.
+ * half-finished ingest reads as a disagreement rather than a different result.
+ * Which source a sheet came from matters for absences — the protocol XML lists
+ * only MPs who *cast* a vote (§4.2), so only the XLSX supplies `absentCount`.
  */
 
 // --- read models ----------------------------------------------------------
@@ -290,9 +289,3 @@ export const getVotesByMP = query({
     return joined.slice(0, pageLimit(args.limit, 50))
   },
 })
-
-/** Type aliases the HTTP layer asserts request bodies into. */
-export type VoteSheetArgs = ObjectType<typeof voteSheetInput>
-export type VoteRecordFields = Omit<ObjectType<typeof voteRecordInput>, "voteSheetId"> & {
-  voteSheetId?: Id<"voteSheets">
-}

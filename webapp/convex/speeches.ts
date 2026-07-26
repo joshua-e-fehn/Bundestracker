@@ -17,31 +17,26 @@ import { speechInput } from "./schema"
  *
  * ## One row is one speaker's turn, not one `<rede>`
  *
- * §5.2 of docs/api-research.md calls this the biggest trap in the whole
- * corpus, and it is worth restating here because the schema alone does not
- * prevent it: a single `<rede>` element can contain several *distinct*
- * speakers, because a Zwischenfrage is nested inside the speech it interrupts.
- * Protocol 21/90 has 112 `<rede>` elements against 197 speaker paragraphs, and
- * attributing each element to its first speaker credited one minister with
- * 1 599 words plus the 48, 134 and 60 belonging to three interveners.
+ * §5.2 calls this the biggest trap in the corpus and the schema alone does not
+ * prevent it: one `<rede>` can contain several *distinct* speakers, because a
+ * Zwischenfrage nests inside the speech it interrupts. Protocol 21/90 has 112
+ * `<rede>` against 197 speaker paragraphs, and attributing each to its first
+ * speaker credited a minister with 1 599 words plus three interveners' 48, 134
+ * and 60.
  *
- * So the pipeline re-attributes on every `klasse="redner"` paragraph, and each
- * segment it emits is one row here. `speechIndex` is that segment's position in
- * the sitting, which is what makes `(wahlperiode, sitzungnr, mpInternalId,
- * speechIndex)` a natural key — an MP who speaks four times in one sitting has
- * four rows, not one that overwrites itself three times.
+ * So the pipeline re-attributes on every `klasse="redner"` paragraph and each
+ * segment is one row, positioned by `speechIndex` — which makes `(wahlperiode,
+ * sitzungnr, mpInternalId, speechIndex)` a natural key: an MP who speaks four
+ * times has four rows, not one overwritten three times.
  *
  * ## Words, not speeches
  *
  * `wordCount` is what scoring uses. Ranking by row count puts Robert Habeck 36
- * speeches ahead of Olaf Scholz for saying 25 % less, because question time
- * fragments a minister's turn into dozens of short replies (§5.2). Both are
- * returned; only one is weighted. See lib/scoring.ts.
- *
- * The count excludes `<kommentar>` — applause and heckling *by other people* —
- * and the speaker header paragraph, per the extraction rule in §5.2. That is
- * the pipeline's job; this module trusts the number and says where it came
- * from.
+ * speeches above Olaf Scholz for saying 25 % less, because question time
+ * fragments a minister's turn into dozens of replies (§5.2). Both are stored,
+ * one is weighted. The count excludes `<kommentar>` — applause and heckling by
+ * *other* people — and the speaker header, per §5.2's extraction rule; that is
+ * the pipeline's job, and this module trusts the number.
  */
 
 // --- read models ----------------------------------------------------------
@@ -192,5 +187,3 @@ export const getSpeechesBySitting = query({
     return joined.sort((a, b) => (a.speech.speechIndex ?? 0) - (b.speech.speechIndex ?? 0))
   },
 })
-
-export type SpeechArgs = ObjectType<typeof speechInput>

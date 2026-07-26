@@ -183,5 +183,3 @@ export const getActivityCalendar = query({
       .sort((a, b) => a.date.localeCompare(b.date))
   },
 })
-
-export type ActivityEventArgs = ObjectType<typeof activityEventInput>

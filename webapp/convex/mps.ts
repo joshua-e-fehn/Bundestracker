@@ -70,15 +70,13 @@ export async function findMandate(
  * How a row keyed by `mpInternalId` is labelled for display.
  *
  * Seven modules render a list of someone else's rows — a ballot's votes, a
- * committee's members, a sitting's speeches, the rankings — and every one needs
- * the same three fields off the roster. Resolved server-side because the
- * alternative is a query per row: a ballot is 630 of them.
+ * committee's members, the rankings — and each needs the same three roster
+ * fields. Resolved server-side because the alternative is a query per row, and
+ * a ballot is 630 of them.
  *
- * The fallbacks matter and are the reason this is one function. A missing
- * mandate is possible — §7.3's Stammdaten lag means a vote row can name an MP
- * the roster has not caught up with — and every caller should degrade the same
- * way: show the id rather than an empty cell, so the gap is visible instead of
- * looking like an MP with no name.
+ * The fallbacks are why this is one function. A missing mandate is possible
+ * (§7.3's Stammdaten lag), and every caller should degrade the same way: show
+ * the id, so the gap is visible rather than looking like a nameless MP.
  */
 export async function mpLabel(
   ctx: QueryCtx,

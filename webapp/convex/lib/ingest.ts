@@ -12,11 +12,11 @@ type SystemFields = "_id" | "_creationTime"
  * What every ingestion mutation shares: upsert-on-natural-key, and the bounds
  * that keep one request inside Convex's transaction limits.
  *
- * The pipeline re-runs. A daily sync re-reads anything whose `aktualisiert`
- * moved (§2.5 of docs/api-research.md), a failed run is simply run again, and
- * a backfill of an already-loaded period must be a no-op rather than a second
- * copy. So "insert if new, patch if changed" is the only write shape in this
- * deployment, and it lives here rather than being re-derived eleven times.
+ * The pipeline re-runs: a daily sync re-reads anything whose `aktualisiert`
+ * moved (§2.5), a failed run is simply run again, and re-backfilling a loaded
+ * period must be a no-op rather than a second copy. So "insert if new, patch
+ * if changed" is the only write shape here, defined once rather than eleven
+ * times.
  */
 
 /** Convex reads ~16 000 documents and writes ~8 000 in one transaction. A
@@ -96,12 +96,11 @@ type IngestFields<Table extends TableNames> = Omit<
  * carry an `updatedAt`: `mps` and `activityScores` are corrected in place and
  * want a modification time, while an ingested speech either exists or does not.
  *
- * The two casts are the price of being generic over `Table`. Both narrow to
- * exactly what the signature already promises — a `Partial` of this table's
- * document, and a full one — but `patch` and `insert` resolve their parameter
- * types from a concrete table name, which a type parameter is not. The
- * alternative is this function eleven times over, once per table, which is how
- * upsert semantics drift apart between them.
+ * The two casts are the price of being generic over `Table`: both narrow to
+ * what the signature already promises, but `patch` and `insert` resolve their
+ * parameter types from a concrete table name, which a type parameter is not.
+ * The alternative is this function once per table, which is how upsert
+ * semantics drift apart.
  */
 export async function upsertRow<Table extends TableNames>(
   ctx: MutationCtx,

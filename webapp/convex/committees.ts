@@ -7,29 +7,22 @@ import { committeeMembershipInput } from "./schema"
 /**
  * Committee seats.
  *
- * ## ⚠ Current period only, and that is permanent
+ * ## ⚠ Current period only, and permanently so
  *
  * MdB-Stammdaten is the **only** machine-readable committee source that exists
- * — DIP `/person` has no committee field at all, verified against every
- * top-level key across all 5 623 records, and `person_roles` has none either
- * (§6.3 of docs/api-research.md). And the dump carries committee entries for
- * the current Wahlperiode only: all 1 744 `Ausschuss` entries belong to WP21,
- * with earlier periods carrying Fraktion membership and nothing else (§6.4).
+ * — DIP `/person` has no committee field and `person_roles` none either
+ * (§6.3) — and it covers the current Wahlperiode only: all 1 744 `Ausschuss`
+ * entries belong to WP21 (§6.4).
  *
- * So for any period but the current one, `committeeCount` is 0 because nothing
- * was ever published — not because nobody sat on a committee. That has to
- * reach the reader; a scoring component that silently zeroes for historical
- * periods would make every past MP look idle. §6.4 also suggests the only fix
- * available: archive the ZIP on every sync, so a history accumulates from now
- * on even though none can be recovered.
+ * So for earlier periods `committeeCount` is 0 because nothing was published,
+ * not because nobody sat on a committee. That must reach the reader, or a
+ * component that silently zeroes makes every past MP look idle. §6.4's only
+ * fix is archiving the ZIP each sync, so history accumulates going forward.
  *
- * ## Why one row per (MP, period, committee)
- *
- * Because Stammdaten lists a chair **twice** — once as `Vorsitzender`, once as
- * `Ordentliches Mitglied` (§6.3, verified on Armin Laschet). A key any finer
- * than the committee would count every chair's seat twice in `committeeCount`.
- * Keying on the committee makes double-counting structurally impossible rather
- * than something the pipeline has to remember to avoid.
+ * One row per (MP, period, committee), because Stammdaten lists a chair
+ * **twice** — as `Vorsitzender` and as `Ordentliches Mitglied` (§6.3, verified
+ * on Armin Laschet). Any finer key double-counts every chair's seat; this one
+ * makes that structurally impossible rather than something to remember.
  */
 
 // --- read models ----------------------------------------------------------
@@ -187,5 +180,3 @@ export const getCommittees = query({
       .sort((a, b) => a.committeeName.localeCompare(b.committeeName, "de"))
   },
 })
-
-export type CommitteeMembershipArgs = ObjectType<typeof committeeMembershipInput>

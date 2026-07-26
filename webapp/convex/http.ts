@@ -161,20 +161,14 @@ http.route({
 /**
  * Registers `POST /api/pipeline/<path>` as a front door to one mutation.
  *
- * A table rather than thirteen near-identical `http.route` blocks: each would
- * differ only in its path and the mutation it names, and copied route handlers
- * are how a key check or an error mapping ends up applied to twelve routes out
- * of thirteen. Going through `pipelineRoute` is the only way to register one,
- * so a route added later cannot ship without the bearer-key check.
+ * A table rather than thirteen near-identical `http.route` blocks, which is how
+ * a key check ends up applied to twelve routes out of thirteen. The mutation
+ * reference carries its own argument type, so `FunctionArgs` recovers it and
+ * the body is asserted once here rather than cast per route.
  *
- * The mutation reference carries its own argument type, so `FunctionArgs`
- * recovers it and the body is asserted into exactly what that mutation
- * accepts — one `asArgs` at one boundary rather than a cast per route.
- *
- * 200 rather than 201: a batch upsert is not a creation. The response says how
- * many rows were inserted against updated, which is how the pipeline tells a
- * genuinely incremental sync from one rewriting the world every night because
- * a natural key stopped matching.
+ * 200, not 201: a batch upsert is not a creation, and the inserted/updated
+ * split is how the pipeline tells an incremental sync from one rewriting the
+ * world nightly because a natural key stopped matching.
  */
 function ingestionRoute<Ref extends FunctionReference<"mutation", "internal">>(
   path: string,
@@ -211,26 +205,14 @@ ingestionRoute("activities", internal.activities.upsertActivities)
 ingestionRoute("activity-events", internal.activityEvents.addActivityEvents)
 ingestionRoute("scores", internal.activityScores.upsertScore)
 
-/**
- * Regenerates the synthetic hemicycle.
- *
- * Generated in Convex from the roster rather than posted as rows, because there
- * is nothing to post: no machine-readable seating data exists anywhere (§9), so
- * these seats are derived from Fraktion sizes and are a visualisation rather
- * than a record of where anyone sits. See convex/seating.ts.
- */
+/** Regenerates the synthetic hemicycle. Derived in Convex from the roster
+ * rather than posted, because there is nothing to post — see
+ * convex/seating.ts. */
 ingestionRoute("seating/generate", internal.seating.generateSeating)
 
-/**
- * Rescores a slice of the roster.
- *
- * Sliced because scoring one MP reads their activities, speeches, votes and
- * committees, so the whole chamber in one transaction would exceed Convex's
- * read limit. The response carries `nextCursor`/`hasMore`; the caller loops
- * until `hasMore` is false. The daily cron walks the same path on its own
- * schedule — this route is for a backfill that wants its scores now rather
- * than tomorrow morning.
- */
+/** Rescores a slice of the roster; loop until `hasMore` is false. For a
+ * backfill that wants its scores now rather than at the cron's next run — see
+ * convex/scoreSweep.ts for why it is sliced. */
 ingestionRoute("scores/recompute", internal.activityScores.recomputeScores)
 
 export default http

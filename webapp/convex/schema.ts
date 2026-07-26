@@ -19,25 +19,23 @@ import type { ScoreComponent } from "../lib/scoring"
  *    row wait on a round-trip for a Convex id it has no other use for.
  *
  *  - **Absent values are `null`, never a missing key.** The pipeline serialises
- *    pydantic models, so every field is present in the JSON. A required key
- *    that may be null means a field the pipeline forgot fails the argument
- *    validator instead of being written as null and quietly meaning something.
- *    (`v.optional` still appears where a *row* legitimately predates a field.)
+ *    pydantic models, so every field is present in the JSON, and a required
+ *    nullable key means a field it forgot fails the validator rather than being
+ *    written as null and quietly meaning something. (`v.optional` still appears
+ *    where a *row* legitimately predates a field.)
  *
  *  - **Dates are ISO `YYYY-MM-DD` strings**, so lexicographic order is
- *    chronological and an index range needs no parsing. The sources are not —
- *    Stammdaten and the protocol XML both use `TT.MM.JJJJ` (§6.2) — so
- *    converting is the pipeline's job, at the edge.
+ *    chronological and an index range needs no parsing. The sources use
+ *    `TT.MM.JJJJ` (§6.2), so converting is the pipeline's job, at the edge.
  *
  *  - **Better Auth's tables are not here.** They live in the component's own
  *    schema, at `convex/betterAuth/schema.ts`. A row belonging to a user
- *    references them by `v.string()` — the Better Auth user id — and never by
+ *    references them by `v.string()` — the Better Auth user id — never by
  *    `v.id("user")`, because there is no local `user` table to name.
  *
- * Every table the pipeline writes carries a natural key it can be upserted on,
- * with an index over exactly that key, so a sync that dies halfway can be
- * re-run without duplicating rows. Where a table's natural key is not a single
- * external id, the comment on its index says what the key is.
+ * Every table the pipeline writes carries a natural key with an index over it,
+ * so a sync that dies halfway re-runs without duplicating rows. Where that key
+ * is not a single external id, the comment on its index says what it is.
  */
 
 // --- shared value types ---------------------------------------------------
@@ -132,24 +130,23 @@ export const scoreBreakdown = v.object({
 
 // --- table field definitions ----------------------------------------------
 //
-// Exported as plain objects rather than inlined into `defineTable`, so each
-// module can build its argument and return validators from the same source —
-// adding a field reaches the ingestion API without a second edit. Timestamps
-// are excluded from the `*Input` objects: the mutation stamps those, so a
-// caller cannot backdate a row or forge `updatedAt`.
+// Plain objects rather than inlined into `defineTable`, so each module builds
+// its argument and return validators from the same source and a new field
+// reaches the ingestion API without a second edit. Timestamps are excluded: the
+// mutation stamps those, so a caller cannot backdate a row or forge
+// `updatedAt`.
 
 /**
  * Master MP data — one row per **mandate**, i.e. per (MP, Wahlperiode).
  *
- * Not one row per human, deliberately. `party`, `fraktion`, `constituency`,
+ * Not one row per human, deliberately: `party`, `fraktion`, `constituency`,
  * `electionMethod` and `datesInOffice` all change between periods, and §6.4
- * records six WP21 MPs who changed Fraktion mid-period. `internalId` is stable
- * across periods and identifies the human; `(internalId, wahlperiode)` is the
- * natural key of this table and identifies the mandate.
+ * records six WP21 MPs who changed Fraktion mid-period. `internalId` identifies
+ * the human across periods; `(internalId, wahlperiode)` is this table's natural
+ * key and identifies the mandate.
  *
- * That split matters for name matching too: the research measured zero
- * ambiguous `(surname, forename)` keys *within* WP21 but fifteen across the
- * whole corpus (§7.2), so every join is scoped to a period.
+ * The split matters for name matching too: zero ambiguous `(surname, forename)`
+ * keys *within* WP21 but fifteen across the corpus (§7.2), so scope every join.
  */
 export const mpInput = {
   /** The Bundestrack id, minted by the pipeline. Stable across Wahlperioden;
@@ -455,33 +452,27 @@ const schema = defineSchema({
     // Resolving a protocol XML `<redner id>` to a mandate (§5.2). Scoped by
     // period because a Stammdaten id spans all of them.
     .index("by_stammdatenId_and_wahlperiode", ["stammdatenId", "wahlperiode"])
-    // Resolving a DIP `/aktivitaet.person_id` the same way. Its null arm is
-    // useful in its own right: it lists the mandates the name match has not
-    // resolved yet, which §7.3 says to retry rather than drop.
+    // Resolving a DIP `/aktivitaet.person_id` the same way. Its null arm lists
+    // the mandates the name match has not resolved, which §7.3 says to retry.
     .index("by_dipPersonId_and_wahlperiode", ["dipPersonId", "wahlperiode"])
-    // The roster, whole or by group. A separate `by_fraktion` would be a fourth
-    // index maintained on every write to answer a question nobody asks: group
-    // names repeat across periods, so a Fraktion is only meaningful inside one.
+    // The roster, whole or by group. No separate `by_fraktion`: group names
+    // repeat across periods, so a Fraktion only means something inside one.
     .index("by_wahlperiode_and_fraktion", ["wahlperiode", "fraktion"]),
 
   voteSheets: defineTable({ ...voteSheetInput, createdAt: v.number() })
     .index("by_wahlperiode_and_sitzungnr_and_abstimmnr", ["wahlperiode", "sitzungnr", "abstimmnr"])
-    // Listing a period's ballots, newest first. Period-scoped rather than the
-    // bare `by_date` the task specified: reading by date alone and filtering
-    // the period out afterwards silently drops ballots past the fetch cutoff,
-    // so a period that is not the current one would just look emptier the
-    // further back you went.
+    // A period's ballots, newest first. Period-scoped in the index: reading by
+    // date and filtering the period out afterwards drops ballots past the fetch
+    // cutoff, so older periods would just look emptier.
     .index("by_wahlperiode_and_date", ["wahlperiode", "date"])
-    // Chamber-wide recency, across periods — "what did the Bundestag last vote
-    // on", which is the home page rather than an archive view.
+    // Chamber-wide recency across periods — the home page, not an archive.
     .index("by_date", ["date"]),
 
   voteRecords: defineTable({ ...voteRecordInput, createdAt: v.number() })
     // One MP votes once per ballot, so this is both the natural key and, by its
     // `voteSheetId` prefix, the "everyone who voted on this" read.
     .index("by_voteSheetId_and_mpInternalId", ["voteSheetId", "mpInternalId"])
-    // The other direction: one MP's whole voting record, which is what the
-    // participation rate is computed from.
+    // The other direction: one MP's record, which participation is computed on.
     .index("by_mpInternalId", ["mpInternalId"]),
 
   motions: defineTable({ ...motionInput, createdAt: v.number() })
@@ -496,9 +487,8 @@ const schema = defineSchema({
     .index("by_mpInternalId", ["mpInternalId"]),
 
   speeches: defineTable({ ...speechInput, createdAt: v.number() })
-    // The natural key, and the sitting-wide scan that `upsertSpeeches` uses to
-    // replace a re-parsed protocol wholesale. Its `(wahlperiode, sitzungnr)`
-    // prefix is that scan; the full tuple is the single-row lookup.
+    // The natural key; its `(wahlperiode, sitzungnr)` prefix is the sitting-wide
+    // scan that re-ingesting a parsed protocol runs.
     .index("by_wahlperiode_and_sitzungnr_and_mpInternalId_and_speechIndex", [
       "wahlperiode",
       "sitzungnr",
@@ -509,9 +499,8 @@ const schema = defineSchema({
     .index("by_mpInternalId_and_protocolDate", ["mpInternalId", "protocolDate"]),
 
   questions: defineTable({ ...questionInput, createdAt: v.number() })
-    // No external id exists for a question, so the key is behavioural:
-    // (MP, period, date) narrows to the handful an MP asked that day and
-    // `upsertQuestion` matches `subject` within it.
+    // No external id exists for a question, so the key is behavioural: this
+    // narrows to one MP's questions that day, and `subject` picks one out.
     .index("by_mpInternalId_and_wahlperiode_and_date", ["mpInternalId", "wahlperiode", "date"])
     .index("by_wahlperiode_and_date", ["wahlperiode", "date"]),
 

@@ -8,21 +8,19 @@ import { preferredLocale, scoreWeights } from "./schema"
 /**
  * A signed-in user's saved weightings, followed MPs and language.
  *
- * The only table in this deployment a browser writes to, and the only one
- * holding personal data. Everything else is public parliamentary record served
- * by public queries — see the note in convex/lib/auth.ts.
+ * The only table a browser writes to, and the only one holding personal data;
+ * everything else is public record served by public queries (convex/lib/auth.ts).
  *
- * **`userId` is never an argument.** Every function here takes it from the
- * session via `requireUserId`; a `userId` parameter would let any signed-in
- * user read or rewrite anyone else's preferences by supplying their id, and no
- * check inside a handler fixes an API whose shape invites it. Hence no
- * `getPreferencesFor(userId)` — not even internally, since an internal function
- * is one `internal` → `api` typo from being reachable.
+ * **`userId` is never an argument.** Every function takes it from the session
+ * via `requireUserId`; a `userId` parameter would let any signed-in user read
+ * or rewrite anyone else's preferences, and no check inside a handler fixes an
+ * API whose shape invites it. Hence no `getPreferencesFor(userId)` — not even
+ * internally, an internal function being one `internal` → `api` typo from
+ * reachable.
  *
- * Signing in is optional (AGENTS.md), so `getPreferences` returns defaults to an
- * anonymous visitor rather than throwing. The mutations do throw: there is
- * nowhere to save to without an account, and silently discarding a user's
- * choices would be worse than telling them.
+ * Signing in is optional (AGENTS.md), so `getPreferences` returns defaults to
+ * an anonymous visitor. The mutations do throw: there is nowhere to save
+ * without an account, and discarding a user's choices silently is worse.
  */
 
 const preferencesDoc = v.object({

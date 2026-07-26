@@ -9,19 +9,17 @@ import { seatingAssignmentInput } from "./schema"
  *
  * ## ⚠ These are not real seats
  *
- * §9 of docs/api-research.md is definitive: **no official machine-readable
- * seating data exists** — checked and absent from the DIP spec, the Stammdaten
- * DTD, the protocol XML and its DTD, the bundestag.de plenary pages and
- * Wikidata. Only the seat *distribution* is derivable, by counting the roster
- * (`getFractionSizes` in convex/mps.ts), so these rows place the right-sized
- * blocs in conventional left-to-right order on a standard arc. Which position
- * within a bloc a named MP occupies is arbitrary.
+ * §9 is definitive: **no official machine-readable seating data exists** —
+ * absent from the DIP spec, the Stammdaten DTD, the protocol XML and its DTD,
+ * the bundestag.de plenary pages and Wikidata. Only the *distribution* is
+ * derivable, by counting the roster (`getFractionSizes`), so these rows place
+ * right-sized blocs in conventional left-to-right order on a standard arc;
+ * position within a bloc is arbitrary.
  *
- * The table says `Assignments` and the field says `seatLabel`, so this comment
- * is what stops either reading as a claim about the real chamber. The UI must
- * not present a seat as an MP's actual place, and `generateSeating` is the only
- * writer — there is deliberately no path for a caller to assert a "real" seat,
- * because no source could justify one.
+ * The table says `Assignments` and the field `seatLabel`, so this comment is
+ * what stops either reading as a claim about the real chamber. The UI must not
+ * present a seat as an MP's actual place, and `generateSeating` is the only
+ * writer — deliberately no path exists to assert a "real" seat.
  */
 
 // --- read models ----------------------------------------------------------
@@ -203,5 +201,3 @@ export const getSeatingAssignments = query({
     )
   },
 })
-
-export type SeatingAssignmentArgs = ObjectType<typeof seatingAssignmentInput>

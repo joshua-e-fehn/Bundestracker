@@ -2,37 +2,33 @@
  * The activity score: what it counts, how it weighs it, and what it refuses to
  * claim.
  *
- * This file is deliberately outside `convex/`, because both sides need it.
- * Convex computes and stores a score under the default weights (the daily cron
- * in convex/crons.ts); a signed-in user can re-weight their own view
- * (`userPreferences.customWeights`), and that has to recompute in the browser
- * as they drag a slider rather than round-trip per keystroke. Two
- * implementations of one formula would drift, and the drift would look like a
- * bug in the data.
+ * Deliberately outside `convex/`, because both sides need it: the daily cron
+ * stores a score under the default weights, and a signed-in user re-weights
+ * their own view live in the browser (`userPreferences.customWeights`) rather
+ * than round-tripping per slider keystroke. Two implementations of one formula
+ * would drift, and the drift would look like a bug in the data.
  *
  * ## What the score is not
  *
  * Bundestracker's premise is that every figure is backed by a Bundestag record
- * (see AGENTS.md). Weighting is unavoidably editorial — some choice has to be
- * made for the default view — so the honest thing is to make it explicit,
- * adjustable, and shown alongside its components rather than presented as a
- * verdict. `scoreBreakdown` is stored for that reason: a total is only ever
- * displayed next to what produced it.
+ * (AGENTS.md), and weighting is unavoidably editorial — some choice has to be
+ * made for the default view. So it is explicit, adjustable, and shown beside
+ * its components rather than presented as a verdict; that is what storing
+ * `scoreBreakdown` buys.
  *
- * Three limits are structural rather than provisional, and no weighting fixes
- * them. They come from docs/api-research.md and belong in the UI, not just
- * here:
+ * Three limits are structural rather than provisional, no weighting fixes
+ * them, and they belong in the UI rather than only here:
  *
- *  - **Vote participation covers named ballots only.** Roughly 1 015 votes in
- *    the Bundestag's entire history were recorded by name (§4.4); every other
- *    vote is a show of hands with no per-MP record in existence.
+ *  - **Vote participation covers named ballots only** — roughly 1 015 in the
+ *    Bundestag's history (§4.4). Every other vote is a show of hands with no
+ *    per-MP record in existence.
  *  - **Committee work is current-period only.** All 1 744 committee entries in
- *    the Stammdaten dump belong to WP21, by design (§6.4). For an earlier
- *    period `committeeCount` is 0 because nothing was published, not because
- *    nobody sat on a committee.
- *  - **Speech volume is measured in words, not speeches.** Question time
- *    fragments one minister's turn into dozens of short replies, which ranked
- *    Robert Habeck 36 speeches above Olaf Scholz for saying 25 % less (§5.2).
+ *    the dump belong to WP21, by design (§6.4), so for an earlier period
+ *    `committeeCount` is 0 because nothing was published — not because nobody
+ *    sat on a committee.
+ *  - **Speech volume is words, not speeches.** Question time fragments a
+ *    minister's turn into dozens of replies, ranking Robert Habeck 36 speeches
+ *    above Olaf Scholz for saying 25 % less (§5.2).
  */
 
 /** The seven inputs to a score. `convex/schema.ts` builds its `scoreWeights`

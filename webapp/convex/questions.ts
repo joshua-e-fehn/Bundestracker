@@ -16,21 +16,15 @@ import { questionInput, questionType } from "./schema"
  *
  * `type` is a closed union, unlike `activities.aktivitaetsart`, because the
  * distinction is constitutional rather than editorial: a Große Anfrage is
- * debated, a Kleine Anfrage is answered in writing, and there is no third kind.
+ * debated, a Kleine Anfrage answered in writing, and there is no third kind.
  *
- * ## The natural key is behavioural
- *
- * No external id identifies a question as such. It reaches Bundestrack as a
- * Drucksache with `drucksachetyp: "Kleine Anfrage"` and as an `/aktivitaet`
- * record, neither of which is "the question's id" in a way that survives being
- * seen from the other side. So the key is `(mpInternalId, wahlperiode, date)`
- * narrowed by `subject`: the index scopes to the handful an MP asked on one
- * day, and the subject picks one out.
- *
- * That is weaker than a real id, and its failure mode is worth naming: two
- * questions from the same MP on the same day with the same subject collapse
- * into one row. That is the right trade — the alternative, no key at all, means
- * every sync re-inserts every question the MP has ever asked.
+ * **The natural key is behavioural.** No external id identifies a question as
+ * such — it arrives as a Drucksache and as an `/aktivitaet` record, neither of
+ * which is "the question's id" from the other side. So the key is
+ * `(mpInternalId, wahlperiode, date)` narrowed by `subject`. Its failure mode
+ * is worth naming: two questions from one MP on one day with the same subject
+ * collapse into one row. Still the right trade — no key at all means every sync
+ * re-inserts every question the MP has ever asked.
  */
 
 // --- read models ----------------------------------------------------------
@@ -121,5 +115,3 @@ export const getQuestions = query({
     return rows.map(toQuestionDoc)
   },
 })
-
-export type QuestionArgs = ObjectType<typeof questionInput>

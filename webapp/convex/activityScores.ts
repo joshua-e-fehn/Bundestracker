@@ -1,4 +1,4 @@
-import { type ObjectType, v } from "convex/values"
+import { v } from "convex/values"
 // Aliased so the exported mutation below can be `computeScore` — the name the
 // pipeline and the cron call it by — without shadowing the pure function it
 // delegates to.
@@ -26,15 +26,13 @@ import { voteParticipation } from "./votes"
  * (`userPreferences.customWeights`). One formula, two callers.
  *
  * One row per (MP, Wahlperiode, month), `month` being `YYYY-MM` or **null for
- * the whole period** — the monthly rows are the contribution graph's
- * aggregates, the null row is the total the rankings sort on. Both come from
- * the same computation, so they cannot disagree the way a cached total and its
- * parts can.
+ * the whole period** — the monthly rows feed the contribution graph, the null
+ * row is the total the rankings sort on. Both come from the same computation,
+ * so they cannot disagree the way a cached total and its parts can.
  *
- * What a score does not claim: three limits are structural and no weighting
- * removes them (named ballots only; committee work for the current period only;
- * speech volume in words, not speeches). They are set out in lib/scoring.ts and
- * belong in the UI, not only in a comment.
+ * Three limits on what a score claims are structural and no weighting removes
+ * them (named ballots only; committee work for the current period only; words,
+ * not speech count). lib/scoring.ts sets them out; they belong in the UI.
  */
 
 // --- read models ----------------------------------------------------------
@@ -380,5 +378,3 @@ export const getDefaultWeights = query({
   returns: scoreWeights,
   handler: async () => DEFAULT_WEIGHTS,
 })
-
-export type ActivityScoreArgs = ObjectType<typeof activityScoreInput>

@@ -21,28 +21,25 @@ import { activityInput } from "./schema"
 /**
  * The per-MP activity backbone, from DIP `/aktivitaet`.
  *
- * The easiest table in the deployment to keep correct, and the most important
- * to get complete. One record per MP per action, carrying `person_id`
- * directly — so unlike votes and speeches it needs no name matching (§3.5 of
- * docs/api-research.md), and unlike Drucksache authorship it is not truncated
- * at four entries (§3.4). WP21 alone holds 80 537 records.
+ * The easiest table here to keep correct and the most important to get
+ * complete. One record per MP per action carrying `person_id` directly, so
+ * unlike votes and speeches it needs no name matching (§3.5), and unlike
+ * Drucksache authorship it is not capped at four (§3.4). WP21 holds 80 537.
  *
  * ## ⚠ `aktivitaetsart` is an open string
  *
- * The finding that shapes this module. The spec types the field as a bare
- * `string` — no enum, no value list, no catalogue endpoint — and the values
- * named in the research come from a few hundred sampled records out of those
- * 80 537 (§3.5).
+ * The finding that shapes this module. The spec types it as a bare `string` —
+ * no enum, no value list, no catalogue endpoint — and the values named in the
+ * research are a few hundred sampled records out of those 80 537 (§3.5).
  *
- * A closed union in the schema would reject unknown kinds at the door; a closed
- * mapping in scoring would be worse, accepting them and scoring them at zero.
- * §3.5 puts it directly: *"a silently-dropped value means an entire class of
- * parliamentary activity vanishes from every MP's score with no error"*.
+ * A closed union would reject unknown kinds at the door; a closed mapping in
+ * scoring would be worse, accepting them and scoring them at zero. §3.5 puts it
+ * directly: *"a silently-dropped value means an entire class of parliamentary
+ * activity vanishes from every MP's score with no error"*.
  *
- * So the field is `v.string()`, `bucketFor` in lib/scoring.ts routes anything
- * unrecognised to a counted `other` bucket, and `listUnrecognisedActivityKinds`
- * below lets the census §11.4 asks for run against live data rather than a
- * sample. An unknown kind becomes a question, not a silence.
+ * So the field is `v.string()`, `bucketFor` routes anything unrecognised to a
+ * counted `other`, and `listUnrecognisedActivityKinds` below runs §11.4's
+ * census against live data. An unknown kind becomes a question, not a silence.
  */
 
 // --- read models ----------------------------------------------------------
@@ -186,5 +183,3 @@ export const getActivitiesByMP = query({
     return rows.map(toActivityDoc)
   },
 })
-
-export type ActivityArgs = ObjectType<typeof activityInput>
