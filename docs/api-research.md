@@ -484,8 +484,11 @@ curl "https://www.bundestag.de/ajax/filterlist/de/parlament/plenum/abstimmung/li
 Returns an HTML fragment. Params: `limit`, `offset`, `noFilterSet=true`, plus
 date filters (`date` start/end fields, default range from `1949-09-01`).
 
-Observed: **~1 015 entries total**; offsets ≥ ~1 015 return a ~1 KB empty
-fragment. Each entry links a PDF and (for recent votes) an XLSX:
+Observed by paginating `limit`/`offset`: **~1 015 entries total**; offsets
+≥ ~1 015 return a ~1 KB empty fragment, and the deepest rows are WP16 votes from
+2007–2009. (A second pass saw the listing stop at 2019 — see open question 5 in
+§11.4; re-confirm the terminal offset from a clean IP.) Each entry links a PDF
+and, for recent votes, an XLSX:
 
 ```
 https://www.bundestag.de/resource/blob/1194616/20260710_8-xls.xlsx
@@ -1602,12 +1605,16 @@ clean IP before the corresponding code is written.
 4. **Empirical safe request rate.** Everything measured here was recorded either
    side of a *triggered* block, giving an upper bound on what is unsafe but no
    lower bound on what is safe. Establish this cautiously. (§2.6)
-5. **Named-vote coverage before ~2012.** The default listing bottomed out at
-   2019-10-24 with `noFilterSet=true`, and GET-style date parameters
-   (`dateFrom`/`dateTo`, `startDate`/`endDate`, `date`, and the widget's own
-   `440434-start`/`-end`) were all **ignored** — the newest rows came back
-   regardless. Test the POST form the widget actually submits before assuming
-   the older WP16–17 tail is reachable programmatically. (§4.1)
+5. **Named-vote coverage before ~2012, and the `offset` ceiling.** Two passes
+   disagreed here and it must be settled before backfilling. One pass paginated
+   with `limit=30&noFilterSet=true&offset=…` all the way to **~1 015 entries**,
+   reaching WP16 rows from 2007–2009 (PDF-only at that depth); another reported
+   the listing bottoming out at 2019-10-24. Separately, GET-style date
+   parameters (`dateFrom`/`dateTo`, `startDate`/`endDate`, `date`, and the
+   widget's own `440434-start`/`-end`) were all **ignored** — the newest rows
+   came back regardless. Re-run the full pagination from a clean IP, record the
+   true terminal offset, and test the POST form the widget actually submits
+   before assuming the WP16–17 tail is reachable programmatically. (§4.1)
 6. **WP17/18 XML boundary.** `xml_url` is documented in the spec as WP18+, but
    that edge was never confirmed live. (A second pass reported the DTD stating
    "gültig ab 19. Wahlperiode"; that string is **not present** in the retrieved
