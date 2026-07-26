@@ -49,7 +49,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from bundestrack.api.base import BundestagAPIError
@@ -511,6 +511,13 @@ class Pipeline:
         pages from the newest and stops at the first ballot it has already
         stored — which is why `incremental` exists rather than a `since`.
 
+        The listing covers the Bundestag's whole history — ~1 015 entries —
+        while a run wants one period, so the period is decided from the
+        listing's own date *before* the sheet is downloaded. The alternative
+        reads the Wahlperiode off the parsed sheet, which means fetching all
+        1 015 to keep 90: a thousand needless downloads against a WAF that
+        counts bytes (§2.6).
+
         Rows whose name does not resolve are quarantined by the resolver, not
         dropped (§7.3): a dropped vote row is a vote that silently never
         happened, and it is unrecoverable from any other source.
@@ -521,7 +528,9 @@ class Pipeline:
         records = BatchResult("vote records")
         events = BatchResult("feed events")
         skipped_pdf_only = 0
+        skipped_other_period = 0
         seen_keys = set(self.state.ingested_ballots(self.wahlperiode))
+        window = self._mandate_window()
 
         for link in self.votes.iter_vote_links():
             if not link.has_data_sheet:
@@ -530,12 +539,20 @@ class Pipeline:
                 # failure — and counted so the boundary stays visible.
                 skipped_pdf_only += 1
                 continue
+            if not _within(link.date, window):
+                skipped_other_period += 1
+                continue
             try:
                 sheet = self.votes.fetch_sheet(link)
             except BundestagAPIError as error:
                 stage.notes.append(f"{link.title}: {error}")
                 continue
             if sheet.wahlperiode != self.wahlperiode:
+                # The date window is a filter, not a guarantee: a ballot held
+                # in the days around a dissolution can fall inside it and still
+                # belong to the neighbouring period. The sheet's own
+                # Wahlperiode column settles it.
+                skipped_other_period += 1
                 continue
 
             key = _ballot_key(sheet)
@@ -555,6 +572,11 @@ class Pipeline:
         if skipped_pdf_only:
             stage.notes.append(
                 f"{skipped_pdf_only} ballots are PDF-only (pre-~2012, §4.1) and have no data sheet"
+            )
+        if skipped_other_period:
+            stage.notes.append(
+                f"{skipped_other_period} ballots belong to another Wahlperiode "
+                "(the listing spans the whole Bundestag)"
             )
 
     def _ingest_ballot(
@@ -628,6 +650,33 @@ class Pipeline:
         if since is not None:
             return since
         return self.state.since(self.wahlperiode, stream)
+
+    def _mandate_window(self) -> tuple[date | None, date | None]:
+        """When this Wahlperiode ran, from the roster's own mandate dates.
+
+        Derived rather than tabulated: `MDBWP_VON`/`MDBWP_BIS` already say when
+        the period began and ended (§6.2), so a hardcoded table would be a
+        second thing to update every election — and wrong for exactly the
+        period nobody remembered to add.
+
+        The end is open while the period is current, which is what an MP still
+        serving means: `None` there, and `_within` reads it as "no upper
+        bound".
+        """
+        starts: list[date] = []
+        ends: list[date] = []
+        for mp in self._require_resolver().roster():
+            mandate = mp.mandate_for(self.wahlperiode)
+            if mandate is None:  # pragma: no cover - `roster()` filters on this
+                continue
+            if mandate.start_date:
+                starts.append(mandate.start_date)
+            if mandate.end_date:
+                ends.append(mandate.end_date)
+            else:
+                # One sitting MP is enough to make the period open-ended.
+                return (min(starts) if starts else None, None)
+        return (min(starts) if starts else None, max(ends) if ends else None)
 
     def _require_resolver(self) -> MPResolver:
         if self.resolver is None:
@@ -861,6 +910,23 @@ def _batched[T](items: Iterable[T], size: int) -> Iterator[list[T]]:
             batch = []
     if batch:
         yield batch
+
+
+def _within(when: date | None, window: tuple[date | None, date | None]) -> bool:
+    """Whether a listing date falls inside a Wahlperiode's span.
+
+    An undated entry passes. The listing leaves the date cell empty for the
+    pre-2012 rows (§4.1), and those are PDF-only anyway — but a *dated* filter
+    that rejected unknown dates would silently skip any future row whose
+    formatting this parser has not seen, which is the wrong way to fail on the
+    only source of absences.
+    """
+    if when is None:
+        return True
+    start, end = window
+    if start and when < start:
+        return False
+    return not (end and when > end)
 
 
 def _ballot_key(sheet: VoteSheet) -> str:

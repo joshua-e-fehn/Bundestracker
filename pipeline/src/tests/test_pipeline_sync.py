@@ -13,11 +13,12 @@ two operational findings live:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
 from bundestrack.models.dip import Aktivitaet
+from bundestrack.models.votes import VoteSheetLink
 from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
 from bundestrack.pipeline.state import (
@@ -29,7 +30,7 @@ from bundestrack.pipeline.state import (
     load_state,
     save_state,
 )
-from bundestrack.pipeline.sync import Pipeline, RunReport, backfill, sync
+from bundestrack.pipeline.sync import Pipeline, RunReport, _within, backfill, sync
 from tests.conftest import fixture_bytes, fixture_json
 
 
@@ -415,6 +416,71 @@ def test_the_quarantine_count_reaches_the_summary(tmp_path) -> None:
 
     assert report.quarantined >= 1
     assert "quarantine" in report.summary()
+
+
+# --- votes ----------------------------------------------------------------
+
+
+def test_a_ballot_from_another_period_is_not_downloaded_at_all(tmp_path) -> None:
+    """The listing spans the whole Bundestag — ~1 015 entries — and a run wants
+    one period.
+
+    Deciding the period from the parsed sheet would mean fetching all 1 015 to
+    keep 90, against a WAF that counts bytes as well as requests (§2.6). The
+    listing carries the date, so the window is applied first.
+    """
+    fetched: list[str] = []
+
+    class DatedVotes(StubVotes):
+        def iter_vote_links(self, **kwargs):
+            yield VoteSheetLink(
+                title="Ein Gesetz von 2011",
+                xlsx_url="https://example.test/old.xlsx",
+                date=date(2011, 3, 1),
+            )
+
+        def fetch_sheet(self, link):
+            fetched.append(link.title)
+            raise AssertionError("an out-of-period ballot should never be downloaded")
+
+    pipeline, _loader = build(tmp_path=tmp_path)
+    pipeline.votes = DatedVotes()
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+    pipeline.load_votes(report, incremental=False)
+
+    assert fetched == []
+    (stage,) = [s for s in report.stages if s.name == "votes"]
+    assert any("another Wahlperiode" in note for note in stage.notes)
+
+
+def test_an_undated_listing_entry_is_still_considered(tmp_path) -> None:
+    """The listing leaves the date cell empty for the pre-2012 rows (§4.1).
+
+    Rejecting unknown dates would silently skip any future row whose date
+    formatting this parser has not seen — the wrong way to fail on the only
+    source of absences (§4.2).
+    """
+    pipeline, _loader = build(tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+
+    assert _within(None, pipeline._mandate_window()) is True
+
+
+def test_a_current_period_has_no_upper_bound(tmp_path) -> None:
+    # One sitting MP — an open `MDBWP_BIS` — means the period has not ended, so
+    # today's ballot must not be filtered out as "after the period".
+    pipeline, _loader = build(tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+
+    start, end = pipeline._mandate_window()
+
+    assert start == date(2025, 3, 25)
+    assert end is None
+    assert _within(date(2099, 1, 1), (start, end)) is True
+    assert _within(date(2024, 1, 1), (start, end)) is False
 
 
 # --- period-specific gaps -------------------------------------------------
