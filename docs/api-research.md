@@ -4,6 +4,18 @@
 > verified with a live HTTP request or by reading an official schema file on
 > **2026-07-26**, unless explicitly marked as unverified. Where something does
 > *not* exist, that is stated as a finding rather than left silent.
+>
+> **Provenance.** Compiled in two independent passes on the same day. The
+> endpoint/parameter matrix and AND/OR semantics (§2.4) are generated
+> mechanically from `openapi.yaml`, so they are exhaustive. The following were
+> confirmed twice, from separate downloads, and can be relied on most heavily:
+> the vote-sheet one-hot encoding and its 630-row tally (§4.1), `<redner id>` =
+> Stammdaten ID (§5.2, 101/101 and 192/192 in different samples), the
+> multi-speaker `<rede>` trap (§5.2, reproduced in both WP20 and WP21), the
+> `-text` page size of 10 (§2.2), committee data being current-WP-only (§6.4),
+> and the absence of any seating field in all four schemas (§9). Conversely,
+> anything marked unverified is blocked on the WAF (§2.6) — see the "Open
+> questions" note at the end of §11.
 
 ---
 
@@ -27,16 +39,24 @@ no key) — per-MP votes as clean JSON with stable IDs.
 ### The eight things most likely to bite you
 
 1. **Three ID spaces, no shared key.** DIP `/person` id (`1013`), Stammdaten
-   `<MDB><ID>` (`11004011`), and the vote sheets (**no ID column at all**).
-   See §7 — this is the central modelling constraint.
-2. **A bot-protection WAF (Enodia) IP-blocks concurrent requests.** Fetch
-   strictly sequentially. See §2.6.
+   `<MDB><ID>` (`11004011`, = protocol `<redner id>`), and the vote sheets
+   (**no ID column at all**). See §7 — the central modelling constraint.
+2. **A bot-protection WAF (Enodia) IP-blocks on 303.** Fetch strictly
+   sequentially and never follow redirects. See §2.6.
 3. **Seating-position data does not exist** in any official machine-readable
    form. See §9.
 4. **`/plenarprotokoll-text` gives a flat text blob, not per-speech records.**
-   Structured speeches only come from the protocol XML. See §5.
-5. **Committee membership in Stammdaten exists only for the *current*
+   Regex-parsing it inflates word counts by **+53.6 %** and misses 35 speakers.
+   Structured speeches come only from the protocol XML. See §5.
+5. **One `<rede>` can contain several distinct speakers** (Zwischenfragen), so
+   attributing a whole `<rede>` to its first speaker is wrong. See §5.2.
+6. **`/person` is not an MP roster** — WP21 returns 803, not 630, and
+   `funktion == "MdB"` both over- and under-counts. Use Stammdaten. See §6.1.
+7. **Committee membership in Stammdaten exists only for the *current*
    Wahlperiode.** Historical committee work is not in the dump. See §6.4.
+8. **Two OpenAPI spec bugs** will break generated clients: five `Person` fields
+   typed `string` come back as arrays, and `PersonRole.funktion` is declared
+   required but never appears. See §6.1.
 6. **One `<rede>` is not one speaker** — Zwischenfragen put several distinct
    MPs inside a single element. Re-attribute on every `klasse="redner"`
    paragraph or you credit interveners' words to the main speaker. See §5.2.
@@ -1563,6 +1583,42 @@ time, and overlap the window slightly to tolerate clock skew.
   run resumable.
 - Normalise `\xa0` (non-breaking space) everywhere in XML-derived text, and
   apply Unicode NFKD normalisation before any name matching (§7.1b).
+
+### 11.4 Open questions — resolve before building
+
+Each of these is blocked on the Enodia WAF (§2.6) and should be settled from a
+clean IP before the corresponding code is written.
+
+1. **Full `aktivitaetsart` census** for WP21 (ideally WP18–21). The scoring
+   taxonomy depends on it and the observed values are a small sample of 80 537
+   records. Page `/aktivitaet?f.wahlperiode=21&f.zuordnung=BT`, tallying the
+   field. (§3.5)
+2. **Currently advertised public API key and its stated validity window** on
+   <https://dip.bundestag.de/über-dip/hilfe/api>, plus the application process
+   for a **private** key. The key in §1.2 is shared and rotating. (§1.2)
+3. **Does a private API key bypass Enodia**, or does the WAF sit in front of it
+   regardless? This materially changes the pacing budget for a daily sync and is
+   worth asking `parlamentsdokumentation@bundestag.de` directly. (§2.6)
+4. **Empirical safe request rate.** Everything measured here was recorded either
+   side of a *triggered* block, giving an upper bound on what is unsafe but no
+   lower bound on what is safe. Establish this cautiously. (§2.6)
+5. **Named-vote coverage before ~2012.** The default listing bottomed out at
+   2019-10-24 with `noFilterSet=true`, and GET-style date parameters
+   (`dateFrom`/`dateTo`, `startDate`/`endDate`, `date`, and the widget's own
+   `440434-start`/`-end`) were all **ignored** — the newest rows came back
+   regardless. Test the POST form the widget actually submits before assuming
+   the older WP16–17 tail is reachable programmatically. (§4.1)
+6. **WP17/18 XML boundary.** `xml_url` is documented as WP18+ but the published
+   DTD says "gültig ab 19. Wahlperiode." Diff a WP18 protocol against a WP20 one
+   before backfilling, and count `xml_url` presence in
+   `/plenarprotokoll?f.wahlperiode=18` vs `=17`. (§5.2)
+7. **A vote containing abstentions and/or invalid ballots**, to exercise the
+   `Enthaltung` and `ungültig` columns — both were zero across all 630 rows of
+   the sampled sheet, so those code paths are untested. (§4.1)
+8. **Speaking duration.** Word count is a reasonable proxy, but if per-speech
+   timing is recoverable anywhere (protocol timestamps, Mediathek metadata) it
+   would be a fairer measure. The Mediathek player's XHR calls could not be
+   inspected. (§5.3)
 
 ---
 
