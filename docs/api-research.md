@@ -1103,7 +1103,7 @@ Verified: `f.person=Bilger Steffen` → 1 result, id `1013`.
 > surnames contain non-ASCII, yet specific records are stripped — DIP has
 > `Özoguz` / `Salihovic` / `Ahmetovic` where Stammdaten has `Özoğuz` /
 > `Salihović` / `Ahmetović` (note `Özoguz` keeps `Ö` but loses `ğ`). Try
-> several spellings, or fold diacritics (§7.1b).
+> several spellings, or fold diacritics (§7.2).
 
 ### 6.2 MdB-Stammdaten — the authoritative MP roster
 
@@ -1391,14 +1391,14 @@ mid = idx.get((name, vorname)) or idx.get((f"{titel} {name}".strip(), vorname))
 
 **Result: 628/630 matched.** The 2 residual misses (`Glaser, Stefan`;
 `Naser, Christoph`) are **not** algorithm failures — they are MPs absent from
-the Stammdaten dump, which lags reality (see §7.2).
+the Stammdaten dump, which lags reality (see §7.3).
 
 No duplicate `(NACHNAME, VORNAME)` pairs exist within WP21, so exact matches are
 unambiguous. Across WPs they are not unique — always scope matching to the
 Wahlperiode. `ORTSZUSATZ` exists precisely to disambiguate identical names
 (`Müller (Braunschweig)`), so preserve it.
 
-### 7.1b Stammdaten ↔ DIP `/person`: add Unicode normalisation
+### 7.2 Stammdaten ↔ DIP `/person`: add Unicode normalisation
 
 For the **speaker → DIP person** direction, exact `(vorname, nachname)` matching
 scored **106/108** on protocol 21/90. Both failures were character-level
@@ -1449,7 +1449,7 @@ snapshot).
 and fall back to `GEBURTSDATUM` for the 15 historical collisions (e.g.
 `('muller','karl')` → 3 IDs).
 
-### 7.2 Stammdaten staleness
+### 7.3 Stammdaten staleness
 
 The ZIP is a periodic snapshot and **lags mid-term changes**. Observed:
 `Michael Breilmann` appears with WP20 only despite sitting in WP21;
@@ -1462,7 +1462,7 @@ records successions with `start_date` and an `info` note such as *"ist am
 20.07.2026 für Frank Junge in den Deutschen Bundestag nachgerückt"*) to detect
 new MPs sooner.
 
-### 7.3 Recommendation
+### 7.4 Recommendation
 
 Mint an **internal Bundestrack MP id** and store all external ids against it
 (`dip_person_id`, `stammdaten_id`, `aw_politician_id`), resolved once during
@@ -1585,7 +1585,7 @@ time, and overlap the window slightly to tolerate clock skew.
 - Persist `xml_hash` / `pdf_hash` and skip unchanged documents; make the whole
   run resumable.
 - Normalise `\xa0` (non-breaking space) everywhere in XML-derived text, and
-  apply Unicode NFKD normalisation before any name matching (§7.1b).
+  apply Unicode NFKD normalisation before any name matching (§7.2).
 
 ### 11.4 Open questions — resolve before building
 
