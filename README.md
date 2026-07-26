@@ -76,5 +76,13 @@ deployment, routed by `webapp/convex/http.ts` to mutations that upsert records,
 authenticating with a shared key in an `Authorization: Bearer` header. Details
 in `pipeline/README.md`.
 
-The daily sync runs from a system cron calling `pixi run pipeline sync`. Convex's
-own crons handle in-Convex aggregation; the API fetch happens in Python.
+The daily sync runs from a system cron calling `scripts/daily-sync.sh`, which
+wraps `pixi run pipeline sync` with the PATH, lock and log that cron does not
+provide. Convex's own crons handle in-Convex aggregation; the API fetch happens
+in Python.
+
+## Deploying
+
+Frontend on Vercel, backend on Convex, and each needs the other's URL — the
+Convex URLs are required at *build* time, not just at runtime. `docs/deployment.md`
+has the order that resolves that circularity, plus the cron setup.
