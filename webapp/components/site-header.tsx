@@ -27,21 +27,29 @@ import { cn } from "@/lib/utils"
  * not the other, which nobody notices because only one is ever on screen at a
  * time.
  *
- * The routes beyond "/" do not exist yet; this branch builds the shell. They are
- * listed anyway because the shell is what says what the site is, and a nav that
- * grows a link per merged PR never gets reviewed as a whole.
+ * ## Every entry here must be a route that exists
+ *
+ * This list was originally written against German paths (`/abgeordnete`,
+ * `/rangliste`) while the shell was being built and the pages were not. The
+ * pages then landed on another branch at English paths — the spelling
+ * `lib/auth-routes.ts` also uses — so all five links pointed at 404s once the
+ * two branches were merged.
+ *
+ * So the rule is the one `lib/auth-routes.ts` already states for its own list: a
+ * link goes in when its page does, not before. A nav entry for an unbuilt page
+ * costs nothing to add later and, until then, is indistinguishable to a reader
+ * from a broken site. `nav.votes` and `nav.motions` keep their dictionary
+ * entries for whichever branch builds those pages.
  */
 const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
-  { href: "/abgeordnete", labelKey: "nav.members" },
-  { href: "/abstimmungen", labelKey: "nav.votes" },
-  { href: "/antraege", labelKey: "nav.motions" },
-  { href: "/rangliste", labelKey: "nav.rankings" },
-  { href: "/aktivitaet", labelKey: "nav.activity" },
+  { href: "/mps", labelKey: "nav.members" },
+  { href: "/rankings", labelKey: "nav.rankings" },
+  { href: "/feed", labelKey: "nav.feed" },
 ]
 
-/** German paths in both languages, deliberately. The subject is a German
- * parliament and the URLs are shared artefacts — a link pasted into a chat
- * should not read differently depending on who copied it. */
+/** One spelling of a path in both languages, deliberately. The URLs are shared
+ * artefacts — a link pasted into a chat should not read differently depending on
+ * who copied it. */
 function useIsActive() {
   const pathname = usePathname()
   return (href: string) => pathname === href || pathname.startsWith(`${href}/`)

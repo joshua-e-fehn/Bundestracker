@@ -5,13 +5,9 @@ import { AuthGuard } from "@/components/providers/auth-guard"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { ThemeProvider } from "@/components/providers/theme-provider"
-<<<<<<< HEAD
-import { SiteNav } from "@/components/site-nav"
-=======
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { Toaster } from "@/components/ui/sonner"
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
 import { getToken } from "@/lib/auth-server"
 import { DEFAULT_LOCALE, localeFromAcceptLanguage, t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -125,16 +121,10 @@ export default async function RootLayout({
           <QueryProvider>
             <ThemeProvider>
               <LocaleProvider initialLocale={locale}>
-<<<<<<< HEAD
-                {/* Placeholder nav — see components/site-nav.tsx. The real one
-                    belongs to the layout branch, which replaces this line. */}
-                <SiteNav />
-=======
                 {/* Header and footer sit inside LocaleProvider — they are
                     translated — but outside AuthGuard, so the chrome stays on
                     screen if a future private route redirects. */}
                 <SiteHeader />
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
                 <AuthGuard>{children}</AuthGuard>
                 <SiteFooter />
                 <Toaster />

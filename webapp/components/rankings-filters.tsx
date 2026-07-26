@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { formatMonth } from "@/lib/format"
+import { formatMonth } from "@/lib/bundestag"
 import type { TranslationKey } from "@/lib/i18n"
 import type { AgeGroup } from "@/lib/taxonomy"
 
