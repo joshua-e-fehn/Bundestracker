@@ -1,0 +1,79 @@
+{
+ "numFound": 16282,
+ "cursor": "AoJw0Jjht58DLlZvcmdhbmctMzM3MzY5",
+ "documents": [
+  {
+   "id": "337602",
+   "beratungsstand": "Noch nicht beantwortet",
+   "vorgangstyp": "Kleine Anfrage",
+   "sachgebiet": [
+    "Außenpolitik und internationale Beziehungen",
+    "Verteidigung"
+   ],
+   "typ": "Vorgang",
+   "wahlperiode": 21,
+   "initiative": [
+    "Fraktion BÜNDNIS 90/DIE GRÜNEN"
+   ],
+   "aktualisiert": "2026-07-24T12:32:33+02:00",
+   "deskriptor": [
+    {
+     "fundstelle": false,
+     "name": "Auslandseinsatz der Bundeswehr",
+     "typ": "Sachbegriffe"
+    },
+    {
+     "fundstelle": false,
+     "name": "EUNAVFOR MED IRINI",
+     "typ": "Institutionen"
+    },
+    {
+     "fundstelle": false,
+     "name": "Libyen",
+     "typ": "Geograph. Begriffe"
+    },
+    {
+     "fundstelle": false,
+     "name": "Waffenembargo",
+     "typ": "Sachbegriffe"
+    }
+   ],
+   "titel": "Umsetzung des VN-Waffenembargos gegen Libyen, Zusammenarbeit mit libyschen Sicherheitsakteuren und Zukunft der Operation EUNAVFOR MED IRINI",
+   "datum": "2026-07-24"
+  },
+  {
+   "id": "337601",
+   "beratungsstand": "Noch nicht beantwortet",
+   "vorgangstyp": "Kleine Anfrage",
+   "sachgebiet": [
+    "Innere Sicherheit",
+    "Wissenschaft, Forschung und Technologie"
+   ],
+   "typ": "Vorgang",
+   "wahlperiode": 21,
+   "initiative": [
+    "Fraktion der AfD"
+   ],
+   "aktualisiert": "2026-07-24T12:15:11+02:00",
+   "deskriptor": [
+    {
+     "fundstelle": false,
+     "name": "Bericht",
+     "typ": "Sachbegriffe"
+    },
+    {
+     "fundstelle": false,
+     "name": "Extremismus",
+     "typ": "Sachbegriffe"
+    },
+    {
+     "fundstelle": false,
+     "name": "Forschung",
+     "typ": "Sachbegriffe"
+    }
+   ],
+   "titel": "Berichte des Forschungsverbundes \"Monitoringsystem und Transferplattform Radikalisierung\" (MOTRA)",
+   "datum": "2026-07-24"
+  }
+ ]
+}

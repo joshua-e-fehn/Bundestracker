@@ -1,0 +1,93 @@
+{
+ "numFound": 803,
+ "cursor": "AoJwkJLRxJ8DK1BlcnNvbi04MDc2",
+ "documents": [
+  {
+   "id": "8190",
+   "funktion": [
+    "MdB"
+   ],
+   "fraktion": [
+    "BÜNDNIS 90/DIE GRÜNEN"
+   ],
+   "nachname": "Roth",
+   "vorname": "Claudia",
+   "typ": "Person",
+   "wahlperiode": [
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+   ],
+   "aktualisiert": "2025-09-02T14:58:12+02:00",
+   "person_roles": [
+    {
+     "fraktion": "BÜNDNIS 90/DIE GRÜNEN",
+     "nachname": "Roth",
+     "vorname": "Claudia",
+     "wahlkreiszusatz": "Augsburg",
+     "wahlperiode_nummer": [
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+     ]
+    },
+    {
+     "ressort_titel": "Beauftr. der Bundesregierung für Kultur und Medien",
+     "nachname": "Roth",
+     "vorname": "Claudia",
+     "wahlperiode_nummer": [
+      20,
+      21
+     ]
+    },
+    {
+     "nachname": "Roth",
+     "vorname": "Claudia",
+     "wahlperiode_nummer": [
+      18,
+      19
+     ]
+    },
+    {
+     "nachname": "Roth",
+     "vorname": "Claudia",
+     "wahlperiode_nummer": [
+      15
+     ]
+    }
+   ],
+   "titel": "Claudia Roth, MdB, BÜNDNIS 90/DIE GRÜNEN",
+   "datum": "2026-07-24",
+   "basisdatum": "1998-11-13"
+  },
+  {
+   "id": "8028",
+   "funktion": [
+    "MdB"
+   ],
+   "fraktion": [
+    "AfD"
+   ],
+   "nachname": "Wolf",
+   "vorname": "Alexander",
+   "typ": "Person",
+   "wahlperiode": [
+    21
+   ],
+   "aktualisiert": "2025-03-10T10:55:33+01:00",
+   "titel": "Dr. Alexander Wolf, MdB, AfD",
+   "datum": "2026-07-24",
+   "basisdatum": "2025-05-23"
+  }
+ ]
+}

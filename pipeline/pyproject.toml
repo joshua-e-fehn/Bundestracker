@@ -9,6 +9,12 @@ dependencies = [
   "pydantic>=2.10",
   "pydantic-settings>=2.7",
   "click>=8.1",
+  # The named-vote data sheets are XLSX and nothing else publishes per-MP
+  # absences (docs/api-research.md §4.1). openpyxl reads them without pandas.
+  "openpyxl>=3.1",
+  # The published DIP API key lives in openapi.yaml, which the client re-parses
+  # when a key expires mid-run (§1.2).
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +56,14 @@ select = [
   "SIM",  # flake8-simplify
   "RUF",  # ruff-specific
 ]
+
+# RUF001-003 flag "ambiguous" Unicode — characters that resemble ASCII ones.
+# This code documents German parliamentary data, so its prose legitimately
+# contains en dashes and `×`, and several docstrings quote a non-breaking space
+# verbatim because it is a documented parsing hazard in the source XML.
+# Declaring the ones we mean keeps the check live for genuine homoglyphs: a
+# Cyrillic `а` in an identifier still fails.
+allowed-confusables = ["–", "×", "→", "≠"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["bundestrack"]
