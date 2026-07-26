@@ -1,0 +1,69 @@
+"use client"
+
+import { useLocale } from "@/components/providers/locale-provider"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { isSeatingColorMode, SEATING_MODES, type SeatingColorMode } from "@/lib/seating"
+import { cn } from "@/lib/utils"
+
+/**
+ * Picks what the seating map colours by.
+ *
+ * Renders `SEATING_MODES` (lib/seating.ts) rather than listing the modes here,
+ * so the toggle, the legend and the map read one table. A mode added there
+ * appears in all three at once; listing them per component is how a mode ends up
+ * selectable but unlabelled in the legend.
+ *
+ * ## Tabs, because this is the same control the rankings already use
+ *
+ * `components/rankings.tsx` switches between nine leaderboards with `Tabs`, and
+ * this is that interaction exactly: one exclusive choice, applied immediately, to
+ * the view below it. A hand-rolled `role="radiogroup"` would be a second answer
+ * to a question this codebase has already answered — and a worse one, since Radix
+ * brings the roving tabindex, arrow-key navigation and focus management that a
+ * bespoke version has to reimplement and then keep working.
+ *
+ * Deliberately *not* `components/filter-chips.tsx`, which looks similar and means
+ * something different: chips are independent toggles where several can be on and
+ * "none" means "everything". A chamber is coloured one way at a time, so "none
+ * selected" is not a state this control can be in.
+ */
+export function ColorModeToggle({
+  value,
+  onChange,
+  className,
+}: {
+  value: SeatingColorMode
+  onChange: (next: SeatingColorMode) => void
+  className?: string
+}) {
+  const { t } = useLocale()
+
+  return (
+    <div className={cn("flex flex-col gap-1.5", className)}>
+      <span id="seating-color-mode-label" className="font-medium text-muted-foreground text-xs">
+        {t("seating.colorMode")}
+      </span>
+      <Tabs
+        value={value}
+        // Radix hands back a plain string; the guard is what keeps this
+        // component's contract to `SeatingColorMode` honest rather than casting.
+        onValueChange={(next) => {
+          if (isSeatingColorMode(next)) onChange(next)
+        }}
+      >
+        {/* Scrolls rather than wraps, as the rankings' nine tabs do: five mode
+            names wrapped to two rows on a phone push the map below the fold. */}
+        <TabsList
+          aria-labelledby="seating-color-mode-label"
+          className="w-full justify-start overflow-x-auto"
+        >
+          {SEATING_MODES.map((mode) => (
+            <TabsTrigger key={mode.id} value={mode.id} className="whitespace-nowrap">
+              {t(mode.labelKey)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+    </div>
+  )
+}

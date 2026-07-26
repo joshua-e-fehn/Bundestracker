@@ -8,13 +8,7 @@ import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { UserMenu } from "@/components/user-menu"
 import type { TranslationKey } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -44,6 +38,7 @@ import { cn } from "@/lib/utils"
 const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
   { href: "/mps", labelKey: "nav.members" },
   { href: "/rankings", labelKey: "nav.rankings" },
+  { href: "/seating", labelKey: "nav.seating" },
   { href: "/feed", labelKey: "nav.feed" },
 ]
 
@@ -82,9 +77,7 @@ export function SiteHeader() {
               aria-current={isActive(href) ? "page" : undefined}
               className={cn(
                 "rounded-md px-2.5 py-1.5 font-medium text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                isActive(href)
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
+                isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(labelKey)}

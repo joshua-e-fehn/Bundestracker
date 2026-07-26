@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { existsSync, readdirSync } from "node:fs"
+import { join } from "node:path"
 import { isPublicPath } from "./auth-routes"
 
 /**
@@ -23,6 +25,28 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/")).toBe(true)
     expect(isPublicPath("/mps")).toBe(true)
     expect(isPublicPath("/mps/bt-0001")).toBe(true)
+  })
+
+  test("every route with a page under app/ is public", () => {
+    // The list above is hand-written, so it only catches the routes someone
+    // remembered to add to it — and this is a bug whose whole character is
+    // being forgotten. `/seating` was the third route to hit it, after `/mps`
+    // and `/rankings`.
+    //
+    // So this reads the filesystem instead: every directory under app/ holding
+    // a page.tsx is a route a reader can navigate to, and every one of them
+    // must be browsable signed out. A new page fails here on the commit that
+    // adds it rather than in a browser weeks later. Route groups and private
+    // folders are skipped — they do not appear in a URL — and so are dynamic
+    // segments, which are covered by their parent's prefix.
+    const appDir = new URL("../app/", import.meta.url).pathname
+    for (const entry of readdirSync(appDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      if (/^[(_[@]/.test(entry.name)) continue
+      if (entry.name === "api") continue
+      if (!existsSync(join(appDir, entry.name, "page.tsx"))) continue
+      expect(isPublicPath(`/${entry.name}`)).toBe(true)
+    }
   })
 
   test("an id with an encoded character is still public", () => {

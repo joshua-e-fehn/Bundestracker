@@ -451,6 +451,16 @@ async function main() {
     }
   }
   console.log("  scores")
+
+  // Last, because the arc is *derived* from the roster rather than posted — the
+  // same `seating/generate` route the Python pipeline calls, so seeding
+  // exercises it rather than reaching past it. Running it before the roster
+  // exists would seat nobody. See convex/seating.ts.
+  const seating = (await post("seating/generate", { wahlperiode: WP })) as {
+    seated: number
+    rows: number
+  }
+  console.log(`  seating (${seating.seated} seats, ${seating.rows} rows)`)
   console.log("Done.")
 }
 
