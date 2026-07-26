@@ -1,0 +1,164 @@
+{
+ "numFound": 1583,
+ "cursor": "AoJCN1ZvcmdhbmdzcG9zaXRpb24tNjcwNjAw",
+ "documents": [
+  {
+   "id": "670587",
+   "vorgangsposition": "1. Beratung",
+   "zuordnung": "BT",
+   "gang": true,
+   "fortsetzung": false,
+   "nachtrag": false,
+   "vorgangstyp": "Gesetzgebung",
+   "titel": "Gesetz zur Verlängerung der Fristen im Investitionsprogramm Ganztagsausbau",
+   "typ": "Vorgangsposition",
+   "aktivitaet_anzahl": 11,
+   "dokumentart": "Plenarprotokoll",
+   "aktualisiert": "2025-05-27T14:07:12+02:00",
+   "ueberweisung": [
+    {
+     "ausschuss": "Ausschuss für Bildung, Familie, Senioren, Frauen und Jugend",
+     "ausschuss_kuerzel": "AfBFSFJ",
+     "federfuehrung": true
+    },
+    {
+     "ausschuss": "Ausschuss für Wohnen, Stadtentwicklung, Bauwesen und Kommunen",
+     "ausschuss_kuerzel": "BauA",
+     "federfuehrung": false
+    },
+    {
+     "ausschuss": "Haushaltsausschuss",
+     "ausschuss_kuerzel": "HaushA",
+     "federfuehrung": false
+    }
+   ],
+   "fundstelle": {
+    "id": "5710",
+    "dokumentnummer": "21/7",
+    "datum": "2025-05-22",
+    "verteildatum": "2025-05-23",
+    "xml_url": "https://dserver.bundestag.de/btp/21/21007.xml",
+    "dokumentart": "Plenarprotokoll",
+    "herausgeber": "BT",
+    "urheber": [],
+    "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.475",
+    "anfangsseite": 475,
+    "endseite": 482,
+    "anfangsquadrant": "A",
+    "endquadrant": "D"
+   },
+   "beschlussfassung": [
+    {
+     "beschlusstenor": "Überweisung",
+     "dokumentnummer": "21/216",
+     "seite": "482D"
+    }
+   ],
+   "aktivitaet_anzeige": [
+    {
+     "seite": "475B",
+     "aktivitaetsart": "Rede",
+     "titel": "Karin Prien, Bundesmin., Bundesministerium für Bildung, Familie, Senioren, Frauen und Jugend",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.475"
+    },
+    {
+     "seite": "476B",
+     "aktivitaetsart": "Rede",
+     "titel": "Christian Zaum, MdB, AfD",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.476"
+    },
+    {
+     "seite": "477C",
+     "aktivitaetsart": "Rede",
+     "titel": "Jasmina Hostert, MdB, SPD",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.477"
+    },
+    {
+     "seite": "478B",
+     "aktivitaetsart": "Rede",
+     "titel": "Dr. Anja Reinalter, MdB, BÜNDNIS 90/DIE GRÜNEN",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.478"
+    }
+   ],
+   "datum": "2025-05-22",
+   "vorgang_id": "321946"
+  },
+  {
+   "id": "670592",
+   "vorgangsposition": "1. Beratung",
+   "zuordnung": "BT",
+   "gang": true,
+   "fortsetzung": false,
+   "nachtrag": false,
+   "vorgangstyp": "Gesetzgebung",
+   "titel": "Gesetz zur besseren Bekämpfung überhöhter Mieten (Mietwuchergesetz)",
+   "typ": "Vorgangsposition",
+   "aktivitaet_anzahl": 9,
+   "dokumentart": "Plenarprotokoll",
+   "aktualisiert": "2025-05-27T14:07:12+02:00",
+   "ueberweisung": [
+    {
+     "ausschuss": "Ausschuss für Recht und Verbraucherschutz",
+     "ausschuss_kuerzel": "AfRechtVer",
+     "federfuehrung": true
+    },
+    {
+     "ausschuss": "Ausschuss für Wohnen, Stadtentwicklung, Bauwesen und Kommunen",
+     "ausschuss_kuerzel": "BauA",
+     "federfuehrung": false
+    }
+   ],
+   "fundstelle": {
+    "id": "5710",
+    "dokumentnummer": "21/7",
+    "datum": "2025-05-22",
+    "verteildatum": "2025-05-23",
+    "xml_url": "https://dserver.bundestag.de/btp/21/21007.xml",
+    "dokumentart": "Plenarprotokoll",
+    "herausgeber": "BT",
+    "urheber": [],
+    "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.515",
+    "anfangsseite": 515,
+    "endseite": 523,
+    "anfangsquadrant": "C",
+    "endquadrant": "B"
+   },
+   "beschlussfassung": [
+    {
+     "beschlusstenor": "Überweisung",
+     "abstimm_ergebnis_bemerkung": "Festlegung der Federführung gegen den Wunsch der Fraktion Die Linke (Federführung beim BauA)",
+     "dokumentnummer": "21/134",
+     "seite": "523B"
+    }
+   ],
+   "aktivitaet_anzeige": [
+    {
+     "seite": "515C",
+     "aktivitaetsart": "Rede",
+     "titel": "Caren Lay, MdB, DIE LINKE",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.515"
+    },
+    {
+     "seite": "516B",
+     "aktivitaetsart": "Rede",
+     "titel": "Dr. Jan-Marco Luczak, MdB, CDU/CSU",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.516"
+    },
+    {
+     "seite": "517B",
+     "aktivitaetsart": "Zwischenfrage",
+     "titel": "Caren Lay, MdB, DIE LINKE",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.517"
+    },
+    {
+     "seite": "518B",
+     "aktivitaetsart": "Rede",
+     "titel": "Rainer Galla, MdB, AfD",
+     "pdf_url": "https://dserver.bundestag.de/btp/21/21007.pdf#P.518"
+    }
+   ],
+   "datum": "2025-05-22",
+   "vorgang_id": "321692"
+  }
+ ]
+}

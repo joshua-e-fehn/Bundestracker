@@ -1,0 +1,44 @@
+{
+ "numFound": 803,
+ "cursor": "AoJw0MaHwp8DK1BlcnNvbi03MjU5",
+ "documents": [
+  {
+   "id": "8075",
+   "funktion": [
+    "MdB"
+   ],
+   "fraktion": [
+    "AfD"
+   ],
+   "nachname": "Mixl",
+   "vorname": "Reinhard",
+   "typ": "Person",
+   "wahlperiode": [
+    21
+   ],
+   "aktualisiert": "2025-03-11T11:26:50+01:00",
+   "titel": "Reinhard Mixl, MdB, AfD",
+   "datum": "2026-07-22",
+   "basisdatum": "2025-04-30"
+  },
+  {
+   "id": "8071",
+   "funktion": [
+    "MdB"
+   ],
+   "fraktion": [
+    "AfD"
+   ],
+   "nachname": "Meyer-Soltau",
+   "vorname": "Knuth",
+   "typ": "Person",
+   "wahlperiode": [
+    21
+   ],
+   "aktualisiert": "2025-03-11T10:56:41+01:00",
+   "titel": "Knuth Meyer-Soltau, MdB, AfD",
+   "datum": "2026-07-22",
+   "basisdatum": "2025-04-28"
+  }
+ ]
+}

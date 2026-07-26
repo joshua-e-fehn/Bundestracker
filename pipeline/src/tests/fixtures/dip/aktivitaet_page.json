@@ -1,0 +1,70 @@
+{
+ "numFound": 80537,
+ "cursor": "AoJw0N2ax58DMkFrdGl2aXRhZXQtMTc5MjU2MQ==",
+ "documents": [
+  {
+   "id": "1793259",
+   "aktivitaetsart": "Kleine Anfrage",
+   "typ": "Aktivität",
+   "person_id": "8004",
+   "vorgangsbezug_anzahl": 1,
+   "dokumentart": "Drucksache",
+   "wahlperiode": 21,
+   "aktualisiert": "2026-07-24T12:03:00+02:00",
+   "vorgangsbezug": [
+    {
+     "vorgangsposition": "Kleine Anfrage",
+     "vorgangstyp": "Kleine Anfrage",
+     "titel": "Umsetzung des VN-Waffenembargos gegen Libyen, Zusammenarbeit mit libyschen Sicherheitsakteuren und Zukunft der Operation EUNAVFOR MED IRINI",
+     "id": "337602"
+    }
+   ],
+   "fundstelle": {
+    "pdf_url": "https://dserver.bundestag.de/btd/21/073/2107327.pdf",
+    "id": "289866",
+    "dokumentnummer": "21/7327",
+    "datum": "2026-07-24",
+    "dokumentart": "Drucksache",
+    "drucksachetyp": "Kleine Anfrage",
+    "herausgeber": "BT",
+    "urheber": [
+     "Fraktion BÜNDNIS 90/DIE GRÜNEN"
+    ]
+   },
+   "titel": "Jeanne Dillschneider, MdB, BÜNDNIS 90/DIE GRÜNEN",
+   "datum": "2026-07-24"
+  },
+  {
+   "id": "1793258",
+   "aktivitaetsart": "Kleine Anfrage",
+   "typ": "Aktivität",
+   "person_id": "1496",
+   "vorgangsbezug_anzahl": 1,
+   "dokumentart": "Drucksache",
+   "wahlperiode": 21,
+   "aktualisiert": "2026-07-24T12:03:00+02:00",
+   "vorgangsbezug": [
+    {
+     "vorgangsposition": "Kleine Anfrage",
+     "vorgangstyp": "Kleine Anfrage",
+     "titel": "Umsetzung des VN-Waffenembargos gegen Libyen, Zusammenarbeit mit libyschen Sicherheitsakteuren und Zukunft der Operation EUNAVFOR MED IRINI",
+     "id": "337602"
+    }
+   ],
+   "fundstelle": {
+    "pdf_url": "https://dserver.bundestag.de/btd/21/073/2107327.pdf",
+    "id": "289866",
+    "dokumentnummer": "21/7327",
+    "datum": "2026-07-24",
+    "dokumentart": "Drucksache",
+    "drucksachetyp": "Kleine Anfrage",
+    "herausgeber": "BT",
+    "urheber": [
+     "Fraktion BÜNDNIS 90/DIE GRÜNEN"
+    ]
+   },
+   "titel": "Luise Amtsberg, MdB, BÜNDNIS 90/DIE GRÜNEN",
+   "datum": "2026-07-24"
+  }
+ ]
+}

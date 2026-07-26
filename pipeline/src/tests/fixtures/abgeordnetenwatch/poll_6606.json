@@ -1,0 +1,174 @@
+{
+ "meta": {
+  "abgeordnetenwatch_api": {
+   "version": "2.9.0",
+   "changelog": "https://www.abgeordnetenwatch.de/api/version-changelog/aktuell",
+   "licence": "CC0 1.0",
+   "licence_link": "https://creativecommons.org/publicdomain/zero/1.0/deed.de",
+   "documentation": "https://www.abgeordnetenwatch.de/api/entitaeten/poll"
+  },
+  "status": "ok",
+  "status_message": "",
+  "result": {
+   "entity_id": "6606",
+   "entity_type": "node"
+  }
+ },
+ "data": {
+  "id": 6606,
+  "entity_type": "node",
+  "label": "Sportfördergesetz",
+  "api_url": "https://www.abgeordnetenwatch.de/api/v2/polls/6606",
+  "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag/21/abstimmungen/sportfoerdergesetz",
+  "field_accepted": true,
+  "field_committees": [
+   {
+    "id": 6100,
+    "entity_type": "node",
+    "label": "Ausschuss für Sport und Ehrenamt",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/committees/6100",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag/21/ausschuesse/ausschuss-fuer-sport-und-ehrenamt"
+   }
+  ],
+  "field_intro": "<p><span>Der Bundestag hat über das </span><a class=\"link-read-more\" href=\"https://dserver.bundestag.de/btd/21/059/2105921.pdf\" target=\"_blank\"><span>Sportfördergesetz</span></a><span> abgestimmt. Mit dem Gesetz wird die Förderung des Spitzensports in Deutschland erstmals in einem eigenen Gesetz geregelt. Ziel ist es, die Sportförderung transparenter, effizienter und weniger bürokratisch zu gestalten sowie Athlet:innen gezielter zu unterstützen.</span></p><p><span>Kern des Gesetzes ist die Gründung einer unabhängigen Spitzensport-Agentur. Sie soll künftig die Fördermittel des Bundes vergeben und die sportfachliche Steuerung der Spitzensportförderung übernehmen. Zudem sollen die Förderungen stärker an den Bedürfnissen der Athlet:innen sowie an sportlichem Potenzial und Leistung ausgerichtet werden.</span></p><p><span>Der Gesetzentwurf wurde in einer vom </span><a class=\"link-committees\" href=\"https://www.abgeordnetenwatch.de/bundestag/21/ausschuesse/ausschuss-fuer-sport-und-ehrenamt\" target=\"_blank\"><span>Ausschuss für Sport und Ehrenamt</span></a><span> </span><a class=\"link-read-more\" href=\"https://dserver.bundestag.de/btd/21/070/2107006.pdf\" target=\"_blank\"><span>geänderten Fassung</span></a><span> mit 519 Ja-Stimmen bei 43 Nein-Stimmen <strong>angenommen</strong>. Es gab keine Enthaltungen.&nbsp;</span></p>",
+  "field_legislature": {
+   "id": 161,
+   "entity_type": "parliament_period",
+   "label": "Bundestag 2025 - 2029",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+  },
+  "field_poll_date": "2026-07-10",
+  "field_related_links": [
+   {
+    "uri": "entity:node/4907",
+    "title": "Namentliche Abstimmungen: ABC der wichtigsten Begriffe"
+   }
+  ],
+  "field_topics": [
+   {
+    "id": 12,
+    "entity_type": "taxonomy_term",
+    "label": "Sport, Freizeit und Tourismus",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/topics/12",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/themen-dip21/sport-freizeit-und-tourismus"
+   }
+  ],
+  "related_data": {
+   "votes": [
+    {
+     "id": 665215,
+     "entity_type": "vote",
+     "label": "Sanae Abdi - Sportfördergesetz",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/votes/665215",
+     "mandate": {
+      "id": 68376,
+      "entity_type": "candidacy_mandate",
+      "label": "Sanae Abdi (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/68376"
+     },
+     "poll": {
+      "id": 6606,
+      "entity_type": "node",
+      "label": "Sportfördergesetz",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/polls/6606",
+      "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag/21/abstimmungen/sportfoerdergesetz"
+     },
+     "vote": "yes",
+     "reason_no_show": null,
+     "reason_no_show_other": null,
+     "fraction": {
+      "id": 425,
+      "entity_type": "fraction",
+      "label": "SPD (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/425"
+     }
+    },
+    {
+     "id": 665217,
+     "entity_type": "vote",
+     "label": "Doris Achelwilm - Sportfördergesetz",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/votes/665217",
+     "mandate": {
+      "id": 68378,
+      "entity_type": "candidacy_mandate",
+      "label": "Doris Achelwilm (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/68378"
+     },
+     "poll": {
+      "id": 6606,
+      "entity_type": "node",
+      "label": "Sportfördergesetz",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/polls/6606",
+      "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag/21/abstimmungen/sportfoerdergesetz"
+     },
+     "vote": "no",
+     "reason_no_show": null,
+     "reason_no_show_other": null,
+     "fraction": {
+      "id": 422,
+      "entity_type": "fraction",
+      "label": "Die Linke (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/422"
+     }
+    },
+    {
+     "id": 665220,
+     "entity_type": "vote",
+     "label": "Gökay Akbulut - Sportfördergesetz",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/votes/665220",
+     "mandate": {
+      "id": 68381,
+      "entity_type": "candidacy_mandate",
+      "label": "Gökay Akbulut (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/68381"
+     },
+     "poll": {
+      "id": 6606,
+      "entity_type": "node",
+      "label": "Sportfördergesetz",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/polls/6606",
+      "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag/21/abstimmungen/sportfoerdergesetz"
+     },
+     "vote": "no_show",
+     "reason_no_show": null,
+     "reason_no_show_other": null,
+     "fraction": {
+      "id": 422,
+      "entity_type": "fraction",
+      "label": "Die Linke (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/422"
+     }
+    },
+    {
+     "id": 665344,
+     "entity_type": "vote",
+     "label": "Sonja Eichwede - Sportfördergesetz",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/votes/665344",
+     "mandate": {
+      "id": 68504,
+      "entity_type": "candidacy_mandate",
+      "label": "Sonja Eichwede (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/68504"
+     },
+     "poll": {
+      "id": 6606,
+      "entity_type": "node",
+      "label": "Sportfördergesetz",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/polls/6606",
+      "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag/21/abstimmungen/sportfoerdergesetz"
+     },
+     "vote": "yes",
+     "reason_no_show": "maternity_protection",
+     "reason_no_show_other": null,
+     "fraction": {
+      "id": 425,
+      "entity_type": "fraction",
+      "label": "SPD (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/425"
+     }
+    }
+   ]
+  }
+ }
+}

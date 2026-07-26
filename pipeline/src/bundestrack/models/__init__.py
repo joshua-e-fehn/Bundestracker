@@ -1,6 +1,84 @@
-"""Pydantic models for DIP records and the Convex documents they become.
+"""Pydantic models for the four sources' wire formats.
 
-The DIP shapes are the wire format and are validated on the way in; the Convex
-shapes are what the ingestion mutations accept and are validated on the way
-out. Keeping both here means a change in either contract has one place to land.
+One module per source, because they agree on almost nothing: DIP speaks JSON
+with two documented-but-wrong field types, Stammdaten and the plenary protocols
+speak two unrelated XML dialects, and the vote sheets are a spreadsheet with no
+identifier column at all.
+
+What they *do* share is the vocabulary the Convex schema uses at the far end —
+notably `votes.Vote`, whose five values keep `absent` and `abstain` distinct
+because the sources do (docs/api-research.md §4.1).
+
+`stammdaten.NameIndex` is the bridge. Two of the four sources carry no usable MP
+id, so joining them to the roster is name matching, and §7 makes that the
+central modelling constraint rather than an implementation detail.
 """
+
+from bundestrack.models.dip import (
+    Aktivitaet,
+    Beschlussfassung,
+    Drucksache,
+    DrucksacheText,
+    Fundstelle,
+    ListResponse,
+    Person,
+    PersonRole,
+    Plenarprotokoll,
+    PlenarprotokollText,
+    Ueberweisung,
+    Vorgang,
+    Vorgangsposition,
+)
+from bundestrack.models.speeches import (
+    BallotBlock,
+    BallotName,
+    Protocol,
+    Speaker,
+    Speech,
+)
+from bundestrack.models.stammdaten import (
+    MP,
+    CommitteeMembership,
+    Mandate,
+    MPName,
+    NameIndex,
+    NameMatch,
+    StammdatenDump,
+    fold_name,
+    parse_german_date,
+)
+from bundestrack.models.votes import Vote, VoteRecord, VoteSheet, VoteSheetLink
+
+__all__ = [
+    "MP",
+    "Aktivitaet",
+    "BallotBlock",
+    "BallotName",
+    "Beschlussfassung",
+    "CommitteeMembership",
+    "Drucksache",
+    "DrucksacheText",
+    "Fundstelle",
+    "ListResponse",
+    "MPName",
+    "Mandate",
+    "NameIndex",
+    "NameMatch",
+    "Person",
+    "PersonRole",
+    "Plenarprotokoll",
+    "PlenarprotokollText",
+    "Protocol",
+    "Speaker",
+    "Speech",
+    "StammdatenDump",
+    "Ueberweisung",
+    "Vorgang",
+    "Vorgangsposition",
+    "Vote",
+    "VoteRecord",
+    "VoteSheet",
+    "VoteSheetLink",
+    "fold_name",
+    "parse_german_date",
+]

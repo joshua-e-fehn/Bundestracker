@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dbtplenarprotokoll wahlperiode="21" sitzung-nr="90" sitzung-datum="10.07.2026" sitzung-start-uhrzeit="09:00" sitzung-ende-uhrzeit="17:08" sitzung-ort="Berlin" herausgeber="Deutscher Bundestag" issn="0722-7980" start-seitennr="11107" sitzung-naechste-datum="08.09.2026">
+ <sitzungsverlauf>
+  <tagesordnungspunkt top-id="Tagesordnungspunkt 22">
+   <rede id="ID219001100">
+    <p klasse="redner">
+     <a id="r11" />
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Frau Präsidentin! Liebe Kolleginnen und Kollegen! Wir schließen heute das Gesetz zur Stabilisierung der Beitragssätze in der gesetzlichen Krankenversicherung ab, und die Debatte hier zeigt, dass das Gesetz weitreichende Auswirkungen haben wird: auf die Menschen im Land, auf die Versicherten, auf die Unternehmen, auf die Leistungserbringer.</p>
+    <kommentar>(Beatrix von Storch [AfD]: Nur nicht auf die Bürgergeldempfänger! – Gegenruf der Abg. Dr. Alice Weidel [AfD]: Die nie eingezahlt haben!)</kommentar>
+    <p klasse="J">Deswegen ist es auch gut, dass wir das Gesetz gut vorbereitet haben, und deswegen muss über dieses Gesetz auch kontrovers diskutiert und darum gerungen werden. Das ist selbstverständlich; denn wir läuten mit diesem Gesetz nicht mehr und nicht weniger als einen Paradigmenwechsel im Gesundheitswesen ein.</p>
+    <kommentar>(Dr. Alice Weidel [AfD]: Allerdings!)</kommentar>
+    <p klasse="O">Und dieser Paradigmenwechsel und dieses Gesetz sind notwendig, liebe Kolleginnen und Kollegen.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD – Dr. Fabian Fahl [Die Linke]: Für Aufrüstung!)</kommentar>
+    <p klasse="J">Die Leitplanken für das Gesetz waren lange klar, und im Verlauf des Verfahrens haben wir die Maßnahmen intensiv diskutiert. Wir haben sie ergänzt, wir haben sie angepasst. Das gehört zu demokratischen Prozessen dazu. Und es ist auch richtig so, und deswegen haben wir auch genau bis zum Schluss um den richtigen Kompromiss gerungen. Jetzt steht das Ergebnis.</p>
+    <p klasse="J">Meine Damen und Herren, die Arbeit, die hinter so einem Vorhaben steckt, ist wirklich gewaltig, und ich möchte mich bei vielen Beteiligten an dieser Stelle für den Einsatz bedanken, beginnend mit den Expertinnen und Experten der FinanzKommission Gesundheit, die ich eingesetzt hatte und deren Vorschläge die Grundlage für das Gesetz bilden, aber auch bei den Kolleginnen und Kollegen der Koalitionsfraktionen, bei den Gesundheitspolitikern im Speziellen, aber auch bei allen Kolleginnen und Kollegen, die jetzt seit Wochen und Monaten auch im Austausch mit den Bürgern waren, im Austausch mit den Leistungserbringern waren und viele Gespräche geführt haben,</p>
+    <kommentar>(Zuruf der Abg. Nicole Gohlke [Die Linke])</kommentar>
+    <p klasse="O">aber auch bei den Mitarbeiterinnen und Mitarbeitern bei mir im Haus und in den Fraktionen für den unermüdlichen Einsatz.</p>
+    <kommentar>(Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN]: Sagen Sie auch noch was zum Inhalt?)</kommentar>
+    <p klasse="J">Ich möchte mich auch bei allen Akteuren im Gesundheitswesen bedanken, die sich mit konstruktiven Beiträgen in den Prozess eingebracht haben.</p>
+    <kommentar>(Beifall bei der CDU/CSU – Zurufe vom BÜNDNIS 90/DIE GRÜNEN und von der Linken – Ates Gürpinar [Die Linke] – Unglaublich! Fangen Sie jetzt nicht an, zu klatschen, Frau Warken!)</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Einen Moment, bitte. – Jede Fraktion hat hier die Chance, zu reden, und Sie kommen auch noch dran. Ich bitte, jetzt auch mal zuzuhören, auch wenn es nicht die eigene Meinung ist.</p>
+    <p klasse="J">Jetzt hat die Ministerin das Wort. Bitte.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="redner">
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Liebe Kolleginnen und Kollegen, das Ziel dieses Gesetzes ist klar: Wir stabilisieren die Beitragssätze in der gesetzlichen Krankenversicherung.</p>
+    <kommentar>(Dr. Alice Weidel [AfD]: Die Beitragssätze steigen!)</kommentar>
+    <p klasse="O">Die finanzielle Lage der gesetzlichen Krankenversicherung ist dramatisch, und sie erlaubt auch keinen Aufschub mehr. Wir haben daher die zur Verfügung stehende Zeit für die Beratungen intensiv genutzt.</p>
+    <p klasse="J">Es ist von entscheidender Bedeutung, dass wir dieses Gesetz heute abschließen; denn schon im Sommer werden die ersten Weichen für künftige Beitragssätze mit der Festlegung der Grundlohnrate und danach durch den Schätzerkreis gestellt, und bis dahin müssen die Maßnahmen klar sein.</p>
+    <p klasse="J">Das kann uns gelingen, meine Damen und Herren; denn auch die Gespräche mit den Ländern in den letzten Tagen und Wochen habe ich als sehr konstruktiv empfunden, und auch den Ländern ist bewusst, was droht, wenn es nicht gelingt, die Beitragssätze zu stabilisieren. Dann müssten wir schon im kommenden Jahr mit einer Beitragssatzsteigerung um 1 Prozentpunkt rechnen, knapp 20 Milliarden Euro, paritätisch verteilt auf Arbeitnehmer und Arbeitgeber. Und das, meine Damen und Herren, kann nicht sein, was wir wollen.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="J">Lassen Sie mich auf die Ausgangssituation und die Inhalte des Gesetzes kurz eingehen. Das ist auch wichtig, um die Tragweite zu verstehen.</p>
+    <p klasse="J">Nach den neuesten Zahlen steigen die Ausgaben der GKV rund doppelt so stark wie die Einnahmen. Dadurch wächst das Defizit um weitere 3,5 Milliarden Euro für 2027 an. Mit dem vorliegenden Entwurf haben wir auch diese neue Lücke nun geschlossen,</p>
+    <kommentar>(Zuruf des Abg. Johannes Wagner [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+    <p klasse="O">und das ist ein starkes, unübersehbares Signal, dass nun ein deutlich größerer Anteil vom Bund kommt.</p>
+    <kommentar>(Zuruf der Abg. Dr. Kirsten Kappert-Gonther [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+    <p klasse="O">Ab 2027 wird der Beitrag des Bundes für die Gesundheitsversorgung der Grundsicherungsempfänger noch einmal deutlich angehoben, und die vorgesehene Absenkung des Bundeszuschusses wird sukzessive reduziert. Auch das ist ein wichtiges Zeichen seitens des Bundes.</p>
+    <kommentar>(Beifall bei der CDU/CSU – Zuruf des Abg. Johannes Wagner [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+    <p klasse="J">Liebe Kolleginnen und Kollegen, die beiden Leitlinien des Gesetzentwurfes wurden gewahrt: Effizienz und Evidenz. Oder einfacher gesagt: Wir wollen künftig mit dem Geld auskommen, das wir haben, und nur noch das bezahlen, was nutzt.</p>
+    <p klasse="J">Zudem gilt weiterhin der Grundsatz: Alle Beteiligten im Gesundheitswesen leisten einen Beitrag; denn alle profitieren auch langfristig von einer nachhaltigen Finanzierung. Es bleibt ein ausgewogenes Paket.</p>
+    <p klasse="J">Ich möchte drei Beispiele nennen, wo wir Anpassungen vorgenommen haben: Bei der Familienversicherung berücksichtigen wir jetzt die individuelle Familiensituation besser, indem wir die Altersgrenze der zu berücksichtigenden Kinder von sieben auf zwölf Jahre anheben.</p>
+    <kommentar>(Dr. Alice Weidel [AfD]: Und die Großeltern in Anatolien?)</kommentar>
+    <p klasse="O">Für die Pharmaindustrie haben wir eine Lösung gefunden, die den Unternehmen mehr Planungssicherheit gibt. Aber gleichzeitig bleibt es bei einem angemessenen Beitrag der pharmazeutischen Unternehmen zur Konsolidierung der GKV-Finanzen.</p>
+    <kommentar>(Zuruf des Abg. Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+    <p klasse="O">Und die Krankenhäuser erhalten mehr Flexibilität und Beinfreiheit.</p>
+    <p klasse="J">Wir sehen wichtige Maßnahmen zur Entbürokratisierung vor. Den Punkt haben wir am Ende noch sehr intensiv mit den Ländern besprochen. Wir haben nicht nur wichtige Regelungen im Gesetz ergänzt, sondern wir geben auch die Zusage in Richtung der Länder,</p>
+    <kommentar>(Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN]: Das wird euch noch einholen!)</kommentar>
+    <p klasse="O">dass wir weitere Maßnahmen zum Bürokratieabbau im Gesundheitswesen voranbringen werden.</p>
+    <kommentar>(Beifall bei der CDU/CSU)</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Frau Bundesministerin, lassen Sie eine Zwischenfrage zu?</p>
+    <p klasse="redner">
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Gerne.</p>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Nur ein Hinweis meinerseits. Von denjenigen, die nachher noch reden, lassen wir jetzt keine Zwischenfragen zu. Diejenigen, die nicht mehr als Redner auf der Liste sind, haben die Chance. – Bitte sehr.</p>
+    <p klasse="redner">
+     <redner id="11005527">
+      <name>
+       <vorname>Stella</vorname>
+       <nachname>Merendino</nachname>
+       <fraktion>Die Linke</fraktion>
+      </name>
+     </redner>Stella Merendino (Die Linke):</p>
+    <p klasse="J_1">Frau Ministerin, draußen vor der Tür sind ungefähr 600 Pflegekräfte, die gegen dieses Spargesetz demonstrieren. Sie sagen: Es werden alle beteiligt. – Aber die Pharmaindustrie und die Reichen dieses Landes werden nicht beteiligt. Wie kann das sein? Und was würden Sie jetzt gerne den Streikenden dort draußen mitteilen?</p>
+    <kommentar>(Beifall bei der Linken sowie bei Abgeordneten des BÜNDNISSES 90/DIE GRÜNEN)</kommentar>
+    <p klasse="redner">
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Frau Kollegin, ich bin auch mit den Beschäftigten in der Pflege in den letzten Tagen und Wochen im Austausch gewesen. Natürlich betreffen die Maßnahmen, die wir jetzt vornehmen, auch den Bereich der Pflege.</p>
+    <kommentar>(Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN]: Ja, Personalstandards runter!)</kommentar>
+    <p klasse="J">Wir haben in den vergangenen Jahren aus politischer Überzeugung dafür gesorgt, dass die Löhne in der Pflege in den letzten zehn Jahren um über 40 Prozent gestiegen sind.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD – Zurufe vom BÜNDNIS 90/DIE GRÜNEN und von der Linken)</kommentar>
+    <p klasse="O">Wir haben das getan, indem wir die Tarifsteigerungen in voller Höhe refinanziert haben. Jetzt gibt es mit diesem Gesetz eine Änderung, mit der wir das nicht mehr tun, weil es schlicht so nicht mehr finanzierbar ist im System. Dennoch können wir davon ausgehen – das haben die Kollegen auch dargelegt –, dass es zu Lohnsteigerungen führen wird. Wir gehen davon aus, dass im nächsten Jahr Abschlüsse mit Lohnsteigerungen von etwa 3,5 Prozent möglich sind.</p>
+    <p klasse="J">Also, zu sagen, es würden Löhne gekürzt oder es könnten in Zukunft keine Vergütungssteigerungen mehr kommen, ist schlicht falsch.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="O">Sie können nur nicht mehr in dem Maße wie bislang refinanziert werden. Uns war es wichtig, an der Stelle noch mal nachzubessern. Das haben wir auch getan.</p>
+    <p klasse="J">In diesem Sinne meine ich: Wir haben ein ausgewogenes Paket, in dem Menschen, die höhere Einkommen haben, durch eine Anhebung der Beitragsbemessungsgrenze natürlich auch stärker beteiligt werden und in dem natürlich auch die Pharmaindustrie einen angemessenen Beitrag leistet. Ich glaube, das kann man an den Zahlen auch sehr gut darstellen.</p>
+    <p klasse="J">Es ist ein ausgewogenes Paket. Und ich denke, man kann auch nicht knapp 20 Milliarden Euro sparen und den Menschen sagen, keiner wird davon was spüren. Das gehört, denke ich, zur Ehrlichkeit auch dazu.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD – Zuruf des Abg. Ates Gürpinar [Die Linke])</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Frau Bundesministerin, lassen Sie eine weitere Zwischenfrage zu, aus den Reihen der Grünen? – Bitte.</p>
+    <p klasse="redner">
+     <redner id="11004773">
+      <name>
+       <titel>Dr.</titel>
+       <vorname>Kirsten</vorname>
+       <nachname>Kappert-Gonther</nachname>
+       <fraktion>BÜNDNIS 90/DIE GRÜNEN</fraktion>
+      </name>
+     </redner>Dr. Kirsten Kappert-Gonther (BÜNDNIS 90/DIE GRÜNEN):</p>
+    <p klasse="J_1">Vielen Dank, Frau Ministerin, dass Sie die Zwischenfrage zulassen. – Ich möchte Sie fragen: Ist Ihnen bewusst, dass die Angriffe und Einschnitte im Bereich der Psychotherapie, die Sie mit diesem Gesetz vornehmen werden, dazu führen werden, dass vermutlich mindestens ein Drittel der psychotherapeutischen Kapazitäten in diesem Land nicht mehr zur Verfügung stehen werden?</p>
+    <p klasse="J">Ist Ihnen bewusst, dass das längere Wartezeiten, mehr individuelles Leid, mehr Chronifizierung, mehr Arbeitsunfähigkeit und mehr Frühverrentung mit sich bringen wird? Und ist Ihnen bewusst, dass der Anteil der Kosten hierfür vermutlich exponentiell steigen wird? Es gibt nämlich sehr gute Berechnungen, dass jeder Euro, den Sie in die Psychotherapie investieren, am Ende volkswirtschaftlich und im Gesundheitssystem 4 Euro einspart.</p>
+    <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der Linken)</kommentar>
+    <p klasse="J">Ich möchte Sie fragen, wie Sie unter diesen Vorzeichen die massiven Angriffe auf die Psychotherapie und die seelische Gesundheit der Bevölkerung rechtfertigen.</p>
+    <kommentar>(Beifall beim BÜNDNIS 90/DIE GRÜNEN sowie bei Abgeordneten der Linken)</kommentar>
+    <p klasse="redner">
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Wir nehmen bei den Psychotherapeutinnen und Psychotherapeuten dieselben Maßnahmen vor, die wir auch in den anderen Bereichen vornehmen.</p>
+    <kommentar>(Ates Gürpinar [Die Linke]: Da ist es auch falsch, Frau Warken! – Zuruf des Abg. Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN])</kommentar>
+    <p klasse="J">Ich weiß: Vielen Kolleginnen und Kollegen ist es ein Anliegen, dort noch einmal nachzubessern; die Koalitionsfraktionen haben sich dazu verständigt. Und es ist auch richtig und wichtig, dass besonders vulnerable Bereiche noch mal besser in den Blick genommen werden. Wir müssen aber sehen, Frau Kollegin – auch das wollen wir in der Koalition angehen – –</p>
+    <kommentar>(Zurufe vom BÜNDNIS 90/DIE GRÜNEN und von der Linken)</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Einen Moment, bitte. Entschuldigung. – Es ist, glaube ich, nicht ganz so schwer, zu verstehen: Wenn man eine Frage stellt und die Ministerin die Frage beantwortet, dann hört man auch zu, auch in der Fraktion, die die Frage gestellt hat.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="J">Bitte.</p>
+    <p klasse="redner">
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Vielen Dank, Frau Präsidentin. – Wir haben uns in der Koalition darauf verständigt, dass wir uns das Problem einmal grundsätzlicher anschauen müssen. Denn die Maßnahmen, die Vergütungsanreize, die es in den letzten Jahren gegeben hat, haben eben nicht dazu geführt, dass die Situation besser ist: dass man schneller einen Termin bekommt, dass man im Bereich der Psychotherapie schneller versorgt ist.</p>
+    <kommentar>(Zuruf der Abg. Heidi Reichinnek [Die Linke])</kommentar>
+    <p klasse="O">Deswegen ist es, glaube ich, eine grundsätzliche Frage, wie wir den Zugang verbessern, wie wir besser steuern und wie wir die Menschen schneller in die Versorgung und zu einem Termin bringen.</p>
+    <p klasse="J">Das ist nichts, was wir mit dem Gesetz jetzt angehen;</p>
+    <kommentar>(Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Im Gegenteil!)</kommentar>
+    <p klasse="O">das ist ein Spargesetz. Das Thema Versorgung muss an anderer Stelle gelöst werden. Da gibt es ein Problem, und da wird es Lösungen geben.</p>
+    <p klasse="J">Wir sehen aber eben auch, dass das, was in der Vergangenheit an Lösungen präsentiert worden ist, nicht dazu geführt hat, dass die Versorgung besser ist. Deswegen ändern wir an der Stelle die Maßnahmen, müssen aber gemeinsam einem Weg finden, um tatsächlich zu einem schnelleren und besseren Zugang zu kommen.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD – Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Ach, wie denn? – Dr. Kirsten Kappert-Gonther [BÜNDNIS 90/DIE GRÜNEN]: Sie verschlechtern die Situation!)</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Frau Bundesministerin, eine letzte Frage, die ich aufrufe, aus der AfD-Fraktion. Würden Sie sie zulassen? – Bitte sehr.</p>
+    <kommentar>(Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Also, wir verschlechtern erst mal die Lage, und dann überlegen wir uns was!)</kommentar>
+    <p klasse="redner">
+     <redner id="11005018">
+      <name>
+       <titel>Dr.</titel>
+       <vorname>Christina</vorname>
+       <nachname>Baum</nachname>
+       <fraktion>AfD</fraktion>
+      </name>
+     </redner>Dr. Christina Baum (AfD):</p>
+    <p klasse="J_1">Frau Ministerin, danke für das Zulassen der Frage. – Bisher war es so, dass die Krankenkassen verpflichtet waren, ihre Mitglieder zu informieren, wenn es zu Beitragserhöhungen kam. Jetzt ist das nicht mehr der Fall. Was ist dafür der Grund? Wollen Sie, dass sich die Mitglieder irgendwie überraschen lassen? Müssen sich die Mitglieder dann überraschen lassen? Können Sie das bitte erklären?</p>
+    <p klasse="redner">
+     <redner id="11004437">
+      <name>
+       <vorname>Nina</vorname>
+       <nachname>Warken</nachname>
+       <rolle>
+        <rolle_lang>Bundesministerin für Gesundheit</rolle_lang>
+        <rolle_kurz>Bundeministerin BMG</rolle_kurz>
+       </rolle>
+      </name>
+     </redner>Nina Warken, Bundesministerin für Gesundheit:</p>
+    <p klasse="J_1">Dies ist eine Änderung, die im Rahmen des parlamentarischen Verfahrens auf Wunsch der Fraktionen aufgenommen worden ist.</p>
+    <kommentar>(Dr. Janosch Dahmen [BÜNDNIS 90/DIE GRÜNEN]: Aha! – Britta Haßelmann [BÜNDNIS 90/DIE GRÜNEN]: Wieso eigentlich?)</kommentar>
+    <p klasse="O">Der Wunsch ist aus Vereinfachungsgründen und Gründen des Bürokratieabbaus entstanden. Es muss natürlich gewährleistet sein, dass die Versicherten auch in der Lage sind, ihr Sonderkündigungsrecht, das dann entsteht, wahrzunehmen. Das muss beides sichergestellt werden, und darum werden wir uns auch kümmern.</p>
+    <kommentar>(Beifall bei Abgeordneten der CDU/CSU)</kommentar>
+    <p klasse="J">Sehr geehrte Kolleginnen und Kollegen, mit dem Beitragssatzstabilisierungsgesetz bringen wir Einnahmen und Ausgaben der gesetzlichen Krankenkassen endlich wieder in ein Gleichgewicht.</p>
+    <p klasse="J">Damit entlasten wir Bürger, damit entlasten wir Arbeitgeber; aber damit schaffen wir eben auch die Grundlage für die bereits begonnenen Strukturreformen. Wir schaffen die Voraussetzung für eine hochwertige, verlässliche und bezahlbare Gesundheitsversorgung bei uns im Land – jetzt und in Zukunft.</p>
+    <p klasse="J">Wenn das Gesetz heute den Bundesrat passiert, dann senden wir auch eine entscheidende Botschaft, liebe Kolleginnen und Kollegen: Die Politik der Mitte ist weiterhin entscheidungs- und handlungsfähig. Und das ist von unschätzbarem Wert, auch für unser Land und unsere Demokratie. Daher bitte ich um Ihre Zustimmung.</p>
+    <p klasse="J">Herzlichen Dank.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Für die Fraktion der AfD-Fraktion hat Frau Abgeordnete Claudia Weiss das Wort.</p>
+    <kommentar>(Beifall bei der AfD)</kommentar>
+   </rede>
+   <rede id="ID219000100">
+    <p klasse="redner">
+     <a id="r1" />
+     <redner id="11004011">
+      <name>
+       <vorname>Steffen</vorname>
+       <nachname>Bilger</nachname>
+       <fraktion>CDU/CSU</fraktion>
+      </name>
+     </redner>Steffen Bilger (CDU/CSU):</p>
+    <p klasse="J_1">Frau Präsidentin! Liebe Kolleginnen und Kollegen! Die Koalitionsfraktionen beantragen, die zweite und dritte Lesung des Gebäudemodernisierungsgesetzes auf die heutige Tagesordnung zu setzen. Mit diesem Gesetz bewahren wir Bürgerinnen und Bürger, Wirtschaft und Verwaltung vor Kosten in Milliardenhöhe, die ansonsten mit den derzeit geltenden Regelungen auf sie zukommen würden. Stattdessen schaffen wir einfache, flexible und technologieoffene Regelungen und geben den Menschen die Wahlfreiheit beim Heizungstausch zurück.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="O">Mit diesem pragmatischen Ansatz stellen wir zudem die Einhaltung der Klimaziele sicher,</p>
+    <kommentar>(Dr. Alaa Alhamwi [BÜNDNIS 90/DIE GRÜNEN]: Niemals!)</kommentar>
+    <p klasse="O">und wir setzen mit dem Gesetzentwurf die Vorgaben der EU-Gebäuderichtlinie um, deren Umsetzungsfrist bereits Ende Mai abgelaufen ist. Damit ist nachvollziehbar, weshalb wir wollen, dass die Regelungen so schnell wie möglich in Kraft treten.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="J">Warum nun diese Geschäftsordnungsdebatte heute Morgen? Die Linken sind vor das Bundesverfassungsgericht gezogen, um die Aufsetzung dieses Tagesordnungspunkts zu verhindern.</p>
+    <kommentar>(Jens Spahn [CDU/CSU]: Schlechte Verlierer!)</kommentar>
+    <p klasse="O">In der Koalition haben wir vereinbart, die Entscheidung in Karlsruhe aus Respekt vor dem Bundesverfassungsgericht abzuwarten, bevor wir die Debatte aufsetzen. So hatte ich es auch am Dienstag gegenüber den Fraktionen angekündigt. Das Bundesverfassungsgericht hat gestern entschieden und die Organklage abgewiesen, so wie wir es erwartet hatten. Erst vor zwei Tagen hatten wir eine Geschäftsordnungsdebatte über die Aufsetzung der GKV-Reform auf die heutige Tagesordnung. Zwischendurch gab es mehrere Eilanträge vor dem Bundesverfassungsgericht, um Entscheidungen hier im Deutschen Bundestag zu verhindern. Und das alles ist Ihr gutes Recht. Aber lassen Sie uns die Entscheidung doch vor allem in der Sache treffen, anstatt zu versuchen, die Debatte mit Geschäftsordnungsanträgen und offensichtlich wenig aussichtsreichen Klagen zu verhindern, meine Damen und Herren.</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <p klasse="J">Beim Gebäudemodernisierungsgesetz gab es genauso wie bei der GKV-Reform ein geordnetes und transparentes parlamentarisches Verfahren. Der Gesetzentwurf der Bundesregierung wurde am 13. Mai beschlossen. Am 11. Juni fand hier im Deutschen Bundestag die erste Lesung statt. Im federführenden Ausschuss für Wirtschaft und Energie wurde die beabsichtigte Neuregelung ausführlich beraten. Auch der Änderungsantrag der Koalitionsfraktionen wurde rechtzeitig am 4. Juli und damit vier Tage vor der abschließenden Ausschussberatung im Ausschuss verteilt. Also: Jeder, der sich in die Beratungen einbringen wollte, konnte das in diesem geordneten Verfahren tun.</p>
+    <kommentar>(Zuruf von der Linken: Aber Antworten gab es keine!)</kommentar>
+    <p klasse="J">Sehr geehrte Kolleginnen und Kollegen der Oppositionsfraktionen, ich fordere Sie deshalb auf: Stimmen Sie unserem Aufsetzungsantrag zu, lassen Sie uns hier im Plenum die Auseinandersetzung in der Sache suchen, anstatt sich weiter hinter verfahrensrechtlichen Manövern zu verstecken!</p>
+    <kommentar>(Beifall bei der CDU/CSU sowie bei Abgeordneten der SPD)</kommentar>
+    <name>Präsidentin Julia Klöckner:</name>
+    <p klasse="J_1">Für die AfD-Fraktion hat Herr Abgeordneter Marc Bernhard das Wort. Bitte.</p>
+    <kommentar>(Beifall bei der AfD)</kommentar>
+   </rede>
+  </tagesordnungspunkt>
+  <tagesordnungspunkt top-id="Zusatzpunkt 18">
+   <p klasse="AL_Vorspann_1">Endgültiges Ergebnis</p>
+   <p klasse="AL_Vorspann_2">Abgegebene Stimmen:	606;</p>
+   <p klasse="AL_Vorspann_2">davon</p>
+   <p klasse="AL_Vorspann_3">ja:	318</p>
+   <p klasse="AL_Vorspann_3">nein:	284</p>
+   <p klasse="AL_Vorspann_3">enthalten:	4</p>
+   <p klasse="AL_Ja-Nein-Enth">Ja</p>
+   <p klasse="AL_Partei">CDU/CSU</p>
+   <p klasse="AL_Namen">Knut Abraham</p>
+   <p klasse="AL_Namen">Anna Aeikens</p>
+   <p klasse="AL_Partei">SPD</p>
+   <p klasse="AL_Namen">Sanae Abdi</p>
+   <p klasse="AL_Namen">Reem Alabali Radovan</p>
+   <p klasse="AL_Ja-Nein-Enth">Nein</p>
+   <p klasse="AL_Partei">CDU/CSU</p>
+   <p klasse="AL_Namen">Kai Whittaker</p>
+   <p klasse="AL_Partei">AfD</p>
+   <p klasse="AL_Namen">Alexander Arpaschi</p>
+   <p klasse="AL_Namen">Carolin Bachmann</p>
+   <p klasse="AL_Partei">SPD</p>
+   <p klasse="AL_Namen">Jan Dieren</p>
+   <p klasse="AL_Namen">Sabine Dittmar</p>
+   <p klasse="AL_Partei">BÜNDNIS 90/ DIE GRÜNEN</p>
+   <p klasse="AL_Namen">Dr. Alaa Alhamwi</p>
+   <p klasse="AL_Namen">Tarek Al-Wazir</p>
+   <p klasse="AL_Partei">Die Linke</p>
+   <p klasse="AL_Namen">Doris Achelwilm</p>
+   <p klasse="AL_Namen">Jan van Aken</p>
+   <p klasse="AL_Partei">Fraktionslos</p>
+   <p klasse="AL_Namen">Jan Wenzel Schmidt</p>
+   <p klasse="AL_Namen">Stefan Seidler</p>
+   <p klasse="AL_Ja-Nein-Enth">Enthalten</p>
+   <p klasse="AL_Partei">SPD</p>
+   <p klasse="AL_Namen">Adis Ahmetovic</p>
+   <p klasse="AL_Namen">Rasha Nasr</p>
+  </tagesordnungspunkt>
+ </sitzungsverlauf>
+ <anlagen>
+  <anlage>
+   <anlagen-text>
+    <rede id="ID219009600">
+     <p klasse="redner">
+      <a id="ANLr1" />
+      <redner id="11004261">
+       <name>
+        <vorname>Sabine</vorname>
+        <nachname>Dittmar</nachname>
+        <fraktion>SPD</fraktion>
+       </name>
+      </redner>Sabine Dittmar (SPD):</p>
+     <p klasse="J">Ich werde dem Gesetzentwurf zur Beitragsstabilisierung in der gesetzlichen Krankenversicherung heute nicht zustimmen.</p>
+     <p klasse="J">Diese Entscheidung ist mir nicht leichtgefallen. Ich weiß um die schwierige finanzielle Lage der gesetzlichen Krankenversicherung und erkenne ausdrücklich an, dass im parlamentarischen Verfahren wesentliche Verbesserungen erreicht werden konnten. Es ist gelungen, die Belastungen für die Versicherten zu begrenzen und den Bund stärker an der Finanzierung zu beteiligen. Dafür gilt allen Beteiligten mein Dank.</p>
+     <p klasse="J">Dennoch überwiegen für mich die inhaltlichen Bedenken. Als Hausärztin habe ich mehr als 15 Jahre an der medizinischen Basis gearbeitet und betrachte mögliche negative Auswirkungen auf die Gesundheitsversorgung mit besonderer Sorge.</p>
+     <p klasse="J">Mit Blick auf die psychotherapeutische Versorgung habe ich große Bedenken. Psychische Erkrankungen gehören zu den größten gesundheitspolitischen Herausforderungen unserer Zeit. Bereits heute warten viele Betroffene über Monate auf einen Therapieplatz. Maßnahmen, die die ambulante psychotherapeutische Versorgung zusätzlich unter Druck setzen könnten, halte ich deshalb für den falschen Weg.</p>
+     <p klasse="J">Ebenso kritisch bewerte ich die Eingriffe in die hausarztzentrierte Versorgung. Wir sind uns als Koalition einig, dass wir mit der Einführung einer Primärarztversorgung die Patientensteuerung verbessern wollen. Umso weniger überzeugt mich, dass gleichzeitig Strukturen geschwächt werden, die genau dieses Ziel bereits heute unterstützen. Die hausarztzentrierte Versorgung ist ein bewährtes Instrument für eine koordinierte, qualitativ hochwertige und wirtschaftliche Versorgung. Gerade mit Blick auf die bevorstehende Einführung der Primärarztversorgung sollte die hausarztzentrierte Versorgung gestärkt und nicht geschwächt werden.</p>
+     <p klasse="J">Als Sozialdemokratin ist mir eine solidarisch finanzierte und zugleich leistungsfähige gesetzliche Krankenversicherung ein zentrales Anliegen. Notwendige Maßnahmen zur finanziellen Stabilisierung dürfen aus meiner Sicht nicht die Versorgungsbereiche gefährden, die für eine gute Versorgung von zentraler Bedeutung sind.</p>
+     <p klasse="J">Aus diesen Gründen kann ich dem Gesetzentwurf trotz der im parlamentarischen Verfahren erreichten Verbesserungen nicht zustimmen.</p>
+    </rede>
+   </anlagen-text>
+  </anlage>
+ </anlagen>
+</dbtplenarprotokoll>
