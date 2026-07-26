@@ -48,6 +48,12 @@ export const PUBLIC_PATHS = [
   // `/mps/<internalId>`, and a link that redirects to a 404 is worse than one
   // that reaches a page not yet written.
   "/mps",
+  // The fourth route to be added without this entry — see the ⚠ above. The
+  // voting explorer (PR #13) shipped with `app/votes/page.tsx` and no line
+  // here, so `lib/auth-routes.test.ts` has been failing on main since: the
+  // filesystem check that exists precisely to catch this caught it, and the
+  // fix is the one line it was written to demand.
+  "/votes",
 ]
 
 export function isPublicPath(pathname: string) {
