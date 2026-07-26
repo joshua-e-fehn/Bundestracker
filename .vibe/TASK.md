@@ -1,51 +1,61 @@
-# Task — scaffold-monorepo
+# Task — convex-schema
 
-Scaffold the Bundestrack monorepo. Create the following structure:
+Design and implement the Convex schema for Bundestracker. Read docs/api-research.md first — it contains the complete API research with all entity shapes, ID spaces, and the critical join problem.
 
-1. Pixi root (pixi.toml) with these tasks:
-   - dev: cd webapp && bun run dev
-   - build: cd webapp && bun run build
-   - pipeline: cd pipeline && python -m bundestrack.cli
-   - lint: runs Ruff on pipeline/ and Biome on webapp/
-   - format: runs Ruff format on pipeline/ and Biome format on webapp/
-   - typecheck: cd webapp && bun run typecheck
-   - test: runs pytest on pipeline/ and any JS tests on webapp/
+Your task: implement the full Convex schema in webapp/convex/schema.ts based on the research findings.
 
-2. Python pipeline directory (pipeline/):
-   - pyproject.toml with Ruff config (linting + formatting), httpx, pydantic dependencies
-   - src/bundestrack/__init__.py
-   - src/bundestrack/cli.py (placeholder with click/argparse CLI structure)
-   - src/bundestrack/config.py (env var loading: CONVEX_URL, BUNDESTAG_API_KEY, BUNDESTAG_API_BASE_URL)
-   - src/bundestrack/api/ (empty __init__.py — will be filled by pipeline agents)
-   - src/bundestrack/models/ (empty __init__.py)
-   - src/bundestrack/pipeline/ (empty __init__.py)
-   - src/tests/__init__.py
-   - README.md
+Key architectural findings from the research:
+1. THREE incompatible MP ID spaces: DIP person ID (short numeric), Stammdaten ID (8-digit), and vote sheets (no ID at all — name matching required). Mint an INTERNAL Bundestrack MP id and store all external ids against it.
+2. Vote data comes from XLSX sheets with one-hot encoding (ja/nein/Enthaltung/ungültig/nichtabgegeben). No MP ID column — names only.
+3. Speech data comes from plenary protocol XML. One <rede> can contain multiple speakers (Zwischenfragen).
+4. Seating data does NOT exist in machine-readable form — generate synthetically from Fraktion sizes.
+5. Committee membership in Stammdaten is current-WP only.
+6. aktivitaetsart is an open string, not an enum.
+7. The DIP API has 16 endpoints (8 collections + 8 by-id): /vorgang, /vorgangsposition, /drucksache, /drucksache-text, /plenarprotokoll, /plenarprotokoll-text, /aktivitaet, /person.
 
-3. Next.js webapp (webapp/):
-   - Initialize Next.js 16 with Bun (bun create next-app with App Router, TypeScript, Tailwind CSS, Turbopack)
-   - Install: convex, @convex-dev/better-auth, better-auth, shadcn (radix-ui), lucide-react, tailwind-merge, clsx, class-variance-authority, next-themes, zod, @tanstack/react-query, framer-motion, tw-animate-css
-   - Initialize shadcn/ui (components.json)
-   - Initialize Convex (bunx convex init) in webapp/convex/
-   - Initialize Biome (biome.json) for TS linting + formatting
-   - Setup Better Auth:
-     - webapp/convex/betterAuth/ (auth.ts, schema.ts, adapter.ts, convex.config.ts)
-     - webapp/convex/auth.ts (getCurrentUser query)
-     - webapp/convex/auth.config.ts
-     - webapp/convex/http.ts (HTTP endpoint for auth + pipeline ingestion)
-     - webapp/lib/auth-routes.ts (all paths public — PUBLIC_PATHS = ['/', '/sign-in', '/sign-up', '/api'])
-     - webapp/proxy.ts (pass-through middleware, no auth gating)
-     - webapp/providers/auth-provider.tsx (Better Auth client)
-     - webapp/components/providers/auth-guard.tsx (client-side, optional auth)
-   - Social providers: Google + GitHub OAuth (multi-user, NO single-user lockdown)
-   - Environment variables template (.env.example): CONVEX_DEPLOYMENT, BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SITE_URL
-   - vercel.json with build script
-   - scripts/convex-deploy-if-key.sh (same as cambridge tracker pattern)
+Tables to implement in schema.ts:
 
-4. Copy the exact Better Auth pattern from the Cambridge tracker at /opt/data/workspace/cambridge/webapp/convex/betterAuth/ and /opt/data/workspace/cambridge/webapp/convex/auth.ts — but REMOVE the single-user lockdown (no databaseHooks.user.create.before check). Make it multi-user. Add GitHub alongside Google in socialProviders.
+1. mps — Master MP data. Fields: internalId (string, the Bundestrack ID), stammdatenId (string, 8-digit), dipPersonId (string, short numeric, nullable), name (string), vorname (string), nachname (string), ortsZusatz (string, nullable), praefix (string, nullable), party (string), fraktion (string), constituency (string, nullable), wahlperiode (number), bio (string, nullable), photoUrl (string, nullable), birthDate (string, nullable), education (string, nullable), profession (string, nullable), electionMethod (string, nullable), datesInOffice (object with start/end, nullable), createdAt (number), updatedAt (number). Index by stammdatenId, dipPersonId, fraktion, wahlperiode.
 
-5. Setup i18n foundation: lib/i18n.ts with DE as default locale, EN as secondary. Create a simple translation function (can use next-intl or a lightweight custom solution).
+2. voteSheets — Named vote metadata. Fields: wahlperiode (number), sitzungnr (number), abstimmnr (number), title (string), date (string), result (string), yesCount (number), noCount (number), abstainCount (number), invalidCount (number), absentCount (number), totalEligible (number), sourceUrl (string, nullable), createdAt (number). Index by (wahlperiode, sitzungnr, abstimmnr), date.
 
-6. Commit everything and push to main branch.
+3. voteRecords — Per-MP vote records. Fields: mpInternalId (string), voteSheetId (Id), vote (union: yes/no/abstain/invalid/absent), partyAtVote (string, nullable), remark (string, nullable), createdAt (number). Index by voteSheetId, mpInternalId.
 
-IMPORTANT: Use bun exclusively (never npm/pnpm/yarn). Use bun.lock (Bun 1.2+). This is a monorepo — the root has pixi.toml, the webapp has package.json, the pipeline has pyproject.toml.
+4. motions — Motions and bills. Fields: dipVorgangId (string, nullable), dipDrucksacheId (string, nullable), drucksacheNr (string, nullable), title (string), type (string, nullable), date (string), wahlperiode (number), vorgangstyp (string, nullable), createdAt (number). Index by wahlperiode, date, dipVorgangId.
+
+5. motionSponsors — MP-to-motion relationship. Fields: motionId (Id), mpInternalId (string), role (string, nullable), createdAt (number). Index by motionId, mpInternalId.
+
+6. speeches — Plenary speeches. Fields: mpInternalId (string), protocolId (string, nullable), protocolDate (string), wahlperiode (number), sitzungnr (number), speechIndex (number, nullable), wordCount (number, nullable), topic (string, nullable), createdAt (number). Index by mpInternalId, protocolDate, wahlperiode.
+
+7. questions — Written questions. Fields: mpInternalId (string), subject (string), date (string), wahlperiode (number), type (union: major/minor), createdAt (number). Index by mpInternalId, date, wahlperiode.
+
+8. committeeMemberships — MP-committee mapping. Fields: mpInternalId (string), committeeName (string), role (string, nullable), wahlperiode (number), startDate (string, nullable), endDate (string, nullable), createdAt (number). Index by mpInternalId, committeeName, wahlperiode.
+
+9. activities — Parliamentary activities from DIP /aktivitaet endpoint. Fields: dipAktivitaetId (string), mpInternalId (string), aktivitaetsart (string, open string NOT enum), vorgangId (string, nullable), date (string), wahlperiode (number), description (string, nullable), createdAt (number). Index by mpInternalId, date, wahlperiode, dipAktivitaetId.
+
+10. activityEvents — Unified activity feed. Fields: mpInternalId (string), eventType (union: motion/speech/vote/question/bill/committee/activity), date (string), title (string), description (string, nullable), referenceId (string, nullable), referenceType (string, nullable), wahlperiode (number), createdAt (number). Index by mpInternalId, date, eventType, wahlperiode.
+
+11. activityScores — Computed per-MP scores. Fields: mpInternalId (string), wahlperiode (number), month (string, format YYYY-MM), motionCount (number), speechCount (number), questionCount (number), reportCount (number), voteParticipationRate (number), committeeCount (number), billSponsorshipCount (number), totalScore (number), scoreBreakdown (object with per-component scores and weights), createdAt (number), updatedAt (number). Index by mpInternalId, wahlperiode, month.
+
+12. seatingAssignments — Synthetic seat-to-MP mapping. Fields: mpInternalId (string), wahlperiode (number), seatLabel (string), faction (string), row (number, nullable), column (number, nullable), createdAt (number). Index by mpInternalId, wahlperiode, faction.
+
+13. userPreferences — Saved user preferences (for logged-in users). Fields: userId (string, Better Auth user ID), customWeights (object, nullable), followedMpIds (array of strings), preferredLocale (string, nullable), createdAt (number), updatedAt (number). Index by userId.
+
+Also implement the necessary Convex mutations in separate files:
+- webapp/convex/mps.ts — upsertMP, upsertMPs (batch), getMP, getMPs (list with filters)
+- webapp/convex/votes.ts — upsertVoteSheet, upsertVoteRecords (batch), getVoteSheet, getVoteSheets
+- webapp/convex/motions.ts — upsertMotion, upsertMotionSponsors, getMotions, getMotionsByMP
+- webapp/convex/speeches.ts — upsertSpeech, upsertSpeeches (batch), getSpeechesByMP
+- webapp/convex/questions.ts — upsertQuestion, upsertQuestions, getQuestionsByMP
+- webapp/convex/committees.ts — upsertCommitteeMembership, getCommitteesByMP
+- webapp/convex/activities.ts — upsertActivity, upsertActivities, getActivitiesByMP
+- webapp/convex/activityEvents.ts — addActivityEvent, getActivityFeed
+- webapp/convex/activityScores.ts — computeScore, upsertScore, getScores, getRankings
+- webapp/convex/seating.ts — upsertSeatingAssignment, getSeatingAssignments
+- webapp/convex/userPreferences.ts — getPreferences, updatePreferences, followMP, unfollowMP
+
+The HTTP endpoint in webapp/convex/http.ts should expose mutation endpoints that the Python pipeline can call via POST.
+
+Also create webapp/convex/crons.ts with a daily cron that recomputes activity scores and rankings.
+
+Commit and push when done.

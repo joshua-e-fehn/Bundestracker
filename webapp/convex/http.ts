@@ -1,4 +1,5 @@
-import { httpRouter } from "convex/server"
+import { type FunctionArgs, type FunctionReference, httpRouter } from "convex/server"
+import { internal } from "./_generated/api"
 import { type ActionCtx, httpAction } from "./_generated/server"
 import { authComponent, createAuth } from "./betterAuth/auth"
 
@@ -12,8 +13,9 @@ import { authComponent, createAuth } from "./betterAuth/auth"
  * purpose, because a session is a thing only a browser can obtain.
  *
  * This file is transport only: key check, parsing, status codes. What the key
- * is allowed to *reach* belongs in a dedicated `convex/ingest.ts`, so that
- * question has one short answer rather than a route handler each to audit.
+ * is allowed to *reach* is the `internal.*` mutations named below, every one an
+ * upsert on a natural key — see convex/lib/ingest.ts for why that is the only
+ * write shape here, and for the batch ceiling these routes inherit.
  */
 
 const http = httpRouter()
@@ -123,6 +125,20 @@ export async function readJsonBody(request: Request): Promise<Record<string, unk
   return body as Record<string, unknown>
 }
 
+/**
+ * Asserts a request body into the argument type of the mutation it is passed
+ * to, which TypeScript infers from the call site.
+ *
+ * Nothing is checked here and nothing can be: the value came off the wire. The
+ * real check is the mutation's own argument validator, which rejects unknown,
+ * missing and mistyped fields and throws — landing in `pipelineRoute`'s catch
+ * as a 400 naming the offending field. This exists to say that once rather
+ * than scatter casts down the file.
+ */
+function asArgs<T>(body: Record<string, unknown>): T {
+  return body as unknown as T
+}
+
 // --- pipeline -------------------------------------------------------------
 
 /**
@@ -140,10 +156,81 @@ http.route({
   }),
 })
 
-// Ingestion routes attach here — `POST /api/pipeline/members`,
-// `/api/pipeline/activities`, and so on. Each one parses its body with
-// `readJsonBody`, hands it to an `internal.ingest.*` mutation that upserts on
-// the DIP record id, and returns 201. Register them with `pipelineRoute` so
-// they inherit the key check.
+// --- ingestion ------------------------------------------------------------
+
+/**
+ * Registers `POST /api/pipeline/<path>` as a front door to one mutation.
+ *
+ * A table rather than thirteen near-identical `http.route` blocks: each would
+ * differ only in its path and the mutation it names, and copied route handlers
+ * are how a key check or an error mapping ends up applied to twelve routes out
+ * of thirteen. Going through `pipelineRoute` is the only way to register one,
+ * so a route added later cannot ship without the bearer-key check.
+ *
+ * The mutation reference carries its own argument type, so `FunctionArgs`
+ * recovers it and the body is asserted into exactly what that mutation
+ * accepts — one `asArgs` at one boundary rather than a cast per route.
+ *
+ * 200 rather than 201: a batch upsert is not a creation. The response says how
+ * many rows were inserted against updated, which is how the pipeline tells a
+ * genuinely incremental sync from one rewriting the world every night because
+ * a natural key stopped matching.
+ */
+function ingestionRoute<Ref extends FunctionReference<"mutation", "internal">>(
+  path: string,
+  mutation: Ref,
+): void {
+  http.route({
+    path: `/api/pipeline/${path}`,
+    method: "POST",
+    handler: pipelineRoute(async (ctx, request) => {
+      const body = await readJsonBody(request)
+      return json(await ctx.runMutation(mutation, asArgs<FunctionArgs<Ref>>(body)), 200)
+    }),
+  })
+}
+
+// The roster first: everything else joins to it, and every other ingestion
+// mutation rejects a record naming an MP who is not on it — §11.1's dependency
+// order, enforced rather than merely documented.
+ingestionRoute("mps", internal.mps.upsertMPs)
+
+/** Attaches a DIP person id once the name match resolves it (§7.2). Separate
+ * from the roster upsert because it happens a stage later and from a different
+ * source — and §11.1 puts the roster first precisely so it need not wait. */
+ingestionRoute("mps/link-dip", internal.mps.linkDipPersonId)
+
+ingestionRoute("vote-sheets", internal.votes.upsertVoteSheet)
+ingestionRoute("vote-records", internal.votes.upsertVoteRecords)
+ingestionRoute("motions", internal.motions.upsertMotions)
+ingestionRoute("motion-sponsors", internal.motions.upsertMotionSponsors)
+ingestionRoute("speeches", internal.speeches.upsertSpeeches)
+ingestionRoute("questions", internal.questions.upsertQuestions)
+ingestionRoute("committee-memberships", internal.committees.upsertCommitteeMemberships)
+ingestionRoute("activities", internal.activities.upsertActivities)
+ingestionRoute("activity-events", internal.activityEvents.addActivityEvents)
+ingestionRoute("scores", internal.activityScores.upsertScore)
+
+/**
+ * Regenerates the synthetic hemicycle.
+ *
+ * Generated in Convex from the roster rather than posted as rows, because there
+ * is nothing to post: no machine-readable seating data exists anywhere (§9), so
+ * these seats are derived from Fraktion sizes and are a visualisation rather
+ * than a record of where anyone sits. See convex/seating.ts.
+ */
+ingestionRoute("seating/generate", internal.seating.generateSeating)
+
+/**
+ * Rescores a slice of the roster.
+ *
+ * Sliced because scoring one MP reads their activities, speeches, votes and
+ * committees, so the whole chamber in one transaction would exceed Convex's
+ * read limit. The response carries `nextCursor`/`hasMore`; the caller loops
+ * until `hasMore` is false. The daily cron walks the same path on its own
+ * schedule — this route is for a backfill that wants its scores now rather
+ * than tomorrow morning.
+ */
+ingestionRoute("scores/recompute", internal.activityScores.recomputeScores)
 
 export default http
