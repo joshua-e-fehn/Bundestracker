@@ -21,14 +21,48 @@ be re-run.
 src/bundestrack/
   cli.py        # click entry point: init / sync / backfill / status
   config.py     # environment → Settings (pydantic-settings)
-  api/          # httpx clients: DIP (read), Convex (write)
-  models/       # pydantic models for DIP records and Convex documents
+  api/          # httpx clients, one per source (see below)
+  models/       # pydantic models for each source's wire format
   pipeline/     # orchestration: fetch → transform → load
-src/tests/      # pytest
+src/tests/      # pytest, against fixtures recorded from the live sources
 ```
 
-Only `cli.py` and `config.py` are implemented — the rest are scaffolds awaiting
-the pipeline work.
+`pipeline/` is still a scaffold; everything else is implemented.
+
+## The four sources
+
+No single API answers "what did this MP do?", so `api/` has one client per
+source. `docs/api-research.md` is the reference for all of them, and every
+client cites the section a non-obvious decision comes from.
+
+| Client | Source | Gives you |
+| --- | --- | --- |
+| `DIPClient` | `search.dip.bundestag.de/api/v1` | Vorgänge, Drucksachen, Aktivitäten, Personen, protocol metadata |
+| `ProtocolClient` | `dserver.bundestag.de/btp/…` | Speaker-attributed speeches, **and** roll-call name lists |
+| `VoteClient` | `bundestag.de/resource/blob/…` | Per-MP yes/no/abstain/**absent** |
+| `StammdatenClient` | MdB-Stammdaten ZIP | The MP roster, mandates, committees |
+| `AbgeordnetenwatchClient` | `abgeordnetenwatch.de/api/v2` | Validation, and mid-period successions |
+
+Backfill order is not arbitrary: Stammdaten first, because it is the roster and
+the name index everything else resolves against, then DIP `/person`, then the
+rest (§11.1).
+
+### Two constraints worth knowing before you touch `api/`
+
+**Fetch sequentially.** Every `*.bundestag.de` host sits behind a bot-protection
+WAF that IP-blocks *all* of them at once, including the unauthenticated OpenAPI
+spec, and did not clear across an hour of backoff (§2.6). `BundestagClient`
+enforces this: it paces requests, never follows redirects, and raises
+`ConcurrentFetchError` if a second thread starts a request while one is in
+flight. That is deliberate — serialising behind a lock would let a threaded
+caller look correct while doubling the request rate.
+
+**MPs have three incompatible ids.** DIP `/person` uses a short numeric id, the
+Stammdaten dump and the protocol XML share an 8-digit one, and the vote sheets
+have no id column at all (§7). Speeches and activities join by id; everything
+else joins by name, via `models.stammdaten.NameIndex` — 628/630 on a real
+ballot. Resolve once at ingest and store the crosswalk; never join on names at
+query time.
 
 ## Configuration
 
