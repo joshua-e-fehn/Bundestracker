@@ -24,15 +24,27 @@
  * entries below do that, and "/api" is among them because Better Auth's own
  * callback routes live under it and must stay reachable while signed out.
  *
- * **That exactness is why every new public section must be added here.** It is
- * not a formality: an omitted path is not merely ungated, it is *gated*. The
- * guard renders a spinner instead of the page and redirects a signed-out
- * visitor to /sign-in — so the roster and the profiles, which are the public
- * record this site exists to publish, would have demanded an account. That is
- * what happened when /mps was added, and it is invisible from the server-
- * rendered HTML: the page 200s with an empty body.
+ * ⚠ **A new page must be added here or it is not reachable.** That consequence
+ * follows from the exact-match note above and is easy to miss, because the
+ * failure does not look like an auth problem: `AuthGuard` redirects to
+ * `/sign-in`, which does not exist yet, so the page renders a 404 and the
+ * obvious suspect is the route itself. `/rankings` and `/feed` each spent a
+ * debugging session on it. Until a genuinely private route exists, every
+ * content route belongs on this list.
  */
-export const PUBLIC_PATHS = ["/", "/mps", "/sign-in", "/sign-up", "/api"]
+export const PUBLIC_PATHS = [
+  "/",
+  "/sign-in",
+  "/sign-up",
+  "/api",
+  "/rankings",
+  "/feed",
+  // Not built on this branch — the MP pages belong to `frontend-mp-profiles` —
+  // but listed because the feed and every leaderboard row links to
+  // `/mps/<internalId>`, and a link that redirects to a 404 is worse than one
+  // that reaches a page not yet written.
+  "/mps",
+]
 
 export function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
