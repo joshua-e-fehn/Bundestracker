@@ -1,5 +1,5 @@
-import { v } from "convex/values"
-import type { Doc } from "./_generated/dataModel"
+import { type Infer, v } from "convex/values"
+import type { Doc, Id } from "./_generated/dataModel"
 import { internalMutation, type QueryCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
@@ -29,6 +29,10 @@ import { vote, voteSheetInput } from "./schema"
  */
 
 // --- read models ----------------------------------------------------------
+
+/** One of the five ballot positions. Inferred from the schema's validator so
+ * `groupMajority` cannot name a sixth. */
+type Vote = Infer<typeof vote>
 
 const voteSheetDoc = v.object({
   id: v.id("voteSheets"),
@@ -188,6 +192,73 @@ export async function voteParticipation(
   return { rate: eligible === 0 ? null : cast / eligible, cast, eligible }
 }
 
+// --- group majority -------------------------------------------------------
+
+/**
+ * How a parliamentary group voted, as a whole, on one ballot.
+ *
+ * The comparison the profile page shows beside an MP's own vote: did they go
+ * with their group or against it? Answering that is the point of a *named*
+ * ballot, and it is the one question the raw record cannot answer alone.
+ *
+ * Read off `by_voteSheetId_and_partyAtVote`, keyed on the group **printed on
+ * the ballot** rather than the roster's current `fraktion`. §6.4 records six
+ * WP21 MPs who changed group mid-period, and a vote from March should be
+ * compared against the group the MP sat with in March.
+ *
+ * `absent` is excluded from the tally rather than treated as a position: a
+ * group whose members mostly stayed away has no majority view, and reporting
+ * "the group did not vote" as the line an MP defied would be a claim the sheet
+ * does not make. When the remaining votes tie, or nobody voted, the answer is
+ * null — genuinely undetermined, which the UI renders as such rather than as
+ * agreement.
+ */
+export async function groupMajority(
+  ctx: QueryCtx,
+  voteSheetId: Id<"voteSheets">,
+  partyAtVote: string | null,
+): Promise<{ vote: Vote; share: number } | null> {
+  // A record with no group on it — the sheets do carry these — has no group to
+  // be compared against. Querying with null would match the other ungrouped
+  // records, which are not a caucus.
+  if (partyAtVote === null) return null
+
+  const records = await ctx.db
+    .query("voteRecords")
+    .withIndex("by_voteSheetId_and_partyAtVote", (q) =>
+      q.eq("voteSheetId", voteSheetId).eq("partyAtVote", partyAtVote),
+    )
+    .collect()
+
+  const tally = new Map<Vote, number>()
+  let counted = 0
+  for (const record of records) {
+    if (record.vote === "absent") continue
+    tally.set(record.vote, (tally.get(record.vote) ?? 0) + 1)
+    counted++
+  }
+  if (counted === 0) return null
+
+  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1])
+  // A tie is not a majority. Two groups of equal size mean the group split, and
+  // naming either half "the line" would invent a position.
+  if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null
+  return { vote: ranked[0][0], share: ranked[0][1] / counted }
+}
+
+/**
+ * Ceiling on how many ballots one `getVotesByMP` call may compare to a group.
+ *
+ * Each comparison scans one group's records for one ballot — at most 209 rows
+ * (§9) — so an unbounded page of 700 would be 146 000 reads against Convex's
+ * ~16 000 limit. The profile page asks for five.
+ *
+ * Rejects rather than truncates, matching `assertBatchSize` in convex/lib/
+ * ingest.ts: a silently shortened list of votes is indistinguishable from an MP
+ * who voted less often.
+ */
+const MAX_GROUP_COMPARISONS = 25
+
 // --- public queries -------------------------------------------------------
 
 /**
@@ -263,29 +334,61 @@ export const getVoteSheets = query({
   },
 })
 
-/** One MP's votes, newest ballot first — the profile page's voting tab. */
+/**
+ * One MP's votes, newest ballot first — the profile page's voting tab.
+ *
+ * `groupVote` is what the MP's own group did on that ballot, so the page can
+ * say whether they went with it. Computed after the page is cut rather than per
+ * record: the comparison costs one group-scoped scan each, and doing it for
+ * every ballot an MP has ever voted in would be the read that eventually
+ * exceeds a transaction. Null means genuinely undetermined — no group on the
+ * record, nobody voted, or the group tied — never "agreed"; see `groupMajority`.
+ */
 export const getVotesByMP = query({
   args: { mpInternalId: v.string(), wahlperiode: v.number(), limit: v.optional(v.number()) },
   returns: v.array(
     v.object({
       vote,
       remark: v.union(v.null(), v.string()),
+      partyAtVote: v.union(v.null(), v.string()),
+      /** The group's own majority position, or null when there is none. */
+      groupVote: v.union(v.null(), v.object({ vote, share: v.number() })),
       sheet: voteSheetDoc,
     }),
   ),
   handler: async (ctx, args) => {
+    const limit = pageLimit(args.limit, 50)
+    if (limit > MAX_GROUP_COMPARISONS) {
+      throw new Error(
+        `limit ${limit} exceeds ${MAX_GROUP_COMPARISONS}: each row compares the MP's vote ` +
+          "against their whole group on that ballot, so a larger page would exhaust the " +
+          "transaction's read limit. Request a smaller page.",
+      )
+    }
+
     const records = await ctx.db
       .query("voteRecords")
       .withIndex("by_mpInternalId", (q) => q.eq("mpInternalId", args.mpInternalId))
       .collect()
 
-    const joined = []
+    const inPeriod = []
     for (const record of records) {
       const sheet = await ctx.db.get(record.voteSheetId)
       if (!sheet || sheet.wahlperiode !== args.wahlperiode) continue
-      joined.push({ vote: record.vote, remark: record.remark, sheet: toVoteSheetDoc(sheet) })
+      inPeriod.push({ record, sheet })
     }
-    joined.sort((a, b) => b.sheet.date.localeCompare(a.sheet.date))
-    return joined.slice(0, pageLimit(args.limit, 50))
+    inPeriod.sort((a, b) => b.sheet.date.localeCompare(a.sheet.date))
+
+    const joined = []
+    for (const { record, sheet } of inPeriod.slice(0, limit)) {
+      joined.push({
+        vote: record.vote,
+        remark: record.remark,
+        partyAtVote: record.partyAtVote,
+        groupVote: await groupMajority(ctx, sheet._id, record.partyAtVote),
+        sheet: toVoteSheetDoc(sheet),
+      })
+    }
+    return joined
   },
 })

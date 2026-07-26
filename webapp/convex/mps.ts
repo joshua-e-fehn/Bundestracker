@@ -15,7 +15,7 @@ import {
   upsertRow,
   withoutSystemFields,
 } from "./lib/ingest"
-import { mpInput } from "./schema"
+import { mpInput, scoreBreakdown } from "./schema"
 
 /**
  * The MP roster — the table every other one joins to.
@@ -274,6 +274,85 @@ export const getMPs = query({
           a.nachname.localeCompare(b.nachname, "de") || a.vorname.localeCompare(b.vorname, "de"),
       )
       .map(toMpDoc)
+  },
+})
+
+/**
+ * The roster with each MP's period score attached — what the /mps table renders.
+ *
+ * A join rather than two queries and a merge in the browser, for the reason
+ * `mpLabel` exists: the alternative is one score read per row, and the roster is
+ * 630 rows. One indexed roster scan plus one point lookup each.
+ *
+ * The score is the **period total** — the `month: null` row that `getScores`
+ * documents as the rankings' sort key — under the *default* weights. A
+ * signed-in user's custom weights re-sort in the browser from `scoreBreakdown`,
+ * which carries the raw counts; recomputing 630 rows server-side per slider
+ * move is what `rescore` in lib/scoring.ts exists to avoid.
+ *
+ * `score` is null, not 0, when no row exists. The distinction is the whole
+ * reason this is nullable: an MP the cron has not scored yet and an MP who did
+ * nothing are different claims, and a 0 in a sortable column asserts the second.
+ * Sorting is the caller's job for the same reason — the UI decides where
+ * "unscored" belongs, and it is not "least active".
+ */
+export const getMPsWithScores = query({
+  args: {
+    wahlperiode: v.number(),
+    fraktion: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(
+    v.object({
+      mp: mpDoc,
+      score: v.union(
+        v.null(),
+        v.object({
+          totalScore: v.number(),
+          voteParticipationRate: v.number(),
+          scoreBreakdown,
+        }),
+      ),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("mps")
+      .withIndex("by_wahlperiode_and_fraktion", (q) => {
+        const scoped = q.eq("wahlperiode", args.wahlperiode)
+        return args.fraktion === undefined ? scoped : scoped.eq("fraktion", args.fraktion)
+      })
+      .take(pageLimit(args.limit, 700))
+
+    const joined = []
+    for (const row of rows) {
+      const score = await ctx.db
+        .query("activityScores")
+        .withIndex("by_mpInternalId_and_wahlperiode_and_month", (q) =>
+          q
+            .eq("mpInternalId", row.internalId)
+            .eq("wahlperiode", args.wahlperiode)
+            .eq("month", null),
+        )
+        .unique()
+      joined.push({
+        mp: toMpDoc(row),
+        score: score
+          ? {
+              totalScore: score.totalScore,
+              voteParticipationRate: score.voteParticipationRate,
+              scoreBreakdown: score.scoreBreakdown,
+            }
+          : null,
+      })
+    }
+    // Alphabetical, matching `getMPs` — the same list, so the same default
+    // order, and the table's own sort starts from something a reader recognises.
+    return joined.sort(
+      (a, b) =>
+        a.mp.nachname.localeCompare(b.mp.nachname, "de") ||
+        a.mp.vorname.localeCompare(b.mp.vorname, "de"),
+    )
   },
 })
 
