@@ -1,8 +1,7 @@
 import { type ObjectType, v } from "convex/values"
-import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, recordBatch, upsertRow } from "./lib/ingest"
-import { requireMandate } from "./mps"
+import { assertBatchSize, emptyBatchResult, recordBatch, upsertRow, withId } from "./lib/ingest"
+import { mpLabel, requireMandate } from "./mps"
 import { seatingAssignmentInput } from "./schema"
 
 /**
@@ -33,10 +32,7 @@ const seatingAssignmentDoc = v.object({
   createdAt: v.number(),
 })
 
-function toSeatDoc(row: Doc<"seatingAssignments">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toSeatDoc = withId<"seatingAssignments">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -65,11 +61,7 @@ export const upsertSeatingAssignments = internalMutation({
   args: { assignments: v.array(v.object(seatingAssignmentInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.assignments.length > MAX_BATCH) {
-      throw new Error(
-        `Batch too large: ${args.assignments.length} assignments, maximum is ${MAX_BATCH}`,
-      )
-    }
+    assertBatchSize(args.assignments.length, "assignments")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const assignment of args.assignments) {
@@ -197,16 +189,11 @@ export const getSeatingAssignments = query({
 
     const joined = []
     for (const row of rows) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", row.mpInternalId).eq("wahlperiode", args.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
       joined.push({
         seat: toSeatDoc(row),
-        name: mp?.name ?? row.mpInternalId,
-        photoUrl: mp?.photoUrl ?? null,
+        name: mp.name,
+        photoUrl: mp.photoUrl,
       })
     }
     // Drawing order: row by row, left to right.

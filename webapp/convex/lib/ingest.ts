@@ -2,6 +2,12 @@ import type { WithoutSystemFields } from "convex/server"
 import type { Doc, TableNames } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
 
+/** The system fields Convex adds and the ingestion API does not expose. Stripped
+ * on read because `internalId` — not `_id` — is the identifier every table and
+ * every URL uses, and offering both would invite a second one into the
+ * frontend. */
+type SystemFields = "_id" | "_creationTime"
+
 /**
  * What every ingestion mutation shares: upsert-on-natural-key, and the bounds
  * that keep one request inside Convex's transaction limits.
@@ -33,6 +39,38 @@ export const MAX_PAGE = 200
 export function pageLimit(limit: number | undefined, fallback = 50): number {
   if (limit === undefined || !Number.isFinite(limit)) return fallback
   return Math.max(1, Math.min(MAX_PAGE, Math.floor(limit)))
+}
+
+/**
+ * Rejects an oversized batch, naming what was sent and what the ceiling is.
+ *
+ * Rejects rather than truncates, so the pipeline gets a 400 it can chunk and
+ * retry instead of a 200 that silently wrote the first `MAX_BATCH` rows. The
+ * message names the unit (`speeches`, `sponsors`) because a caller posting
+ * several kinds in a sync needs to know which one to split.
+ */
+export function assertBatchSize(count: number, unit: string): void {
+  if (count > MAX_BATCH) {
+    throw new Error(`Batch too large: ${count} ${unit}, maximum is ${MAX_BATCH}`)
+  }
+}
+
+/** Drops Convex's system fields — the read-model shape for a table whose own
+ * identifier is the one callers use. See `SystemFields`. */
+export function withoutSystemFields<Table extends TableNames>(
+  row: Doc<Table>,
+): Omit<Doc<Table>, SystemFields> {
+  const { _id, _creationTime, ...rest } = row
+  return rest
+}
+
+/** As above, but re-exposing the Convex id under `id` — for the tables whose
+ * rows a caller must be able to name again (a motion to fetch its sponsors, a
+ * ballot to fetch its records). */
+export function withId<Table extends TableNames>(
+  row: Doc<Table>,
+): Omit<Doc<Table>, SystemFields> & { id: Doc<Table>["_id"] } {
+  return { id: row._id, ...withoutSystemFields(row) }
 }
 
 /**

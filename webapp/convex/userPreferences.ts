@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import type { Doc } from "./_generated/dataModel"
 import { type MutationCtx, mutation, query } from "./_generated/server"
 import { getUserId, requireUserId } from "./lib/auth"
+import { findMandate } from "./mps"
 import { preferredLocale, scoreWeights } from "./schema"
 
 /**
@@ -227,12 +228,11 @@ export const getFollowedMPs = query({
 
     const followed = []
     for (const internalId of row.followedMpIds) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", internalId).eq("wahlperiode", args.wahlperiode),
-        )
-        .unique()
+      // `findMandate`, not `mpLabel`: an MP followed but not sitting in the
+      // requested period is skipped entirely, and `mpLabel`'s job is the
+      // opposite — it renders a placeholder so a gap stays visible. Both are
+      // right in their own place; the difference is whether the row exists.
+      const mp = await findMandate(ctx, internalId, args.wahlperiode)
       if (!mp) continue
       followed.push({
         internalId: mp.internalId,

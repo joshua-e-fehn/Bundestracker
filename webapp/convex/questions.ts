@@ -1,7 +1,13 @@
 import { type ObjectType, v } from "convex/values"
-import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withId,
+} from "./lib/ingest"
 import { requireMandate } from "./mps"
 import { questionInput, questionType } from "./schema"
 
@@ -31,10 +37,7 @@ import { questionInput, questionType } from "./schema"
 
 const questionDoc = v.object({ id: v.id("questions"), ...questionInput, createdAt: v.number() })
 
-function toQuestionDoc(row: Doc<"questions">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toQuestionDoc = withId<"questions">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -65,11 +68,7 @@ export const upsertQuestions = internalMutation({
   args: { questions: v.array(v.object(questionInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.questions.length > MAX_BATCH) {
-      throw new Error(
-        `Batch too large: ${args.questions.length} questions, maximum is ${MAX_BATCH}`,
-      )
-    }
+    assertBatchSize(args.questions.length, "questions")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const question of args.questions) {

@@ -8,11 +8,11 @@ import {
   type ScoreInputs,
   type ScoreWeights,
 } from "../lib/scoring"
-import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
 import { activityTallies } from "./activities"
 import { committeeCount } from "./committees"
-import { pageLimit, upsertRow } from "./lib/ingest"
+import { pageLimit, upsertRow, withId } from "./lib/ingest"
+import { mpLabel } from "./mps"
 import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
 import { speechVolume } from "./speeches"
 import { voteParticipation } from "./votes"
@@ -46,10 +46,7 @@ const activityScoreDoc = v.object({
   updatedAt: v.number(),
 })
 
-function toScoreDoc(row: Doc<"activityScores">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toScoreDoc = withId<"activityScores">
 
 // --- the window -----------------------------------------------------------
 
@@ -361,18 +358,13 @@ export const getRankings = query({
 
     const ranked = []
     for (const [index, row] of rows.entries()) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", row.mpInternalId).eq("wahlperiode", args.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
       ranked.push({
         rank: index + 1,
         mpInternalId: row.mpInternalId,
-        name: mp?.name ?? row.mpInternalId,
-        fraktion: mp?.fraktion ?? "",
-        photoUrl: mp?.photoUrl ?? null,
+        name: mp.name,
+        fraktion: mp.fraktion,
+        photoUrl: mp.photoUrl,
         totalScore: row.totalScore,
         scoreBreakdown: row.scoreBreakdown,
       })

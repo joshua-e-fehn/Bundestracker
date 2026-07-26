@@ -1,8 +1,15 @@
 import { type ObjectType, v } from "convex/values"
 import type { Doc, Id } from "./_generated/dataModel"
 import { internalMutation, type QueryCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
-import { requireMandate } from "./mps"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withId,
+} from "./lib/ingest"
+import { mpLabel, requireMandate } from "./mps"
 import { vote, type voteRecordInput, voteSheetInput } from "./schema"
 
 /**
@@ -30,10 +37,7 @@ const voteSheetDoc = v.object({
   createdAt: v.number(),
 })
 
-function toVoteSheetDoc(row: Doc<"voteSheets">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toVoteSheetDoc = withId<"voteSheets">
 
 /** A vote record joined to the voter. The name is denormalised into the
  * response because the ballot view lists 630 rows and doing this per row in the
@@ -109,11 +113,7 @@ export const upsertVoteRecords = internalMutation({
   },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.records.length > MAX_BATCH) {
-      throw new Error(
-        `Batch too large: ${args.records.length} vote records, maximum is ${MAX_BATCH}`,
-      )
-    }
+    assertBatchSize(args.records.length, "vote records")
     const sheet = await findSheet(ctx, args.wahlperiode, args.sitzungnr, args.abstimmnr)
     if (!sheet) {
       throw new Error(
@@ -230,16 +230,11 @@ export const getVoteSheet = query({
     const joined = []
     for (const record of records) {
       tallied[record.vote]++
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", record.mpInternalId).eq("wahlperiode", sheet.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, record.mpInternalId, sheet.wahlperiode)
       joined.push({
         mpInternalId: record.mpInternalId,
-        name: mp?.name ?? record.mpInternalId,
-        fraktion: mp?.fraktion ?? record.partyAtVote ?? "",
+        name: mp.name,
+        fraktion: mp.fraktion,
         vote: record.vote,
         partyAtVote: record.partyAtVote,
         remark: record.remark,

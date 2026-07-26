@@ -1,8 +1,15 @@
 import { type ObjectType, v } from "convex/values"
 import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
-import { requireMandate } from "./mps"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withId,
+} from "./lib/ingest"
+import { mpLabel, requireMandate } from "./mps"
 import { motionInput, type motionSponsorInput } from "./schema"
 
 /**
@@ -28,10 +35,7 @@ import { motionInput, type motionSponsorInput } from "./schema"
 
 const motionDoc = v.object({ id: v.id("motions"), ...motionInput, createdAt: v.number() })
 
-function toMotionDoc(row: Doc<"motions">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toMotionDoc = withId<"motions">
 
 // --- lookup ---------------------------------------------------------------
 
@@ -90,9 +94,7 @@ export const upsertMotions = internalMutation({
   args: { motions: v.array(v.object(motionInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.motions.length > MAX_BATCH) {
-      throw new Error(`Batch too large: ${args.motions.length} motions, maximum is ${MAX_BATCH}`)
-    }
+    assertBatchSize(args.motions.length, "motions")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const motion of args.motions) {
@@ -117,9 +119,7 @@ export const upsertMotionSponsors = internalMutation({
   },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.sponsors.length > MAX_BATCH) {
-      throw new Error(`Batch too large: ${args.sponsors.length} sponsors, maximum is ${MAX_BATCH}`)
-    }
+    assertBatchSize(args.sponsors.length, "sponsors")
     const motion = await findMotion(ctx, args.dipVorgangId, args.dipDrucksacheId)
     if (!motion) {
       throw new Error(
@@ -223,16 +223,11 @@ export const getMotionSponsors = query({
 
     const joined = []
     for (const sponsorship of sponsorships) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", sponsorship.mpInternalId).eq("wahlperiode", motion.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, sponsorship.mpInternalId, motion.wahlperiode)
       joined.push({
         mpInternalId: sponsorship.mpInternalId,
-        name: mp?.name ?? sponsorship.mpInternalId,
-        fraktion: mp?.fraktion ?? "",
+        name: mp.name,
+        fraktion: mp.fraktion,
         role: sponsorship.role,
       })
     }

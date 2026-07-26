@@ -7,7 +7,14 @@ import {
   type QueryCtx,
   query,
 } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withoutSystemFields,
+} from "./lib/ingest"
 import { mpInput } from "./schema"
 
 /**
@@ -35,10 +42,7 @@ import { mpInput } from "./schema"
  * too would invite a second one into the frontend. */
 const mpDoc = v.object({ ...mpInput, createdAt: v.number(), updatedAt: v.number() })
 
-function toMpDoc(row: Doc<"mps">) {
-  const { _id, _creationTime, ...rest } = row
-  return rest
-}
+const toMpDoc = withoutSystemFields<"mps">
 
 // --- lookup ---------------------------------------------------------------
 
@@ -49,7 +53,7 @@ function toMpDoc(row: Doc<"mps">) {
  * this is the natural-key lookup that makes every upsert here idempotent, so
  * there is one definition of "the row this record belongs to".
  */
-async function findMandate(
+export async function findMandate(
   ctx: QueryCtx,
   internalId: string,
   wahlperiode: number,
@@ -60,6 +64,33 @@ async function findMandate(
       q.eq("internalId", internalId).eq("wahlperiode", wahlperiode),
     )
     .unique()
+}
+
+/**
+ * How a row keyed by `mpInternalId` is labelled for display.
+ *
+ * Seven modules render a list of someone else's rows — a ballot's votes, a
+ * committee's members, a sitting's speeches, the rankings — and every one needs
+ * the same three fields off the roster. Resolved server-side because the
+ * alternative is a query per row: a ballot is 630 of them.
+ *
+ * The fallbacks matter and are the reason this is one function. A missing
+ * mandate is possible — §7.3's Stammdaten lag means a vote row can name an MP
+ * the roster has not caught up with — and every caller should degrade the same
+ * way: show the id rather than an empty cell, so the gap is visible instead of
+ * looking like an MP with no name.
+ */
+export async function mpLabel(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+): Promise<{ name: string; fraktion: string; photoUrl: string | null }> {
+  const mp = await findMandate(ctx, mpInternalId, wahlperiode)
+  return {
+    name: mp?.name ?? mpInternalId,
+    fraktion: mp?.fraktion ?? "",
+    photoUrl: mp?.photoUrl ?? null,
+  }
 }
 
 /**
@@ -118,9 +149,7 @@ export const upsertMPs = internalMutation({
   args: { mps: v.array(v.object(mpInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.mps.length > MAX_BATCH) {
-      throw new Error(`Batch too large: ${args.mps.length} MPs, maximum is ${MAX_BATCH}`)
-    }
+    assertBatchSize(args.mps.length, "MPs")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const mp of args.mps) {

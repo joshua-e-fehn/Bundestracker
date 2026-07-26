@@ -1,8 +1,14 @@
 import { type ObjectType, v } from "convex/values"
-import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
-import { requireMandate } from "./mps"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withId,
+} from "./lib/ingest"
+import { mpLabel, requireMandate } from "./mps"
 import { activityEventInput, eventType } from "./schema"
 
 /**
@@ -29,10 +35,7 @@ const activityEventDoc = v.object({
   createdAt: v.number(),
 })
 
-function toEventDoc(row: Doc<"activityEvents">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toEventDoc = withId<"activityEvents">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -73,9 +76,7 @@ export const addActivityEvents = internalMutation({
   args: { events: v.array(v.object(activityEventInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.events.length > MAX_BATCH) {
-      throw new Error(`Batch too large: ${args.events.length} events, maximum is ${MAX_BATCH}`)
-    }
+    assertBatchSize(args.events.length, "events")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const event of args.events) {
@@ -141,16 +142,11 @@ export const getChamberFeed = query({
 
     const joined = []
     for (const row of rows) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", row.mpInternalId).eq("wahlperiode", args.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
       joined.push({
         event: toEventDoc(row),
-        name: mp?.name ?? row.mpInternalId,
-        fraktion: mp?.fraktion ?? "",
+        name: mp.name,
+        fraktion: mp.fraktion,
       })
     }
     return joined

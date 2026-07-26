@@ -1,6 +1,5 @@
 import { type ObjectType, v } from "convex/values"
 import { bucketFor } from "../lib/scoring"
-import type { Doc } from "./_generated/dataModel"
 import {
   internalMutation,
   internalQuery,
@@ -8,7 +7,14 @@ import {
   type QueryCtx,
   query,
 } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withId,
+} from "./lib/ingest"
 import { requireMandate } from "./mps"
 import { activityInput } from "./schema"
 
@@ -43,10 +49,7 @@ import { activityInput } from "./schema"
 
 const activityDoc = v.object({ id: v.id("activities"), ...activityInput, createdAt: v.number() })
 
-function toActivityDoc(row: Doc<"activities">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toActivityDoc = withId<"activities">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -75,11 +78,7 @@ export const upsertActivities = internalMutation({
   args: { activities: v.array(v.object(activityInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.activities.length > MAX_BATCH) {
-      throw new Error(
-        `Batch too large: ${args.activities.length} activities, maximum is ${MAX_BATCH}`,
-      )
-    }
+    assertBatchSize(args.activities.length, "activities")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const activity of args.activities) {

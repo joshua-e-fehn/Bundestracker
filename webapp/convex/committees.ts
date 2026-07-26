@@ -1,8 +1,7 @@
 import { type ObjectType, v } from "convex/values"
-import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, recordBatch, upsertRow } from "./lib/ingest"
-import { requireMandate } from "./mps"
+import { assertBatchSize, emptyBatchResult, recordBatch, upsertRow, withId } from "./lib/ingest"
+import { mpLabel, requireMandate } from "./mps"
 import { committeeMembershipInput } from "./schema"
 
 /**
@@ -41,10 +40,7 @@ const committeeMembershipDoc = v.object({
   createdAt: v.number(),
 })
 
-function toMembershipDoc(row: Doc<"committeeMemberships">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toMembershipDoc = withId<"committeeMemberships">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -76,11 +72,7 @@ export const upsertCommitteeMemberships = internalMutation({
   args: { memberships: v.array(v.object(committeeMembershipInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.memberships.length > MAX_BATCH) {
-      throw new Error(
-        `Batch too large: ${args.memberships.length} memberships, maximum is ${MAX_BATCH}`,
-      )
-    }
+    assertBatchSize(args.memberships.length, "memberships")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const membership of args.memberships) {
@@ -157,16 +149,11 @@ export const getCommitteeMembers = query({
 
     const joined = []
     for (const row of rows) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", row.mpInternalId).eq("wahlperiode", args.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
       joined.push({
         mpInternalId: row.mpInternalId,
-        name: mp?.name ?? row.mpInternalId,
-        fraktion: mp?.fraktion ?? "",
+        name: mp.name,
+        fraktion: mp.fraktion,
         role: row.role,
       })
     }

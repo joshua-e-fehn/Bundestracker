@@ -1,8 +1,15 @@
 import { type ObjectType, v } from "convex/values"
 import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
-import { emptyBatchResult, MAX_BATCH, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
-import { requireMandate } from "./mps"
+import {
+  assertBatchSize,
+  emptyBatchResult,
+  pageLimit,
+  recordBatch,
+  upsertRow,
+  withId,
+} from "./lib/ingest"
+import { mpLabel, requireMandate } from "./mps"
 import { speechInput } from "./schema"
 
 /**
@@ -41,10 +48,7 @@ import { speechInput } from "./schema"
 
 const speechDoc = v.object({ id: v.id("speeches"), ...speechInput, createdAt: v.number() })
 
-function toSpeechDoc(row: Doc<"speeches">) {
-  const { _id, _creationTime, ...rest } = row
-  return { id: _id, ...rest }
-}
+const toSpeechDoc = withId<"speeches">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -90,9 +94,7 @@ export const upsertSpeeches = internalMutation({
   args: { speeches: v.array(v.object(speechInput)) },
   returns: v.object({ inserted: v.number(), updated: v.number() }),
   handler: async (ctx, args) => {
-    if (args.speeches.length > MAX_BATCH) {
-      throw new Error(`Batch too large: ${args.speeches.length} speeches, maximum is ${MAX_BATCH}`)
-    }
+    assertBatchSize(args.speeches.length, "speeches")
     const now = Date.now()
     const result = emptyBatchResult()
     for (const speech of args.speeches) {
@@ -177,16 +179,11 @@ export const getSpeechesBySitting = query({
 
     const joined = []
     for (const row of rows) {
-      const mp = await ctx.db
-        .query("mps")
-        .withIndex("by_internalId_and_wahlperiode", (q) =>
-          q.eq("internalId", row.mpInternalId).eq("wahlperiode", args.wahlperiode),
-        )
-        .unique()
+      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
       joined.push({
         speech: toSpeechDoc(row),
-        name: mp?.name ?? row.mpInternalId,
-        fraktion: mp?.fraktion ?? "",
+        name: mp.name,
+        fraktion: mp.fraktion,
       })
     }
     // Document order, which is what `speechIndex` is for — the index sorts by
