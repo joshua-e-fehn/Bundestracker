@@ -62,7 +62,7 @@ from bundestrack.models.dip import Aktivitaet, Plenarprotokoll
 from bundestrack.models.votes import VoteSheet, VoteSheetLink
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
-from bundestrack.pipeline.load import BatchResult, ConvexLoader
+from bundestrack.pipeline.load import BatchResult, ConvexError, ConvexLoader
 from bundestrack.pipeline.state import (
     STREAM_ACTIVITIES,
     STREAM_MOTIONS,
@@ -406,7 +406,9 @@ class Pipeline:
 
         for drucksache in self.dip.iter_drucksachen(self.wahlperiode, updated_since=since):
             seen.append(drucksache.aktualisiert)
-            payloads.append(transform.motion_from_drucksache(drucksache))
+            payloads.append(
+                transform.motion_from_drucksache(drucksache, wahlperiode=self.wahlperiode)
+            )
 
         motions = transform.dedupe_motions(payloads)
         if motions:
@@ -679,6 +681,20 @@ class Pipeline:
             return since
         return self.state.since(self.wahlperiode, stream)
 
+    def check_destination(self) -> None:
+        """Fail now if the deployment will not accept this key.
+
+        A no-op in a dry run, which writes nothing and so needs no key. Raises
+        `ConvexAuthError` otherwise, naming both places the key has to be set —
+        the alternative is paying for the whole fetch and writing none of it.
+        """
+        if self.loader.health():
+            return
+        raise ConvexError(
+            f"The ingestion API at {self.loader.base_url} did not accept this key. "
+            "PIPELINE_API_KEY must match the value set on the deployment."
+        )
+
     def _flush_promotions(self) -> int:
         """Write the mandate rows for MPs promoted since the last flush (§7.3).
 
@@ -895,6 +911,18 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     later stages are independent of each other, so one source being down should
     not cost the rest of the run.
     """
+    # Before anything is fetched. `/api/pipeline/health` exists for exactly
+    # this: a rotated or missing key becomes one clean 401 at the start rather
+    # than several thousand of them after hours of sequential fetching (§2.6).
+    # Reported like any other failure — the cron reads the report, and a
+    # traceback out of `sync()` is not one — but nothing else is attempted,
+    # since there is no point fetching for a destination that will not accept
+    # a single write.
+    _guard(report, "destination", run.check_destination)
+    if not report.ok:
+        logger.error("The ingestion API rejected this key — nothing was fetched")
+        return
+
     _guard(report, "roster", lambda: run.load_roster(report))
     if run.resolver is None or not run.resolver.roster():
         # Guarded like the rest, but *not* continued past: nothing else can be

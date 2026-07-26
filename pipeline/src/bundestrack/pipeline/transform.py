@@ -626,14 +626,27 @@ def motion_from_vorgang(vorgang: Vorgang) -> Payload:
     }
 
 
-def motion_from_drucksache(drucksache: Drucksache) -> Payload:
+def motion_from_drucksache(drucksache: Drucksache, *, wahlperiode: int | None = None) -> Payload:
     """A printed paper → the `motions` row, linked to its procedure.
 
     `drucksacheNr` is Bundestag-issued only. §5.1 warns that Bundesrat
     numbering is a bare running number that any `split("/")` misparses, which
     is why every DIP query passes `f.zuordnung=BT`.
+
+    `wahlperiode` falls back to the period being fetched, and is *required* one
+    way or the other. `Drucksache.wahlperiode` is optional in the wire format,
+    and defaulting a missing one to `0` — as this did — files the motion under
+    a period that does not exist: no error, but the row is unreachable from
+    `by_wahlperiode_and_date`, from `getMotions`, and from every profile page.
+    A silent nowhere is worse than a loud failure.
     """
     reference = drucksache.vorgangsbezug[0] if drucksache.vorgangsbezug else None
+    period = drucksache.wahlperiode if drucksache.wahlperiode is not None else wahlperiode
+    if period is None:
+        raise TransformError(
+            f"Drucksache {drucksache.id} has no Wahlperiode and none was supplied; "
+            "the row would be filed under a period that does not exist"
+        )
     return {
         "dipVorgangId": reference.id if reference else None,
         "dipDrucksacheId": drucksache.id,
@@ -641,7 +654,7 @@ def motion_from_drucksache(drucksache: Drucksache) -> Payload:
         "title": require_text(drucksache.titel, f"Drucksache {drucksache.id}"),
         "type": clean_text(drucksache.drucksachetyp),
         "date": require_iso(drucksache.datum, f"Drucksache {drucksache.id}"),
-        "wahlperiode": drucksache.wahlperiode or 0,
+        "wahlperiode": period,
         "vorgangstyp": clean_text(reference.vorgangstyp) if reference else None,
     }
 

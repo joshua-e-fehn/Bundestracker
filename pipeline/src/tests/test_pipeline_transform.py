@@ -537,6 +537,33 @@ def test_a_drucksache_title_loses_the_line_breaks_dip_embeds_in_it() -> None:
     assert payload["title"] == "Haushaltsführung 2024 Über- und außerplanmäßige Ausgaben"
 
 
+def test_a_paper_with_no_wahlperiode_takes_the_one_being_fetched() -> None:
+    """`Drucksache.wahlperiode` is optional in the wire format.
+
+    Defaulting a missing one to `0` files the motion under a period that does
+    not exist: no error, but the row is unreachable from
+    `by_wahlperiode_and_date`, from `getMotions`, and from every profile page.
+    A silent nowhere is worse than a loud failure.
+    """
+    drucksache = Drucksache.model_validate(
+        {
+            "id": "289876",
+            "typ": "Dokument",
+            "dokumentart": "Drucksache",
+            "drucksachetyp": "Antwort",
+            "dokumentnummer": "21/7331",
+            "herausgeber": "BT",
+            "datum": "2026-07-24",
+            "aktualisiert": "2026-07-24T12:03:00+02:00",
+            "titel": "Ein Papier ohne Wahlperiode",
+        }
+    )
+
+    assert transform.motion_from_drucksache(drucksache, wahlperiode=21)["wahlperiode"] == 21
+    with pytest.raises(transform.TransformError, match="Wahlperiode"):
+        transform.motion_from_drucksache(drucksache)
+
+
 def test_a_vorgang_becomes_a_motion_keyed_on_the_procedure() -> None:
     vorgang = Vorgang.model_validate(fixture_json("dip", "vorgang_page.json")["documents"][0])
 

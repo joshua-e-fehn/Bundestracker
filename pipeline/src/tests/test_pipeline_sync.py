@@ -228,6 +228,41 @@ def test_one_stage_failing_does_not_end_the_run(tmp_path) -> None:
     assert [stage.name for stage in report.stages][-1] == "seating"
 
 
+def test_a_key_the_deployment_rejects_fails_before_anything_is_fetched(
+    tmp_path,
+) -> None:
+    """`/api/pipeline/health` exists for exactly this.
+
+    A WP21 init is hours of sequential fetching (§2.6), so discovering a
+    rotated key at the first write means paying for the whole fetch and writing
+    none of it.
+    """
+
+    class RefusingLoader(RecordingLoader):
+        def __init__(self) -> None:
+            super().__init__()
+            self.dry_run = False
+
+        def health(self) -> bool:
+            return False
+
+    loader = RefusingLoader()
+    pipeline, _ = build(tmp_path=tmp_path)
+    pipeline.loader = loader
+    fetched: list[str] = []
+
+    class CountingStammdaten(StubStammdaten):
+        def fetch(self):
+            fetched.append("stammdaten")
+            return super().fetch()
+
+    pipeline.stammdaten = CountingStammdaten()
+    report = backfill(21, pipeline=pipeline)
+
+    assert not report.ok
+    assert fetched == [], "nothing should be fetched once the key is known bad"
+
+
 # --- the watermark --------------------------------------------------------
 
 
