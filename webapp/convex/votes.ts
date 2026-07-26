@@ -54,6 +54,45 @@ const voteRecordDoc = v.object({
   remark: v.union(v.null(), v.string()),
 })
 
+/** The group's own majority position on a ballot, or null where it has none —
+ * see `majorityOf` for the three ways that happens. */
+const groupVoteDoc = v.union(v.null(), v.object({ vote, share: v.number() }))
+
+/**
+ * `voteRecordDoc` plus what the ballot page needs per row: the portrait, the
+ * group's line, and whether this vote broke it.
+ *
+ * `rebel` is computed server-side rather than derived in the table from
+ * `vote !== groupVote.vote`, because that comparison has three exceptions
+ * (`isRebel`) and a component that re-implemented it would eventually get one
+ * of them wrong — most likely by calling an absence a dissent.
+ */
+const voteRecordRow = v.object({
+  ...voteRecordDoc.fields,
+  photoUrl: v.union(v.null(), v.string()),
+  groupVote: groupVoteDoc,
+  rebel: v.boolean(),
+})
+
+/** One group's row in the per-Fraktion breakdown. */
+const fraktionBreakdownRow = v.object({
+  /** The group as printed on the ballot — see `tallyByGroup`. */
+  fraktion: v.string(),
+  yes: v.number(),
+  no: v.number(),
+  abstain: v.number(),
+  invalid: v.number(),
+  absent: v.number(),
+  /** Members of this group with a record on this ballot, absences included —
+   * the denominator for the bar. */
+  total: v.number(),
+  /** Votes actually cast, i.e. `total` less absences. What `share` is over. */
+  cast: v.number(),
+  majority: groupVoteDoc,
+  /** Members who voted against `majority`. */
+  rebels: v.number(),
+})
+
 // --- lookup ---------------------------------------------------------------
 
 /** The ballot identified by `(wahlperiode, sitzungnr, abstimmnr)` — what the
@@ -230,17 +269,36 @@ export async function groupMajority(
     )
     .collect()
 
+  return majorityOf(records.map((record) => record.vote))
+}
+
+/**
+ * The modal position among votes actually cast, or null when there is no one
+ * position — the rule `groupMajority` applies, as a pure function.
+ *
+ * Extracted because three readers need the same answer from differently-shaped
+ * inputs: `groupMajority` from one group's indexed slice, `getVoteSheetById`
+ * and `getFraktionVoteBreakdown` from one already-collected sheet grouped in
+ * memory. Re-deriving "the group's line" per caller is how one of them ends up
+ * counting `absent`, or calling a tie a majority, and then the profile page and
+ * the ballot page disagree about whether the same MP dissented.
+ *
+ * Both exclusions are the header's, restated once here because this is now
+ * where they are enforced: `absent` is not a position, and an exact tie is a
+ * split rather than a line.
+ */
+export function majorityOf(votes: readonly Vote[]): { vote: Vote; share: number } | null {
   const tally = new Map<Vote, number>()
   let counted = 0
-  for (const record of records) {
-    if (record.vote === "absent") continue
-    tally.set(record.vote, (tally.get(record.vote) ?? 0) + 1)
+  for (const vote of votes) {
+    if (vote === "absent") continue
+    tally.set(vote, (tally.get(vote) ?? 0) + 1)
     counted++
   }
   if (counted === 0) return null
 
   const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1])
-  // A tie is not a majority. Two groups of equal size mean the group split, and
+  // A tie is not a majority. Two blocs of equal size mean the group split, and
   // naming either half "the line" would invent a position.
   if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null
   return { vote: ranked[0][0], share: ranked[0][1] / counted }
@@ -331,6 +389,340 @@ export const getVoteSheets = query({
       .order("desc")
       .take(pageLimit(args.limit, 50))
     return rows.map(toVoteSheetDoc)
+  },
+})
+
+/**
+ * A page of a period's ballots, with the values its filters can select — the
+ * `/votes` list.
+ *
+ * ## Why this is not `getVoteSheets` with more arguments
+ *
+ * That one answers "the N most recent", which is what the home page's five-row
+ * panel wants, and it does so with a single `.take(N)`. This one has to report
+ * `total` so the pager can say "page 3 of 9", and a total is not something a
+ * `.take()` can produce. So it reads the period's sheets and slices — the same
+ * shape, and for the same reason, as `paged` in convex/rankings.ts.
+ *
+ * The read is bounded by the corpus rather than by a limit: §4.4 puts named
+ * ballots at ~1 015 in the Bundestag's *entire history*, so one period's sheets
+ * are a few hundred rows at most. That is the whole reason this can filter and
+ * count in memory; it would not be safe over `voteRecords`, which is why
+ * `getVoteSheetById` below is per-ballot and this one never touches them.
+ *
+ * `results` and `years` come back alongside the page because a filter offering
+ * a value that selects nothing reads as broken data — the same decision, and
+ * the same wording, as `getRankingFilterOptions`. They are computed over the
+ * period's sheets *before* filtering, so choosing one filter does not empty the
+ * other's dropdown.
+ */
+export const getVoteSheetsPage = query({
+  args: {
+    wahlperiode: v.number(),
+    /** Substring of the title, folded case-insensitively. */
+    search: v.optional(v.string()),
+    /** Published outcome, matched exactly against the values in `results`. Free
+     * text on the sheet (§3.2), so this is a selection from what is there
+     * rather than an enum. */
+    result: v.optional(v.string()),
+    /** Calendar year as `YYYY`. A year rather than a month: a period spans
+     * four of them and a month picker would list forty mostly-empty options. */
+    year: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    offset: v.optional(v.number()),
+  },
+  returns: v.object({
+    rows: v.array(voteSheetDoc),
+    /** Size of the filtered set, not of the page — what the pager counts. */
+    total: v.number(),
+    results: v.array(v.object({ value: v.string(), count: v.number() })),
+    years: v.array(v.object({ value: v.string(), count: v.number() })),
+  }),
+  handler: async (ctx, args) => {
+    const sheets = await ctx.db
+      .query("voteSheets")
+      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .order("desc")
+      .collect()
+
+    const results = new Map<string, number>()
+    const years = new Map<string, number>()
+    for (const sheet of sheets) {
+      results.set(sheet.result, (results.get(sheet.result) ?? 0) + 1)
+      // Dates are ISO `YYYY-MM-DD` (schema header), so the year is a slice
+      // rather than a parse.
+      const year = sheet.date.slice(0, 4)
+      years.set(year, (years.get(year) ?? 0) + 1)
+    }
+
+    // Lowercased rather than folded through lib/search.ts' `foldName`: that
+    // module is the browser's, and convex/ may not import from a React-adjacent
+    // path. Titles are document titles, not names — the diacritic folding
+    // `foldName` exists for is about matching people.
+    const needle = args.search?.trim().toLowerCase() ?? ""
+    const filtered = sheets.filter((sheet) => {
+      if (needle !== "" && !sheet.title.toLowerCase().includes(needle)) return false
+      if (args.result !== undefined && sheet.result !== args.result) return false
+      if (args.year !== undefined && sheet.date.slice(0, 4) !== args.year) return false
+      return true
+    })
+
+    const limit = pageLimit(args.limit, 25)
+    const offset = Math.max(0, Math.floor(args.offset ?? 0))
+
+    const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count
+    return {
+      rows: filtered.slice(offset, offset + limit).map(toVoteSheetDoc),
+      total: filtered.length,
+      results: [...results]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => byCount(a, b) || a.value.localeCompare(b.value, "de")),
+      // Newest first, like the rows themselves.
+      years: [...years]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.value.localeCompare(a.value)),
+    }
+  },
+})
+
+/**
+ * Every group's position on one ballot, tallied from the records.
+ *
+ * The shared core of `getVoteSheetById` and `getFraktionVoteBreakdown`: both
+ * need the same table, and computing it twice from one sheet's records would be
+ * two chances to disagree about who dissented.
+ *
+ * Grouped by `partyAtVote` — the group **printed on the ballot** — falling back
+ * to the roster's current `fraktion` only where the sheet carries none. §6.4's
+ * six mid-period defectors are the reason that order matters: a March vote
+ * belongs to the group the MP sat with in March, and reading it against their
+ * July group would manufacture a dissent that never happened.
+ *
+ * A record with no group anywhere is counted in the totals and excluded from
+ * the breakdown: it is a real vote, but not one any caucus cast.
+ */
+export function tallyByGroup(
+  records: ReadonlyArray<{ mpInternalId: string; vote: Vote; partyAtVote: string | null }>,
+  fraktionOf: (mpInternalId: string) => string,
+): Map<string, { counts: Record<Vote, number>; majority: { vote: Vote; share: number } | null }> {
+  const votesByGroup = new Map<string, Vote[]>()
+  const countsByGroup = new Map<string, Record<Vote, number>>()
+
+  for (const record of records) {
+    const group = record.partyAtVote ?? fraktionOf(record.mpInternalId)
+    if (group === "") continue
+    const counts = countsByGroup.get(group) ?? { yes: 0, no: 0, abstain: 0, invalid: 0, absent: 0 }
+    counts[record.vote]++
+    countsByGroup.set(group, counts)
+    const votes = votesByGroup.get(group) ?? []
+    votes.push(record.vote)
+    votesByGroup.set(group, votes)
+  }
+
+  const out = new Map<
+    string,
+    { counts: Record<Vote, number>; majority: { vote: Vote; share: number } | null }
+  >()
+  for (const [group, counts] of countsByGroup) {
+    out.set(group, { counts, majority: majorityOf(votesByGroup.get(group) ?? []) })
+  }
+  return out
+}
+
+/** The group a record belongs to, by the rule `tallyByGroup` documents. */
+function groupOf(
+  record: { mpInternalId: string; partyAtVote: string | null },
+  fraktionOf: (mpInternalId: string) => string,
+): string {
+  return record.partyAtVote ?? fraktionOf(record.mpInternalId)
+}
+
+/**
+ * The group tally as sorted rows, matching `fraktionBreakdownRow`.
+ *
+ * Ordered by size, largest first, so the breakdown reads like the chamber: §9
+ * puts CDU/CSU at 209 seats and fraktionslos at 3, and listing them
+ * alphabetically would open the table on the three. Ties break by name so the
+ * order is stable between renders.
+ */
+export function breakdownRows(
+  groups: Map<
+    string,
+    { counts: Record<Vote, number>; majority: { vote: Vote; share: number } | null }
+  >,
+) {
+  const rows = []
+  for (const [fraktion, { counts, majority }] of groups) {
+    const total = counts.yes + counts.no + counts.abstain + counts.invalid + counts.absent
+    const cast = total - counts.absent
+    // Recounted from the tally rather than carried through: a group's rebels
+    // are exactly its cast votes that are not the majority position. Safe to
+    // subtract from `cast` because `majorityOf` never returns `absent`, so
+    // `counts[majority.vote]` is always one of the cast tallies.
+    const rebels = majority === null ? 0 : cast - counts[majority.vote]
+    rows.push({ fraktion, ...counts, total, cast, majority, rebels })
+  }
+  return rows.sort((a, b) => b.total - a.total || a.fraktion.localeCompare(b.fraktion, "de"))
+}
+
+/**
+ * Whether a vote went against the voter's own group — the "rebel" flag.
+ *
+ * Three things are deliberately *not* dissent, and each is a claim the sheet
+ * does not support:
+ *
+ *  - An absence. `nichtabgegeben` is not a position, so there is nothing for it
+ *    to contradict; counting it would make anyone who missed a sitting a rebel.
+ *  - A vote in a group with no majority — a tie, or one where nobody voted.
+ *    There is no line to break. See `majorityOf`.
+ *  - A vote by an MP with no group on the record and none on the roster.
+ *
+ * Consistent with `getCrossPartyRankings` in convex/rankings.ts, which counts
+ * the same event across a window of ballots for its leaderboard.
+ */
+export function isRebel(vote: Vote, majority: { vote: Vote; share: number } | null): boolean {
+  if (vote === "absent") return false
+  if (majority === null) return false
+  return vote !== majority.vote
+}
+
+/**
+ * One ballot by its Convex id, with every record joined to its voter — what
+ * `/votes/[id]` renders.
+ *
+ * ## Why an id, when `getVoteSheet` takes the natural key
+ *
+ * Both identify the same row, and both stay. `(wahlperiode, sitzungnr,
+ * abstimmnr)` is what the XLSX sheet name encodes, so it is the key the
+ * *pipeline* has and the one a reader could reconstruct from an official
+ * document. The id is what a *link* has: `getVoteSheetsPage` returns rows
+ * carrying `id`, and a list that already holds the identity of each row should
+ * not make its detail page re-derive a three-part key to look it up again.
+ *
+ * `ctx.db.get` returns null for a well-formed id that names no row; an id that
+ * is not a `voteSheets` id at all throws, so the route validates before calling
+ * — see `app/votes/[id]/page.tsx`.
+ *
+ * ## What it returns beyond the records
+ *
+ * `tallied` alongside the sheet's published counts, for the reason in the
+ * header: they are stored un-derived from each other so an incomplete ingest
+ * reads as a disagreement rather than as a different result.
+ *
+ * `groupVote` and `rebel` per record, and `breakdown` per group, all from the
+ * one read of this ballot's records — bounded by the chamber at ~630 rows.
+ * Computing them here rather than in the browser is what lets the per-MP table
+ * be filtered and sorted without re-deriving each group's line on every
+ * keystroke.
+ */
+export const getVoteSheetById = query({
+  args: { id: v.id("voteSheets") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      sheet: voteSheetDoc,
+      records: v.array(voteRecordRow),
+      tallied: v.object({
+        yes: v.number(),
+        no: v.number(),
+        abstain: v.number(),
+        invalid: v.number(),
+        absent: v.number(),
+      }),
+      breakdown: v.array(fraktionBreakdownRow),
+      /** How many records went against their group's line. The table's
+       * "dissenters" filter counts this, so it is stated rather than left to
+       * the client to recount. */
+      rebelCount: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const sheet = await ctx.db.get(args.id)
+    if (!sheet) return null
+
+    // Bounded by the chamber: 630-odd rows for one ballot, well inside the
+    // read limit, and a page of a ballot is not a useful thing to return.
+    const records = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+      .collect()
+
+    // One `mpLabel` per record, resolved once and reused by the tally, the
+    // rows and the breakdown — the join `voteRecordDoc` exists to avoid doing
+    // 630 times in the client.
+    const labels = new Map<string, { name: string; fraktion: string; photoUrl: string | null }>()
+    for (const record of records) {
+      if (labels.has(record.mpInternalId)) continue
+      labels.set(record.mpInternalId, await mpLabel(ctx, record.mpInternalId, sheet.wahlperiode))
+    }
+    const fraktionOf = (mpInternalId: string) => labels.get(mpInternalId)?.fraktion ?? ""
+
+    const tallied = { yes: 0, no: 0, abstain: 0, invalid: 0, absent: 0 }
+    for (const record of records) tallied[record.vote]++
+
+    const groups = tallyByGroup(records, fraktionOf)
+
+    let rebelCount = 0
+    const joined = []
+    for (const record of records) {
+      const label = labels.get(record.mpInternalId)
+      const group = groupOf(record, fraktionOf)
+      const majority = groups.get(group)?.majority ?? null
+      const rebel = isRebel(record.vote, majority)
+      if (rebel) rebelCount++
+      joined.push({
+        mpInternalId: record.mpInternalId,
+        name: label?.name ?? record.mpInternalId,
+        fraktion: label?.fraktion ?? "",
+        photoUrl: label?.photoUrl ?? null,
+        vote: record.vote,
+        partyAtVote: record.partyAtVote,
+        remark: record.remark,
+        groupVote: majority,
+        rebel,
+      })
+    }
+    joined.sort((a, b) => a.name.localeCompare(b.name, "de"))
+
+    return {
+      sheet: toVoteSheetDoc(sheet),
+      records: joined,
+      tallied,
+      breakdown: breakdownRows(groups),
+      rebelCount,
+    }
+  },
+})
+
+/**
+ * How each parliamentary group voted on one ballot.
+ *
+ * The same table `getVoteSheetById` embeds, as its own query — for a caller
+ * that wants the group summary without 630 rows of records crossing the wire.
+ * Both go through `tallyByGroup`, so the two can never disagree.
+ */
+export const getFraktionVoteBreakdown = query({
+  args: { id: v.id("voteSheets") },
+  returns: v.union(v.null(), v.array(fraktionBreakdownRow)),
+  handler: async (ctx, args) => {
+    const sheet = await ctx.db.get(args.id)
+    if (!sheet) return null
+
+    const records = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+      .collect()
+
+    // Only the records with no group printed on them need the roster, so this
+    // resolves lazily rather than labelling all 630.
+    const fallback = new Map<string, string>()
+    for (const record of records) {
+      if (record.partyAtVote !== null || fallback.has(record.mpInternalId)) continue
+      const mp = await mpLabel(ctx, record.mpInternalId, sheet.wahlperiode)
+      fallback.set(record.mpInternalId, mp.fraktion)
+    }
+
+    return breakdownRows(tallyByGroup(records, (id) => fallback.get(id) ?? ""))
   },
 })
 

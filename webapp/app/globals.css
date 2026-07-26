@@ -57,6 +57,15 @@
   --color-party-linke: var(--party-linke);
   --color-party-fraktionslos: var(--party-fraktionslos);
   --color-party-unknown: var(--party-unknown);
+
+  /* Ballot positions, for the stacked result bar. A second meaningful palette
+   * beside the party one, and deliberately separate from it: a party colour
+   * says who voted, these say what was voted. */
+  --color-vote-yes: var(--vote-yes);
+  --color-vote-no: var(--vote-no);
+  --color-vote-abstain: var(--vote-abstain);
+  --color-vote-invalid: var(--vote-invalid);
+  --color-vote-absent: var(--vote-absent);
 }
 
 :root {
@@ -116,6 +125,25 @@
   --party-linke: oklch(0.52 0.2 350);
   --party-fraktionslos: oklch(0.55 0.01 285);
   --party-unknown: oklch(0.6 0 0);
+
+  /* --- ballot positions ---------------------------------------------------
+   *
+   * Green/red for the two opposed positions and amber for abstention, matching
+   * components/vote-result-badge.tsx so the badge in a table and the segment in
+   * a bar are the same colour for the same vote.
+   *
+   * `absent` is a neutral, not a fifth hue, and that is the whole point: §4.1
+   * distinguishes `Enthaltung` (voted to abstain) from `nichtabgegeben` (did
+   * not vote), and convex/schema.ts keeps them as separate values so the two
+   * are never collapsed. A coloured absence would read as a position; this one
+   * reads as the absence of one. `invalid` shares the neutral register for the
+   * same reason a spoiled ballot is not a rejection — slightly darker, so the
+   * two are still separable side by side. */
+  --vote-yes: oklch(0.55 0.14 150);
+  --vote-no: oklch(0.55 0.19 26);
+  --vote-abstain: oklch(0.7 0.13 85);
+  --vote-invalid: oklch(0.72 0.008 285);
+  --vote-absent: oklch(0.85 0.005 285);
 }
 
 /**
@@ -180,6 +208,18 @@
   --party-linke: oklch(0.7 0.19 350);
   --party-fraktionslos: oklch(0.72 0.012 285);
   --party-unknown: oklch(0.7 0 0);
+
+  /* --- ballot positions (dark) --------------------------------------------
+   *
+   * Lifted like the party colours, and the neutrals inverted: on a near-black
+   * background an absence has to be *darker* than the cast votes to read as
+   * empty, where on white it was lighter. The ordering that matters is
+   * preserved — absence is the least present thing in the bar in both themes. */
+  --vote-yes: oklch(0.72 0.16 148);
+  --vote-no: oklch(0.68 0.19 25);
+  --vote-abstain: oklch(0.8 0.14 88);
+  --vote-invalid: oklch(0.5 0.008 265);
+  --vote-absent: oklch(0.38 0.008 265);
 }
 
 @layer base {

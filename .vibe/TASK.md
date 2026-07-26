@@ -1,13 +1,14 @@
-# Task — frontend-seating-map
+# Task — frontend-voting-pages
 
-Build the parliament seating map for Bundestracker. Do NOT ask any questions — proceed autonomously. Read AGENTS.md and docs/api-research.md section 9 (seating arrangements — no official data exists, generate synthetically from Fraktion sizes).
+Build vote pages for Bundestracker. Do NOT ask questions. Read webapp/convex/votes.ts and webapp/convex/schema.ts, then build:
 
-Build:
-1. /seating page — SVG hemicycle with 730+ seats, clickable, color modes (party, coalition/opposition, activity, attendance, committee), zoom/pan, legend
-2. webapp/lib/seating.ts — synthetic seat position generation from Fraktion sizes (arc layout, government right, opposition left)
-3. Components: seating-map.tsx (SVG), seating-legend.tsx, color-mode-toggle.tsx, seat-tooltip.tsx
-4. Convex: update seating.ts with upsertSeatingAssignments (generate from MP data) and getSeatingWithMPs (join seating with MP profiles + activity scores)
+1. webapp/app/votes/page.tsx — vote list with table (date, title, result bar), filters, pagination. Query getVoteSheets from convex/votes.ts.
+2. webapp/app/votes/[id]/page.tsx — vote detail: title, date, result badge, stacked vote bar (yes/no/abstain/absent), per-MP table with Fraktion filter and search, rebel vote highlighting.
+3. webapp/components/vote-bar.tsx — horizontal stacked bar.
+4. webapp/components/vote-table.tsx — per-MP vote table.
+5. webapp/components/rebel-vote-badge.tsx — badge for MPs voting against party.
+6. Add Convex queries to webapp/convex/votes.ts: getVoteSheetById (with voteRecords joined to MP data), getVoteSheets (paginated list with filters), getFraktionVoteBreakdown.
 
-Bilingual DE/EN, German default.
+Use existing lib/i18n.ts for translations, lib/parties.ts for Fraktion colors. Bilingual DE/EN, German default.
 
-Commit and push when done. Do NOT wait for user input.
+Commit and push. Do NOT wait for input.
