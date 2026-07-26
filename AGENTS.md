@@ -8,7 +8,7 @@
 
 ## Project Overview
 
-Bundestrack is an objective activity tracker for members of the German
+Bundestracker is an objective activity tracker for members of the German
 Bundestag — a "GitHub contributions graph for MPs." It surfaces transparent,
 measurable parliamentary activity from official public data: motions,
 speeches, votes, questions, committee work. No subjective scoring — every

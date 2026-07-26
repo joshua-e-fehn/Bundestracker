@@ -1,4 +1,4 @@
-# Bundestrack
+# Bundestracker
 
 Objective activity tracker for members of the German Bundestag. A "GitHub contributions graph for MPs" — transparent, measurable parliamentary activity based on publicly available official data.
 
