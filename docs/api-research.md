@@ -1608,10 +1608,13 @@ clean IP before the corresponding code is written.
    `440434-start`/`-end`) were all **ignored** — the newest rows came back
    regardless. Test the POST form the widget actually submits before assuming
    the older WP16–17 tail is reachable programmatically. (§4.1)
-6. **WP17/18 XML boundary.** `xml_url` is documented as WP18+ but the published
-   DTD says "gültig ab 19. Wahlperiode." Diff a WP18 protocol against a WP20 one
-   before backfilling, and count `xml_url` presence in
-   `/plenarprotokoll?f.wahlperiode=18` vs `=17`. (§5.2)
+6. **WP17/18 XML boundary.** `xml_url` is documented in the spec as WP18+, but
+   that edge was never confirmed live. (A second pass reported the DTD stating
+   "gültig ab 19. Wahlperiode"; that string is **not present** in the retrieved
+   copy of `dbtplenarprotokoll.dtd` v1.0.2, so treat the discrepancy itself as
+   unresolved.) Count `xml_url` presence in
+   `/plenarprotokoll?f.wahlperiode=18` vs `=17`, and diff a WP18 protocol
+   against a WP20 one before backfilling. (§5.2)
 7. **A vote containing abstentions and/or invalid ballots**, to exercise the
    `Enthaltung` and `ungültig` columns — both were zero across all 630 rows of
    the sampled sheet, so those code paths are untested. (§4.1)
