@@ -564,15 +564,16 @@ metadata endpoint plus direct XML fetches instead.
 #### Undocumented field: `xml_hash`
 
 Live responses carry **`xml_hash`** (MD5 of the XML) alongside the documented
-`pdf_hash`. It is **absent from the OpenAPI spec** but present on 86/86 BT
-documents. Persist it and skip re-downloading unchanged XML.
+`pdf_hash`. It is **absent from the OpenAPI spec** but was present on every BT
+document sampled (86/86 in one pass). Persist it and skip re-downloading
+unchanged XML.
 
 **Filter to the Bundestag:** `/plenarprotokoll?f.wahlperiode=21` returns
 `numFound: 105` — **mixing both chambers** (90 BT + 15 BR). Always pass
 `f.zuordnung=BT`. Three concrete traps if you don't:
 
-- **BR protocols have no XML at all** (0/14 carry `xml_url`; BT: 86/86), so a BR
-  row silently yields zero speeches.
+- **BR protocols have no XML at all** (0/14 sampled carry `xml_url`; every BT
+  document sampled did), so a BR row silently yields zero speeches.
 - **`dokumentnummer` format differs**: BT `21/90` (wp/sitzung) vs BR `1067`
   (bare running number, continuous across decades). Any `.split("/")` misparses.
 - **Different URL tree**: BR lives at `brp/1067.pdf`, not `btp/`.
@@ -584,7 +585,7 @@ The `Fundstelle` schema exposes **`xml_url`** directly (documented as
 so you can go from a DIP record straight to the XML without guessing URLs.
 
 URL pattern (verified — the formula reproduces `fundstelle.xml_url` for
-**86/86** WP21 BT protocols): `https://dserver.bundestag.de/btp/21/21090.xml`
+all **86** WP21 BT protocols checked): `https://dserver.bundestag.de/btp/21/21090.xml`
 — i.e. `btp/<wp>/<wp><sitzung:03d>.xml`. Size ~1.2 MB. Prefer reading
 `fundstelle.xml_url` from the API over constructing it.
 
