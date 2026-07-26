@@ -11,6 +11,7 @@ where the variables are set for real.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,6 +21,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # access; it is rate-limited but requires no registration, so it is the default
 # rather than a required secret.
 DEFAULT_API_BASE_URL = "https://search.dip.bundestag.de/api/v1"
+
+#: A Convex deployment answers on two hosts, and the ingestion API is on the
+#: *second* one: `convex.cloud` serves the generated client API, while anything
+#: registered on the `httpRouter` — which is what `/api/pipeline/*` is
+#: (webapp/convex/http.ts) — is served from `convex.site`. Posting to the cloud
+#: host returns a 404 that looks exactly like a missing route, so the two
+#: spellings are converted here once rather than guessed at each call site.
+CONVEX_API_HOST_SUFFIX = ".convex.cloud"
+CONVEX_SITE_HOST_SUFFIX = ".convex.site"
+
+#: Where a sync records what it has already seen. Under the pipeline package's
+#: working directory rather than a temp path: the daily cron must find the
+#: previous run's watermark, and a watermark that vanishes turns every sync
+#: into a full backfill against a WAF that IP-blocks (§2.6).
+DEFAULT_STATE_PATH = Path(".bundestrack-state.json")
 
 
 class Settings(BaseSettings):
@@ -49,13 +65,69 @@ class Settings(BaseSettings):
         validation_alias="BUNDESTAG_API_BASE_URL",
         description="Base URL of the Bundestag DIP API.",
     )
+    convex_http_url: str = Field(
+        default="",
+        validation_alias="CONVEX_HTTP_URL",
+        description=(
+            "Convex HTTP endpoint URL, e.g. https://<deployment>.convex.site. "
+            "This is where /api/pipeline/* lives. Derived from CONVEX_URL when "
+            "unset, so only a deployment with a custom domain needs to set it."
+        ),
+    )
+    pipeline_api_key: str = Field(
+        default="",
+        validation_alias="PIPELINE_API_KEY",
+        description=(
+            "Shared secret presented as `Authorization: Bearer` to the Convex "
+            "ingestion API. Must match `PIPELINE_API_KEY` on the deployment."
+        ),
+    )
+    state_path: Path = Field(
+        default=DEFAULT_STATE_PATH,
+        validation_alias="BUNDESTRACK_STATE_PATH",
+        description="Where the incremental sync stores its watermark and quarantine.",
+    )
 
-    @field_validator("convex_url", "bundestag_api_base_url")
+    @field_validator("convex_url", "convex_http_url", "bundestag_api_base_url")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
         # Every caller builds URLs as f"{base}/path"; normalising here means no
         # caller has to remember whether the base ends in a slash.
         return value.rstrip("/")
+
+    def require_convex_http_url(self) -> str:
+        """The Convex HTTP endpoint, or a readable error when it cannot be found.
+
+        Falls back to `CONVEX_URL` with the host rewritten, because the two are
+        the same deployment and asking an operator to set both invites them to
+        drift. The explicit variable still wins, for a deployment served from a
+        custom domain where the suffix swap does not apply.
+        """
+        if self.convex_http_url:
+            return self.convex_http_url
+        convex_url = self.require_convex_url()
+        if convex_url.endswith(CONVEX_API_HOST_SUFFIX):
+            return convex_url[: -len(CONVEX_API_HOST_SUFFIX)] + CONVEX_SITE_HOST_SUFFIX
+        raise ConfigError(
+            f"CONVEX_HTTP_URL is not set and {convex_url!r} does not end in "
+            f"{CONVEX_API_HOST_SUFFIX}, so the site URL cannot be derived from it. "
+            "Set CONVEX_HTTP_URL to the deployment's HTTP endpoint, e.g. "
+            "https://<deployment>.convex.site"
+        )
+
+    def require_pipeline_api_key(self) -> str:
+        """The ingestion key, or a readable error when it is unset.
+
+        Checked before a run rather than at the first POST: the ingestion API
+        denies on an unset key (webapp/convex/http.ts), so the alternative is
+        discovering it as a 401 after a full fetch has already been paid for.
+        """
+        if not self.pipeline_api_key:
+            raise ConfigError(
+                "PIPELINE_API_KEY is not set. It must match the value set on the "
+                'Convex deployment with `bunx convex env set PIPELINE_API_KEY "…"`.'
+            )
+        return self.pipeline_api_key
 
     def require_convex_url(self) -> str:
         """The Convex URL, or a readable error when it is unset.

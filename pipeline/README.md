@@ -19,15 +19,50 @@ be re-run.
 
 ```
 src/bundestrack/
-  cli.py        # click entry point: init / sync / backfill / status
+  cli.py        # click entry point: init / sync / backfill / scores / status
   config.py     # environment → Settings (pydantic-settings)
   api/          # httpx clients, one per source (see below)
   models/       # pydantic models for each source's wire format
   pipeline/     # orchestration: fetch → transform → load
+    join.py       # the MP identity layer — three id spaces onto one
+    transform.py  # pure model → Convex payload functions
+    load.py       # the Convex HTTP ingestion client
+    sync.py       # the stages, in the order the joins allow
+    state.py      # the watermark, the quarantine, the document hashes
 src/tests/      # pytest, against fixtures recorded from the live sources
 ```
 
-`pipeline/` is still a scaffold; everything else is implemented.
+## How a run is ordered, and why
+
+The order is a dependency graph, not a preference (§11.1) — and Convex
+enforces it, because every ingestion mutation rejects a record naming an MP who
+is not on the roster:
+
+1. **MdB-Stammdaten ZIP** → the roster, the internal ids, the name index,
+   committees. Everything else joins to this.
+2. **DIP `/person`** → the `dipPersonId` crosswalk, matched by folded name
+   (§7.2, 99.1 %).
+3. **DIP `/aktivitaet`** → activities, questions, sponsorships, the feed.
+4. **DIP `/vorgang` + `/drucksache`** → motions, deduplicated on the procedure.
+5. **Protocol XML** → speech segments, gated on `xml_hash`.
+6. **Named-vote XLSX** → ballots and per-MP votes — the only source with
+   absences (§4.2).
+7. **Seating** → regenerated from the roster. Synthetic; §9 is definitive that
+   no real seat assignment is published anywhere.
+
+Stages 2–7 are independent of each other, so one source being down does not
+cost the rest of the run: each reports its own outcome and the command exits
+non-zero if any failed.
+
+**Unmatched names are quarantined, never dropped.** The Stammdaten dump lags
+reality (§7.3) — two MPs in a July 2026 ballot were missing from it entirely —
+and a dropped vote row is a vote that silently never happened. `state.json`
+holds them and every sync retries them against the fresher roster.
+
+**The watermark is the max `aktualisiert` actually seen**, not wall-clock time,
+overlapped by an hour for clock skew (§11.2). A clock-based watermark drops any
+record whose timestamp fell between the query and the run finishing, and the
+next window starts after it — so the record never comes back.
 
 ## The four sources
 
@@ -71,12 +106,21 @@ Read from the environment, or a `.env` file in this directory:
 | Variable                  | Required | Meaning                                              |
 | ------------------------- | -------- | ---------------------------------------------------- |
 | `CONVEX_URL`              | to write | `https://<deployment>.convex.cloud`                   |
+| `CONVEX_HTTP_URL`         | no       | `https://<deployment>.convex.site` — derived from `CONVEX_URL` unless the deployment has a custom domain |
 | `BUNDESTAG_API_KEY`       | yes      | DIP API key (the Bundestag publishes a public one)    |
 | `BUNDESTAG_API_BASE_URL`  | no       | Defaults to `https://search.dip.bundestag.de/api/v1`  |
 | `PIPELINE_API_KEY`        | to write | Must match `PIPELINE_API_KEY` on the Convex deployment |
+| `BUNDESTRACK_STATE_PATH`  | no       | Where the watermark and quarantine live. Defaults to `.bundestrack-state.json` |
 
-`pixi run pipeline status` prints the resolved configuration without making a
-single API call — the quickest way to tell whether a cron host is set up.
+⚠ A Convex deployment answers on **two** hosts, and `/api/pipeline/*` is on the
+`.convex.site` one: anything registered on the `httpRouter` is served from the
+site URL, while `.convex.cloud` serves the generated client API. Posting to the
+wrong host returns a 404 that looks exactly like a missing route, so the
+pipeline converts one to the other rather than making you set both.
+
+`pixi run pipeline status` prints the resolved configuration — including the
+last watermark and the quarantine size — without making a single API call. It
+is the quickest way to tell whether a cron host is set up and keeping up.
 
 ## Running
 
@@ -87,8 +131,18 @@ pixi run pipeline status            # print config, touch nothing
 pixi run pipeline init              # full backfill of the current period
 pixi run pipeline sync              # daily incremental (what the cron runs)
 pixi run pipeline backfill --wp 20  # one named electoral period
+pixi run pipeline scores            # recompute activity scores now
 pixi run pipeline --dry-run sync    # fetch and transform, write nothing
 ```
+
+`init` on WP21 is **hours**: 80 537 activities over ~806 pages, 90 protocols
+and every named ballot, fetched strictly sequentially because the WAF blocks a
+pipeline that hurries (§2.6). It is resumable — every write is an upsert on a
+natural key, so a run that dies is re-run rather than repaired.
+
+`scores` is worth running after a backfill. The nightly Convex cron recomputes
+the current month plus each MP's period total, so a backfill's older months
+would otherwise stay at zero until something touched them.
 
 Or directly, inside this directory:
 

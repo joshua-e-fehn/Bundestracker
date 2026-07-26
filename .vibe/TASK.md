@@ -1,27 +1,56 @@
-# Task — convex-verify
+# Task — pipeline-orchestration
 
-Verify and fix the Convex ingestion pipeline. The schema and domain modules were just merged in PR #3. Your job is to verify that the Convex mutations, HTTP endpoints, and crons all work correctly together.
+Build the pipeline orchestration for the Bundestracker data pipeline. The API clients are already implemented in pipeline/src/bundestrack/api/ (base.py, dip.py, votes.py, stammdaten.py, protocols.py, abgeordnetenwatch.py). Read those files to understand the interfaces.
 
-Specifically:
+Your task: implement pipeline/src/bundestrack/pipeline/ — the fetch → transform → load pipeline that orchestrates the API clients and writes to Convex via HTTP.
 
-1. Read webapp/convex/schema.ts and all domain modules (mps.ts, votes.ts, motions.ts, speeches.ts, questions.ts, committees.ts, activities.ts, activityEvents.ts, activityScores.ts, seating.ts, userPreferences.ts).
+Read docs/api-research.md for the critical architectural findings, especially:
+- §7: The join problem (three incompatible ID spaces) — mint an internal Bundestrack MP ID
+- §7.1: Name-matching algorithm (verified 628/630)
+- §7.4: Recommendation to mint internal ID and store all external IDs against it
+- §11: Recommended pipeline design
 
-2. Read webapp/convex/http.ts — verify the HTTP mutation endpoints are correctly wired for the Python pipeline to call via POST. Each endpoint should accept JSON, validate it, and call the corresponding mutation.
+Implement these files:
 
-3. Read webapp/convex/crons.ts — verify the daily cron is properly configured to recompute activity scores.
+1. pipeline/src/bundestrack/pipeline/join.py — The MP identity resolution layer:
+   - Mint internal Bundestrack MP IDs
+   - Cross-reference DIP person ID ↔ Stammdaten ID via name matching (diacritic folding, ORTSZUSATZ disambiguation)
+   - Match vote sheet names to Stammdaten IDs (the 628/630 algorithm from §7.1)
+   - Store all external IDs against the internal ID
+   - Quarantine unmatched names for retry on later syncs
 
-4. Read webapp/lib/scoring.ts — verify the activity score computation matches the concept doc's default weights (25% motions, 20% speeches, 15% questions, 15% reports, 10% voting participation, 10% committee work, 5% legislative sponsorship).
+2. pipeline/src/bundestrack/pipeline/transform.py — Transform raw API responses to Convex schema shapes:
+   - Transform DIP person → mp shape
+   - Transform Stammdaten XML → mp shape (merge with DIP data)
+   - Transform vote XLSX → voteSheet + voteRecords (with name matching)
+   - Transform protocol XML → speeches (multi-speaker re-attribution)
+   - Transform DIP aktivitaet → activities + activityEvents
+   - Transform DIP vorgang/drucksache → motions + motionSponsors
+   - Transform Stammdaten committees → committeeMemberships
 
-5. Run bunx convex dev in the webapp directory to deploy to a dev Convex deployment. Fix any schema validation errors, type errors, or import issues you find.
+3. pipeline/src/bundestrack/pipeline/load.py — Load transformed data to Convex via HTTP API:
+   - POST to Convex HTTP mutation endpoints (defined in webapp/convex/http.ts)
+   - Idempotent upserts by external ID
+   - Batch writes (chunk large payloads)
+   - Error handling, retry on failure
+   - Progress tracking
 
-6. Test the HTTP endpoints by calling them with curl using sample data:
-   - POST to upsert an MP
-   - POST to upsert a vote sheet with vote records
-   - POST to upsert a motion
-   - Verify the data appears in queries
+4. pipeline/src/bundestrack/pipeline/sync.py — Orchestration:
+   - init() — Full backfill of current Wahlperiode (21): fetch all MPs, all votes, all protocols, all activities, all motions → transform → load
+   - sync() — Daily incremental: fetch only new/updated data since last sync → transform → load
+   - backfill(wahlperiode) — Backfill a specific electoral period
+   - recompute_scores() — Trigger Convex cron to recompute activity scores
 
-7. Create webapp/convex/lib/ingest.ts if it doesn't exist or improve the existing one — this is the shared ingestion logic (idempotent upserts by external ID, batch writes, error handling).
+5. pipeline/src/bundestrack/pipeline/__init__.py — Re-exports
 
-8. If you find any issues, fix them. Commit and push all fixes.
+6. Update pipeline/src/bundestrack/cli.py to wire the pipeline commands:
+   - bundestracker init — calls sync.init() for the current WP
+   - bundestracker sync — calls sync.sync() for daily incremental
+   - bundestracker backfill --wp <N> — calls sync.backfill(N)
+   - bundestracker scores — calls sync.recompute_scores()
 
-The goal is a verified, working Convex backend that the Python pipeline can write to and the frontend can read from.
+7. pipeline/src/bundestrack/config.py should already have CONVEX_URL, BUNDESTAG_API_KEY, BUNDESTAG_API_BASE_URL. Add CONVEX_HTTP_URL (the Convex deployment HTTP endpoint URL).
+
+Write tests for the transform and join logic.
+
+Commit and push when done.
