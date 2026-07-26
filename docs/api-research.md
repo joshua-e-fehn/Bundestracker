@@ -352,8 +352,7 @@ multi-megabyte `-text` pages.
 
 ## 3. Vorgänge, Vorgangspositionen & Drucksachen
 
-*(Section populated from the fleet's verified findings — see §12 for the
-per-endpoint field reference.)*
+Full per-endpoint field lists are in §12.
 
 ### 3.1 The data model
 
