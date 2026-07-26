@@ -67,20 +67,28 @@ const de = {
   "nav.home": "Startseite",
   "nav.members": "Abgeordnete",
   "nav.activity": "Aktivität",
-  "nav.rankings": "Rangliste",
-  "nav.feed": "Aktivitätsfeed",
   "nav.about": "Über",
   "nav.language": "Sprache",
   "nav.theme": "Design",
+  "nav.rankings": "Rangliste",
+  "nav.feed": "Aktivitätsfeed",
+  "nav.votes": "Abstimmungen",
+  "nav.motions": "Anträge",
+  "nav.menu": "Menü",
+  "nav.openMenu": "Menü öffnen",
+  "nav.closeMenu": "Menü schließen",
+
+  "theme.light": "Hell",
+  "theme.dark": "Dunkel",
+  "theme.system": "System",
 
   "auth.signIn": "Anmelden",
   "auth.signOut": "Abmelden",
   "auth.signInWithGoogle": "Mit Google anmelden",
   "auth.signInWithGitHub": "Mit GitHub anmelden",
-  // The sign-in page has to answer "why would I?", because the answer is not
-  // "to see the data" — all of it is public without an account.
   "auth.optionalNotice":
     "Anmelden ist optional. Alle Daten sind ohne Konto einsehbar; ein Konto speichert eigene Gewichtungen und gefolgte Abgeordnete.",
+  "auth.account": "Konto",
 
   "common.loading": "Wird geladen …",
   "common.error": "Etwas ist schiefgelaufen.",
@@ -89,156 +97,38 @@ const de = {
   "common.search": "Suchen",
   "common.all": "Alle",
   "common.none": "Keine",
-  "common.empty": "Keine Einträge gefunden.",
-  "common.loadMore": "Mehr laden",
-  "common.showingCount": "{shown} von {total}",
+  "common.reset": "Zurücksetzen",
+  "common.showMore": "Mehr anzeigen",
+  "common.comingSoon": "Demnächst verfügbar",
   "common.previous": "Zurück",
   "common.next": "Weiter",
   "common.page": "Seite {page} von {pages}",
-  "common.reset": "Zurücksetzen",
-  "common.filters": "Filter",
-
-  "mp.motions": "Anträge",
-  "mp.speeches": "Reden",
-  "mp.votes": "Abstimmungen",
-  "mp.questions": "Anfragen",
-  "mp.committees": "Ausschüsse",
-  "mp.party": "Fraktion",
-  "mp.constituency": "Wahlkreis",
-  "mp.electoralPeriod": "Wahlperiode",
-  "mp.activityScore": "Aktivitätswert",
-
-  // --- rankings -----------------------------------------------------------
-
-  "rankings.title": "Ranglisten",
-  "rankings.subtitle": "Wer im Bundestag was tut — gemessen an offiziellen Aufzeichnungen.",
-  "rankings.rank": "Rang",
-  "rankings.member": "Abgeordnete:r",
-  "rankings.metric": "Wert",
-  "rankings.score": "Aktivitätswert",
-  "rankings.empty": "Für diese Auswahl liegen keine Werte vor.",
-
-  // Board names. Each is a leaderboard tab; the description sits under the
-  // heading and says what the number actually counts.
-  "rankings.board.mostActive": "Aktivste",
-  "rankings.board.mostActive.desc":
-    "Gesamter Aktivitätswert der Wahlperiode, gewichtet nach den Standardgewichten.",
-  "rankings.board.speeches": "Meiste Reden",
-  "rankings.board.speeches.desc":
-    "Redebeiträge im Plenum. Die Wortzahl steht daneben — sie ist der Wert, den die Bewertung nutzt.",
-  "rankings.board.motions": "Meiste Anträge",
-  "rankings.board.motions.desc": "Anträge und Entschließungsanträge, gezählt aus DIP-Aktivitäten.",
-  "rankings.board.questions": "Meiste Anfragen",
-  "rankings.board.questions.desc": "Kleine und Große Anfragen an die Bundesregierung.",
-  "rankings.board.voteParticipation": "Höchste Abstimmungsbeteiligung",
-  "rankings.board.voteParticipation.desc":
-    "Anteil der namentlichen Abstimmungen, an denen abgestimmt wurde. Enthaltung zählt als Teilnahme.",
-  "rankings.board.crossParty": "Meiste Abweichung von der Fraktion",
-  "rankings.board.crossParty.desc":
-    "Namentliche Abstimmungen, in denen anders als die Mehrheit der eigenen Fraktion gestimmt wurde.",
-  "rankings.board.committees": "Meiste Ausschussarbeit",
-  "rankings.board.committees.desc":
-    "Ausschusssitze in der laufenden Wahlperiode. Frühere Perioden sind nicht veröffentlicht.",
-  "rankings.board.bills": "Meiste Gesetzentwürfe",
-  "rankings.board.bills.desc": "Gesetzentwürfe, die die Abgeordneten mitgezeichnet haben.",
-  "rankings.board.rising": "Aufsteiger:innen des Monats",
-  "rankings.board.rising.desc":
-    "Größter Zuwachs des Aktivitätswerts gegenüber dem Vormonat, in Punkten.",
-
-  // Column headers, kept short enough for a table head.
-  "rankings.column.speeches": "Reden",
-  "rankings.column.words": "Wörter",
-  "rankings.column.motions": "Anträge",
-  "rankings.column.questions": "Anfragen",
-  "rankings.column.participation": "Beteiligung",
-  "rankings.column.ballots": "Abstimmungen",
-  "rankings.column.dissent": "Abweichungen",
-  "rankings.column.committees": "Ausschüsse",
-  "rankings.column.bills": "Gesetzentwürfe",
-  "rankings.column.change": "Veränderung",
-  "rankings.column.previous": "Vormonat",
-
-  "rankings.filter.fraktion": "Fraktion",
-  "rankings.filter.state": "Bundesland",
-  "rankings.filter.ageGroup": "Altersgruppe",
-  "rankings.filter.allFraktionen": "Alle Fraktionen",
-  "rankings.filter.allStates": "Alle Bundesländer",
-  "rankings.filter.allAges": "Alle Altersgruppen",
-  "rankings.filter.month": "Zeitraum",
-  "rankings.filter.wholePeriod": "Gesamte Wahlperiode",
-
-  "rankings.age.u30": "unter 30",
-  "rankings.age.30s": "30–39",
-  "rankings.age.40s": "40–49",
-  "rankings.age.50s": "50–59",
-  "rankings.age.60s": "60–69",
-  "rankings.age.70plus": "70+",
-
-  // The caveats. These are structural limits of the sources (docs/api-research.md
-  // §4.4, §5.2, §6.4), not provisional gaps, so they are shown beside the number
-  // rather than filed under "about".
-  "rankings.caveat.namedVotesOnly":
-    "Nur namentliche Abstimmungen — rund 1 015 in der Geschichte des Bundestages. Alle übrigen Abstimmungen sind Handzeichen ohne personenbezogene Aufzeichnung.",
-  "rankings.caveat.speechCount":
-    "Redebeiträge sind Segmente, keine Reden: die Fragestunde zerlegt einen Ministerbeitrag in Dutzende Antworten. Die Bewertung nutzt deshalb die Wortzahl.",
-  "rankings.caveat.committeesCurrentOnly":
-    "Ausschussdaten liegen nur für die laufende Wahlperiode vor — frühere Perioden sind nirgends maschinenlesbar veröffentlicht.",
-  "rankings.caveat.crossParty":
-    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
-  "rankings.caveat.rising":
-    "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
-  "rankings.noPreviousMonth":
-    "Für die gesamte Wahlperiode gibt es keinen Vormonat. Wählen Sie einen Monat.",
-
-  "rankings.scoreExplainer":
-    "Der Aktivitätswert ist eine gewichtete Summe messbarer Vorgänge. Die Gewichtung ist eine Setzung, keine Wertung — jede Komponente ist einzeln ausgewiesen.",
-
-  // --- activity feed ------------------------------------------------------
-
-  "feed.title": "Aktivitätsfeed",
-  "feed.subtitle": "Was zuletzt im Bundestag passiert ist.",
-  "feed.empty": "Keine Aktivitäten für diese Auswahl.",
-  "feed.filterByType": "Nach Art filtern",
-  "feed.allTypes": "Alle Arten",
-  "feed.reference": "Zum Nachweis",
-  "feed.end": "Keine weiteren Einträge.",
-
-  "event.motion": "Antrag",
-  "event.speech": "Rede",
-  "event.vote": "Abstimmung",
-  "event.question": "Anfrage",
-  "event.bill": "Gesetzentwurf",
-  "event.committee": "Ausschuss",
-  "event.activity": "Aktivität",
-
-  // Relative timestamps. `{count}` is the number; the caller picks singular or
-  // plural by key, because German and English split at different counts.
-  "time.justNow": "gerade eben",
-  "time.minuteAgo": "vor einer Minute",
-  "time.minutesAgo": "vor {count} Minuten",
-  "time.hourAgo": "vor einer Stunde",
-  "time.hoursAgo": "vor {count} Stunden",
-  "time.yesterday": "gestern",
-  "time.daysAgo": "vor {count} Tagen",
-  "time.weekAgo": "vor einer Woche",
-  "time.weeksAgo": "vor {count} Wochen",
-  "time.monthAgo": "vor einem Monat",
-  "time.monthsAgo": "vor {count} Monaten",
-  "time.yearAgo": "vor einem Jahr",
-  "time.yearsAgo": "vor {count} Jahren",
-
-  // --- MP profiles, roster and score panel -------------------------------
-  //
-  // Restored: these belong to the MP-profile pages (PR #7) and were dropped
-  // when PR #8 rewrote the neighbouring region of this file. Their absence
-  // broke `pixi run typecheck` on main — `t()` keys off this dictionary, so a
-  // missing key is a compile error at every call site, which is exactly the
-  // guard this file's header describes working as intended.
-
-  "common.showMore": "Mehr anzeigen",
-  "common.comingSoon": "Demnächst verfügbar",
   "common.noResults": "Keine Treffer.",
+  "common.empty": "Keine Einträge gefunden.",
+  "common.loadMore": "Mehr laden",
+  "common.showingCount": "{shown} von {total}",
+  "common.filters": "Filter",
+  "common.noData": "Noch keine Daten",
+  "common.noDataHint": "Die Datenpipeline hat für diesen Bereich noch nichts geladen.",
 
+  "home.heroLead":
+    "Wie ein Beitragsdiagramm für Abgeordnete: Anträge, Reden, Abstimmungen, Anfragen und Ausschussarbeit — jede Zahl belegt durch ein offizielles Dokument des Bundestages.",
+  "home.browseAllMPs": "Alle Abgeordneten ansehen",
+  "home.viewRankings": "Rangliste ansehen",
+  "home.statsTitle": "Der Bundestag in Zahlen",
+  "home.statMPs": "Abgeordnete",
+  "home.statNamedVotes": "Namentliche Abstimmungen",
+  "home.statMotions": "Anträge & Gesetzentwürfe",
+  "home.statSpeeches": "Redebeiträge",
+  "home.statNamedVotesNote":
+    "Nur namentliche Abstimmungen — für alle übrigen Abstimmungen existiert kein Einzelnachweis.",
+  "home.topMPsTitle": "Aktivste Abgeordnete",
+  "home.topMPsSubtitle": "Nach Aktivitätswert in der laufenden Wahlperiode",
+  "home.latestVotesTitle": "Neueste namentliche Abstimmungen",
+  "home.feedTitle": "Zuletzt geschehen",
+  "home.showAll": "Alle ansehen",
+
+  // --- MP list -------------------------------------------------------------
   "mps.title": "Abgeordnete",
   "mps.subtitle": "Alle Mitglieder des Deutschen Bundestages der {wahlperiode}. Wahlperiode.",
   "mps.searchPlaceholder": "Nach Name oder Wahlkreis suchen …",
@@ -254,7 +144,16 @@ const de = {
   "mps.columnParticipation": "Abstimmungsteilnahme",
   "mps.listMandate": "Landesliste",
 
-  // --- MP profile ---
+  // --- MP profile ----------------------------------------------------------
+  "mp.motions": "Anträge",
+  "mp.speeches": "Reden",
+  "mp.votes": "Abstimmungen",
+  "mp.questions": "Anfragen",
+  "mp.committees": "Ausschüsse",
+  "mp.party": "Fraktion",
+  "mp.constituency": "Wahlkreis",
+  "mp.electoralPeriod": "Wahlperiode",
+  "mp.activityScore": "Aktivitätswert",
   "mp.backToList": "Zurück zur Übersicht",
   "mp.notFound": "Diese Abgeordnete oder dieser Abgeordnete wurde nicht gefunden.",
   "mp.biography": "Biografie",
@@ -286,7 +185,7 @@ const de = {
   "mp.trends": "Entwicklung",
   "mp.trendsComingSoon": "Verlaufsgrafiken folgen in einer späteren Ausbaustufe.",
 
-  // --- score breakdown ---
+  // --- score breakdown -----------------------------------------------------
   "score.total": "Gesamtwert",
   "score.breakdown": "Zusammensetzung",
   "score.component": "Komponente",
@@ -303,10 +202,6 @@ const de = {
   "score.component.voteParticipation": "Abstimmungsteilnahme",
   "score.component.committees": "Ausschüsse",
   "score.component.billSponsorships": "Gesetzentwürfe",
-
-  // The three structural limits from lib/scoring.ts. They belong in the UI
-  // rather than only in a comment: each one is a case where a low number means
-  // "not published" rather than "did not happen".
   "score.caveat.namedVotes":
     "Abstimmungsteilnahme umfasst nur namentliche Abstimmungen. Alle übrigen Abstimmungen werden nicht personenbezogen protokolliert.",
   "score.caveat.committees":
@@ -314,7 +209,7 @@ const de = {
   "score.caveat.speechWords":
     "Redebeiträge werden nach Wörtern gewichtet, nicht nach Anzahl der Wortmeldungen.",
 
-  // --- weight controls ---
+  // --- weight controls -----------------------------------------------------
   "weights.title": "Eigene Gewichtungen",
   "weights.description":
     "Passen Sie die Gewichtung jeder Komponente an. Der Wert wird sofort neu berechnet.",
@@ -327,7 +222,7 @@ const de = {
   "weights.saveFailed": "Speichern fehlgeschlagen.",
   "weights.resetToDefault": "Standardwerte",
 
-  // --- activity heatmap ---
+  // --- activity heatmap ----------------------------------------------------
   "heatmap.title": "Aktivitätsverlauf",
   "heatmap.legendLess": "weniger",
   "heatmap.legendMore": "mehr",
@@ -336,53 +231,168 @@ const de = {
   "heatmap.empty": "Für diesen Zeitraum sind keine Aktivitäten erfasst.",
   "heatmap.total": "{count} Aktivitäten in den letzten zwölf Monaten",
 
-  // --- votes ---
+  // --- rankings ------------------------------------------------------------
+  "rankings.title": "Ranglisten",
+  "rankings.subtitle": "Wer im Bundestag was tut — gemessen an offiziellen Aufzeichnungen.",
+  "rankings.rank": "Rang",
+  "rankings.member": "Abgeordnete:r",
+  "rankings.metric": "Wert",
+  "rankings.score": "Aktivitätswert",
+  "rankings.empty": "Für diese Auswahl liegen keine Werte vor.",
+  "rankings.board.mostActive": "Aktivste",
+  "rankings.board.mostActive.desc":
+    "Gesamter Aktivitätswert der Wahlperiode, gewichtet nach den Standardgewichten.",
+  "rankings.board.speeches": "Meiste Reden",
+  "rankings.board.speeches.desc":
+    "Redebeiträge im Plenum. Die Wortzahl steht daneben — sie ist der Wert, den die Bewertung nutzt.",
+  "rankings.board.motions": "Meiste Anträge",
+  "rankings.board.motions.desc": "Anträge und Entschließungsanträge, gezählt aus DIP-Aktivitäten.",
+  "rankings.board.questions": "Meiste Anfragen",
+  "rankings.board.questions.desc": "Kleine und Große Anfragen an die Bundesregierung.",
+  "rankings.board.voteParticipation": "Höchste Abstimmungsbeteiligung",
+  "rankings.board.voteParticipation.desc":
+    "Anteil der namentlichen Abstimmungen, an denen abgestimmt wurde. Enthaltung zählt als Teilnahme.",
+  "rankings.board.crossParty": "Meiste Abweichung von der Fraktion",
+  "rankings.board.crossParty.desc":
+    "Namentliche Abstimmungen, in denen anders als die Mehrheit der eigenen Fraktion gestimmt wurde.",
+  "rankings.board.committees": "Meiste Ausschussarbeit",
+  "rankings.board.committees.desc":
+    "Ausschusssitze in der laufenden Wahlperiode. Frühere Perioden sind nicht veröffentlicht.",
+  "rankings.board.bills": "Meiste Gesetzentwürfe",
+  "rankings.board.bills.desc": "Gesetzentwürfe, die die Abgeordneten mitgezeichnet haben.",
+  "rankings.board.rising": "Aufsteiger:innen des Monats",
+  "rankings.board.rising.desc":
+    "Größter Zuwachs des Aktivitätswerts gegenüber dem Vormonat, in Punkten.",
+  "rankings.column.speeches": "Reden",
+  "rankings.column.words": "Wörter",
+  "rankings.column.motions": "Anträge",
+  "rankings.column.questions": "Anfragen",
+  "rankings.column.participation": "Beteiligung",
+  "rankings.column.ballots": "Abstimmungen",
+  "rankings.column.dissent": "Abweichungen",
+  "rankings.column.committees": "Ausschüsse",
+  "rankings.column.bills": "Gesetzentwürfe",
+  "rankings.column.change": "Veränderung",
+  "rankings.column.previous": "Vormonat",
+  "rankings.filter.fraktion": "Fraktion",
+  "rankings.filter.state": "Bundesland",
+  "rankings.filter.ageGroup": "Altersgruppe",
+  "rankings.filter.allFraktionen": "Alle Fraktionen",
+  "rankings.filter.allStates": "Alle Bundesländer",
+  "rankings.filter.allAges": "Alle Altersgruppen",
+  "rankings.filter.month": "Zeitraum",
+  "rankings.filter.wholePeriod": "Gesamte Wahlperiode",
+  "rankings.age.u30": "unter 30",
+  "rankings.age.30s": "30–39",
+  "rankings.age.40s": "40–49",
+  "rankings.age.50s": "50–59",
+  "rankings.age.60s": "60–69",
+  "rankings.age.70plus": "70+",
+  "rankings.caveat.namedVotesOnly":
+    "Nur namentliche Abstimmungen — rund 1 015 in der Geschichte des Bundestages. Alle übrigen Abstimmungen sind Handzeichen ohne personenbezogene Aufzeichnung.",
+  "rankings.caveat.speechCount":
+    "Redebeiträge sind Segmente, keine Reden: die Fragestunde zerlegt einen Ministerbeitrag in Dutzende Antworten. Die Bewertung nutzt deshalb die Wortzahl.",
+  "rankings.caveat.committeesCurrentOnly":
+    "Ausschussdaten liegen nur für die laufende Wahlperiode vor — frühere Perioden sind nirgends maschinenlesbar veröffentlicht.",
+  "rankings.caveat.crossParty":
+    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
+  "rankings.caveat.rising":
+    "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
+  "rankings.noPreviousMonth":
+    "Für die gesamte Wahlperiode gibt es keinen Vormonat. Wählen Sie einen Monat.",
+  "rankings.scoreExplainer":
+    "Der Aktivitätswert ist eine gewichtete Summe messbarer Vorgänge. Die Gewichtung ist eine Setzung, keine Wertung — jede Komponente ist einzeln ausgewiesen.",
+
+  // --- voting explorer -----------------------------------------------------
+  "votes.title": "Namentliche Abstimmungen",
+  "votes.subtitle":
+    "Jede namentliche Abstimmung des Bundestages — mit dem Stimmverhalten jeder und jedes Abgeordneten.",
+  "votes.namedOnlyNotice":
+    "Nur namentliche Abstimmungen werden personenbezogen protokolliert. Alle übrigen Abstimmungen sind Handzeichen, für die kein Einzelnachweis existiert.",
+  "votes.empty": "Für diese Auswahl liegen keine Abstimmungen vor.",
+  "votes.emptyAll": "Für diese Wahlperiode sind noch keine Abstimmungen geladen.",
+  "votes.searchPlaceholder": "Abstimmungen durchsuchen …",
+  "votes.filterResult": "Ergebnis",
+  "votes.allResults": "Alle Ergebnisse",
+  "votes.filterYear": "Jahr",
+  "votes.allYears": "Alle Jahre",
+  "votes.count": "{count} von {total} Abstimmungen",
+  "votes.columnDate": "Datum",
+  "votes.columnTitle": "Vorlage",
+  "votes.columnResult": "Ergebnis",
+  "votes.columnBreakdown": "Stimmverteilung",
+  "votes.sitting": "Sitzung {sitzungnr}, Abstimmung {abstimmnr}",
+  "votes.notFound": "Diese Abstimmung wurde nicht gefunden.",
+  "votes.backToList": "Zurück zu den Abstimmungen",
+  "votes.turnout": "Beteiligung",
+  "votes.eligible": "Stimmberechtigt",
+  "votes.sourceSheet": "Amtliches Abstimmungsergebnis (XLSX)",
+  "votes.tallyMismatch":
+    "Die veröffentlichten Zahlen und die geladenen Einzelstimmen stimmen nicht überein — die Daten zu dieser Abstimmung sind unvollständig.",
+  "votes.tallyPublished": "Veröffentlicht",
+  "votes.tallyCounted": "Geladen",
+  "votes.breakdownTitle": "Abstimmung nach Fraktion",
+  "votes.breakdownEmpty": "Keine Fraktionsdaten zu dieser Abstimmung.",
+  "votes.recordsTitle": "Einzelne Stimmen",
+  "votes.recordsEmpty": "Keine Einzelstimmen zu dieser Abstimmung geladen.",
+  "votes.searchMembers": "Abgeordnete suchen …",
+  "votes.filterVote": "Stimme",
+  "votes.allVotes": "Alle Stimmen",
+  "votes.filterFraktion": "Fraktion",
+  "votes.allFraktionen": "Alle Fraktionen",
+  "votes.columnMember": "Abgeordnete:r",
+  "votes.columnVote": "Stimme",
+  "votes.columnRemark": "Anmerkung",
+  "votes.noMembers": "Keine Abgeordneten entsprechen den Filtern.",
+  "votes.groupMajority": "Fraktionsmehrheit",
+  "votes.groupMajorityNone": "keine Mehrheit",
+  "votes.groupShare": "{share} der abgegebenen Stimmen",
+  "votes.rebels": "Abweichler:innen",
+  "votes.rebel": "Abweichung",
+  "votes.rebelTooltip": "Hat anders gestimmt als die Mehrheit der eigenen Fraktion.",
+  "votes.rebelsEmpty": "Niemand ist von der eigenen Fraktionsmehrheit abgewichen.",
+  "votes.rebelsNote":
+    "Abwesenheit zählt nicht als Abweichung, und eine gespaltene Fraktion hat keine Mehrheit, von der abgewichen werden könnte.",
+  "votes.rebelCount": "{count} Abweichung(en)",
+  "votes.showAllMembers": "Alle {count} Abgeordneten anzeigen",
+
   "vote.yes": "Ja",
   "vote.no": "Nein",
   "vote.abstain": "Enthaltung",
   "vote.invalid": "Ungültig",
   "vote.absent": "Nicht abgegeben",
 
-  // --- site chrome, homepage and footer ---
-  "nav.votes": "Abstimmungen",
-  "nav.motions": "Anträge",
-  "nav.menu": "Menü",
-  "nav.openMenu": "Menü öffnen",
-  "nav.closeMenu": "Menü schließen",
+  // --- activity feed -------------------------------------------------------
+  "feed.title": "Aktivitätsfeed",
+  "feed.subtitle": "Was zuletzt im Bundestag passiert ist.",
+  "feed.empty": "Keine Aktivitäten für diese Auswahl.",
+  "feed.filterByType": "Nach Art filtern",
+  "feed.allTypes": "Alle Arten",
+  "feed.reference": "Zum Nachweis",
+  "feed.end": "Keine weiteren Einträge.",
 
-  "theme.light": "Hell",
-  "theme.dark": "Dunkel",
-  "theme.system": "System",
-  "auth.account": "Konto",
-  // Distinct from `common.loading` on purpose: an empty section and a loading
-  // one look alike, and only one of them is worth waiting for.
-  "common.noData": "Noch keine Daten",
-  "common.noDataHint": "Die Datenpipeline hat für diesen Bereich noch nichts geladen.",
+  "event.motion": "Antrag",
+  "event.speech": "Rede",
+  "event.vote": "Abstimmung",
+  "event.question": "Anfrage",
+  "event.bill": "Gesetzentwurf",
+  "event.committee": "Ausschuss",
+  "event.activity": "Aktivität",
 
-  "home.heroLead":
-    "Wie ein Beitragsdiagramm für Abgeordnete: Anträge, Reden, Abstimmungen, Anfragen und Ausschussarbeit — jede Zahl belegt durch ein offizielles Dokument des Bundestages.",
-  "home.browseAllMPs": "Alle Abgeordneten ansehen",
-  "home.viewRankings": "Rangliste ansehen",
-
-  "home.statsTitle": "Der Bundestag in Zahlen",
-  "home.statMPs": "Abgeordnete",
-  "home.statNamedVotes": "Namentliche Abstimmungen",
-  "home.statMotions": "Anträge & Gesetzentwürfe",
-  // "Redebeiträge", not "Reden": a row is one speaker's turn, and §5.2 counts
-  // 197 speaker paragraphs against 112 `<rede>` elements in one sitting. A card
-  // headed "Reden" would read about 75 % high.
-  "home.statSpeeches": "Redebeiträge",
-  // The one caveat that belongs on the front page rather than buried: a named
-  // ballot is the exception in the Bundestag, not the rule, so this figure is
-  // not "how often they voted".
-  "home.statNamedVotesNote":
-    "Nur namentliche Abstimmungen — für alle übrigen Abstimmungen existiert kein Einzelnachweis.",
-
-  "home.topMPsTitle": "Aktivste Abgeordnete",
-  "home.topMPsSubtitle": "Nach Aktivitätswert in der laufenden Wahlperiode",
-  "home.latestVotesTitle": "Neueste namentliche Abstimmungen",
-  "home.feedTitle": "Zuletzt geschehen",
-  "home.showAll": "Alle ansehen",
+  // --- relative timestamps -------------------------------------------------
+  "time.justNow": "gerade eben",
+  "time.minuteAgo": "vor einer Minute",
+  "time.minutesAgo": "vor {count} Minuten",
+  "time.hourAgo": "vor einer Stunde",
+  "time.hoursAgo": "vor {count} Stunden",
+  "time.yesterday": "gestern",
+  "time.daysAgo": "vor {count} Tagen",
+  "time.weekAgo": "vor einer Woche",
+  "time.weeksAgo": "vor {count} Wochen",
+  "time.monthAgo": "vor einem Monat",
+  "time.monthsAgo": "vor {count} Monaten",
+  "time.yearAgo": "vor einem Jahr",
+  "time.yearsAgo": "vor {count} Jahren",
 
   "footer.dataSource": "Datenquelle",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",
@@ -410,11 +420,20 @@ const en: Dictionary = {
   "nav.home": "Home",
   "nav.members": "Members",
   "nav.activity": "Activity",
-  "nav.rankings": "Rankings",
-  "nav.feed": "Activity feed",
   "nav.about": "About",
   "nav.language": "Language",
   "nav.theme": "Theme",
+  "nav.rankings": "Rankings",
+  "nav.feed": "Activity feed",
+  "nav.votes": "Votes",
+  "nav.motions": "Motions",
+  "nav.menu": "Menu",
+  "nav.openMenu": "Open menu",
+  "nav.closeMenu": "Close menu",
+
+  "theme.light": "Light",
+  "theme.dark": "Dark",
+  "theme.system": "System",
 
   "auth.signIn": "Sign in",
   "auth.signOut": "Sign out",
@@ -422,6 +441,7 @@ const en: Dictionary = {
   "auth.signInWithGitHub": "Sign in with GitHub",
   "auth.optionalNotice":
     "Signing in is optional. All data is viewable without an account; an account saves your own score weightings and followed members.",
+  "auth.account": "Account",
 
   "common.loading": "Loading …",
   "common.error": "Something went wrong.",
@@ -430,148 +450,38 @@ const en: Dictionary = {
   "common.search": "Search",
   "common.all": "All",
   "common.none": "None",
-  "common.empty": "No entries found.",
-  "common.loadMore": "Load more",
-  "common.showingCount": "{shown} of {total}",
+  "common.reset": "Reset",
+  "common.showMore": "Show more",
+  "common.comingSoon": "Coming soon",
   "common.previous": "Previous",
   "common.next": "Next",
   "common.page": "Page {page} of {pages}",
-  "common.reset": "Reset",
-  "common.filters": "Filters",
-
-  "mp.motions": "Motions",
-  "mp.speeches": "Speeches",
-  "mp.votes": "Votes",
-  "mp.questions": "Questions",
-  "mp.committees": "Committees",
-  "mp.party": "Party",
-  "mp.constituency": "Constituency",
-  "mp.electoralPeriod": "Electoral period",
-  "mp.activityScore": "Activity score",
-
-  // --- rankings -----------------------------------------------------------
-
-  "rankings.title": "Rankings",
-  "rankings.subtitle": "Who does what in the Bundestag — measured against official records.",
-  "rankings.rank": "Rank",
-  "rankings.member": "Member",
-  "rankings.metric": "Value",
-  "rankings.score": "Activity score",
-  "rankings.empty": "No figures available for this selection.",
-
-  "rankings.board.mostActive": "Most active",
-  "rankings.board.mostActive.desc":
-    "Total activity score for the electoral period, under the default weights.",
-  "rankings.board.speeches": "Most speeches",
-  "rankings.board.speeches.desc":
-    "Plenary speech segments. The word count sits alongside — that is the figure scoring uses.",
-  "rankings.board.motions": "Most motions",
-  "rankings.board.motions.desc": "Motions and resolutions, counted from DIP activity records.",
-  "rankings.board.questions": "Most questions",
-  "rankings.board.questions.desc": "Minor and major written questions to the federal government.",
-  "rankings.board.voteParticipation": "Highest voting participation",
-  "rankings.board.voteParticipation.desc":
-    "Share of named ballots in which a vote was cast. An abstention counts as participation.",
-  "rankings.board.crossParty": "Most cross-party voting",
-  "rankings.board.crossParty.desc":
-    "Named ballots voted against the majority of the member's own parliamentary group.",
-  "rankings.board.committees": "Most committee work",
-  "rankings.board.committees.desc":
-    "Committee seats in the current electoral period. Earlier periods are unpublished.",
-  "rankings.board.bills": "Most bills introduced",
-  "rankings.board.bills.desc": "Bills the member put their name to.",
-  "rankings.board.rising": "Rising this month",
-  "rankings.board.rising.desc":
-    "Largest increase in activity score against the previous month, in points.",
-
-  "rankings.column.speeches": "Speeches",
-  "rankings.column.words": "Words",
-  "rankings.column.motions": "Motions",
-  "rankings.column.questions": "Questions",
-  "rankings.column.participation": "Participation",
-  "rankings.column.ballots": "Ballots",
-  "rankings.column.dissent": "Dissents",
-  "rankings.column.committees": "Committees",
-  "rankings.column.bills": "Bills",
-  "rankings.column.change": "Change",
-  "rankings.column.previous": "Previous month",
-
-  "rankings.filter.fraktion": "Parliamentary group",
-  "rankings.filter.state": "Federal state",
-  "rankings.filter.ageGroup": "Age group",
-  "rankings.filter.allFraktionen": "All groups",
-  "rankings.filter.allStates": "All states",
-  "rankings.filter.allAges": "All ages",
-  "rankings.filter.month": "Period",
-  "rankings.filter.wholePeriod": "Whole electoral period",
-
-  "rankings.age.u30": "under 30",
-  "rankings.age.30s": "30–39",
-  "rankings.age.40s": "40–49",
-  "rankings.age.50s": "50–59",
-  "rankings.age.60s": "60–69",
-  "rankings.age.70plus": "70+",
-
-  "rankings.caveat.namedVotesOnly":
-    "Named ballots only — roughly 1,015 in the Bundestag's entire history. Every other vote is a show of hands with no per-member record.",
-  "rankings.caveat.speechCount":
-    "Speech entries are segments, not speeches: question time splits a minister's turn into dozens of replies. Scoring therefore uses the word count.",
-  "rankings.caveat.committeesCurrentOnly":
-    "Committee data exists for the current electoral period only — earlier periods are published nowhere in machine-readable form.",
-  "rankings.caveat.crossParty":
-    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
-  "rankings.caveat.rising":
-    "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
-  "rankings.noPreviousMonth":
-    "The whole electoral period has no previous month. Pick a month instead.",
-
-  "rankings.scoreExplainer":
-    "The activity score is a weighted sum of measurable records. The weighting is a choice, not a verdict — every component is shown separately.",
-
-  // --- activity feed ------------------------------------------------------
-
-  "feed.title": "Activity feed",
-  "feed.subtitle": "What has just happened in the Bundestag.",
-  "feed.empty": "No activity for this selection.",
-  "feed.filterByType": "Filter by type",
-  "feed.allTypes": "All types",
-  "feed.reference": "Source record",
-  "feed.end": "No further entries.",
-
-  "event.motion": "Motion",
-  "event.speech": "Speech",
-  "event.vote": "Vote",
-  "event.question": "Question",
-  "event.bill": "Bill",
-  "event.committee": "Committee",
-  "event.activity": "Activity",
-
-  "time.justNow": "just now",
-  "time.minuteAgo": "a minute ago",
-  "time.minutesAgo": "{count} minutes ago",
-  "time.hourAgo": "an hour ago",
-  "time.hoursAgo": "{count} hours ago",
-  "time.yesterday": "yesterday",
-  "time.daysAgo": "{count} days ago",
-  "time.weekAgo": "a week ago",
-  "time.weeksAgo": "{count} weeks ago",
-  "time.monthAgo": "a month ago",
-  "time.monthsAgo": "{count} months ago",
-  "time.yearAgo": "a year ago",
-  "time.yearsAgo": "{count} years ago",
-
-  // --- MP profiles, roster and score panel -------------------------------
-  //
-  // Restored: these belong to the MP-profile pages (PR #7) and were dropped
-  // when PR #8 rewrote the neighbouring region of this file. Their absence
-  // broke `pixi run typecheck` on main — `t()` keys off this dictionary, so a
-  // missing key is a compile error at every call site, which is exactly the
-  // guard this file's header describes working as intended.
-
-  "common.showMore": "Show more",
-  "common.comingSoon": "Coming soon",
   "common.noResults": "No results.",
+  "common.empty": "No entries found.",
+  "common.loadMore": "Load more",
+  "common.showingCount": "{shown} of {total}",
+  "common.filters": "Filters",
+  "common.noData": "No data yet",
+  "common.noDataHint": "The data pipeline has not loaded anything for this section yet.",
 
+  "home.heroLead":
+    "A contributions graph for members of parliament: motions, speeches, votes, questions and committee work — every figure backed by an official Bundestag record.",
+  "home.browseAllMPs": "Browse all MPs",
+  "home.viewRankings": "View rankings",
+  "home.statsTitle": "The Bundestag in numbers",
+  "home.statMPs": "Members",
+  "home.statNamedVotes": "Named votes",
+  "home.statMotions": "Motions & bills",
+  "home.statSpeeches": "Speech contributions",
+  "home.statNamedVotesNote":
+    "Named ballots only — for every other vote, no per-member record exists.",
+  "home.topMPsTitle": "Most active members",
+  "home.topMPsSubtitle": "By activity score in the current electoral period",
+  "home.latestVotesTitle": "Latest named votes",
+  "home.feedTitle": "Latest activity",
+  "home.showAll": "Show all",
+
+  // --- MP list -------------------------------------------------------------
   "mps.title": "Members",
   "mps.subtitle": "All members of the German Bundestag in electoral period {wahlperiode}.",
   "mps.searchPlaceholder": "Search by name or constituency …",
@@ -587,7 +497,16 @@ const en: Dictionary = {
   "mps.columnParticipation": "Voting participation",
   "mps.listMandate": "Party list",
 
-  // --- MP profile ---
+  // --- MP profile ----------------------------------------------------------
+  "mp.motions": "Motions",
+  "mp.speeches": "Speeches",
+  "mp.votes": "Votes",
+  "mp.questions": "Questions",
+  "mp.committees": "Committees",
+  "mp.party": "Party",
+  "mp.constituency": "Constituency",
+  "mp.electoralPeriod": "Electoral period",
+  "mp.activityScore": "Activity score",
   "mp.backToList": "Back to all members",
   "mp.notFound": "This member could not be found.",
   "mp.biography": "Biography",
@@ -619,7 +538,7 @@ const en: Dictionary = {
   "mp.trends": "Trends",
   "mp.trendsComingSoon": "Trend charts are planned for a later release.",
 
-  // --- score breakdown ---
+  // --- score breakdown -----------------------------------------------------
   "score.total": "Total score",
   "score.breakdown": "Breakdown",
   "score.component": "Component",
@@ -636,7 +555,6 @@ const en: Dictionary = {
   "score.component.voteParticipation": "Voting participation",
   "score.component.committees": "Committees",
   "score.component.billSponsorships": "Bill sponsorships",
-
   "score.caveat.namedVotes":
     "Voting participation covers recorded (named) votes only. Every other ballot is a show of hands with no per-member record.",
   "score.caveat.committees":
@@ -644,7 +562,7 @@ const en: Dictionary = {
   "score.caveat.speechWords":
     "Speeches are weighted by words spoken, not by the number of times a member took the floor.",
 
-  // --- weight controls ---
+  // --- weight controls -----------------------------------------------------
   "weights.title": "Custom weightings",
   "weights.description": "Adjust how much each component counts. The score updates immediately.",
   "weights.signInCta": "Sign in to save custom weightings",
@@ -656,7 +574,7 @@ const en: Dictionary = {
   "weights.saveFailed": "Could not save.",
   "weights.resetToDefault": "Defaults",
 
-  // --- activity heatmap ---
+  // --- activity heatmap ----------------------------------------------------
   "heatmap.title": "Activity over time",
   "heatmap.legendLess": "less",
   "heatmap.legendMore": "more",
@@ -665,45 +583,167 @@ const en: Dictionary = {
   "heatmap.empty": "No activity is recorded for this period.",
   "heatmap.total": "{count} activities in the last twelve months",
 
-  // --- votes ---
+  // --- rankings ------------------------------------------------------------
+  "rankings.title": "Rankings",
+  "rankings.subtitle": "Who does what in the Bundestag — measured against official records.",
+  "rankings.rank": "Rank",
+  "rankings.member": "Member",
+  "rankings.metric": "Value",
+  "rankings.score": "Activity score",
+  "rankings.empty": "No figures available for this selection.",
+  "rankings.board.mostActive": "Most active",
+  "rankings.board.mostActive.desc":
+    "Total activity score for the electoral period, under the default weights.",
+  "rankings.board.speeches": "Most speeches",
+  "rankings.board.speeches.desc":
+    "Plenary speech segments. The word count sits alongside — that is the figure scoring uses.",
+  "rankings.board.motions": "Most motions",
+  "rankings.board.motions.desc": "Motions and resolutions, counted from DIP activity records.",
+  "rankings.board.questions": "Most questions",
+  "rankings.board.questions.desc": "Minor and major written questions to the federal government.",
+  "rankings.board.voteParticipation": "Highest voting participation",
+  "rankings.board.voteParticipation.desc":
+    "Share of named ballots in which a vote was cast. An abstention counts as participation.",
+  "rankings.board.crossParty": "Most cross-party voting",
+  "rankings.board.crossParty.desc":
+    "Named ballots voted against the majority of the member's own parliamentary group.",
+  "rankings.board.committees": "Most committee work",
+  "rankings.board.committees.desc":
+    "Committee seats in the current electoral period. Earlier periods are unpublished.",
+  "rankings.board.bills": "Most bills introduced",
+  "rankings.board.bills.desc": "Bills the member put their name to.",
+  "rankings.board.rising": "Rising this month",
+  "rankings.board.rising.desc":
+    "Largest increase in activity score against the previous month, in points.",
+  "rankings.column.speeches": "Speeches",
+  "rankings.column.words": "Words",
+  "rankings.column.motions": "Motions",
+  "rankings.column.questions": "Questions",
+  "rankings.column.participation": "Participation",
+  "rankings.column.ballots": "Ballots",
+  "rankings.column.dissent": "Dissents",
+  "rankings.column.committees": "Committees",
+  "rankings.column.bills": "Bills",
+  "rankings.column.change": "Change",
+  "rankings.column.previous": "Previous month",
+  "rankings.filter.fraktion": "Parliamentary group",
+  "rankings.filter.state": "Federal state",
+  "rankings.filter.ageGroup": "Age group",
+  "rankings.filter.allFraktionen": "All groups",
+  "rankings.filter.allStates": "All states",
+  "rankings.filter.allAges": "All ages",
+  "rankings.filter.month": "Period",
+  "rankings.filter.wholePeriod": "Whole electoral period",
+  "rankings.age.u30": "under 30",
+  "rankings.age.30s": "30–39",
+  "rankings.age.40s": "40–49",
+  "rankings.age.50s": "50–59",
+  "rankings.age.60s": "60–69",
+  "rankings.age.70plus": "70+",
+  "rankings.caveat.namedVotesOnly":
+    "Named ballots only — roughly 1,015 in the Bundestag's entire history. Every other vote is a show of hands with no per-member record.",
+  "rankings.caveat.speechCount":
+    "Speech entries are segments, not speeches: question time splits a minister's turn into dozens of replies. Scoring therefore uses the word count.",
+  "rankings.caveat.committeesCurrentOnly":
+    "Committee data exists for the current electoral period only — earlier periods are published nowhere in machine-readable form.",
+  "rankings.caveat.crossParty":
+    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
+  "rankings.caveat.rising":
+    "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
+  "rankings.noPreviousMonth":
+    "The whole electoral period has no previous month. Pick a month instead.",
+  "rankings.scoreExplainer":
+    "The activity score is a weighted sum of measurable records. The weighting is a choice, not a verdict — every component is shown separately.",
+
+  // --- voting explorer -----------------------------------------------------
+  "votes.title": "Named votes",
+  "votes.subtitle": "Every named ballot in the Bundestag — with how each member voted.",
+  "votes.namedOnlyNotice":
+    "Only named ballots are recorded per member. Every other vote is a show of hands, for which no individual record exists.",
+  "votes.empty": "No ballots available for this selection.",
+  "votes.emptyAll": "No ballots have been loaded for this electoral period yet.",
+  "votes.searchPlaceholder": "Search ballots …",
+  "votes.filterResult": "Result",
+  "votes.allResults": "All results",
+  "votes.filterYear": "Year",
+  "votes.allYears": "All years",
+  "votes.count": "{count} of {total} ballots",
+  "votes.columnDate": "Date",
+  "votes.columnTitle": "Motion",
+  "votes.columnResult": "Result",
+  "votes.columnBreakdown": "Vote distribution",
+  "votes.sitting": "Sitting {sitzungnr}, ballot {abstimmnr}",
+  "votes.notFound": "This ballot could not be found.",
+  "votes.backToList": "Back to ballots",
+  "votes.turnout": "Turnout",
+  "votes.eligible": "Eligible",
+  "votes.sourceSheet": "Official result sheet (XLSX)",
+  "votes.tallyMismatch":
+    "The published counts and the loaded individual votes do not agree — the data for this ballot is incomplete.",
+  "votes.tallyPublished": "Published",
+  "votes.tallyCounted": "Loaded",
+  "votes.breakdownTitle": "Vote by parliamentary group",
+  "votes.breakdownEmpty": "No group data for this ballot.",
+  "votes.recordsTitle": "Individual votes",
+  "votes.recordsEmpty": "No individual votes loaded for this ballot.",
+  "votes.searchMembers": "Search members …",
+  "votes.filterVote": "Vote",
+  "votes.allVotes": "All votes",
+  "votes.filterFraktion": "Parliamentary group",
+  "votes.allFraktionen": "All groups",
+  "votes.columnMember": "Member",
+  "votes.columnVote": "Vote",
+  "votes.columnRemark": "Remark",
+  "votes.noMembers": "No members match the filters.",
+  "votes.groupMajority": "Group majority",
+  "votes.groupMajorityNone": "no majority",
+  "votes.groupShare": "{share} of votes cast",
+  "votes.rebels": "Dissenters",
+  "votes.rebel": "Dissent",
+  "votes.rebelTooltip": "Voted against the majority of their own parliamentary group.",
+  "votes.rebelsEmpty": "Nobody voted against their own group's majority.",
+  "votes.rebelsNote":
+    "An absence is not a dissent, and a split group has no majority to dissent from.",
+  "votes.rebelCount": "{count} dissent(s)",
+  "votes.showAllMembers": "Show all {count} members",
+
   "vote.yes": "Yes",
   "vote.no": "No",
   "vote.abstain": "Abstained",
   "vote.invalid": "Invalid",
   "vote.absent": "Did not vote",
 
-  // --- site chrome, homepage and footer ---
-  "nav.votes": "Votes",
-  "nav.motions": "Motions",
-  "nav.menu": "Menu",
-  "nav.openMenu": "Open menu",
-  "nav.closeMenu": "Close menu",
+  // --- activity feed -------------------------------------------------------
+  "feed.title": "Activity feed",
+  "feed.subtitle": "What has just happened in the Bundestag.",
+  "feed.empty": "No activity for this selection.",
+  "feed.filterByType": "Filter by type",
+  "feed.allTypes": "All types",
+  "feed.reference": "Source record",
+  "feed.end": "No further entries.",
 
-  "theme.light": "Light",
-  "theme.dark": "Dark",
-  "theme.system": "System",
-  "auth.account": "Account",
-  "common.noData": "No data yet",
-  "common.noDataHint": "The data pipeline has not loaded anything for this section yet.",
+  "event.motion": "Motion",
+  "event.speech": "Speech",
+  "event.vote": "Vote",
+  "event.question": "Question",
+  "event.bill": "Bill",
+  "event.committee": "Committee",
+  "event.activity": "Activity",
 
-  "home.heroLead":
-    "A contributions graph for members of parliament: motions, speeches, votes, questions and committee work — every figure backed by an official Bundestag record.",
-  "home.browseAllMPs": "Browse all MPs",
-  "home.viewRankings": "View rankings",
-
-  "home.statsTitle": "The Bundestag in numbers",
-  "home.statMPs": "Members",
-  "home.statNamedVotes": "Named votes",
-  "home.statMotions": "Motions & bills",
-  "home.statSpeeches": "Speech contributions",
-  "home.statNamedVotesNote":
-    "Named ballots only — for every other vote, no per-member record exists.",
-
-  "home.topMPsTitle": "Most active members",
-  "home.topMPsSubtitle": "By activity score in the current electoral period",
-  "home.latestVotesTitle": "Latest named votes",
-  "home.feedTitle": "Latest activity",
-  "home.showAll": "Show all",
+  // --- relative timestamps -------------------------------------------------
+  "time.justNow": "just now",
+  "time.minuteAgo": "a minute ago",
+  "time.minutesAgo": "{count} minutes ago",
+  "time.hourAgo": "an hour ago",
+  "time.hoursAgo": "{count} hours ago",
+  "time.yesterday": "yesterday",
+  "time.daysAgo": "{count} days ago",
+  "time.weekAgo": "a week ago",
+  "time.weeksAgo": "{count} weeks ago",
+  "time.monthAgo": "a month ago",
+  "time.monthsAgo": "{count} months ago",
+  "time.yearAgo": "a year ago",
+  "time.yearsAgo": "{count} years ago",
 
   "footer.dataSource": "Data source",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",

@@ -87,7 +87,10 @@ function ActivityHeatmap({ mpInternalId }: { mpInternalId: string }) {
   return (
     <div
       className="grid grid-flow-col gap-0.5"
-      style={{ gridTemplateRows: "repeat(7, minmax(0, 1fr))", gridTemplateColumns: `repeat(${HEATMAP_COLUMNS}, minmax(0, 1fr))` }}
+      style={{
+        gridTemplateRows: "repeat(7, minmax(0, 1fr))",
+        gridTemplateColumns: `repeat(${HEATMAP_COLUMNS}, minmax(0, 1fr))`,
+      }}
       // One label for the strip rather than 84 individually announced cells:
       // the detail belongs on the profile page's full graph, not in a card.
       aria-hidden={days === undefined ? true : undefined}

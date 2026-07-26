@@ -56,11 +56,7 @@ export function formatCount(value: number, locale: Locale): string {
  * formatting so it survives the German separator, and it reads the same in both
  * languages, which is why it is a symbol rather than a translated word.
  */
-export function formatApproximateCount(
-  value: number,
-  exact: boolean,
-  locale: Locale,
-): string {
+export function formatApproximateCount(value: number, exact: boolean, locale: Locale): string {
   const formatted = formatCount(value, locale)
   return exact ? formatted : `${formatted}+`
 }
@@ -92,12 +88,29 @@ export function formatPercent(value: number, locale: Locale): string {
 }
 
 /**
- * A month-on-month change, always signed: `+3,4`, `−1,2`, `±0`.
+ * A 0…1 share to one decimal place — the leaderboards' participation column.
  *
- * `signDisplay: "exceptZero"` rather than a hand-written `+` prefix, because the
- * minus sign a reader should see is U+2212, not the hyphen a template literal
- * would produce — and only `Intl` knows that per locale. Zero stays unsigned:
- * "no change" is not a direction.
+ * Distinct from `formatPercent`, which rounds to whole percents: participation
+ * rates cluster near the top, because most MPs vote in most named ballots, so
+ * whole percents collapse a large part of a 630-row board onto a handful of
+ * visible values while it still sorts invisibly. A table that ranks by a number
+ * has to show the digit it ranked on.
+ */
+export function formatRate(value: number, locale: Locale): string {
+  if (!Number.isFinite(value)) return "—"
+  return new Intl.NumberFormat(intlLocale(locale), {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
+/**
+ * A change, with an explicit sign — the rising board's column.
+ *
+ * `signDisplay: "exceptZero"` rather than `"always"`: a change of exactly zero
+ * reads better as "0" than as "+0", and there it means genuinely unchanged
+ * rather than a small gain rounded down.
  */
 export function formatDelta(value: number, locale: Locale): string {
   if (!Number.isFinite(value)) return "—"
@@ -109,13 +122,12 @@ export function formatDelta(value: number, locale: Locale): string {
 }
 
 /**
- * Formats a value by what its column declares.
+ * Dispatch for `BoardColumn.format` in lib/leaderboards.ts.
  *
- * The dispatch lives here rather than as a conditional in the table, so a
- * leaderboard column added to `LEADERBOARDS` (lib/leaderboards.ts) picks its
- * formatter by naming one — and a `format` added there without a case here is a
- * compile error at the switch rather than a cell that silently renders a raw
- * float.
+ * Beside the formatters rather than in the table component, so a new column
+ * format is added in one place and the nine boards cannot disagree about what
+ * "rate" renders as. The union is exhaustive, so a format added there without a
+ * case here is a compile error rather than a blank cell.
  */
 export function formatBy(
   format: "integer" | "rate" | "score" | "delta",
@@ -126,12 +138,30 @@ export function formatBy(
     case "integer":
       return formatCount(value, locale)
     case "rate":
-      return formatPercent(value, locale)
+      return formatRate(value, locale)
     case "score":
       return formatScore(value, locale)
     case "delta":
       return formatDelta(value, locale)
   }
+}
+
+/**
+ * A `YYYY-MM` as a month name — "Juli 2026" / "July 2026".
+ *
+ * UTC-anchored like every other date here: a stored month parsed in local time
+ * slips to the previous one for readers west of Greenwich, which would put a
+ * month picker one behind the rows it filters.
+ */
+export function formatMonth(month: string, locale: Locale): string {
+  if (!/^\d{4}-\d{2}$/.test(month)) return month
+  const parsed = Date.parse(`${month}-01T00:00:00Z`)
+  if (Number.isNaN(parsed)) return month
+  return new Intl.DateTimeFormat(intlLocale(locale), {
+    year: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(parsed))
 }
 
 /**
