@@ -1,34 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# webapp
 
-## Getting Started
+The Next.js 16 frontend and the Convex backend that serves it.
 
-First, run the development server:
+Everything here runs through the repo root: Pixi owns the tasks and Bun is the
+only JS package manager. See the root `README.md` for the full command list and
+`docs/deployment.md` for how this is deployed.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pixi run dev        # dev server (Turbopack) — or `bun run dev` from here
+pixi run build      # production build
+pixi run typecheck  # tsc --noEmit
+pixi run test       # pytest + bun test
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`bun run build` needs `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL`
+at **build** time, not just at runtime — `lib/auth-server.ts` reads them while
+Next.js collects page data. Run `bunx convex dev` once to have both written to
+`.env.local`, and see `.env.example` for the rest, including which secrets
+belong on the Convex deployment rather than in a file.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Layout
 
-## Learn More
+| Path | What |
+| --- | --- |
+| `app/` | App Router pages — server components by default |
+| `components/` | shadcn/ui components and the app's own |
+| `convex/` | schema, queries, mutations, crons, the pipeline's HTTP ingestion API |
+| `lib/` | i18n dictionaries, party colours, auth helpers, shared vocabularies |
+| `providers/` | client-side context providers |
+| `proxy.ts` | deliberate pass-through — every route is public |
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A new page must be added to `lib/auth-routes.ts` or it is not reachable;
+`lib/auth-routes.test.ts` enforces that.
