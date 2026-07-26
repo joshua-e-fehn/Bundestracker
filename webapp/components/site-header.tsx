@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils"
  */
 const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
   { href: "/mps", labelKey: "nav.members" },
+  { href: "/votes", labelKey: "nav.votes" },
   { href: "/rankings", labelKey: "nav.rankings" },
   { href: "/seating", labelKey: "nav.seating" },
   { href: "/feed", labelKey: "nav.feed" },

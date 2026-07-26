@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { api } from "@/convex/_generated/api"
 import { formatApproximateCount, formatDateShort } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
@@ -220,40 +221,6 @@ export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined
 
 const LATEST_VOTE_COUNT = 5
 
-/**
- * A ballot's published outcome, as a badge.
- *
- * `result` is free text — DIP's `beschlusstenor` is a string, not an enum
- * (§3.2), so this cannot be a lookup. It is matched loosely for a colour and
- * always printed verbatim: an unrecognised tenor keeps its own words in a
- * neutral badge rather than being forced into "passed" or "rejected", which are
- * the two things nobody should guess about a vote.
- */
-function VoteResultBadge({ result }: { result: string }) {
-  const folded = result.toLowerCase()
-  const rejected = folded.includes("ablehnung") || folded.includes("abgelehnt")
-  const passed = folded.includes("annahme") || folded.includes("angenommen")
-
-  return (
-    <Badge
-      variant="outline"
-      className="shrink-0 max-w-[12rem] justify-start truncate"
-      style={
-        passed || rejected
-          ? {
-              backgroundColor: `color-mix(in oklch, ${passed ? "var(--party-gruene)" : "var(--destructive)"} 14%, transparent)`,
-              color: passed ? "var(--party-gruene)" : "var(--destructive)",
-              borderColor: "transparent",
-            }
-          : undefined
-      }
-      title={result}
-    >
-      {result}
-    </Badge>
-  )
-}
-
 export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | undefined }) {
   const { locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
@@ -264,11 +231,7 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
 
   return (
     <section aria-labelledby="latest-votes-heading">
-      <SectionHeading
-        id="latest-votes-heading"
-        titleKey="home.latestVotesTitle"
-        href="/abstimmungen"
-      />
+      <SectionHeading id="latest-votes-heading" titleKey="home.latestVotesTitle" href="/votes" />
       {sheets === undefined ? (
         <RowSkeletons count={LATEST_VOTE_COUNT} height="h-14" />
       ) : sheets.length === 0 ? (
@@ -278,7 +241,7 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
           {sheets.map((sheet) => (
             <Link
               key={sheet.id}
-              href={`/abstimmungen/${sheet.wahlperiode}/${sheet.sitzungnr}/${sheet.abstimmnr}`}
+              href={`/votes/${sheet.id}`}
               className="flex items-center gap-3 px-4 py-3 outline-none transition-colors first:rounded-t-[inherit] last:rounded-b-[inherit] hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <div className="min-w-0 flex-1">
@@ -287,7 +250,7 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
                   {formatDateShort(sheet.date, locale)}
                 </div>
               </div>
-              <VoteResultBadge result={sheet.result} />
+              <VoteOutcomeBadge result={sheet.result} />
             </Link>
           ))}
         </Card>
