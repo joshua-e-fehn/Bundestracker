@@ -138,9 +138,7 @@ class SyncState(BaseModel):
         this and the per-stream detail beneath it.
         """
         marks = [
-            value
-            for key, value in self.watermarks.items()
-            if key.startswith(f"{wahlperiode}:")
+            value for key, value in self.watermarks.items() if key.startswith(f"{wahlperiode}:")
         ]
         return max(marks) if marks else None
 

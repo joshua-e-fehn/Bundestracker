@@ -71,6 +71,7 @@ from bundestrack.pipeline.state import (
     load_state,
     save_state,
 )
+from bundestrack.pipeline.transform import ballot_key
 
 logger = logging.getLogger(__name__)
 
@@ -555,7 +556,7 @@ class Pipeline:
                 skipped_other_period += 1
                 continue
 
-            key = _ballot_key(sheet)
+            key = ballot_key(sheet)
             if incremental and key in seen_keys:
                 # The listing is newest-first, so the first already-stored
                 # ballot means everything after it is stored too.
@@ -595,12 +596,10 @@ class Pipeline:
         *of*, and Convex refuses to insert a placeholder that would then have
         no published tally to check against.
         """
-        title = link.title or sheet.title or f"Namentliche Abstimmung {_ballot_key(sheet)}"
+        title = link.title or sheet.title or f"Namentliche Abstimmung {ballot_key(sheet)}"
         sheets.record(
-            _as_batch(
-                self.loader.upsert_vote_sheet(
-                    transform.vote_sheet_payload(sheet, title=title, sheet_date=link.date)
-                )
+            self.loader.upsert_vote_sheet(
+                transform.vote_sheet_payload(sheet, title=title, sheet_date=link.date)
             )
         )
         records.merge(
@@ -927,16 +926,6 @@ def _within(when: date | None, window: tuple[date | None, date | None]) -> bool:
     if start and when < start:
         return False
     return not (end and when > end)
-
-
-def _ballot_key(sheet: VoteSheet) -> str:
-    return f"{sheet.wahlperiode}/{sheet.sitzungnr}/{sheet.abstimmnr}"
-
-
-def _as_batch(response: dict[str, Any]) -> dict[str, Any]:
-    """A single-row mutation's `{created}` as a batch result's counters."""
-    created = bool(response.get("created"))
-    return {"inserted": int(created), "updated": int(not created)}
 
 
 __all__ = [

@@ -40,6 +40,7 @@ from collections.abc import Iterable, Iterator
 from datetime import date
 from typing import Any
 
+from bundestrack.api.protocols import normalise_text
 from bundestrack.models.dip import Aktivitaet, Drucksache, Vorgang
 from bundestrack.models.speeches import Protocol
 from bundestrack.models.stammdaten import MP, Mandate
@@ -130,12 +131,13 @@ def clean_text(value: str | None) -> str | None:
     part of its natural key: a re-export that changes one line break turns an
     upsert into an insert.
 
-    `.split()` treats `\\r`, `\\n`, `\\t` and `\\xa0` alike, so one pass covers
-    every spelling the sources use.
+    Delegates to `api.protocols.normalise_text`, which already collapses every
+    whitespace spelling these sources use — this adds only the empty-means-
+    absent rule the Convex schema wants, where the parser wants `""`.
     """
     if value is None:
         return None
-    return " ".join(value.split()) or None
+    return normalise_text(value) or None
 
 
 def require_text(value: str | None, what: str) -> str:
@@ -311,6 +313,18 @@ def committee_payloads(resolver: MPResolver) -> list[Payload]:
 # --- votes ----------------------------------------------------------------
 
 
+def ballot_key(sheet: VoteSheet) -> str:
+    """`21/90/8` — a ballot's natural key, as one string.
+
+    Defined once because two things must agree on it and neither can check the
+    other: it is the `referenceId` a vote feed event de-duplicates on, and the
+    key `state.ingested_ballot_keys` uses to decide an incremental run has
+    caught up. Two spellings would mean events silently duplicating, or a sync
+    re-ingesting every ballot nightly.
+    """
+    return f"{sheet.wahlperiode}/{sheet.sitzungnr}/{sheet.abstimmnr}"
+
+
 def vote_sheet_payload(
     sheet: VoteSheet,
     *,
@@ -470,7 +484,7 @@ def activity_payload(aktivitaet: Aktivitaet, internal_id: str) -> Payload:
         "mpInternalId": internal_id,
         "aktivitaetsart": aktivitaet.aktivitaetsart,
         "vorgangId": _first_vorgang_id(aktivitaet),
-        "date": aktivitaet.datum.isoformat(),
+        "date": require_iso(aktivitaet.datum, f"Aktivität {aktivitaet.id}"),
         "wahlperiode": aktivitaet.wahlperiode,
         "description": _activity_description(aktivitaet),
     }
@@ -549,7 +563,7 @@ def question_payload(aktivitaet: Aktivitaet, internal_id: str) -> Payload | None
     return {
         "mpInternalId": internal_id,
         "subject": subject,
-        "date": aktivitaet.datum.isoformat(),
+        "date": require_iso(aktivitaet.datum, f"Aktivität {aktivitaet.id}"),
         "wahlperiode": aktivitaet.wahlperiode,
         "type": kind,
     }
@@ -603,7 +617,7 @@ def motion_from_drucksache(drucksache: Drucksache) -> Payload:
         "drucksacheNr": drucksache.dokumentnummer,
         "title": require_text(drucksache.titel, f"Drucksache {drucksache.id}"),
         "type": clean_text(drucksache.drucksachetyp),
-        "date": drucksache.datum.isoformat(),
+        "date": require_iso(drucksache.datum, f"Drucksache {drucksache.id}"),
         "wahlperiode": drucksache.wahlperiode or 0,
         "vorgangstyp": clean_text(reference.vorgangstyp) if reference else None,
     }
@@ -753,7 +767,7 @@ def activity_event_payloads(
         yield {
             "mpInternalId": internal,
             "eventType": event_type_for(aktivitaet.aktivitaetsart),
-            "date": aktivitaet.datum.isoformat(),
+            "date": require_iso(aktivitaet.datum, f"Aktivität {aktivitaet.id}"),
             # The activity kind is the headline; the document title is the
             # detail. `aktivitaet.titel` is the MP's name and is used for
             # neither (§3.5).
@@ -773,7 +787,7 @@ def vote_event_payloads(sheet: VoteSheet, resolver: MPResolver, *, title: str) -
     show. The `referenceId` is the ballot's natural key rather than a Convex
     id, so the event de-duplicates without the pipeline holding one.
     """
-    reference = f"{sheet.wahlperiode}/{sheet.sitzungnr}/{sheet.abstimmnr}"
+    reference = ballot_key(sheet)
     events: list[Payload] = []
     for record in sheet.records:
         internal = resolver.resolve_printed_name(record.name, record.vorname, record.titel)

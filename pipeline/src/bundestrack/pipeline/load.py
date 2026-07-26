@@ -102,8 +102,21 @@ class BatchResult:
         return self.inserted + self.updated
 
     def record(self, response: dict[str, Any]) -> None:
-        self.inserted += int(response.get("inserted", 0))
-        self.updated += int(response.get("updated", 0))
+        """Fold one ingestion response into the running totals.
+
+        Understands both shapes the API returns, because the routes differ: a
+        batch mutation answers `{inserted, updated}` while a single-row one
+        (`vote-sheets`, `mps/link-dip`) answers `{created}`. Converting here
+        rather than at each call site is what lets a stage's report add up
+        regardless of which kind of route it used.
+        """
+        if "created" in response and "inserted" not in response:
+            created = bool(response["created"])
+            self.inserted += int(created)
+            self.updated += int(not created)
+        else:
+            self.inserted += int(response.get("inserted", 0))
+            self.updated += int(response.get("updated", 0))
         self.requests += 1
 
     def merge(self, other: BatchResult) -> None:
@@ -313,12 +326,9 @@ class ConvexLoader:
         """
         result = BatchResult(unit)
         for payload in payloads:
-            response = self.post(path, payload)
-            # A single-row mutation reports `created`, not `inserted`/`updated`.
-            if "created" in response:
-                response = {"inserted": int(bool(response["created"])), "updated": 0}
-                response["updated"] = 1 - response["inserted"]
-            result.record(response)
+            # `BatchResult.record` handles the `{created}` shape these routes
+            # return — see its docstring.
+            result.record(self.post(path, payload))
         return result
 
     # -- named stages ------------------------------------------------------
