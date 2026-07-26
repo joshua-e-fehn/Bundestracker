@@ -315,7 +315,7 @@ export function MPTable({
             {t("common.previous")}
           </Button>
           <span className="text-muted-foreground text-sm tabular-nums">
-            {t("common.page", { page: currentPage + 1, total: pageCount })}
+            {t("common.page", { page: currentPage + 1, pages: pageCount })}
           </span>
           <Button
             type="button"
