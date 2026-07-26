@@ -92,6 +92,49 @@ export function formatPercent(value: number, locale: Locale): string {
 }
 
 /**
+ * A month-on-month change, always signed: `+3,4`, `−1,2`, `±0`.
+ *
+ * `signDisplay: "exceptZero"` rather than a hand-written `+` prefix, because the
+ * minus sign a reader should see is U+2212, not the hyphen a template literal
+ * would produce — and only `Intl` knows that per locale. Zero stays unsigned:
+ * "no change" is not a direction.
+ */
+export function formatDelta(value: number, locale: Locale): string {
+  if (!Number.isFinite(value)) return "—"
+  return new Intl.NumberFormat(intlLocale(locale), {
+    signDisplay: "exceptZero",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
+/**
+ * Formats a value by what its column declares.
+ *
+ * The dispatch lives here rather than as a conditional in the table, so a
+ * leaderboard column added to `LEADERBOARDS` (lib/leaderboards.ts) picks its
+ * formatter by naming one — and a `format` added there without a case here is a
+ * compile error at the switch rather than a cell that silently renders a raw
+ * float.
+ */
+export function formatBy(
+  format: "integer" | "rate" | "score" | "delta",
+  value: number,
+  locale: Locale,
+): string {
+  switch (format) {
+    case "integer":
+      return formatCount(value, locale)
+    case "rate":
+      return formatPercent(value, locale)
+    case "score":
+      return formatScore(value, locale)
+    case "delta":
+      return formatDelta(value, locale)
+  }
+}
+
+/**
  * Parses an ISO `YYYY-MM-DD` date from the database.
  *
  * Anchored at UTC noon rather than midnight. Every date in the schema is a

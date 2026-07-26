@@ -1,14 +1,8 @@
 "use client"
 
-<<<<<<< HEAD
 import { cva, type VariantProps } from "class-variance-authority"
 import { Tabs as TabsPrimitive } from "radix-ui"
 import type * as React from "react"
-=======
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { Tabs as TabsPrimitive } from "radix-ui"
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
 
 import { cn } from "@/lib/utils"
 
@@ -21,14 +15,7 @@ function Tabs({
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
-<<<<<<< HEAD
       className={cn("group/tabs flex gap-2 data-horizontal:flex-col", className)}
-=======
-      className={cn(
-        "group/tabs flex gap-2 data-horizontal:flex-col",
-        className
-      )}
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
       {...props}
     />
   )
@@ -46,23 +33,14 @@ const tabsListVariants = cva(
     defaultVariants: {
       variant: "default",
     },
-<<<<<<< HEAD
   },
-=======
-  }
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
 )
 
 function TabsList({
   className,
   variant = "default",
   ...props
-<<<<<<< HEAD
 }: React.ComponentProps<typeof TabsPrimitive.List> & VariantProps<typeof tabsListVariants>) {
-=======
-}: React.ComponentProps<typeof TabsPrimitive.List> &
-  VariantProps<typeof tabsListVariants>) {
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
@@ -73,14 +51,7 @@ function TabsList({
   )
 }
 
-<<<<<<< HEAD
 function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
-=======
-function TabsTrigger({
-  className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
@@ -89,25 +60,14 @@ function TabsTrigger({
         "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-active:bg-transparent dark:group-data-[variant=line]/tabs-list:data-active:border-transparent dark:group-data-[variant=line]/tabs-list:data-active:bg-transparent",
         "data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground",
         "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-horizontal/tabs:after:inset-x-0 group-data-horizontal/tabs:after:bottom-[-5px] group-data-horizontal/tabs:after:h-0.5 group-data-vertical/tabs:after:inset-y-0 group-data-vertical/tabs:after:-right-1 group-data-vertical/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-active:after:opacity-100",
-<<<<<<< HEAD
         className,
-=======
-        className
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
       )}
       {...props}
     />
   )
 }
 
-<<<<<<< HEAD
 function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
-=======
-function TabsContent({
-  className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Content>) {
->>>>>>> 750938d (feat: site layout, bilingual chrome, and the homepage (#6))
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
