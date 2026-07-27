@@ -43,9 +43,29 @@ import { rankPartiesBy } from "@/lib/party-comparison"
  * `useQuery` returns `undefined` for both "loading" and "skipped", so a section
  * whose period has not resolved shows the skeleton — correct here, since the
  * period query is itself in flight at that moment.
+ *
+ * ## Two pages, two nesting depths
+ *
+ * These sections are rendered by app/page.tsx directly under its `h1`, and by
+ * app/home-a/page.tsx *inside* a chapter that has an `h2` of its own. So each
+ * takes a `level`, defaulted to 2 — the dashboard's shape, unchanged — and the
+ * narrative page passes 3. Without it the outline flattens: "Wer ist aktiv?"
+ * and "Aktivste Abgeordnete" come out as siblings, which tells a screen reader
+ * the board is a peer of the chapter rather than a part of it.
+ *
+ * A prop rather than a second copy of these sections, because the whole point
+ * of the narrative page reusing them is that no section loses information to
+ * the story — a fork would be exactly how one of the two comes to drop a
+ * caveat.
  */
 
 // --- shared pieces --------------------------------------------------------
+
+/**
+ * How deep a section's heading sits. See the note above; `SectionHeading` owns
+ * the mapping from this to an element.
+ */
+export type SectionLevel = 2 | 3
 
 /**
  * What a section shows once it knows there is nothing to show.
@@ -165,6 +185,7 @@ function ActivityBoard({
   titleKey,
   subtitleKey,
   caveatKey,
+  level,
 }: {
   wahlperiode: number | null | undefined
   direction: "asc" | "desc"
@@ -172,6 +193,7 @@ function ActivityBoard({
   titleKey: TranslationKey
   subtitleKey: TranslationKey
   caveatKey?: TranslationKey
+  level?: SectionLevel
 }) {
   const { t } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
@@ -189,6 +211,7 @@ function ActivityBoard({
         id={headingId}
         titleKey={titleKey}
         subtitleKey={subtitleKey}
+        level={level}
         href="/rankings"
       />
       {rankings === undefined ? (
@@ -236,7 +259,13 @@ function ActivityBoard({
 }
 
 /** The five highest activity scores of the period. */
-export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+export function TopMPs({
+  wahlperiode,
+  level,
+}: {
+  wahlperiode: number | null | undefined
+  level?: SectionLevel
+}) {
   return (
     <ActivityBoard
       wahlperiode={wahlperiode}
@@ -244,6 +273,7 @@ export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined
       headingId="top-mps-heading"
       titleKey="home.topMPsTitle"
       subtitleKey="home.topMPsSubtitle"
+      level={level}
     />
   )
 }
@@ -256,7 +286,13 @@ export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined
  * objective and inspectable (AGENTS.md), and a measure whose unflattering end
  * is hidden cannot be inspected. It comes with the caveat that end requires.
  */
-export function BottomMPs({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+export function BottomMPs({
+  wahlperiode,
+  level,
+}: {
+  wahlperiode: number | null | undefined
+  level?: SectionLevel
+}) {
   return (
     <ActivityBoard
       wahlperiode={wahlperiode}
@@ -265,6 +301,7 @@ export function BottomMPs({ wahlperiode }: { wahlperiode: number | null | undefi
       titleKey="home.bottomMPsTitle"
       subtitleKey="home.bottomMPsSubtitle"
       caveatKey="home.bottomMPsCaveat"
+      level={level}
     />
   )
 }
@@ -288,8 +325,10 @@ export function BottomMPs({ wahlperiode }: { wahlperiode: number | null | undefi
  */
 export function PartyComparisonPreview({
   wahlperiode,
+  level,
 }: {
   wahlperiode: number | null | undefined
+  level?: SectionLevel
 }) {
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
@@ -312,6 +351,7 @@ export function PartyComparisonPreview({
         id="parties-heading"
         titleKey="home.partiesTitle"
         subtitleKey="home.partiesSubtitle"
+        level={level}
         href="/parties"
       />
       {comparison === undefined ? (
@@ -366,7 +406,13 @@ export function PartyComparisonPreview({
 
 const LATEST_VOTE_COUNT = 5
 
-export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+export function LatestVotes({
+  wahlperiode,
+  level,
+}: {
+  wahlperiode: number | null | undefined
+  level?: SectionLevel
+}) {
   const { locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const sheets = useQuery(
@@ -380,6 +426,7 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
         className="mb-4"
         id="latest-votes-heading"
         titleKey="home.latestVotesTitle"
+        level={level}
         href="/votes"
       />
       {sheets === undefined ? (
@@ -426,7 +473,13 @@ const EVENT_LABEL_KEYS: Record<string, TranslationKey> = {
   activity: "event.activity",
 }
 
-export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+export function ActivityFeedPreview({
+  wahlperiode,
+  level,
+}: {
+  wahlperiode: number | null | undefined
+  level?: SectionLevel
+}) {
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const feed = useQuery(
@@ -463,7 +516,13 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
 
   return (
     <section aria-labelledby="feed-heading">
-      <SectionHeading className="mb-4" id="feed-heading" titleKey="home.feedTitle" href="/feed" />
+      <SectionHeading
+        className="mb-4"
+        id="feed-heading"
+        titleKey="home.feedTitle"
+        level={level}
+        href="/feed"
+      />
       {feed === undefined ? (
         <RowSkeletons count={FEED_COUNT} height="h-12" />
       ) : groups.length === 0 ? (
