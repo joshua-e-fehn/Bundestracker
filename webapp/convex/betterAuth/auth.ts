@@ -50,10 +50,36 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
         clientId: process.env.GOOGLE_CLIENT_ID!,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       },
-      github: {
-        clientId: process.env.GITHUB_CLIENT_ID!,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      },
+      // GitHub is registered only when it has credentials.
+      //
+      // It used to be listed unconditionally with `process.env.GITHUB_CLIENT_ID!`
+      // — a non-null assertion that promises at compile time a value the
+      // deployment does not hold at runtime. The result was a backend that
+      // advertised a provider it could not complete:
+      //
+      //   POST /api/auth/sign-in/social {"provider":"github"}
+      //   → 200  https://github.com/login/oauth/authorize?…&client_id=undefined
+      //
+      // An unknown provider correctly returns 404 PROVIDER_NOT_FOUND; GitHub
+      // slipped through only because it was *registered* with undefined values.
+      // Nothing user-reachable led there — the button is genuinely `disabled`
+      // (components/sign-in-panel.tsx) — but an endpoint that answers 200 with a
+      // broken URL is worse than one that says the provider does not exist.
+      //
+      // Spreading a conditional rather than gating on `GITHUB_ENABLED` in
+      // lib/auth-providers.ts: that constant is compiled into the *browser*
+      // bundle and cannot read Convex's environment, which is where these
+      // credentials live. So the frontend flag says whether to offer the button
+      // and this says whether the provider exists at all — and setting the two
+      // env vars is what flips this half, with no deploy.
+      ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            },
+          }
+        : {}),
     },
     // No `databaseHooks.user.create.before` gate here, deliberately.
     // Bundestrack is a public dashboard and signing in is *optional* — an

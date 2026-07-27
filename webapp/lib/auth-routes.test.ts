@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
-import { isPublicPath } from "./auth-routes"
+import { continueWithoutAccountTarget, isPublicPath } from "./auth-routes"
 
 /**
  * Tests for the public-route list.
@@ -91,5 +91,64 @@ describe("isPublicPath", () => {
     // a catch-all entry here that would defeat the omission rule above. Pinned
     // as a test so the distinction is not "fixed" later by widening the list.
     expect(isPublicPath("/this-route-does-not-exist")).toBe(false)
+  })
+})
+
+/**
+ * Where "Ohne Konto weiterlesen" sends the reader.
+ *
+ * The bug this replaces was reproduced end to end in a browser: from
+ * example.com → /sign-in → click the button → back on example.com. The old test
+ * was `window.history.length > 1`, which counts the tab's whole session
+ * including other origins, so it was true for exactly the visit that must not
+ * go back.
+ */
+describe("continueWithoutAccountTarget", () => {
+  const ORIGIN = "https://www.bundestracker.de"
+
+  test("goes back when the reader came from within the site", () => {
+    // The case the button was written for: a reader who was browsing, hit
+    // sign-in, and changed their mind wants the page they were on.
+    expect(continueWithoutAccountTarget(`${ORIGIN}/mps`, ORIGIN)).toBe("back")
+    expect(continueWithoutAccountTarget(`${ORIGIN}/`, ORIGIN)).toBe("back")
+    expect(continueWithoutAccountTarget(`${ORIGIN}/mps/bt-11002735?tab=votes`, ORIGIN)).toBe("back")
+  })
+
+  test("goes home when back would leave the site", () => {
+    // The reproduction, exactly. A visitor who clicks "continue without an
+    // account" is asking to browse Bundestrack.
+    expect(continueWithoutAccountTarget("https://example.com/", ORIGIN)).toBe("/")
+    expect(continueWithoutAccountTarget("https://news.ycombinator.com/item?id=1", ORIGIN)).toBe("/")
+  })
+
+  test("treats a lookalike origin as external", () => {
+    // Origin comparison, not a prefix or a hostname `includes` — the two
+    // shortcuts that would send a reader "back" to somebody else's site.
+    expect(continueWithoutAccountTarget("https://www.bundestracker.de.evil.com/", ORIGIN)).toBe("/")
+    expect(continueWithoutAccountTarget("https://evil.com/www.bundestracker.de", ORIGIN)).toBe("/")
+  })
+
+  test("distinguishes scheme and port, which are part of an origin", () => {
+    // Same host, different origin. On localhost the dev server and a preview on
+    // another port are genuinely different sites to the browser.
+    expect(continueWithoutAccountTarget("http://www.bundestracker.de/mps", ORIGIN)).toBe("/")
+    expect(continueWithoutAccountTarget("http://localhost:3001/", "http://localhost:3000")).toBe("/")
+    expect(continueWithoutAccountTarget("http://localhost:3000/mps", "http://localhost:3000")).toBe(
+      "back",
+    )
+  })
+
+  test("goes home when there is no referrer to judge", () => {
+    // A pasted URL, a bookmark, or a link with rel="noreferrer". There may well
+    // be history behind it, and none of it is knowably ours.
+    expect(continueWithoutAccountTarget("", ORIGIN)).toBe("/")
+  })
+
+  test("declines a referrer it cannot parse rather than throwing", () => {
+    // `document.referrer` is a browser-supplied string; a value that is not a
+    // URL is one to decline, not to crash the only button on the page that
+    // gets a reader out of the sign-in flow.
+    expect(continueWithoutAccountTarget("not a url", ORIGIN)).toBe("/")
+    expect(continueWithoutAccountTarget("///", ORIGIN)).toBe("/")
   })
 })

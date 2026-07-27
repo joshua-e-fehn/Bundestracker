@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { authClient } from "@/lib/auth-client"
 import { GITHUB_ENABLED } from "@/lib/auth-providers"
+import { continueWithoutAccountTarget } from "@/lib/auth-routes"
 
 /**
  * The provider picker.
@@ -27,11 +28,14 @@ import { GITHUB_ENABLED } from "@/lib/auth-providers"
  *
  * ## GitHub is disabled, not hidden
  *
- * `GITHUB_ENABLED` is false while the OAuth app is unconfigured — the backend
- * already lists the provider (convex/betterAuth/auth.ts), so the credentials
- * are the only thing missing. Rendering it greyed out with a "coming soon"
- * badge says that, where hiding it would make the reader who came looking for
- * it think Bundestrack does not support GitHub at all.
+ * `GITHUB_ENABLED` is false while the OAuth app is unconfigured — the
+ * credentials are the only thing missing. Rendering it greyed out with a
+ * "coming soon" badge says that, where hiding it would make the reader who came
+ * looking for it think Bundestrack does not support GitHub at all.
+ *
+ * The backend no longer registers the provider until those credentials exist
+ * (convex/betterAuth/auth.ts), so the two halves now agree: an unconfigured
+ * deployment neither offers the button nor answers its endpoint.
  *
  * The disabled state is real, not cosmetic: `disabled` on a `<button>` takes it
  * out of the tab order and stops the click, so no code path can reach the
@@ -126,18 +130,23 @@ export function SignInPanel() {
       <div className="flex flex-col gap-3 border-border/60 border-t pt-4">
         <p className="text-muted-foreground text-xs leading-relaxed">{t("auth.benefits")}</p>
         <p className="text-muted-foreground text-xs leading-relaxed">{t("auth.optionalNotice")}</p>
-        {/* `router.back()` rather than a link to "/": a reader sent here by a
-            gated route (none exist yet — see lib/auth-routes.ts) wants the page
-            they came from, and one who navigated here deliberately still has
-            the header's home link. Falls through to "/" when there is no
-            history to go back to, which is the case for a pasted URL. */}
+        {/* Back only when "back" is a Bundestrack page, otherwise home.
+            `window.history.length > 1` was the old test and it is true of
+            nearly every visit, including one that arrived from another site —
+            so a reader coming from an external link and clicking *continue
+            without an account* was sent straight back off the site. The
+            decision lives in lib/auth-routes.ts, with the rest of "where may
+            this reader be sent". */}
         <Button
           variant="ghost"
           size="sm"
           className="w-fit"
           onClick={() => {
-            if (window.history.length > 1) router.back()
-            else router.push("/")
+            if (continueWithoutAccountTarget(document.referrer, window.location.origin) === "back") {
+              router.back()
+            } else {
+              router.push("/")
+            }
           }}
         >
           {t("auth.continueWithoutAccount")}

@@ -71,3 +71,45 @@ export const PUBLIC_PATHS = [
 export function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 }
+
+/**
+ * Whether "continue without an account" may go *back* rather than to the home page.
+ *
+ * `components/sign-in-panel.tsx` called `router.back()` whenever
+ * `window.history.length > 1`, which is true of almost every visit — including
+ * one that arrived from another site. Reproduced: example.com → /sign-in →
+ * "Ohne Konto weiterlesen" → back on example.com. A reader who clicks *continue
+ * without an account* is saying they want to browse Bundestrack; ejecting them
+ * to wherever they came from is the one outcome that cannot be what they meant.
+ *
+ * `history.length` is the wrong question because it counts the tab's whole
+ * session, including entries from other origins, and the History API
+ * deliberately exposes nothing about their URLs. `document.referrer` is what is
+ * available, and it answers the question that matters: did the previous page
+ * belong to this site?
+ *
+ * Three cases, and only the first may go back:
+ *
+ *  - **Same-origin referrer** — an internal navigation, so "back" is a
+ *    Bundestrack page and going there is exactly right.
+ *  - **Cross-origin referrer** — going back leaves the site. Home instead.
+ *  - **Empty referrer** — a pasted URL, a bookmark, or a link with
+ *    `rel="noreferrer"`. There may still be history to go back to, and it is
+ *    not knowably ours, so home.
+ *
+ * Here rather than inline in the component so it can be tested without a DOM,
+ * and beside `isPublicPath` because both answer "where may this reader be sent"
+ * — the decision this module already owns.
+ */
+export function continueWithoutAccountTarget(
+  /** `document.referrer` — an absolute URL, or "" when there is none. */
+  referrer: string,
+  /** `window.location.origin` — the origin the app is served from. */
+  origin: string,
+): "back" | "/" {
+  if (!referrer) return "/"
+  // `URL.canParse` rather than try/catch: a malformed referrer is a value to
+  // decline, not an exception to handle.
+  if (!URL.canParse(referrer)) return "/"
+  return new URL(referrer).origin === origin ? "back" : "/"
+}
