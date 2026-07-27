@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient, parse_politicians
@@ -174,6 +174,7 @@ class Pipeline:
         *,
         settings: Settings | None = None,
         dry_run: bool = False,
+        full: bool = False,
         dip: DIPClient | None = None,
         stammdaten: StammdatenClient | None = None,
         protocols: ProtocolClient | None = None,
@@ -186,6 +187,10 @@ class Pipeline:
         self.settings = settings or get_settings()
         self.wahlperiode = wahlperiode
         self.dry_run = dry_run
+        #: Ignore the stored watermarks and fetch the period whole. What makes
+        #: `backfill` mean "all of it" rather than "whatever a previous attempt
+        #: did not already reach" — see `_window`.
+        self.full = full
         self.state = state if state is not None else load_state(self.settings.state_path)
 
         self.dip = dip or DIPClient(
@@ -671,7 +676,9 @@ class Pipeline:
         records = BatchResult("vote records")
         events = BatchResult("feed events")
         skipped_pdf_only = 0
+        skipped_out_of_period = 0
         seen_keys = set(self.state.ingested_ballots(self.wahlperiode))
+        window = resolver.dump.wahlperiode_window(self.wahlperiode)
 
         for link in self.votes.iter_vote_links():
             if not link.has_data_sheet:
@@ -679,6 +686,15 @@ class Pipeline:
                 # entries are PDF-only (§4.1). A coverage boundary, not a
                 # failure — and counted so the boundary stays visible.
                 skipped_pdf_only += 1
+                continue
+            if _outside_period(link.date, window):
+                # The listing is every ballot since 1949 and carries no period
+                # filter, so without this a WP18 backfill downloads ~500 sheets
+                # of ~200 KB to keep the handful that match. The sheet's own
+                # `Wahlperiode` column stays the authority below — this only
+                # declines to pay for a download whose date already says it
+                # cannot be ours.
+                skipped_out_of_period += 1
                 continue
             try:
                 sheet = self.votes.fetch_sheet(link)
@@ -705,6 +721,11 @@ class Pipeline:
         if skipped_pdf_only:
             stage.notes.append(
                 f"{skipped_pdf_only} ballots are PDF-only (pre-~2012, §4.1) and have no data sheet"
+            )
+        if skipped_out_of_period:
+            stage.notes.append(
+                f"{skipped_out_of_period} ballots are dated outside WP{self.wahlperiode} "
+                "and were not downloaded"
             )
 
     def _ingest_ballot(
@@ -774,9 +795,20 @@ class Pipeline:
         never finished, even though the stages beside it have moved on. An
         explicit `since` — a hand re-read after an incident — overrides every
         stream's own mark.
+
+        `full` returns None regardless, which is what makes a re-run of
+        `backfill` fetch the period again rather than resume. The distinction
+        is not academic: a backfill that dies at the WAF leaves a watermark at
+        whatever it *had* read, and `aktualisiert` order is not `datum` order —
+        so resuming from that mark fetches the records amended since, not the
+        records not yet seen, and the rest of the period is silently never
+        fetched by any later run either. Only an explicit `since` overrides it,
+        because that is a human asking for a window by name.
         """
         if since is not None:
             return since
+        if self.full:
+            return None
         return self.state.since(self.wahlperiode, stream)
 
     def _require_resolver(self) -> MPResolver:
@@ -894,19 +926,45 @@ def run_backfill(
 ) -> RunReport:
     """The body `init` and `backfill` share."""
     owned = pipeline is None
-    run = pipeline or Pipeline(wahlperiode, settings=settings, dry_run=dry_run)
+    run = pipeline or Pipeline(wahlperiode, settings=settings, dry_run=dry_run, full=True)
     report = RunReport(wahlperiode, mode)
     try:
+        # `full` on the run rather than only on a fresh `Pipeline`: an injected
+        # one (the tests, and any caller reusing a client) must mean the same
+        # thing by "backfill" as the CLI does.
+        run.full = True
         _run_stages(run, report, since=None, incremental=False)
     finally:
         _finish(run, report, owned=owned)
     return report
 
 
+def months_in(start: date | None, end: date | None) -> list[str]:
+    """Every `YYYY-MM` from `start` to `end` inclusive.
+
+    Zero-padded, because `activityScores.monthWindow` rejects anything else —
+    and would be right to: `"2021-6"` builds bounds that sort above every real
+    date in the year, so the month scores zero and nothing errors.
+
+    An open or unknown bound yields nothing rather than guessing an end. The
+    caller is scoring a period it has just ingested; a period whose extent it
+    cannot state is one it should not invent months for.
+    """
+    if start is None or end is None:
+        return []
+    months: list[str] = []
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        months.append(f"{year:04d}-{month:02d}")
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return months
+
+
 def recompute_scores(
     wahlperiode: int = CURRENT_WAHLPERIODE,
     *,
     month: str | None = None,
+    months: Sequence[str] | None = None,
     settings: Settings | None = None,
     dry_run: bool = False,
     loader: ConvexLoader | None = None,
@@ -921,6 +979,13 @@ def recompute_scores(
     Worth calling after a backfill: the cron recomputes the *current* month
     plus the period total, so a backfill's older months would otherwise stay at
     zero until something touched them.
+
+    `months` rescores a list of them in one pass — what a backfill of a closed
+    period needs, since every one of its months is historical and the nightly
+    sweep will never revisit any of them. The profile trend graphs read exactly
+    those rows and mark a missing one as *not computed* rather than as a zero
+    (webapp/convex/activityScores.ts `getMonthlyScoresByMP`), so leaving them
+    unwritten is visible in the UI rather than merely absent.
     """
     resolved = settings or get_settings()
     owned = loader is None
@@ -928,8 +993,16 @@ def recompute_scores(
         resolved.require_convex_http_url(), resolved.pipeline_api_key, dry_run=dry_run
     )
     try:
-        scored = client.recompute_scores(wahlperiode, month=month)
-        logger.info("Recomputed %d scores for WP%d", scored, wahlperiode)
+        # `[None]` is the period total, and it is always recomputed: a month's
+        # data changing changes the total, and `recomputeScores` writes the
+        # total on every call anyway.
+        targets: list[str | None] = list(months) if months else [month]
+        scored = 0
+        for target in targets:
+            scored += client.recompute_scores(wahlperiode, month=target)
+        logger.info(
+            "Recomputed %d scores for WP%d across %d month(s)", scored, wahlperiode, len(targets)
+        )
         return scored
     finally:
         if owned:
@@ -1015,6 +1088,25 @@ def _batched[T](items: Iterable[T], size: int) -> Iterator[list[T]]:
             batch = []
     if batch:
         yield batch
+
+
+def _outside_period(ballot_date: date | None, window: tuple[date | None, date | None]) -> bool:
+    """Whether a listed ballot's date puts it outside a Wahlperiode.
+
+    Answers False whenever it cannot be sure, and every branch here is that
+    rule applied: an undated row (the pre-2012 tail prints no date, §4.1), a
+    period the dump gives no bounds for, and an open upper bound all fall
+    through to a download and let the sheet's own `Wahlperiode` column decide.
+    A false negative costs one ~200 KB download; a false positive silently
+    drops a ballot from the record, and the sheets are the only source that
+    carries absences (§4.2).
+    """
+    if ballot_date is None:
+        return False
+    start, end = window
+    if start and ballot_date < start:
+        return True
+    return bool(end and ballot_date > end)
 
 
 def _ballot_key(sheet: VoteSheet) -> str:

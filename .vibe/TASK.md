@@ -1,3 +1,3 @@
-# Task — enrichment-pipeline-run
+# Task — historical-backfill
 
-Run the enrichment pipeline to fetch actual MP photos and contact data. Read /tmp/task-enrichment-run.md for full instructions.
+Historical backfill WP14-WP20. Read /tmp/task-historical-backfill.md for full instructions.

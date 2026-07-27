@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 
 /**
@@ -107,19 +108,29 @@ function tally(rows: unknown[]): { count: number; exact: boolean } {
 }
 
 /**
- * Members currently serving in a period — **not** the number of table rows.
+ * How many members a period had — **not** the number of table rows.
  *
  * The distinction is five people and it is the difference between the figure
  * the Bundestag publishes and one only this codebase would recognise. §6.2
  * reconciles it precisely: WP21 has 635 mandate rows, of which 5 have an end
  * date (departures) and 5 began after the period opened (replacements), so
- * `635 − 5 = 630` currently serve — exactly the statutory seat count. A row
- * here is a *mandate*, and one seat can carry two of them across a period.
+ * `635 − 5 = 630` sit at once — exactly the statutory seat count. A row here is
+ * a *mandate*, and one seat can carry two of them across a period.
  *
  * An open `end` means still serving, which is why `datesInOffice` keeps that
  * distinguishable from a date (convex/schema.ts). A null `datesInOffice` counts
  * as serving: the span is unknown rather than closed, and dropping those would
  * under-report the chamber on a partial ingest.
+ *
+ * ⚠ **A closed period has no open mandates at all.** Every WP20 row carries the
+ * dissolution as its `end`, so counting only open ones reports a parliament of
+ * zero — which then sets `empty`, and the home page says the period has no data
+ * over a full roster. The open-ended rule is therefore applied only where it
+ * means something: a period that still has open mandates is in progress, and
+ * the count is who sits *now*; one with none has ended, and the honest figure
+ * is the seats it held, which is the peak concurrent membership rather than the
+ * mandate count. Deriving it from the dates costs nothing here — the rows are
+ * already in hand — and it reduces to the same `635 − 5` for the live period.
  *
  * Note `getFractionSizes` (convex/mps.ts) counts mandates rather than members,
  * so the per-Fraktion figures can sum to 635 where this says 630. That is a
@@ -131,10 +142,56 @@ async function countMPs(ctx: QueryCtx, wahlperiode: number) {
     .query("mps")
     .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", wahlperiode))
     .take(COUNT_CEILING + 1)
-  const serving = rows.filter((row) => row.datesInOffice?.end == null)
   // Exactness is a property of the scan, not of the filter — if the take hit
   // its ceiling the count is a floor whether or not the filter reduced it.
-  return { count: serving.length, exact: rows.length <= COUNT_CEILING }
+  const exact = rows.length <= COUNT_CEILING
+  const open = rows.filter((row) => row.datesInOffice?.end == null)
+  if (open.length > 0) return { count: open.length, exact }
+  return { count: peakConcurrentMandates(rows), exact }
+}
+
+/**
+ * The largest number of these mandates that overlapped on any one day.
+ *
+ * The seat count of a period that has ended. A sweep over the start and end
+ * dates rather than a count of rows: a seat vacated mid-period and refilled is
+ * two mandates and one seat, so the rows over-count by exactly the number of
+ * replacements — five in WP21, and nothing guarantees the figure for a period
+ * fifteen years old.
+ *
+ * A row with no `datesInOffice` counts throughout rather than not at all, for
+ * the same reason it counts as serving above: the span is unknown, not empty.
+ *
+ * Exported for convex/stats.test.ts. Not a Convex function, so it costs nothing
+ * at the API surface — and its failure mode is a plausible number rather than
+ * an error, which is what a test is for.
+ */
+export function peakConcurrentMandates(rows: Array<Pick<Doc<"mps">, "datesInOffice">>): number {
+  // A sweep over `+1 at start` / `-1 at end` events. Ends sort *before* starts
+  // on the same day - the 0 against the 1 in the middle slot - so a seat handed
+  // over on one date reads as a succession rather than as two seats for a day.
+  // The dates are ISO, so a lexicographic sort is chronological.
+  const events: Array<[string, number, number]> = []
+  let unbounded = 0
+  for (const row of rows) {
+    const span = row.datesInOffice
+    if (!span) {
+      // Unknown span, not an empty one - counted throughout, as above.
+      unbounded += 1
+      continue
+    }
+    events.push([span.start, 1, 1])
+    if (span.end) events.push([span.end, 0, -1])
+  }
+  events.sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : a[0] < b[0] ? -1 : 1))
+
+  let running = 0
+  let peak = 0
+  for (const [, , delta] of events) {
+    running += delta
+    if (running > peak) peak = running
+  }
+  return peak + unbounded
 }
 
 /** Named ballots in a period. Exact in practice: ~1 015 exist across the whole

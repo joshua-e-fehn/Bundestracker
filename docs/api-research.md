@@ -497,10 +497,16 @@ https://www.bundestag.de/resource/blob/1194614/20260710_8.pdf
 The blob ID is opaque — you must scrape the list to discover URLs; they are not
 derivable from date/session numbers.
 
-**Coverage boundary (verified by bisection):** machine-readable sheets exist
-back to roughly **WP17 (2012/2013)**. Older entries — the tail of the list,
-reaching back to **WP16 (2007–2009)** — are **PDF-only**. A backfill earlier
-than ~2012 requires PDF parsing or route C.
+**Coverage boundary — corrected 2026-07-27 by walking the listing to
+exhaustion.** The earlier "roughly WP17 (2012/2013)" was inferred by bisection
+and is wrong by about seven years. Measured: of 1 015 entries, **391 carry an
+XLSX and 624 are PDF-only**; the **earliest data sheet is 2019-09-26**, and the
+PDF-only rows span 2009-12-03 → 2019-06-28 plus 101 undated ones.
+
+So machine-readable per-MP votes begin **mid-WP19**. WP14–18 have none through
+this route, and WP19 has them only from its third year. A backfill of anything
+earlier needs PDF parsing or route C. See §11.4 open question 5, now resolved,
+and docs/historical-coverage.md for the per-period consequence.
 
 #### Column schema (verified)
 
@@ -1604,23 +1610,35 @@ clean IP before the corresponding code is written.
 4. **Empirical safe request rate.** Everything measured here was recorded either
    side of a *triggered* block, giving an upper bound on what is unsafe but no
    lower bound on what is safe. Establish this cautiously. (§2.6)
-5. **Named-vote coverage before ~2012, and the `offset` ceiling.** Two passes
-   disagreed here and it must be settled before backfilling. One pass paginated
-   with `limit=30&noFilterSet=true&offset=…` all the way to **~1 015 entries**,
-   reaching WP16 rows from 2007–2009 (PDF-only at that depth); another reported
-   the listing bottoming out at 2019-10-24. Separately, GET-style date
-   parameters (`dateFrom`/`dateTo`, `startDate`/`endDate`, `date`, and the
-   widget's own `440434-start`/`-end`) were all **ignored** — the newest rows
-   came back regardless. Re-run the full pagination from a clean IP, record the
-   true terminal offset, and test the POST form the widget actually submits
-   before assuming the WP16–17 tail is reachable programmatically. (§4.1)
-6. **WP17/18 XML boundary.** `xml_url` is documented in the spec as WP18+, but
-   that edge was never confirmed live. (A second pass reported the DTD stating
-   "gültig ab 19. Wahlperiode"; that string is **not present** in the retrieved
-   copy of `dbtplenarprotokoll.dtd` v1.0.2, so treat the discrepancy itself as
-   unresolved.) Count `xml_url` presence in
-   `/plenarprotokoll?f.wahlperiode=18` vs `=17`, and diff a WP18 protocol
-   against a WP20 one before backfilling. (§5.2)
+5. ~~**Named-vote coverage before ~2012, and the `offset` ceiling.**~~
+   **Resolved 2026-07-27, measured by walking the listing to exhaustion.** Both
+   earlier passes were half right, which is why they appeared to disagree:
+
+   - The listing holds **1 015 entries**, as the first pass found.
+   - **391 carry an XLSX; 624 are PDF-only.** The earliest data sheet is
+     **2019-09-26**, and the PDF-only rows run 2009-12-03 → 2019-06-28 (plus
+     101 undated ones). So the second pass's "bottoms out at 2019" was a
+     statement about *data sheets*, and the first pass's WP16 tail was a
+     statement about *the listing*. Both hold.
+
+   This **corrects §4.1's stated boundary**, which reads "machine-readable
+   sheets exist back to roughly WP17 (2012/2013)" and was inferred by
+   bisection. It is wrong by about seven years: XLSX begins mid-**WP19**, so
+   WP14–18 have **no per-MP vote data at all** through this route, and WP19 has
+   it only from its third year. Sheets per year: 2019: 38, 2020: 53, 2021: 50,
+   2022: 71, 2023: 54, 2024: 47, 2025: 49, 2026: 29.
+
+   The date parameters remain ignored, as both passes found — an incremental
+   sync still cannot ask the server for "ballots since X" and must page from
+   the newest. (§4.1)
+6. ~~**WP17/18 XML boundary.**~~ **Resolved 2026-07-27, measured.** Counting
+   `xml_url` presence on the first page of `/plenarprotokoll?f.zuordnung=BT`
+   gives **100/100 for WP18 and WP19, and 0/100 for WP17 and WP16**. The
+   boundary is exactly WP18, as the spec's note on `xml_url` claimed — so the
+   second pass's "gültig ab 19. Wahlperiode" reading was wrong, consistent with
+   that string being absent from the retrieved DTD. `FIRST_XML_WAHLPERIODE = 18`
+   in both `api/protocols.py` and `pipeline/sync.py` is correct, and WP14–17
+   have no speech data by construction (docs/historical-coverage.md). (§5.2)
 7. **A vote containing abstentions and/or invalid ballots**, to exercise the
    `Enthaltung` and `ungültig` columns — both were zero across all 630 rows of
    the sampled sheet, so those code paths are untested. (§4.1)

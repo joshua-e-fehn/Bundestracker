@@ -331,6 +331,33 @@ class StammdatenDump(BaseModel):
                 result.append(mp)
         return result
 
+    def wahlperiode_window(self, wahlperiode: int) -> tuple[date | None, date | None]:
+        """When a Wahlperiode ran, derived from its mandate dates.
+
+        Read off the roster rather than hardcoded, because a table of election
+        dates would be a second source of truth for something this dump already
+        states — and one that a period Bundestrack has not met yet would not be
+        in.
+
+        The bounds come from the *extremes* of the mandates: the earliest start
+        is the constitutive sitting, and the latest end is the dissolution.
+        Replacements who joined late and members who left early sit strictly
+        inside that, so they cannot narrow it.
+
+        An **open** upper bound means the period has not ended — any mandate
+        with no `MDBWP_BIS` is someone still serving. Returned as None rather
+        than as today's date, so a caller filtering on it does not silently
+        exclude a record dated tomorrow.
+        """
+        mandates = [m for mp in self.mps if (m := mp.mandate_for(wahlperiode))]
+        if not mandates:
+            return (None, None)
+        starts = [m.start_date for m in mandates if m.start_date]
+        if any(m.end_date is None for m in mandates):
+            return (min(starts) if starts else None, None)
+        ends = [m.end_date for m in mandates if m.end_date]
+        return (min(starts) if starts else None, max(ends) if ends else None)
+
 
 class NameIndex:
     """Resolves a printed name to a Stammdaten id (§7.1).
