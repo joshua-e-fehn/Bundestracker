@@ -19,7 +19,7 @@ be re-run.
 
 ```
 src/bundestrack/
-  cli.py        # click entry point: init / sync / backfill / scores / status
+  cli.py        # click entry point: init / sync / backfill / votes / scores / status
   config.py     # environment → Settings (pydantic-settings)
   api/          # httpx clients, one per source (see below)
   models/       # pydantic models for each source's wire format
@@ -131,6 +131,7 @@ pixi run pipeline status            # print config, touch nothing
 pixi run pipeline init              # full backfill of the current period
 pixi run pipeline sync              # daily incremental (what the cron runs)
 pixi run pipeline backfill --wp 20  # one named electoral period
+pixi run pipeline votes --wp 21     # re-read one period's ballots, nothing else
 pixi run pipeline scores            # recompute activity scores now
 pixi run pipeline --dry-run sync    # fetch and transform, write nothing
 ```
@@ -139,6 +140,14 @@ pixi run pipeline --dry-run sync    # fetch and transform, write nothing
 and every named ballot, fetched strictly sequentially because the WAF blocks a
 pipeline that hurries (§2.6). It is resumable — every write is an upsert on a
 natural key, so a run that dies is re-run rather than repaired.
+
+`votes` exists because neither of the two above can re-read a ballot already
+stored, at a sensible cost: `sync` stops at the first one it recognises, and
+`backfill` reaches them only after re-running the 80 537-activity stages. When
+the stored ballots are the rows that are wrong — a change to how a sheet is
+parsed, or to the outcome attached to it — this is the ~70-download re-run.
+It fetches the roster first, because the sheets carry no MP id at all (§4.1)
+and every row is matched by printed name; that is one ZIP.
 
 `scores` is worth running after a backfill. The nightly Convex cron recomputes
 the current month plus each MP's period total, so a backfill's older months
