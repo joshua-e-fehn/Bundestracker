@@ -200,11 +200,21 @@ export const mpInput = {
    * still holds: they are photographer-credited works, not open-licensed ones.
    */
   photoUrl: v.union(v.null(), v.string()),
-  /** Whose photograph it is, e.g. `Sanae Abdi/SPD-Fraktion`. Written and read
-   * as a pair with `photoUrl`: displaying the credit is the licence condition,
-   * so a portrait that arrives without one is dropped by the pipeline rather
-   * than shown bare. */
-  photoCredit: v.union(v.null(), v.string()),
+  /**
+   * Whose photograph it is, e.g. `Sanae Abdi/SPD-Fraktion`. Written and read as
+   * a pair with `photoUrl`: displaying the credit is the licence condition, so
+   * a portrait that arrives without one is dropped by the pipeline rather than
+   * shown bare.
+   *
+   * `v.optional` for the reason the header gives — a *row* legitimately
+   * predates the field. Every `mps` row written before this shipped has no such
+   * key, and a required validator rejects the whole schema deploy rather than
+   * the one row, so the field could not land at all without either this or a
+   * backfill migration over 630 rows to write nulls that mean what absence
+   * already means. The pipeline still always sends it; `mp_payload` has no
+   * branch that omits it.
+   */
+  photoCredit: v.optional(v.union(v.null(), v.string())),
   birthDate: v.union(v.null(), v.string()),
   /** From abgeordnetenwatch (83.4 % of WP21). Stammdaten publishes no
    * education field at all, so this has no official counterpart. */
@@ -213,8 +223,9 @@ export const mpInput = {
   profession: v.union(v.null(), v.string()),
   /** abgeordnetenwatch's `occupation` — what the MP does *now*, which for a
    * sitting member is often `MdB` (88.1 %). Deliberately not merged with
-   * `profession`: the two answer different questions and disagree usefully. */
-  occupation: v.union(v.null(), v.string()),
+   * `profession`: the two answer different questions and disagree usefully.
+   * `v.optional` for the same reason as `photoCredit`. */
+  occupation: v.optional(v.union(v.null(), v.string())),
   /**
    * How to reach the MP, as the Bundestag actually publishes it.
    *
@@ -227,22 +238,32 @@ export const mpInput = {
    *
    * The Berlin office is not stored: it is `Platz der Republik 1` for all 630,
    * so it belongs in the UI as a constant, not in 630 rows.
+   *
+   * `v.optional` for the same reason as `photoCredit`. Note that this makes
+   * three states rather than two, and they are genuinely different: the key
+   * absent means the row predates enrichment, `null` means the page published
+   * nothing, and an object means it did. The UI collapses the first two — both
+   * render "no contact details recorded" — but the pipeline must not, or a run
+   * that skipped the fetch would be indistinguishable from an MP with no
+   * office. Consumers read all three through `?.`, never `!== null`.
    */
-  contact: v.union(
-    v.null(),
-    v.object({
-      /** `bundestag.de/services/formular/contactform?mdbId=…`. The `mdbId` is a
-       * *fourth* MP id space — bundestag.de's own CMS id — so it stays inside
-       * the URL and is never used as a join key. */
-      formUrl: v.union(v.null(), v.string()),
-      /** Constituency office(s), newline-separated as printed. Roughly half of
-       * MPs list none. */
-      constituencyOffice: v.union(v.null(), v.string()),
-      homepage: v.union(v.null(), v.string()),
-      /** `platform` is free text (`Facebook`, `X`, `TikTok`, `Mastodon`…), not
-       * an enum: the list is the Bundestag's and it grows. */
-      socials: v.array(v.object({ platform: v.string(), url: v.string() })),
-    }),
+  contact: v.optional(
+    v.union(
+      v.null(),
+      v.object({
+        /** `bundestag.de/services/formular/contactform?mdbId=…`. The `mdbId` is a
+         * *fourth* MP id space — bundestag.de's own CMS id — so it stays inside
+         * the URL and is never used as a join key. */
+        formUrl: v.union(v.null(), v.string()),
+        /** Constituency office(s), newline-separated as printed. Roughly half of
+         * MPs list none. */
+        constituencyOffice: v.union(v.null(), v.string()),
+        homepage: v.union(v.null(), v.string()),
+        /** `platform` is free text (`Facebook`, `X`, `TikTok`, `Mastodon`…), not
+         * an enum: the list is the Bundestag's and it grows. */
+        socials: v.array(v.object({ platform: v.string(), url: v.string() })),
+      }),
+    ),
   ),
   /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`). */
   electionMethod: v.union(v.null(), v.string()),
