@@ -73,18 +73,17 @@ export function VoteOutcomeBadge({
   return (
     <Badge
       variant="outline"
-      className={cn("max-w-[14rem] shrink-0 justify-start truncate", className)}
-      style={
-        color === null
-          ? undefined
-          : {
-              // The same 14 % tint `PartyBadge` uses, so the two badge families
-              // sit at one weight in a row that carries both.
-              backgroundColor: `color-mix(in oklch, ${color} 14%, transparent)`,
-              color,
-              borderColor: "transparent",
-            }
-      }
+      className={cn(
+        "max-w-[14rem] shrink-0 justify-start truncate",
+        // The same neutral surface `PartyBadge` uses, so the two badge families
+        // sit at one weight in a row that carries both. It was a 14 % tint of
+        // the outcome colour on both, which cost enough contrast to put this
+        // badge at 4.34:1 in light mode — see lib/bundestag.ts for why tinting
+        // a surface with its own foreground cannot be made to work.
+        color !== null && "bg-muted",
+        className,
+      )}
+      style={color === null ? undefined : { color, borderColor: "transparent" }}
       // The cell truncates; the full tenor stays reachable on hover — and in
       // English that hover is also where the official German remains readable.
       title={result}

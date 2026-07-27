@@ -160,7 +160,7 @@ export function SummaryStats({ wahlperiode }: { wahlperiode: number | null | und
             </div>
             <div className="mt-1 font-medium text-muted-foreground text-sm">{t(labelKey)}</div>
             {noteKey ? (
-              <p className="mt-2 text-[0.7rem] text-muted-foreground/80 leading-snug">
+              <p className="mt-2 text-[0.7rem] text-muted-foreground leading-snug">
                 {t(noteKey)}
               </p>
             ) : null}

@@ -179,8 +179,9 @@ const NEUTRAL_STYLE = "border-border bg-muted text-muted-foreground"
 /**
  * The class string per party.
  *
- * **Spelled out rather than composed.** `bg-party-${key}/15` would be tidier
- * and would not work: Tailwind v4 finds classes by scanning source text, so a
+ * **Spelled out rather than composed.** Building the class name from the key
+ * would be tidier and would not work: Tailwind v4 finds classes by scanning
+ * source text, so a
  * name assembled at runtime is never in the generated stylesheet and the badge
  * renders with no background at all. A `Record<PartyKey, …>` also means a party
  * added to `PARTY_KEYS` is a type error here rather than a silently unstyled
@@ -189,20 +190,35 @@ const NEUTRAL_STYLE = "border-border bg-muted text-muted-foreground"
  * The tokens are the same custom properties `partyColor` returns, reached
  * through the `@theme inline` block in app/globals.css — so the badge, the seat
  * dot and the legend swatch are one colour resolved three ways. Each `--party-*`
- * is solved for 4.5:1 against the page background in *both* themes, which is
- * why none of these carries a `dark:` variant.
+ * is solved for 4.5:1 against `--muted` in *both* themes, which is why none of
+ * these carries a `dark:` variant.
+ *
+ * ## The background is `--muted`, not a tint of the party colour
+ *
+ * These read a 15 % `bg-party` tint — a wash of the party's own hue — which is
+ * the obvious way to tint a badge and is why it was written that way. It is
+ * also unreadable. Tinting a surface with the foreground colour moves the two
+ * toward each other, so contrast falls no matter how the token is chosen:
+ * measured, ~12 % in light and ~45 % in dark, which put every dark party badge
+ * between 3.3:1 and 4.4:1. `--party-spd` is 5.67:1 on the dark card and 3.33:1
+ * on its own tint; no alpha recovers that, and no lightness does either without
+ * turning SPD red into pink.
+ *
+ * A neutral surface costs nothing and fixes it outright: the same tokens on
+ * `--muted` clear 4.5:1 across both themes with the dark hues untouched. The
+ * badge still reads as its party — the *text* carries the colour, at full
+ * strength, which is where the 4.5:1 is owed.
  */
 const PARTY_STYLES: Record<PartyKey, string> = {
   // CDU/CSU is black by convention, which is also the page's text colour — so
   // it takes the neutral foreground ramp rather than `--party-cdu-csu`, whose
-  // near-black is a *seat dot* colour and would be unreadable as badge text on
-  // this badge's own light tint.
+  // near-black is a *seat dot* colour and would be unreadable as badge text.
   "cdu-csu": "border-foreground/25 bg-foreground/10 text-foreground",
-  spd: "border-transparent bg-party-spd/15 text-party-spd",
-  gruene: "border-transparent bg-party-gruene/15 text-party-gruene",
-  fdp: "border-transparent bg-party-fdp/15 text-party-fdp",
-  afd: "border-transparent bg-party-afd/15 text-party-afd",
-  linke: "border-transparent bg-party-linke/15 text-party-linke",
+  spd: "border-transparent bg-muted text-party-spd",
+  gruene: "border-transparent bg-muted text-party-gruene",
+  fdp: "border-transparent bg-muted text-party-fdp",
+  afd: "border-transparent bg-muted text-party-afd",
+  linke: "border-transparent bg-muted text-party-linke",
   // Neutral, both of them: a group with no colour of its own, and a spelling
   // `parties.ts` has never seen. Falling through to this is intended — a group
   // is legible without its colour, and inventing one would assert a party
