@@ -66,41 +66,142 @@
   --color-vote-abstain: var(--vote-abstain);
   --color-vote-invalid: var(--vote-invalid);
   --color-vote-absent: var(--vote-absent);
+
+  /* --- brand ---------------------------------------------------------------
+   *
+   * The two brand hues as Tailwind tokens, so `text-gold`, `bg-red/10` and
+   * `border-gold-muted` work the same way the party and ballot colours already
+   * do. Both come in two tiers, and the distinction is the whole reason there
+   * are four tokens rather than two:
+   *
+   *   `--gold` / `--red`  — the *ink* tier. Clears 4.5:1 on the page
+   *                          background in both themes, so it is safe for text,
+   *                          icons and anything a reader must actually read.
+   *   `--gold-brand` / `--red-brand`
+   *                       — the *fill* tier. The identity colour at full
+   *                          saturation, for surfaces that carry text in a
+   *                          contrasting colour rather than being text.
+   *
+   * Using the fill tier as text is the one mistake this split exists to
+   * prevent: the brand gold sits at 2.4:1 on white, which looks correct to a
+   * designer on a good monitor and is illegible to everyone else. */
+  --color-gold: var(--gold);
+  --color-gold-brand: var(--gold-brand);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-red: var(--red);
+  --color-red-brand: var(--red-brand);
+  --color-red-foreground: var(--red-foreground);
 }
 
+/**
+ * The light theme, and the default one.
+ *
+ * ## Where the palette comes from
+ *
+ * Black, gold and red, in the register German federal services actually use
+ * rather than the flag's primaries. Three published sources were measured
+ * rather than recalled:
+ *
+ *  - **bundesregierung.de** sets body text at `#111314` — a near-black carrying
+ *    a faint cool cast, not `#000` — and reserves saturated red (`#C0003C`,
+ *    `#E40134`) for emphasis. Its warm accent is `#F7BB3D`.
+ *  - **bundestag.de** sets text at `#191919` on an `#F6F6F6` surface. Its own
+ *    accent is orange, which is deliberately *not* borrowed here: this site is
+ *    not published by the Bundestag (see components/site-footer.tsx) and should
+ *    not wear its livery.
+ *  - **gov.de**, built on the federal KERN design system, expresses every colour
+ *    as OKLCH lightness/chroma/hue triplets and carries a warm neutral ramp with
+ *    a slight violet cast. The OKLCH-first approach is adopted below; the cast
+ *    is inverted to warm, so the neutrals sit under gold rather than fighting it.
+ *
+ * ## Why the background is off-white and the text is not black
+ *
+ * `#FAFAF9` against `#131311` is 17.8:1 — past every threshold that matters,
+ * and short of the 21:1 of pure black on pure white, which is the combination
+ * that produces halation on an LCD and is the single most common complaint
+ * about "clean" light themes. The 0.002 chroma at hue 95 is what keeps the page
+ * reading as paper rather than as a screenshot with the lights off.
+ *
+ * ## The two-tier brand hues
+ *
+ * `--gold` is *not* the brand gold. The identity colour (`--gold-brand`,
+ * `#C59F3A`) is a 2.4:1 contrast against this background: correct as a fill
+ * behind dark text, illegible as text itself. So the ink tier is darkened to
+ * L 0.555, which reads unmistakably as the same gold and clears 4.5:1. Red
+ * needs no such split — the identity red is already legible as text — but gets
+ * the same two names anyway, so a component never has to know which hue it is
+ * styling to know which token to reach for.
+ *
+ * Every value below was solved for its contrast ratio rather than picked; the
+ * ratios are stated where they are load-bearing.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* 17.81:1 against `--foreground`. */
+  --background: oklch(0.985 0.002 95);
+  --foreground: oklch(0.185 0.004 95);
+  /* Pure white, so a card lifts *off* the page rather than merely bordering it.
+   * The one surface allowed to be brighter than the background. */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.185 0.004 95);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --popover-foreground: oklch(0.185 0.004 95);
+  /* Near-black rather than gold. A primary button is the most-clicked element
+   * on the page and gold at button size is a warning colour in every other
+   * context a reader has seen this week; the brand hues stay as accents, which
+   * is what keeps them meaning something. */
+  --primary: oklch(0.22 0.006 95);
+  --primary-foreground: oklch(0.985 0.002 95);
+  --secondary: oklch(0.955 0.004 95);
+  --secondary-foreground: oklch(0.22 0.006 95);
+  --muted: oklch(0.955 0.004 95);
+  /* 5.59:1 — most of this site's figures are secondary text, so this token
+   * carries more numbers than `--foreground` does and is held well clear of
+   * the 4.5:1 floor rather than at it. */
+  --muted-foreground: oklch(0.505 0.008 95);
+  --accent: oklch(0.955 0.004 95);
+  --accent-foreground: oklch(0.22 0.006 95);
+  /* The brand red doubles as the destructive colour. Two different reds — one
+   * for the identity, one for errors — would read as a mistake, not a system. */
+  --destructive: oklch(0.545 0.205 28);
+  --border: oklch(0.905 0.005 95);
+  --input: oklch(0.9 0.005 95);
+  /* The focus ring is the one place gold appears unprompted on every page. It
+   * is a deliberate choice: focus must be conspicuous, and a gold ring on a
+   * warm-white page is both more visible than the scaffold's grey and the
+   * cheapest possible way for the brand to touch every interaction. */
+  --ring: oklch(0.72 0.125 88);
+  /* A single-hue gold ramp for the contribution heatmap and the seating map's
+   * continuous modes, dim to bright at one hue, so cell intensity reads as
+   * *more* rather than as a different category. Light theme runs the other way
+   * from dark: on paper, more means darker. */
+  --chart-1: oklch(0.93 0.035 92);
+  --chart-2: oklch(0.87 0.06 91);
+  --chart-3: oklch(0.8 0.09 90);
+  --chart-4: oklch(0.72 0.115 89);
+  --chart-5: oklch(0.62 0.115 88);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.97 0.003 95);
+  --sidebar-foreground: oklch(0.185 0.004 95);
+  --sidebar-primary: oklch(0.22 0.006 95);
+  --sidebar-primary-foreground: oklch(0.985 0.002 95);
+  --sidebar-accent: oklch(0.955 0.004 95);
+  --sidebar-accent-foreground: oklch(0.22 0.006 95);
+  --sidebar-border: oklch(0.905 0.005 95);
+  --sidebar-ring: oklch(0.72 0.125 88);
+
+  /* --- brand hues (light) --------------------------------------------------
+   *
+   * `--gold` 4.57:1 and `--red` 5.29:1 against `--background`: both are safe as
+   * text. `--gold-brand` and `--red-brand` are the identity tier and are only
+   * ever fills — each is paired with the `-foreground` that clears 4.5:1 on it
+   * (black on gold at 7.44:1, white on red at 5.52:1), so a badge built from a
+   * brand pair is legible by construction. */
+  --gold: oklch(0.555 0.115 88);
+  --gold-brand: oklch(0.72 0.125 88);
+  --gold-foreground: oklch(0.185 0.004 95);
+  --red: oklch(0.545 0.205 28);
+  --red-brand: oklch(0.545 0.205 28);
+  --red-foreground: oklch(1 0 0);
 
   /* --- party colours (light) ---------------------------------------------
    *
@@ -117,14 +218,19 @@
    * `--party-unknown` is deliberately a plain neutral: a Fraktion this codebase
    * does not recognise should look unstyled, which is the visible prompt to add
    * it (see the header of lib/parties.ts). */
-  --party-cdu-csu: oklch(0.28 0.005 285);
+  --party-cdu-csu: oklch(0.28 0.005 95);
   --party-spd: oklch(0.53 0.21 26);
   --party-gruene: oklch(0.52 0.14 150);
-  --party-fdp: oklch(0.62 0.15 88);
+  /* The FDP's yellow, held at the same L and C as `--gold` so it cannot outshine
+   * the brand hue it now sits closest to. A party colour has to stay its party's
+   * colour, so the hue is untouched — but a full-strength yellow beside gold
+   * makes the gold look like a mistake, and this is the one party colour with
+   * that problem. */
+  --party-fdp: oklch(0.58 0.13 95);
   --party-afd: oklch(0.55 0.15 240);
   --party-linke: oklch(0.52 0.2 350);
-  --party-fraktionslos: oklch(0.55 0.01 285);
-  --party-unknown: oklch(0.6 0 0);
+  --party-fraktionslos: oklch(0.55 0.01 95);
+  --party-unknown: oklch(0.6 0.004 95);
 
   /* --- ballot positions ---------------------------------------------------
    *
@@ -141,58 +247,90 @@
    * two are still separable side by side. */
   --vote-yes: oklch(0.55 0.14 150);
   --vote-no: oklch(0.55 0.19 26);
-  --vote-abstain: oklch(0.7 0.13 85);
-  --vote-invalid: oklch(0.72 0.008 285);
-  --vote-absent: oklch(0.85 0.005 285);
+  /* Abstention is the brand gold's ink tier, not the amber it used to be: the
+   * brief rules out yellow, and a page carrying gold everywhere else should not
+   * introduce a near-miss hue for one bar segment. Darkened from the fill tier
+   * for the same reason as `--gold` — this segment is labelled. */
+  --vote-abstain: oklch(0.6 0.115 88);
+  --vote-invalid: oklch(0.7 0.008 95);
+  --vote-absent: oklch(0.85 0.005 95);
 }
 
 /**
- * The dark theme, and the default one.
+ * The dark theme — now the opt-in one.
  *
- * Carries a slight blue cast (hue 265, chroma 0.01–0.02) rather than the
- * scaffold's pure greyscale: the surfaces read as deep space rather than as
- * switched-off white, which is the intended register for a chamber-wide data
- * view. The cast is kept low enough not to tint the party colours sitting on
- * top of it — those are the only hues on the page that mean anything.
+ * ## What changed and why
  *
- * Contrast is the constraint, not the mood. `--muted-foreground` sits at 0.72
- * lightness so the secondary text carrying most of the figures stays above
- * 4.5:1 on `--background`.
+ * This theme used to carry a blue cast at hue 265 and used to be the default.
+ * Both are gone: the palette is warm throughout (hue 95, the same axis the light
+ * theme uses), so switching themes reads as the lights going out in the same
+ * room rather than as arriving at a different site. A cool grey under a warm
+ * gold makes the gold look muddy, which is the specific failure this avoids.
+ *
+ * The background is a genuine near-black (L 0.155) rather than the previous
+ * L 0.16 charcoal, with just enough chroma to avoid the dead flatness of `#000`
+ * — deep and slightly warm, matching the "luxurious but clean" register.
+ *
+ * ## The hues are lifted, not swapped
+ *
+ * Every brand and party colour here is the *same hue* as its light-theme twin,
+ * raised in lightness until it clears 4.5:1 on this background. `--gold` reaches
+ * 10.4:1 and `--red` 5.65:1. An MP's badge and the brand gold must be
+ * recognisably themselves in both themes; only their lightness is negotiable.
  */
 .dark {
-  --background: oklch(0.16 0.012 265);
-  --foreground: oklch(0.97 0.004 265);
-  --card: oklch(0.205 0.014 265);
-  --card-foreground: oklch(0.97 0.004 265);
-  --popover: oklch(0.205 0.014 265);
-  --popover-foreground: oklch(0.97 0.004 265);
-  --primary: oklch(0.93 0.006 265);
-  --primary-foreground: oklch(0.2 0.014 265);
-  --secondary: oklch(0.27 0.015 265);
-  --secondary-foreground: oklch(0.97 0.004 265);
-  --muted: oklch(0.27 0.015 265);
-  --muted-foreground: oklch(0.72 0.014 265);
-  --accent: oklch(0.29 0.018 265);
-  --accent-foreground: oklch(0.97 0.004 265);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 11%);
+  --background: oklch(0.155 0.004 95);
+  --foreground: oklch(0.965 0.004 95);
+  /* Lifted off the background rather than equal to it, so a card still reads as
+   * a surface once the page is dark and borders are nearly invisible. */
+  --card: oklch(0.205 0.006 95);
+  --card-foreground: oklch(0.965 0.004 95);
+  --popover: oklch(0.205 0.006 95);
+  --popover-foreground: oklch(0.965 0.004 95);
+  --primary: oklch(0.93 0.005 95);
+  --primary-foreground: oklch(0.185 0.006 95);
+  --secondary: oklch(0.27 0.007 95);
+  --secondary-foreground: oklch(0.965 0.004 95);
+  --muted: oklch(0.27 0.007 95);
+  /* 8.31:1 — as in the light theme, held clear of the floor because this token
+   * carries most of the site's figures. */
+  --muted-foreground: oklch(0.735 0.012 95);
+  --accent: oklch(0.29 0.008 95);
+  --accent-foreground: oklch(0.965 0.004 95);
+  --destructive: oklch(0.655 0.19 28);
+  --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.58 0.03 265);
-  /* A single-hue ramp for the contribution heatmap: dim to bright at one hue,
-   * so cell intensity reads as *more* rather than as a different category. */
-  --chart-1: oklch(0.3 0.03 265);
-  --chart-2: oklch(0.44 0.07 262);
-  --chart-3: oklch(0.58 0.11 258);
-  --chart-4: oklch(0.72 0.14 254);
-  --chart-5: oklch(0.85 0.16 250);
-  --sidebar: oklch(0.205 0.014 265);
-  --sidebar-foreground: oklch(0.97 0.004 265);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.29 0.018 265);
-  --sidebar-accent-foreground: oklch(0.97 0.004 265);
-  --sidebar-border: oklch(1 0 0 / 11%);
-  --sidebar-ring: oklch(0.58 0.03 265);
+  --ring: oklch(0.78 0.13 88);
+  /* The gold ramp, running the opposite way from the light theme: on a dark
+   * page, more means brighter. Same hue, so a heatmap read in one theme and
+   * screenshotted in the other is still the same chart. */
+  --chart-1: oklch(0.3 0.03 92);
+  --chart-2: oklch(0.42 0.06 91);
+  --chart-3: oklch(0.55 0.09 90);
+  --chart-4: oklch(0.68 0.115 89);
+  --chart-5: oklch(0.83 0.13 88);
+  --sidebar: oklch(0.205 0.006 95);
+  --sidebar-foreground: oklch(0.965 0.004 95);
+  --sidebar-primary: oklch(0.78 0.13 88);
+  --sidebar-primary-foreground: oklch(0.185 0.006 95);
+  --sidebar-accent: oklch(0.29 0.008 95);
+  --sidebar-accent-foreground: oklch(0.965 0.004 95);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.78 0.13 88);
+
+  /* --- brand hues (dark) ---------------------------------------------------
+   *
+   * The ink tier lifts (gold to L 0.80, red to L 0.655) because it must stay
+   * readable. The fill tier lifts *less* — a fill is judged by the text on top
+   * of it, not by its own contrast with the page, and a fill as bright as the
+   * ink tier would glow. Gold's foreground stays near-black in both themes;
+   * red's stays white. */
+  --gold: oklch(0.8 0.13 88);
+  --gold-brand: oklch(0.78 0.13 88);
+  --gold-foreground: oklch(0.185 0.006 95);
+  --red: oklch(0.655 0.19 28);
+  --red-brand: oklch(0.6 0.2 28);
+  --red-foreground: oklch(1 0 0);
 
   /* --- party colours (dark) ----------------------------------------------
    *
@@ -200,14 +338,17 @@
    * so each clears 4.5:1 against `--background` without glowing. CDU/CSU
    * inverts: black on white becomes bone on near-black, because a black badge
    * on a dark background is not a badge. */
-  --party-cdu-csu: oklch(0.88 0.008 285);
+  --party-cdu-csu: oklch(0.88 0.008 95);
   --party-spd: oklch(0.68 0.2 25);
   --party-gruene: oklch(0.72 0.16 148);
-  --party-fdp: oklch(0.84 0.16 92);
+  /* Eased in chroma against the light theme's 0.16, for the reason given there:
+   * this is the one party colour close enough to the brand gold to compete with
+   * it, and on a dark page a full-chroma yellow wins that fight outright. */
+  --party-fdp: oklch(0.85 0.13 98);
   --party-afd: oklch(0.7 0.14 238);
   --party-linke: oklch(0.7 0.19 350);
-  --party-fraktionslos: oklch(0.72 0.012 285);
-  --party-unknown: oklch(0.7 0 0);
+  --party-fraktionslos: oklch(0.72 0.012 95);
+  --party-unknown: oklch(0.7 0.004 95);
 
   /* --- ballot positions (dark) --------------------------------------------
    *
@@ -217,9 +358,9 @@
    * preserved — absence is the least present thing in the bar in both themes. */
   --vote-yes: oklch(0.72 0.16 148);
   --vote-no: oklch(0.68 0.19 25);
-  --vote-abstain: oklch(0.8 0.14 88);
-  --vote-invalid: oklch(0.5 0.008 265);
-  --vote-absent: oklch(0.38 0.008 265);
+  --vote-abstain: oklch(0.8 0.13 88);
+  --vote-invalid: oklch(0.5 0.008 95);
+  --vote-absent: oklch(0.38 0.008 95);
 }
 
 @layer base {
@@ -231,7 +372,59 @@
   }
   html {
     @apply font-sans;
+    /* Both themes are declared, light first. Native controls — scrollbars, date
+     * pickers, `<select>` popups — read this rather than the `.dark` class, and
+     * the order names the default, so a first-time visitor gets a light
+     * scrollbar next to a light page instead of a dark one. */
+    color-scheme: light dark;
   }
+  .dark {
+    color-scheme: dark;
+  }
+  /* Headings carry the tighter tracking the display face is cut for. Set once
+   * here rather than per component, because the alternative is every page
+   * spelling out `tracking-tight` and one page forgetting. */
+  h1,
+  h2,
+  h3 {
+    @apply font-heading tracking-tight;
+  }
+  /* Figures line up in columns across the site — rankings, score panels, vote
+   * tallies. Tabular numerals are what stop a table's digits from shifting
+   * sideways row to row, and Inter only supplies them when asked. */
+  th,
+  td {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* --- the federal rule -------------------------------------------------------
+ *
+ * A 3 px black-red-gold bar, used as the top edge of the site chrome and the
+ * bottom edge of the footer.
+ *
+ * This is the whole flag reference in the design, and it is deliberately the
+ * only one. The alternative — flag colours used as UI colours — is what makes
+ * civic sites look like a sports kit: the page already carries meaning-bearing
+ * colour in six party hues, and a red-gold interface underneath them would
+ * leave nothing legible as an accent. Confining the flag to a hairline lets it
+ * be unmistakable without competing.
+ *
+ * Hard stops rather than a gradient, and equal thirds, because it is a flag and
+ * not a decoration. The gold band uses `--gold-brand` rather than `--gold`: it
+ * is a fill, carries no text, and this is the one place the identity colour
+ * should appear at full strength.
+ */
+@utility federal-rule {
+  background-image: linear-gradient(
+    to right,
+    var(--foreground) 0%,
+    var(--foreground) 33.333%,
+    var(--red-brand) 33.333%,
+    var(--red-brand) 66.666%,
+    var(--gold-brand) 66.666%,
+    var(--gold-brand) 100%
+  );
 }
 
 /* --- scrollable strips ------------------------------------------------------
