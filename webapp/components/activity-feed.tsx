@@ -204,6 +204,23 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
   )
 
   /**
+   * The threshold actually applied, clamped to a ceiling that can move under it.
+   *
+   * `maxScore` is derived from the loaded rows, so it *falls* when the reader
+   * narrows to a type whose rows all score low. Without the clamp the stored
+   * `minScore` would stay above the new ceiling: `Slider` pins its thumb to
+   * `max` — so the control would read "20" while filtering at 200, every row
+   * would vanish, and dragging to the far left would not bring them back
+   * because the thumb was already there. Clamping here rather than in an effect
+   * keeps the displayed value, the filter and the control the same number
+   * without a render pass where they disagree.
+   *
+   * The reader's own `minScore` is deliberately not overwritten: widening the
+   * type filter again restores the ceiling, and with it the threshold they set.
+   */
+  const threshold = Math.min(minScore, maxScore || 100)
+
+  /**
    * The rows as displayed: filtered, then ordered.
    *
    * A row with no apportionable score is kept at threshold zero and dropped
@@ -219,13 +236,13 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
    */
   const visible = useMemo(() => {
     const kept =
-      minScore <= 0
+      threshold <= 0
         ? scored
-        : scored.filter((row) => row.score.total !== null && row.score.total >= minScore)
+        : scored.filter((row) => row.score.total !== null && row.score.total >= threshold)
     return sort === "score"
       ? [...kept].sort((a, b) => sortableScore(b.score) - sortableScore(a.score))
       : kept
-  }, [scored, sort, minScore])
+  }, [scored, sort, threshold])
 
   const hiddenByScore = scored.length - visible.length
 
@@ -298,7 +315,7 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
             <Label htmlFor="feed-min-score">
               {t("feed.filter.minScore")}
               <span className="ml-1 text-muted-foreground tabular-nums">
-                {formatScore(minScore, locale)}
+                {formatScore(threshold, locale)}
               </span>
             </Label>
             <Slider
@@ -306,13 +323,13 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
               min={0}
               max={maxScore || 100}
               step={Math.max(1, Math.round((maxScore || 100) / 100))}
-              value={[minScore]}
+              value={[threshold]}
               onValueChange={([value]) => setMinScore(value)}
               className="mt-3 w-[12rem] max-w-full"
             />
           </div>
 
-          {(sort !== "chronological" || minScore > 0) && (
+          {(sort !== "chronological" || threshold > 0) && (
             <Button
               type="button"
               variant="ghost"
@@ -331,10 +348,10 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
             sorted list looks complete. Only once either is actually in use: a
             reader on the default chronological feed is not being shown a
             reordering and does not need to be warned about one. */}
-        {(sort === "score" || minScore > 0) && (
+        {(sort === "score" || threshold > 0) && (
           <CaveatNote>
             {t("feed.sort.loadedOnly")}
-            {minScore > 0 && ` ${t("feed.filter.minScoreNote")}`}
+            {threshold > 0 && ` ${t("feed.filter.minScoreNote")}`}
             {hiddenByScore > 0 && ` ${t("feed.filter.hidden", { count: hiddenByScore })}`}
           </CaveatNote>
         )}
@@ -362,7 +379,7 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
               statement from `feed.empty` — that one is a claim about the data,
               this is a claim about the filter. Offering the reader the way out
               rather than the dead end. */}
-          {visible.length === 0 && minScore > 0 ? (
+          {visible.length === 0 && threshold > 0 ? (
             <div className="flex flex-col items-center gap-3 rounded-lg border border-border border-dashed p-8 text-center">
               <p className="text-muted-foreground text-sm">
                 {t("feed.filter.hidden", { count: hiddenByScore })}
