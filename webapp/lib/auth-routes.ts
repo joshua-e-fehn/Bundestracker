@@ -66,13 +66,28 @@ export const PUBLIC_PATHS = [
   // have been redirected to a 404 that looks like a broken route rather than a
   // guard. The filesystem check caught it here; nothing else would have.
   "/search",
-  // The narrative home page, as a candidate for `/`. Not in the nav and
-  // `noindex` — it is a design being looked at rather than a destination — but
-  // public all the same: it is the home page's own content, and a route that
+  // The methodology page. Public for the same reason as everything above it,
+  // and with a sharper edge: it is the page that explains what the figures mean
+  // and what they do not, so gating it would put the site's own caveats behind
+  // an account while leaving the numbers they qualify in the open.
+  "/about",
+  // The narrative home pages, as candidates for `/`. Not in the nav and
+  // `noindex` — they are designs being looked at rather than destinations — but
+  // public all the same: each is the home page's own content, and a route that
   // redirects to `/sign-in` cannot be judged against the one it might replace.
-  // Caught by the filesystem check, on the commit that added the page, for the
-  // seventh time.
+  // Caught by the filesystem check, on the commit that added each page.
+  //
+  // All three are listed because all three routes exist. Two of them were lost
+  // in the home-* merges — this file was resolved by taking one side whole, so
+  // `/home-a` and `/home-c` fell out while their pages stayed on disk, and the
+  // filesystem check went red. That is the eighth time it has earned its keep,
+  // and the first time it caught a *merge* rather than a new page.
+  //
+  // Each goes when its concept does — either deleted, or promoted to `/`, in
+  // which case the existing "/" entry already covers it.
+  "/home-a",
   "/home-b",
+  "/home-c",
 ]
 
 export function isPublicPath(pathname: string) {

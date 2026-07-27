@@ -211,11 +211,8 @@ function ActivityBoard({
   titleKey,
   subtitleKey,
   caveatKey,
-<<<<<<< HEAD
-  level,
-=======
   caveatShownByPage = false,
->>>>>>> home-c-zahlen
+  level,
 }: {
   wahlperiode: number | null | undefined
   direction: "asc" | "desc"
@@ -223,12 +220,8 @@ function ActivityBoard({
   titleKey: TranslationKey
   subtitleKey: TranslationKey
   caveatKey?: TranslationKey
-<<<<<<< HEAD
   level?: SectionLevel
-}) {
-=======
 } & CaveatSuppressible) {
->>>>>>> home-c-zahlen
   const { t } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const rankings = useQuery(
@@ -323,16 +316,12 @@ export function TopMPs({
  */
 export function BottomMPs({
   wahlperiode,
-<<<<<<< HEAD
+  caveatShownByPage,
   level,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
-}) {
-=======
-  caveatShownByPage,
-}: { wahlperiode: number | null | undefined } & CaveatSuppressible) {
->>>>>>> home-c-zahlen
+} & CaveatSuppressible) {
   return (
     <ActivityBoard
       wahlperiode={wahlperiode}
@@ -341,11 +330,8 @@ export function BottomMPs({
       titleKey="home.bottomMPsTitle"
       subtitleKey="home.bottomMPsSubtitle"
       caveatKey="home.bottomMPsCaveat"
-<<<<<<< HEAD
-      level={level}
-=======
       caveatShownByPage={caveatShownByPage}
->>>>>>> home-c-zahlen
+      level={level}
     />
   )
 }
@@ -369,18 +355,12 @@ export function BottomMPs({
  */
 export function PartyComparisonPreview({
   wahlperiode,
-<<<<<<< HEAD
+  caveatShownByPage = false,
   level,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
-}) {
-=======
-  caveatShownByPage = false,
-}: {
-  wahlperiode: number | null | undefined
 } & CaveatSuppressible) {
->>>>>>> home-c-zahlen
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const comparison = useQuery(api.parties.getPartyComparison, skip ? "skip" : { wahlperiode })
