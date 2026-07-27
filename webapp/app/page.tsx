@@ -7,6 +7,7 @@ import {
   ActivityFeedPreview,
   BottomMPs,
   LatestVotes,
+  PartyComparisonPreview,
   SummaryStats,
   TopMPs,
 } from "@/components/home-sections"
@@ -74,10 +75,16 @@ export default function Home() {
             <TopMPs wahlperiode={wahlperiode} />
             <BottomMPs wahlperiode={wahlperiode} />
           </div>
+          {/* The Fraktionen beside the latest ballots — the same two-column
+              shape as the rows above, and the pairing is deliberate: both are
+              chamber-level views, where the two boards above are about
+              individuals. The party card is first in source order, so a phone
+              and a screen reader reach the summary before the ballot list. */}
           <div className="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-2 lg:gap-8">
+            <PartyComparisonPreview wahlperiode={wahlperiode} />
             <LatestVotes wahlperiode={wahlperiode} />
-            <ActivityFeedPreview wahlperiode={wahlperiode} />
           </div>
+          <ActivityFeedPreview wahlperiode={wahlperiode} />
         </div>
       )}
     </main>

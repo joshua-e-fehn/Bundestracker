@@ -1,8 +1,8 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Info } from "lucide-react"
 import { useState } from "react"
+import { CaveatNote } from "@/components/caveat-note"
 import { ColorModeToggle } from "@/components/color-mode-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SeatingLegend } from "@/components/seating-legend"
@@ -100,12 +100,7 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
           rather than behind a link, matching how the leaderboards carry theirs:
           each is a case where a colour could be read as a finding the sources do
           not support. */}
-      {definition?.caveatKey !== undefined && (
-        <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-          <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-          {t(definition.caveatKey)}
-        </p>
-      )}
+      {definition?.caveatKey !== undefined && <CaveatNote>{t(definition.caveatKey)}</CaveatNote>}
     </div>
   )
 }

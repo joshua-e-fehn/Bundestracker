@@ -1,7 +1,8 @@
 "use client"
 
-import { AlertTriangle, ExternalLink, Info } from "lucide-react"
+import { AlertTriangle, ExternalLink } from "lucide-react"
 import Link from "next/link"
+import { CaveatNote } from "@/components/caveat-note"
 import { type FraktionBreakdown, FraktionVoteSummary } from "@/components/fraktion-vote-summary"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card } from "@/components/ui/card"
@@ -127,10 +128,7 @@ export function VoteDetail({
       </div>
 
       {/* The caveat that governs every figure on this page. */}
-      <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-        <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-        {t("votes.namedOnlyNotice")}
-      </p>
+      <CaveatNote>{t("votes.namedOnlyNotice")}</CaveatNote>
 
       {mismatch ? (
         <p className="flex gap-2 rounded-md border border-vote-abstain/40 bg-vote-abstain/10 p-3 text-xs leading-relaxed">

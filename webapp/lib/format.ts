@@ -122,7 +122,32 @@ export function formatDelta(value: number, locale: Locale): string {
 }
 
 /**
- * Dispatch for `BoardColumn.format` in lib/leaderboards.ts.
+ * A **mean of a count**, to one decimal place.
+ *
+ * Distinct from `formatCount`, and the distinction is not cosmetic: an average
+ * of whole things is not itself whole. `/parties` shows the mean committee seats
+ * per mandate, which lands on values like 0.5 and 1.0 — rounded to whole numbers
+ * those two both print as "1", so a bar chart's axis reads "0 0 1 1 1" with
+ * duplicate ticks, and a party averaging 8.5 motions is reported as 8.
+ *
+ * One decimal rather than two, matching `formatScore`: the second place is below
+ * the resolution at which two Fraktionen are meaningfully different.
+ *
+ * ⚠ Not for a true count. A chamber of "630.0 members" is worse than the
+ * rounding this fixes — `formatCount` stays the default and this is only for a
+ * value that is genuinely an average.
+ */
+export function formatMean(value: number, locale: Locale): string {
+  if (!Number.isFinite(value)) return "—"
+  return new Intl.NumberFormat(intlLocale(locale), {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
+/**
+ * Dispatch for `BoardColumn.format` in lib/leaderboards.ts and
+ * `PartyMetric.format` in lib/party-comparison.ts.
  *
  * Beside the formatters rather than in the table component, so a new column
  * format is added in one place and the nine boards cannot disagree about what
@@ -130,13 +155,15 @@ export function formatDelta(value: number, locale: Locale): string {
  * case here is a compile error rather than a blank cell.
  */
 export function formatBy(
-  format: "integer" | "rate" | "score" | "delta",
+  format: "integer" | "mean" | "rate" | "score" | "delta",
   value: number,
   locale: Locale,
 ): string {
   switch (format) {
     case "integer":
       return formatCount(value, locale)
+    case "mean":
+      return formatMean(value, locale)
     case "rate":
       return formatRate(value, locale)
     case "score":

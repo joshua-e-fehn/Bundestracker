@@ -1,9 +1,9 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Info } from "lucide-react"
 import Link from "next/link"
 import { useDeferredValue, useState } from "react"
+import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -109,10 +109,7 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
           exception in the Bundestag, not the rule (§4.4), so a reader counting
           rows here is not counting votes — and this is the one place that can
           say so before they start. */}
-      <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-        <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-        {t("votes.namedOnlyNotice")}
-      </p>
+      <CaveatNote>{t("votes.namedOnlyNotice")}</CaveatNote>
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex min-w-[12rem] flex-1 flex-col gap-1.5">
@@ -142,10 +139,7 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
             <SelectContent>
               <SelectItem value={ANY}>{t("votes.allResults")}</SelectItem>
               {data?.results.map((entry) => (
-                <SelectItem
-                  key={entry.value}
-                  value={entry.value === "" ? PENDING : entry.value}
-                >
+                <SelectItem key={entry.value} value={entry.value === "" ? PENDING : entry.value}>
                   {entry.value === "" ? t("votes.outcome.pending") : entry.value} ({entry.count})
                 </SelectItem>
               ))}

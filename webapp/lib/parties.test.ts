@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { PARTY_KEYS, partyColor, partyFor, partyLabel } from "./parties"
+import { PARTY_KEYS, partyByKey, partyColor, partyFor, partyKeyColor, partyLabel } from "./parties"
 
 /**
  * The cases here are the spellings docs/api-research.md actually observed in the
@@ -107,5 +107,29 @@ describe("partyColor", () => {
   test("every party key has a distinct colour variable", () => {
     const vars = PARTY_KEYS.map((key) => partyColor(key === "cdu-csu" ? "CDU/CSU" : key))
     expect(new Set(vars).size).toBe(PARTY_KEYS.length)
+  })
+})
+
+describe("partyKeyColor", () => {
+  test("agrees with partyColor for every key", () => {
+    // The two must not diverge: `partyColor` takes a Fraktion string and folds
+    // it, this takes the key directly, and the party pages use both — a badge
+    // beside a chart that coloured the same group differently would look like a
+    // rendering bug rather than a lookup bug.
+    for (const key of PARTY_KEYS) {
+      expect(partyKeyColor(key)).toBe(`var(${partyByKey(key).colorVar})`)
+    }
+  })
+
+  test("skips the label round trip that reads as if labels were the identity", () => {
+    // What nine call sites were doing: key → label → substring match → key. It
+    // works, and it invites the conclusion that a label is a safe thing to key a
+    // colour on, which the header of this module exists to deny.
+    expect(partyKeyColor("cdu-csu")).toBe(partyColor("CDU/CSU"))
+    expect(partyKeyColor("gruene")).toBe(partyColor("BÜNDNIS 90/DIE GRÜNEN"))
+  })
+
+  test("every key still has a distinct colour", () => {
+    expect(new Set(PARTY_KEYS.map(partyKeyColor)).size).toBe(PARTY_KEYS.length)
   })
 })
