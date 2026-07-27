@@ -3,7 +3,13 @@
 import { useQuery } from "convex/react"
 import { ArrowRightIcon } from "lucide-react"
 import Link from "next/link"
-import { ActivityFeedPreview, LatestVotes, SummaryStats, TopMPs } from "@/components/home-sections"
+import {
+  ActivityFeedPreview,
+  BottomMPs,
+  LatestVotes,
+  SummaryStats,
+  TopMPs,
+} from "@/components/home-sections"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SeatingPreview } from "@/components/seating-preview"
 import { Button } from "@/components/ui/button"
@@ -53,7 +59,21 @@ export default function Home() {
         // pushed the whole home page to 534 px inside a 375 px viewport.
         <div className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-12">
           <SummaryStats wahlperiode={wahlperiode} />
-          <TopMPs wahlperiode={wahlperiode} />
+          {/* The two ends of the same ranking, side by side from `lg` and
+              stacked below it — the same two-column shape the votes/feed row
+              below already uses, so the page has one answer to "two sections
+              of equal weight" rather than two.
+
+              Most active is first in source order, which is both the left
+              column and what a screen reader and a phone reach first. That
+              ordering is deliberate: the ascending board carries a caveat
+              (see `BottomMPs`) that reads as a qualification of the board
+              above it, and a qualification should not arrive before the thing
+              it qualifies. */}
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-2 lg:gap-8">
+            <TopMPs wahlperiode={wahlperiode} />
+            <BottomMPs wahlperiode={wahlperiode} />
+          </div>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-2 lg:gap-8">
             <LatestVotes wahlperiode={wahlperiode} />
             <ActivityFeedPreview wahlperiode={wahlperiode} />
