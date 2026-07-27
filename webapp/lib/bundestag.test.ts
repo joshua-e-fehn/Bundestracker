@@ -6,6 +6,7 @@ import {
   initials,
   protocolPdfUrl,
 } from "./bundestag"
+import { partyColor, partyFor } from "./parties"
 import { foldName } from "./search"
 
 /**
@@ -98,8 +99,34 @@ describe("initials", () => {
 
 describe("fraktionClassName", () => {
   test("matches the short form the vote sheets and DIP use", () => {
+    // CDU/CSU is the one group deliberately styled from the neutral foreground
+    // ramp rather than from its own `--party-*` token — black is both its
+    // colour and the page's text colour. See `PARTY_STYLES`.
     expect(fraktionClassName("CDU/CSU")).toContain("foreground")
-    expect(fraktionClassName("SPD")).toContain("red")
+    // Asserted as the *token*, not as a hue. This line used to read
+    // `.toContain("red")` against a `text-red-700` from a second party palette
+    // that lived in this module; the palette now has one home in
+    // lib/parties.ts, and naming the token is what keeps this test honest —
+    // "red" would still pass if the SPD were given the wrong red.
+    expect(fraktionClassName("SPD")).toContain("party-spd")
+  })
+
+  test("agrees with the palette every other component reads", () => {
+    // The regression this whole consolidation was for: `FraktionBadge` (the
+    // roster table, the profile header) styled itself from this function while
+    // `PartyBadge` (the cards, the feed, the vote table, the rankings) styled
+    // itself from `partyColor`, and the two held *different* colours for the
+    // same group. One MP's AfD badge was Tailwind `sky` on /mps and
+    // `--party-afd` on /rankings.
+    //
+    // Asserting the two agree, rather than asserting a literal, is what stops
+    // them drifting apart again: a colour changed in one place now has to be
+    // changed in the other or this fails.
+    for (const fraktion of ["SPD", "AfD", "Die Linke", "BÜNDNIS 90/DIE GRÜNEN", "FDP"]) {
+      const { key } = partyFor(fraktion)
+      expect(fraktionClassName(fraktion)).toContain(`party-${key}`)
+      expect(partyColor(fraktion)).toBe(`var(--party-${key})`)
+    }
   })
 
   test("matches Stammdaten's long form too", () => {

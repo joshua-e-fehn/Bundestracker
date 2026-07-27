@@ -23,6 +23,7 @@
  */
 
 import type { Locale } from "./i18n"
+import { type PartyKey, partyFor } from "./parties"
 
 /**
  * The Wahlperiode the site shows by default.
@@ -136,81 +137,82 @@ export function protocolPdfUrl(wahlperiode: number, sitzungnr: number): string {
 // --- Fraktion identity ----------------------------------------------------
 
 /**
- * Tailwind classes for a Fraktion badge, keyed by folded substrings.
+ * Tailwind classes for a Fraktion badge.
  *
- * Colours are the parties' own, which no official dataset publishes — this is
- * the one place in Bundestrack where a value is not backed by a Bundestag
- * record, and it is a presentation choice rather than a claim about anyone.
+ * ## This used to be a second party palette, and that was the bug
  *
- * **Each group carries both spellings, because the sources disagree.** §6.4 is
- * explicit: Stammdaten writes `Fraktion der Christlich Demokratischen
- * Union/Christlich - Sozialen Union` where the vote sheets and DIP write
- * `CDU/CSU`. The abbreviation is *not a substring of the long form* — there is
- * no `cdu` in "Christlich Demokratischen Union" — so matching on the short form
- * alone silently renders every Stammdaten-spelled row in the neutral fallback,
- * which looks like a deliberate choice rather than a miss. The pipeline maps
- * one to the other before writing, but the schema does not enforce that, and a
- * badge is not the place to depend on it.
+ * Until the brand palette landed, this module carried its own table of seven
+ * `border-…/30 bg-…/15 text-…-700 dark:text-…-300` triples keyed by folded
+ * substrings, while `lib/parties.ts` carried a *different* set of colours for
+ * the same seven groups as `--party-*` custom properties. Both were live:
+ * `FraktionBadge` (the roster table and the profile header) read this one,
+ * `PartyBadge` (the cards, the feed, the vote table, the rankings, the seating
+ * legend) read the other. So one MP's AfD badge was Tailwind `sky` on
+ * `/mps` and `--party-afd` on `/rankings` — two blues for one party, on two
+ * pages a reader moves between by clicking a row.
  *
- * Matched by substring rather than equality, and ordered, because one name can
- * contain another. Two orderings are load-bearing: `alternative für
- * deutschland` must be matched as a phrase rather than on `deutschland`, which
- * the SPD's long form also contains; and BSW is matched on `wagenknecht`
- * rather than `bündnis`, which belongs to the Greens' `BÜNDNIS 90/DIE GRÜNEN`.
+ * Rather than translating this table into brand tokens and leaving two tables
+ * to drift again, the matching and the colours now live in `lib/parties.ts`
+ * alone and this function composes classes from `partyFor`. That module already
+ * did the harder half of the job: its `fold` handles the non-breaking space
+ * §5.2 found in the protocol XML and the umlaut spellings, which the plain
+ * `toLowerCase().includes()` here did not.
+ *
+ * ## What was kept
+ *
+ * The two shapes this delegates to are `parties.ts`' concern now, and its
+ * matcher list preserves every ordering constraint this one documented — see
+ * the header of `MATCHERS` there for `fraktionslos` before the party names, the
+ * union before "Christlich - Sozialen", and the AfD matched as a phrase rather
+ * than on `deutschland`.
+ *
+ * BSW and SSW are the one behavioural loss, and it is deliberate. Neither sits
+ * in WP21 (§9 counts CDU/CSU, AfD, SPD, Grüne, Linke and three fraktionslos
+ * members), neither is in `PARTY_KEYS`, and a group `parties.ts` does not
+ * recognise is *meant* to render neutral — that is the visible prompt to add
+ * it, stated in that module's header. Colouring them here and not there would
+ * reintroduce exactly the split this change removes. Adding them belongs in
+ * `PARTY_KEYS` and `--party-*`, in one place, on the day either wins seats.
  */
-const CDU_CSU_STYLE =
-  // Black is the CDU/CSU's colour and also the page's text colour, so the badge
-  // uses the neutral foreground ramp rather than a literal black that would
-  // vanish in dark mode.
-  "border-foreground/25 bg-foreground/10 text-foreground"
-const SPD_STYLE = "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-300"
-const GREEN_STYLE = "border-green-600/30 bg-green-600/15 text-green-700 dark:text-green-300"
-const AFD_STYLE = "border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300"
-const LINKE_STYLE = "border-fuchsia-500/30 bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300"
-const BSW_STYLE = "border-purple-500/30 bg-purple-500/15 text-purple-700 dark:text-purple-300"
-const FDP_STYLE = "border-yellow-500/40 bg-yellow-500/20 text-yellow-800 dark:text-yellow-200"
-const SSW_STYLE = "border-blue-500/30 bg-blue-500/15 text-blue-700 dark:text-blue-300"
+const NEUTRAL_STYLE = "border-border bg-muted text-muted-foreground"
 
-const FRAKTION_STYLES: Array<{ match: string; className: string }> = [
-  { match: "cdu", className: CDU_CSU_STYLE },
-  { match: "csu", className: CDU_CSU_STYLE },
-  { match: "christlich demokratischen", className: CDU_CSU_STYLE },
-  { match: "christlich-demokratischen", className: CDU_CSU_STYLE },
-
-  { match: "spd", className: SPD_STYLE },
-  { match: "sozialdemokratischen", className: SPD_STYLE },
-
-  { match: "grüne", className: GREEN_STYLE },
-
-  // The phrase, not `deutschland` — "Sozialdemokratischen Partei Deutschlands"
-  // contains that word too.
-  { match: "afd", className: AFD_STYLE },
-  { match: "alternative für deutschland", className: AFD_STYLE },
-
-  { match: "linke", className: LINKE_STYLE },
-
-  // `wagenknecht`, not `bündnis`: the Greens' long form opens with BÜNDNIS 90.
-  { match: "bsw", className: BSW_STYLE },
-  { match: "wagenknecht", className: BSW_STYLE },
-
-  { match: "fdp", className: FDP_STYLE },
-  { match: "freien demokratischen", className: FDP_STYLE },
-
-  { match: "ssw", className: SSW_STYLE },
-  { match: "südschleswig", className: SSW_STYLE },
-]
-
-/** Neutral, for a group with no colour of its own — `fraktionslos`, or a
- * spelling the list above has never seen. Falling through to this is the
- * intended behaviour, not a gap: a group is still legible without its colour,
- * and inventing one would assert a party identity the data does not carry. */
-const FRAKTION_FALLBACK = "border-border bg-muted text-muted-foreground"
+/**
+ * The class string per party.
+ *
+ * **Spelled out rather than composed.** `bg-party-${key}/15` would be tidier
+ * and would not work: Tailwind v4 finds classes by scanning source text, so a
+ * name assembled at runtime is never in the generated stylesheet and the badge
+ * renders with no background at all. A `Record<PartyKey, …>` also means a party
+ * added to `PARTY_KEYS` is a type error here rather than a silently unstyled
+ * badge.
+ *
+ * The tokens are the same custom properties `partyColor` returns, reached
+ * through the `@theme inline` block in app/globals.css — so the badge, the seat
+ * dot and the legend swatch are one colour resolved three ways. Each `--party-*`
+ * is solved for 4.5:1 against the page background in *both* themes, which is
+ * why none of these carries a `dark:` variant.
+ */
+const PARTY_STYLES: Record<PartyKey, string> = {
+  // CDU/CSU is black by convention, which is also the page's text colour — so
+  // it takes the neutral foreground ramp rather than `--party-cdu-csu`, whose
+  // near-black is a *seat dot* colour and would be unreadable as badge text on
+  // this badge's own light tint.
+  "cdu-csu": "border-foreground/25 bg-foreground/10 text-foreground",
+  spd: "border-transparent bg-party-spd/15 text-party-spd",
+  gruene: "border-transparent bg-party-gruene/15 text-party-gruene",
+  fdp: "border-transparent bg-party-fdp/15 text-party-fdp",
+  afd: "border-transparent bg-party-afd/15 text-party-afd",
+  linke: "border-transparent bg-party-linke/15 text-party-linke",
+  // Neutral, both of them: a group with no colour of its own, and a spelling
+  // `parties.ts` has never seen. Falling through to this is intended — a group
+  // is legible without its colour, and inventing one would assert a party
+  // identity the data does not carry.
+  fraktionslos: NEUTRAL_STYLE,
+  unknown: NEUTRAL_STYLE,
+}
 
 export function fraktionClassName(fraktion: string): string {
-  const folded = fraktion.toLowerCase()
-  return (
-    FRAKTION_STYLES.find((style) => folded.includes(style.match))?.className ?? FRAKTION_FALLBACK
-  )
+  return PARTY_STYLES[partyFor(fraktion).key]
 }
 
 /**
