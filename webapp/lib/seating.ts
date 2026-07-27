@@ -480,6 +480,66 @@ export function buildFractionArc(
   }
 }
 
+/**
+ * The same arc, drawn from the seats themselves rather than from bloc counts.
+ *
+ * ## Why this is here and not in the component that draws it
+ *
+ * It is the module header's own rule: this is the part that can be wrong
+ * without looking wrong. A placement that sorts by the stored `(row, column)`
+ * before the political rank still renders a plausible hemicycle — it just seats
+ * the Fraktionen in the wrong places, which is a claim about the chamber rather
+ * than a rendering fault. A test catches that; an eye does not.
+ *
+ * ## The pairing is by index, not by `(row, column)`
+ *
+ * A deliberate difference from components/seating-map.tsx, which matches on the
+ * stored pair and *drops* a seat that does not match. That is right there — a
+ * dot is a link to a named member, and an unmatched one would be a link to
+ * nobody — and wrong here, where the same drop is a hole in a decorative
+ * picture. So this sorts into the political order `layoutHemicycle` expects and
+ * pairs positionally, which places every seat even while the stored arc and the
+ * roster disagree (the window between a roster change and the next
+ * `generateSeating` run).
+ *
+ * `(row, column)` still participates, as the tie-break *within* a bloc, so the
+ * arc does not reshuffle between renders. Nulls sort last rather than to zero:
+ * a seat with no stored position belongs at the edge of its own group, not at
+ * the front of it.
+ */
+export function placeSeats<Seat extends SeatColorInput>(
+  seats: readonly (Seat & { row: number | null; column: number | null })[],
+  mode: SeatingColorMode,
+  wahlperiode: number,
+): { seats: Array<{ key: string; position: SeatPosition; fill: string }>; seatRadius: number } {
+  const ordered = [...seats].sort(
+    (a, b) =>
+      seatingRank(a.fraktion) - seatingRank(b.fraktion) ||
+      (a.row ?? Number.MAX_SAFE_INTEGER) - (b.row ?? Number.MAX_SAFE_INTEGER) ||
+      (a.column ?? 0) - (b.column ?? 0),
+  )
+  const layout = layoutHemicycle(ordered.length)
+  // Over the seats actually on screen, so the busiest member sets the top of the
+  // ramp — `seatingMaxima`'s own contract, and what stops a chamber nobody has
+  // scored from painting everyone at full intensity.
+  const maxima = seatingMaxima(ordered)
+
+  return {
+    seats: ordered.map((seat, index) => {
+      const position = layout.positions[index]
+      return {
+        key: `${position.row}-${position.column}`,
+        position,
+        // `seatColor` rather than a local switch, so a seat is the same colour
+        // here as on /seating — including the null handling that keeps
+        // "unscored" visually distinct from "scored zero".
+        fill: seatColor(seat, mode, wahlperiode, maxima),
+      }
+    }),
+    seatRadius: Math.min(layout.seatRadius, MAX_DECORATIVE_SEAT_RADIUS),
+  }
+}
+
 // --- colour modes ---------------------------------------------------------
 
 /**
@@ -719,6 +779,51 @@ export function seatColor(
  * goes through `seatColor` and inherits the same null handling. */
 function rampColor(level: number | null): string {
   return level === null ? NO_DATA_COLOR : RAMP[Math.max(0, Math.min(RAMP.length - 1, level))]
+}
+
+/**
+ * Whether a mode can be coloured from bloc counts alone.
+ *
+ * The two categorical modes read only the group, which is exactly what
+ * `getFractionSizes` returns. The three continuous ones read a per-MP value, so
+ * a picture built from counts cannot answer them — and must not pretend to.
+ * `seatingLevel` returns null rather than 0 for the same reason: an unknown
+ * value renders as unknown instead of borrowing a meaning it has not earned.
+ *
+ * Derived from the mode table rather than listed, so a sixth mode inherits the
+ * right answer from the `scale` it declares instead of defaulting to whichever
+ * branch was written last — the failure `SEATING_MODES` exists as a table to
+ * prevent.
+ */
+export function isDerivableFromBlocs(mode: SeatingColorMode): boolean {
+  return seatingMode(mode)?.scale === "categorical"
+}
+
+/**
+ * The fill for one seat when all that is known is its Fraktion.
+ *
+ * The degraded path: what a chamber drawn from bloc counts may honestly paint
+ * while the per-seat query is in flight, or on a deployment that has a roster
+ * but no generated arc. A continuous mode gets `NO_DATA_COLOR` — the shade the
+ * legend names — rather than an invented ramp position.
+ *
+ * Beside `seatColor` rather than in the component that needs it, so the two
+ * answers to "what colour is this seat" sit together and can be read against
+ * each other. They must agree wherever both apply, which is the categorical
+ * modes: this is `seatColor` with the fields it cannot know removed.
+ */
+export function blocColor(fraktion: string, mode: SeatingColorMode, wahlperiode: number): string {
+  if (!isDerivableFromBlocs(mode)) return NO_DATA_COLOR
+  return seatColor(
+    // The three continuous inputs are null, not zero, and unreachable: the
+    // guard above returns before any of them is read. Null is still the honest
+    // value to pass — "not known here" — rather than a zero that would quietly
+    // become the bottom of a ramp if the guard were ever loosened.
+    { fraktion, totalScore: null, voteParticipationRate: null, committeeCount: null },
+    mode,
+    wahlperiode,
+    { score: 0, committees: 0 },
+  )
 }
 
 /** The ramp as a list, for the legend's low-to-high strip. A copy, so a caller

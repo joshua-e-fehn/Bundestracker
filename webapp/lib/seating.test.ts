@@ -1,19 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { partyColor } from "./parties"
 import {
+  blocColor,
   buildFractionArc,
   coalitionRole,
   distributeSeats,
   expandFractionSeats,
   hemicycleRowCount,
   hemicycleViewBox,
+  isDerivableFromBlocs,
   isSeatingColorMode,
   layoutHemicycle,
   MAX_DECORATIVE_SEAT_RADIUS,
+  NO_DATA_COLOR,
   orderFractionSizes,
+  placeSeats,
   SEATING_LEVELS,
   SEATING_MODES,
   SEATING_ORDER,
+  seatColor,
   seatingLevel,
   seatingRank,
 } from "./seating"
@@ -548,5 +553,134 @@ describe("buildFractionArc", () => {
     expect(arc?.groups).toHaveLength(1)
     expect(arc?.groups[0].count).toBe(4)
     expect(arc?.total).toBe(4)
+  })
+})
+
+/**
+ * Placing the real seats on the arc.
+ *
+ * Extracted from the narrative chamber for the module header's own reason: a
+ * placement that sorts by the stored `(row, column)` before the political rank
+ * still renders a perfectly plausible hemicycle — it just seats the Fraktionen
+ * in the wrong places, which is a claim about the chamber rather than a
+ * rendering fault. Nothing throws, and the picture looks fine.
+ */
+describe("placeSeats", () => {
+  /** A seat with everything the colour modes read, defaulted to "unscored". */
+  const seat = (fraktion: string, row: number, column: number, extra = {}) => ({
+    fraktion,
+    row,
+    column,
+    totalScore: null,
+    voteParticipationRate: null,
+    committeeCount: 0,
+    ...extra,
+  })
+
+  test("orders the blocs politically, not by their stored position", () => {
+    // The stored order here is deliberately the reverse of the political one.
+    // Pairing without the sort would seat CDU/CSU on the left of the chamber.
+    const placed = placeSeats(
+      [seat("CDU/CSU", 0, 0), seat("SPD", 0, 1), seat("Die Linke", 0, 2)],
+      "party",
+      21,
+    )
+    expect(placed.seats.map((s) => s.fill)).toEqual([
+      partyColor("Die Linke"),
+      partyColor("SPD"),
+      partyColor("CDU/CSU"),
+    ])
+  })
+
+  test("places every seat exactly once", () => {
+    // The seat count is the one part of this diagram that is real data (§9), so
+    // a dropped or duplicated dot misstates the Bundestag.
+    const seats = Array.from({ length: 635 }, (_, index) =>
+      seat(index % 2 === 0 ? "SPD" : "CDU/CSU", Math.floor(index / 60), index % 60),
+    )
+    const placed = placeSeats(seats, "party", 21)
+    expect(placed.seats).toHaveLength(635)
+    expect(new Set(placed.seats.map((s) => s.key)).size).toBe(635)
+  })
+
+  test("keeps a seat with no stored position rather than dropping it", () => {
+    // The difference from components/seating-map.tsx, which drops an unmatched
+    // seat because there a dot is a link to a named member. Here a dropped dot
+    // is a hole in a picture, and the roster/arc disagreement that causes it is
+    // a normal window between a roster change and the next `generateSeating`.
+    const placed = placeSeats(
+      [seat("SPD", 0, 0), { ...seat("SPD", 0, 0), row: null, column: null }],
+      "party",
+      21,
+    )
+    expect(placed.seats).toHaveLength(2)
+  })
+
+  test("a null position sorts to the edge of its bloc, not the front", () => {
+    // `?? 0` would put an unplaced seat ahead of every placed one in its group,
+    // which silently reorders the bloc. Detectable because the second seat here
+    // is the one that carries a score.
+    const placed = placeSeats(
+      [{ ...seat("SPD", 0, 0), row: null, column: null }, seat("SPD", 0, 0, { totalScore: 100 })],
+      "activity",
+      21,
+    )
+    // The scored seat is placed first — i.e. the null sorted after it.
+    expect(placed.seats[0].fill).not.toBe(NO_DATA_COLOR)
+    expect(placed.seats[1].fill).toBe(NO_DATA_COLOR)
+  })
+
+  test("scales the ramp against the seats on screen", () => {
+    // `seatingMaxima`'s contract: the busiest member sets the top. Scaling
+    // against a fixed ceiling instead would make a chamber of low scores look
+    // uniformly empty.
+    const placed = placeSeats(
+      [seat("SPD", 0, 0, { totalScore: 10 }), seat("SPD", 0, 1, { totalScore: 1 })],
+      "activity",
+      21,
+    )
+    const fills = placed.seats.map((s) => s.fill)
+    expect(new Set(fills).size).toBe(2)
+    expect(fills).not.toContain(NO_DATA_COLOR)
+  })
+
+  test("caps the dot size like every other decorative arc", () => {
+    const small = placeSeats([seat("SPD", 0, 0)], "party", 21)
+    expect(small.seatRadius).toBe(MAX_DECORATIVE_SEAT_RADIUS)
+  })
+})
+
+describe("blocColor", () => {
+  test("agrees with seatColor wherever both can answer", () => {
+    // The two are different functions for "what colour is this seat", so the
+    // categorical modes — the ones a bloc count can genuinely answer — must not
+    // disagree. A drift here would paint the fallback chamber in one palette
+    // and the real one in another.
+    const maxima = { score: 0, committees: 0 }
+    const input = {
+      fraktion: "SPD",
+      totalScore: null,
+      voteParticipationRate: null,
+      committeeCount: 0,
+    }
+    for (const mode of ["party", "coalition"] as const) {
+      expect(blocColor("SPD", mode, 21)).toBe(seatColor(input, mode, 21, maxima))
+    }
+  })
+
+  test("refuses to invent a value for a per-MP mode", () => {
+    // The whole reason the fallback path is allowed to exist. A ramp position
+    // derived from a bloc count would be indistinguishable from a real one.
+    for (const mode of ["activity", "attendance", "committee"] as const) {
+      expect(blocColor("SPD", mode, 21)).toBe(NO_DATA_COLOR)
+    }
+  })
+
+  test("isDerivableFromBlocs follows the mode table, not a list", () => {
+    // Derived from the declared `scale`, so a sixth mode inherits the right
+    // answer instead of defaulting to whichever branch was written last.
+    for (const mode of SEATING_MODES) {
+      expect(isDerivableFromBlocs(mode.id)).toBe(mode.scale === "categorical")
+    }
   })
 })

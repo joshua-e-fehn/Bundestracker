@@ -28,6 +28,21 @@ import { cn } from "@/lib/utils"
  * reader's only available reading is "the lowest bucket" — which is the exact
  * claim `seatingLevel` returns null to avoid making. The legend is where that
  * distinction becomes visible rather than merely encoded.
+ *
+ * ## `measured` is the second consumer's one addition
+ *
+ * /home-b's chamber draws from bloc counts while its per-seat query is in
+ * flight, and bloc counts cannot answer a continuous mode (see
+ * `isDerivableFromBlocs`). Its ramp is therefore showing a scale nothing on
+ * screen is currently using, so it is dimmed — the scale stays visible, which is
+ * what makes "not shown here" read as a gap rather than as the absence of any
+ * scale at all.
+ *
+ * That component first carried its own copy of this legend, complete with a
+ * second `Swatch` and a second set of mode branches — and the copy branched on
+ * `mode ===` where this one branches on the declared `scale`, which is exactly
+ * the drift the note above warns about. One flag was the whole difference, so
+ * the flag is here and the copy is gone.
  */
 export function SeatingLegend({
   mode,
@@ -35,10 +50,20 @@ export function SeatingLegend({
    * output. Only the party mode uses them; the others have no per-value tally to
    * show. */
   fractionSizes,
+  /** Whether the colours on screen carry this mode's real meaning. False dims
+   * the ramp — see the note above. Defaults to true, so /seating, which always
+   * has the per-seat values, does not have to say so. */
+  measured = true,
+  /** Size of the swatches. The narrative chamber sits in a 22 rem column beside
+   * body copy and wants the legend to read as a caption; /seating gives it a
+   * full-width row under a diagram. Two sizes rather than two components. */
+  size = "md",
   className,
 }: {
   mode: SeatingColorMode
   fractionSizes: ReadonlyArray<{ fraktion: string; count: number }>
+  measured?: boolean
+  size?: "sm" | "md"
   className?: string
 }) {
   const { t } = useLocale()
@@ -64,19 +89,20 @@ export function SeatingLegend({
                 key={entry.fraktion}
                 color={partyColor(entry.fraktion)}
                 label={partyLabel(entry.fraktion)}
+                size={size}
                 // The one genuinely official number on this page (§9: the
                 // distribution is derivable, the assignment is not), so it is
                 // shown rather than left to the tooltip.
                 count={entry.count}
               />
             ))
-          : (
-              // The colours come from `coalitionColor`, not from literals
-              // repeated here. They were literals, and they were the two the map
-              // happened to use at the time — so changing the map's palette
-              // silently left the legend naming the old colours, which is the
-              // one bug a legend can have that makes the chart actively
-              // misleading rather than merely plain.
+          : // The colours come from `coalitionColor`, not from literals
+            // repeated here. They were literals, and they were the two the map
+            // happened to use at the time — so changing the map's palette
+            // silently left the legend naming the old colours, which is the
+            // one bug a legend can have that makes the chart actively
+            // misleading rather than merely plain.
+            (
               [
                 {
                   key: "government",
@@ -97,36 +123,59 @@ export function SeatingLegend({
                   label: t("seating.coalitionUnknown"),
                 },
               ] as const
-            ).map((entry) => <Swatch key={entry.key} color={entry.color} label={entry.label} />)}
+            ).map((entry) => (
+              <Swatch key={entry.key} color={entry.color} label={entry.label} size={size} />
+            ))}
       </div>
     )
   }
 
   return (
     <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-2", className)}>
-      <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+      <div
+        className={cn(
+          "flex items-center gap-1.5 text-muted-foreground text-xs",
+          // Dimmed, not hidden: the scale is what this mode *would* use, and
+          // showing it beside the neutral is what makes the gap legible.
+          measured ? null : "opacity-40",
+        )}
+      >
         <span>{t("seating.legendLow")}</span>
         {seatingRamp().map((color) => (
           <span
             key={color}
             aria-hidden="true"
-            className="size-3 rounded-[3px] ring-1 ring-foreground/10"
+            className={cn(SWATCH_SIZE[size], "rounded-[3px] ring-1 ring-foreground/10")}
             style={{ backgroundColor: color }}
           />
         ))}
         <span>{t("seating.legendHigh")}</span>
       </div>
-      <Swatch color={NO_DATA_COLOR} label={t("seating.noScore")} />
+      <Swatch color={NO_DATA_COLOR} label={t("seating.noScore")} size={size} />
     </div>
   )
 }
 
-function Swatch({ color, label, count }: { color: string; label: string; count?: number }) {
+/** The two swatch sizes. A table rather than a ternary at each of the four call
+ * sites, so the sizes cannot drift apart between the ramp and the swatches. */
+const SWATCH_SIZE = { sm: "size-2.5", md: "size-3" } as const
+
+function Swatch({
+  color,
+  label,
+  count,
+  size = "md",
+}: {
+  color: string
+  label: string
+  count?: number
+  size?: "sm" | "md"
+}) {
   return (
     <span className="flex items-center gap-1.5 text-xs">
       <span
         aria-hidden="true"
-        className="size-3 shrink-0 rounded-[3px] ring-1 ring-foreground/10"
+        className={cn(SWATCH_SIZE[size], "shrink-0 rounded-[3px] ring-1 ring-foreground/10")}
         style={{ backgroundColor: color }}
       />
       <span className="text-muted-foreground">{label}</span>
