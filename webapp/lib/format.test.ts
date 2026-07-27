@@ -111,6 +111,13 @@ describe("formatDateShort", () => {
 })
 
 describe("initials", () => {
+  /**
+   * Re-exported from lib/bundestag.ts since the two near-copies were merged, so
+   * these assert the *contract this module's importers rely on* rather than a
+   * second implementation. lib/bundestag.test.ts covers the same function from
+   * the other side; both are kept because both import paths are live and a
+   * future edit that breaks one should fail loudly at both.
+   */
   test("takes the first and last name parts", () => {
     // Most MPs have no portrait — §6.5 puts Commons coverage at 36.5 % of WP21
     // — so this is the common case, not the edge case.
@@ -127,8 +134,16 @@ describe("initials", () => {
     expect(initials("Christian de Vries")).toBe("CV")
   })
 
+  test("skips academic titles", () => {
+    // The rule this module's copy was missing before the merge.
+    expect(initials("Dr. Hülya Düber")).toBe("HD")
+    expect(initials("Prof. Dr. Lars Castellucci")).toBe("LC")
+  })
+
   test("ignores a parenthesised disambiguator", () => {
     // Stammdaten spells the ortsZusatz inline, as in `Brand (Fulda)` (§6.2).
+    // The rankings table and the activity feed each carried a private copy that
+    // did not, and rendered this name as the avatar `M(`.
     expect(initials("Michael Brand (Fulda)")).toBe("MB")
   })
 

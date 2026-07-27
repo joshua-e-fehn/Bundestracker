@@ -160,17 +160,58 @@ export function fraktionClassName(fraktion: string): string {
  * Commons coverage at **36.5 %** of WP21, so roughly two in three MPs render as
  * initials and this is what most of the grid actually looks like.
  *
- * Academic titles are dropped — `Dr. Hülya Düber` is `HD`, not `DH` — because
- * Stammdaten carries them inside the display name and an initial of "Dr" is not
- * an initial of anyone.
+ * Three kinds of word are dropped before the first and last letters are taken,
+ * each because the sources put something in the display name that is not part
+ * of anyone's name:
+ *
+ *  - **Academic titles** — `Dr. Hülya Düber` is `HD`, not `DH`. Stammdaten
+ *    carries them inline and an initial of "Dr" is an initial of nobody.
+ *  - **Name particles** — §4.1 files `von`/`van`/`de` under a column headed
+ *    `Titel`, which does not hold academic titles. Without this, half the
+ *    aristocracy would share the initials "V".
+ *  - **The parenthesised ortsZusatz** — §6.2 spells it inline, as in
+ *    `Brand (Fulda)`, to tell two MPs of the same name apart.
+ *
+ * ## This is the only implementation
+ *
+ * Four existed: this one, a near-copy in lib/format.ts, and two private ones in
+ * components/rankings-table.tsx and components/activity-feed-item.tsx. The two
+ * private ones split on whitespace alone, so `Michael Brand (Fulda)` rendered as
+ * the avatar `M(` on the rankings and the feed while the roster beside them said
+ * `MB` — the same person, two labels, because the logic had four homes and only
+ * two of them knew about §6.2. A browser sweep found it on screen; no test could
+ * have, since each copy was consistent with itself.
  */
 const TITLE_WORDS = new Set(["dr", "prof", "dr.", "prof.", "h.c.", "hc", "med", "jur", "rer"])
+
+/** Lowercased, so the membership test folds case at the call site. */
+const NAME_PARTICLES = new Set([
+  "von",
+  "van",
+  "de",
+  "der",
+  "den",
+  "dem",
+  "du",
+  "di",
+  "da",
+  "zu",
+  "zur",
+  "la",
+  "le",
+])
 
 export function initials(name: string): string {
   const words = name
     .replace(/\(.*?\)/g, " ") // the `(Fulda)` disambiguator, not part of a name
-    .split(/[\s.]+/)
-    .filter((word) => word.length > 0 && !TITLE_WORDS.has(word.toLowerCase()))
+    // Hyphens split too: `Strack-Zimmermann` is one surname of two parts, and
+    // the last of them is the letter a reader expects to see.
+    .split(/[\s.-]+/)
+    .filter((word) => {
+      if (word.length === 0) return false
+      const folded = word.toLowerCase()
+      return !TITLE_WORDS.has(folded) && !NAME_PARTICLES.has(folded)
+    })
   if (words.length === 0) return "?"
   const first = words[0][0]
   const last = words.length > 1 ? words[words.length - 1][0] : ""
