@@ -1,5 +1,11 @@
 import { Badge } from "@/components/ui/badge"
-import { DISSENT_BADGE_RATE, type DissentTally, isNotableDissenter } from "@/lib/dissent"
+import {
+  DISSENT_BADGE_RATE,
+  DISSENT_MIN_BALLOTS,
+  type DissentTally,
+  isNotableDissenter,
+} from "@/lib/dissent"
+import { formatCount, formatPercent } from "@/lib/format"
 import type { Locale } from "@/lib/i18n"
 import { t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -56,6 +62,11 @@ export function DissentBadge({
 }) {
   if (!isNotableDissenter(tally)) return null
 
+  // The two thresholds reach the tooltip as values rather than as words in the
+  // translation, for the reason the header gives: a string that spelled out
+  // "5 %" would be a third copy of the rule, free to drift from lib/dissent.ts
+  // the next time the constants move — and it would drift twice, once per
+  // language.
   return (
     <Badge
       variant="outline"
@@ -64,7 +75,10 @@ export function DissentBadge({
         compact && "gap-0 px-1.5",
         className,
       )}
-      title={t("mp.dissentBadgeTooltip", locale)}
+      title={t("mp.dissentBadgeTooltip", locale, {
+        rate: formatPercent(DISSENT_BADGE_RATE, locale),
+        ballots: formatCount(DISSENT_MIN_BALLOTS, locale),
+      })}
     >
       {/* The dot carries the meaning alongside the colour, so the badge still
           reads as a badge in greyscale or for a reader who cannot distinguish

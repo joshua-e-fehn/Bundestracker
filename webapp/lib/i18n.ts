@@ -186,6 +186,7 @@ const de = {
   "rankings.column.participation": "Beteiligung",
   "rankings.column.ballots": "Abstimmungen",
   "rankings.column.dissent": "Abweichungen",
+  "rankings.column.dissentRate": "Abweichungsquote",
   "rankings.column.committees": "Ausschüsse",
   "rankings.column.bills": "Gesetzentwürfe",
   "rankings.column.change": "Veränderung",
@@ -222,6 +223,16 @@ const de = {
     "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
   "rankings.noPreviousMonth":
     "Für die gesamte Wahlperiode gibt es keinen Vormonat. Wählen Sie einen Monat.",
+
+  // Which ballots the cross-party board's numbers are *of*. Not a caveat but a
+  // statement of scope: the two scopes of `getCrossPartyRankings` produce the
+  // same row shape over very different sets, so the page says which one it got
+  // rather than leaving a reader to assume — a dissent count over an unnamed
+  // subset is a number without a meaning. The period scope reports no
+  // `ballotsExamined` (it examined all of them, which is not a window), which
+  // is why one of these takes a count and the other cannot.
+  "rankings.crossPartyPeriod": "Gezählt über alle namentlichen Abstimmungen der Wahlperiode.",
+  "rankings.crossPartyWindow": "Gezählt über die letzten {count} namentlichen Abstimmungen.",
 
   "rankings.scoreExplainer":
     "Der Aktivitätswert ist eine gewichtete Summe messbarer Vorgänge. Die Gewichtung ist eine Setzung, keine Wertung — jede Komponente ist einzeln ausgewiesen.",
@@ -412,6 +423,38 @@ const de = {
   "mp.partyLineWith": "auf Fraktionslinie",
   "mp.partyLineAgainst": "gegen die Fraktionsmehrheit",
   "mp.partyLineUnknown": "Fraktionsmehrheit unbekannt",
+
+  // --- dissent over a whole electoral period ---
+  //
+  // The period figure, as opposed to `mp.partyLineAgainst`, which labels a
+  // single ballot. The distinction is the one components/dissent-badge.tsx
+  // draws at length between itself and `RebelVoteBadge`: one vote against the
+  // group is an event, a rate across a period is a pattern, and the second is
+  // the larger claim.
+  //
+  // `mp.dissentNotComputed` and `mp.dissentNone` are deliberately different
+  // strings. A member the backfill has not reached and a member who never broke
+  // with their group are opposite statements, and `getDissentTally` returns
+  // null for the first precisely so the page need not conflate them — see the
+  // header of lib/dissent.ts.
+  "mp.dissent": "Abweichung von der Fraktionslinie",
+  "mp.dissentBadge": "Abweichler:in",
+  // `{rate}` and `{ballots}` come from `DISSENT_BADGE_RATE` and
+  // `DISSENT_MIN_BALLOTS`, never from this string — see components/dissent-badge.tsx.
+  "mp.dissentBadgeTooltip":
+    "Weicht in mindestens {rate} der abgegebenen Stimmen von der eigenen Fraktion ab, bei mindestens {ballots} abgegebenen Stimmen.",
+  "mp.dissentNotComputed": "Für diese Wahlperiode ist noch keine Abweichung berechnet.",
+  "mp.dissentNoBallots":
+    "In dieser Wahlperiode wurde in keiner namentlichen Abstimmung eine Stimme abgegeben.",
+  // `{cast}` is the denominator, and it is named in both branches: "keine
+  // Abweichung" without the number of votes behind it is a claim over an
+  // unnamed set.
+  "mp.dissentNone": "Keine Abweichung bei {cast} abgegebenen Stimmen.",
+  "mp.dissentCount": "{count} Abweichungen bei {cast} abgegebenen Stimmen.",
+  "mp.dissentRate": "Abweichungsquote {rate}",
+  // The period's ballots, not the member's — context for the denominator above
+  // rather than part of it. See `ballotsInPeriod` in convex/votes.ts.
+  "mp.dissentOfBallots": "{ballots} namentliche Abstimmungen in der Wahlperiode",
   // --- trend charts ---
   //
   // `mp.trends` and `mp.trendsComingSoon` were here until the charts landed:
@@ -1574,6 +1617,7 @@ const en: Dictionary = {
   "rankings.column.participation": "Participation",
   "rankings.column.ballots": "Ballots",
   "rankings.column.dissent": "Dissents",
+  "rankings.column.dissentRate": "Dissent rate",
   "rankings.column.committees": "Committees",
   "rankings.column.bills": "Bills",
   "rankings.column.change": "Change",
@@ -1607,6 +1651,9 @@ const en: Dictionary = {
     "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
   "rankings.noPreviousMonth":
     "The whole electoral period has no previous month. Pick a month instead.",
+
+  "rankings.crossPartyPeriod": "Counted across every named ballot of the electoral period.",
+  "rankings.crossPartyWindow": "Counted across the {count} most recent named ballots.",
 
   "rankings.scoreExplainer":
     "The activity score is a weighted sum of measurable records. The weighting is a choice, not a verdict — every component is shown separately.",
@@ -1753,6 +1800,18 @@ const en: Dictionary = {
   "mp.partyLineWith": "with the group majority",
   "mp.partyLineAgainst": "against the group majority",
   "mp.partyLineUnknown": "group majority unknown",
+
+  // --- dissent over a whole electoral period ---
+  "mp.dissent": "Dissent from the group line",
+  "mp.dissentBadge": "Frequent dissenter",
+  "mp.dissentBadgeTooltip":
+    "Votes against their own group in at least {rate} of votes cast, over at least {ballots} votes cast.",
+  "mp.dissentNotComputed": "No dissent figure has been computed for this electoral period yet.",
+  "mp.dissentNoBallots": "No vote was cast in any named ballot in this electoral period.",
+  "mp.dissentNone": "No dissent across {cast} votes cast.",
+  "mp.dissentCount": "{count} dissents across {cast} votes cast.",
+  "mp.dissentRate": "Dissent rate {rate}",
+  "mp.dissentOfBallots": "{ballots} named ballots in the electoral period",
   // --- trend charts ---
   "trends.title": "Trends",
   "trends.subtitle": "Monthly activity across the current electoral period.",
