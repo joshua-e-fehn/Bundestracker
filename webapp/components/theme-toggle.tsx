@@ -17,8 +17,8 @@ import type { TranslationKey } from "@/lib/i18n"
  * Light / dark / system, as a menu rather than a two-way switch.
  *
  * A switch cannot express three states, and "system" has to remain reachable:
- * the site defaults to dark (components/providers/theme-provider.tsx), so a
- * reader whose OS is light has no other way back to it.
+ * the site defaults to light (components/providers/theme-provider.tsx), so a
+ * reader whose OS is dark has no other way back to following it.
  */
 const THEMES: ReadonlyArray<{
   value: string
@@ -42,7 +42,10 @@ export function ThemeToggle() {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  const active = mounted ? (resolvedTheme ?? "dark") : "dark"
+  // The pre-mount guess is the app's default theme, so the common case — a
+  // first-time visitor, who has no stored preference — sees the right glyph
+  // immediately rather than a moon that swaps to a sun a frame later.
+  const active = mounted ? (resolvedTheme ?? "light") : "light"
   const TriggerIcon = active === "light" ? SunIcon : MoonIcon
 
   return (

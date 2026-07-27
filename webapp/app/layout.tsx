@@ -85,14 +85,24 @@ export const metadata: Metadata = {
  * `themeColor` and `colorScheme` still typecheck inside `Metadata` in Next 16
  * but are deprecated there — the build warns and the tags do not render as
  * expected. Two `themeColor` entries so the browser chrome follows the active
- * theme; `colorScheme: "dark light"` names dark first, matching the app's
- * default, which is also what native form controls and scrollbars read.
+ * theme; `colorScheme: "light dark"` names light first, matching the app's
+ * default (components/providers/theme-provider.tsx) and the `color-scheme`
+ * declaration in app/globals.css, which is also what native form controls and
+ * scrollbars read. All three must name light first or a first-time visitor
+ * gets a dark scrollbar beside a light page.
+ *
+ * The two colours are the sRGB renderings of `--background` in each theme —
+ * `oklch(0.985 0.002 95)` and `oklch(0.155 0.004 95)`. They are literals
+ * because a `<meta>` tag cannot hold a `var()`, which makes them the one place
+ * in the app where the palette is duplicated: changing either background in
+ * globals.css means changing it here too, or the phone's status bar will be a
+ * different colour from the page under it.
  */
 export const viewport: Viewport = {
-  colorScheme: "dark light",
+  colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0c0e14" },
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: light)", color: "#fafaf9" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d0c0a" },
   ],
 }
 
