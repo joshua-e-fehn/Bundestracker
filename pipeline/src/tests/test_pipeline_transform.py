@@ -184,6 +184,48 @@ def test_the_dip_id_reaches_the_roster_row_once_the_crosswalk_resolves(
     ]
 
 
+# --- enrichment -----------------------------------------------------------
+
+
+def test_occupation_joins_by_stammdaten_id(resolver) -> None:
+    """`ext_id_bundestagsverwaltung` is the Stammdaten id verbatim, so this is
+    the one external join that needs no name matching at all."""
+    enriched = transform.politician_enrichment(
+        {"11004011": {"occupation": "Diplom-Verwaltungswirt", "education": "Jura"}}, resolver
+    )
+
+    assert [entry.internal_id for entry in enriched] == ["bt-11004011"]
+    assert enriched[0].occupation == "Diplom-Verwaltungswirt"
+
+
+def test_a_politician_outside_the_period_is_not_enriched(resolver) -> None:
+    """`from_stammdaten_id` indexes the whole dump — 4 614 MPs across every
+    period against 635 WP21 seats — because `speech_payloads` needs to resolve
+    a `<redner id>` from a sitting outside the period being loaded.
+
+    So it answers with an internal id for someone this roster does not have,
+    and abgeordnetenwatch carries every member since 2005. Without the roster
+    check the stage reported enriching 1 790 of 635 MPs against live data:
+    former members attached to mandate rows that do not exist.
+    """
+    # 11000019 is in the Stammdaten excerpt but holds no WP21 mandate.
+    enriched = transform.politician_enrichment(
+        {"11000019": {"occupation": "Rechtsanwalt", "education": None}}, resolver
+    )
+
+    assert enriched == []
+
+
+def test_a_politician_with_neither_field_yields_no_entry(resolver) -> None:
+    """An entry carrying nothing would overwrite nothing, but it would count —
+    and the stage reports its length as "MPs with occupation or education"."""
+    enriched = transform.politician_enrichment(
+        {"11004011": {"occupation": None, "education": None}}, resolver
+    )
+
+    assert enriched == []
+
+
 # --- committees -----------------------------------------------------------
 
 

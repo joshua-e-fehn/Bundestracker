@@ -20,13 +20,19 @@ out of order fails as a 400 rather than as an orphan row.
 
     1. Stammdaten ZIP    → the roster, the name index, committees
     2. DIP /person       → the dipPersonId crosswalk (name-matched, §7.2)
-    3. DIP /aktivitaet   → activities, questions, sponsors, the feed
-    4. DIP /vorgang + /drucksache → motions
-    5. Protocol XML      → speeches
-    6. Named-vote XLSX   → ballots and per-MP votes (the only absences, §4.2)
+    3. bundestag.de + abgeordnetenwatch → portraits, occupation, contact
+    4. DIP /aktivitaet   → activities, questions, sponsors, the feed
+    5. DIP /vorgang + /drucksache → motions
+    6. Protocol XML      → speeches
+    7. Named-vote XLSX   → ballots and per-MP votes (the only absences, §4.2)
 
-Stages 3–6 depend on 1 and 2 and on nothing else, so a failure in one does not
+Stages 3–7 depend on 1 and 2 and on nothing else, so a failure in one does not
 invalidate the others — `run_backfill` reports per stage and continues.
+
+Stage 3 is *ordered* after 2 rather than merely dependent on it: both write the
+roster, and the columns they add ride on the same `mps` upsert
+(`transform.mp_payload`), so going second means this run's rows carry the
+enrichment as well as the crosswalk rather than only the crosswalk.
 
 ## Everything here is sequential, and that is load-bearing
 
@@ -52,18 +58,22 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient, parse_politicians
 from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.dip import DIPClient
+from bundestrack.api.mp_profiles import MPProfileClient
 from bundestrack.api.protocols import ProtocolClient
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import VoteClient
 from bundestrack.config import Settings, get_settings
 from bundestrack.models.dip import Aktivitaet, Plenarprotokoll
+from bundestrack.models.enrichment import MPProfileLink, normalise_printed_name
 from bundestrack.models.votes import VoteSheet, VoteSheetLink
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
 from bundestrack.pipeline.load import BatchResult, ConvexLoader
 from bundestrack.pipeline.state import (
+    CONTACT_TTL,
     STREAM_ACTIVITIES,
     STREAM_MOTIONS,
     STREAM_PROTOCOLS,
@@ -168,6 +178,8 @@ class Pipeline:
         stammdaten: StammdatenClient | None = None,
         protocols: ProtocolClient | None = None,
         votes: VoteClient | None = None,
+        profiles: MPProfileClient | None = None,
+        abgeordnetenwatch: AbgeordnetenwatchClient | None = None,
         loader: ConvexLoader | None = None,
         state: SyncState | None = None,
     ) -> None:
@@ -183,6 +195,8 @@ class Pipeline:
         self.stammdaten = stammdaten or StammdatenClient()
         self.protocols = protocols or ProtocolClient()
         self.votes = votes or VoteClient()
+        self.profiles = profiles or MPProfileClient()
+        self.abgeordnetenwatch = abgeordnetenwatch or AbgeordnetenwatchClient()
         self.loader = loader or ConvexLoader(
             self.settings.require_convex_http_url(),
             self.settings.pipeline_api_key,
@@ -196,7 +210,15 @@ class Pipeline:
         self._sponsorships: dict[str, dict[str, str | None]] = {}
 
     def close(self) -> None:
-        for client in (self.dip, self.stammdaten, self.protocols, self.votes, self.loader):
+        for client in (
+            self.dip,
+            self.stammdaten,
+            self.protocols,
+            self.votes,
+            self.profiles,
+            self.abgeordnetenwatch,
+            self.loader,
+        ):
             client.close()
 
     def __enter__(self) -> Pipeline:
@@ -279,7 +301,135 @@ class Pipeline:
         # second copy — every write here is an upsert on `(internalId, wp)`.
         self.loader.upsert_mps(transform.roster_payloads(resolver))
 
-    # -- stage 3: committees ----------------------------------------------
+    # -- stage 3: enrichment ----------------------------------------------
+
+    def load_enrichment(self, report: RunReport, *, full: bool = False) -> None:
+        """Portraits, occupation, education and contact details onto the roster.
+
+        Three sources at three different costs, which is why they are one stage
+        rather than three:
+
+        1. **Portraits** — the bundestag.de MP listing, ~54 requests of ~28 KB
+           for all 639. Cheap enough to re-read every sync, and it is the only
+           source of the photographer credit that the licence requires be shown
+           beside the image (§6.5, `models.enrichment.MPPortrait`).
+        2. **Occupation and education** — abgeordnetenwatch, ~19 requests for
+           the whole filtered collection. The one external join that needs no
+           name matching: `ext_id_bundestagsverwaltung` *is* the Stammdaten id.
+        3. **Contact** — one ~280 KB biography page per MP. 639 of those is
+           ~175 MB through a WAF that counts bytes (§2.6), so this is gated on
+           `state.contact_is_stale` and a daily sync refreshes a thirtieth of
+           the roster rather than all of it.
+
+        Everything is attached to the resolver rather than posted directly, and
+        the roster is re-posted at the end. That is not an optimisation: the
+        `mps` upsert is the write that carries these columns
+        (`transform.mp_payload`), and it runs again on the next sync — so a
+        separately-written `photoUrl` would survive exactly until then.
+
+        Placed after `link_dip_persons` for the same reason it re-posts: that
+        stage already re-posts the roster to patch in the crosswalk, and going
+        second means this run's roster rows carry both rather than the
+        crosswalk alone.
+        """
+        stage = report.stage("enrichment")
+        resolver = self._require_resolver()
+        roster_size = len(resolver.internal_ids())
+
+        profiles = list(self.profiles.iter_profiles())
+        matched, unmatched = transform.portrait_enrichment(profiles, resolver)
+        resolver.attach_enrichment(matched)
+        with_portrait = sum(1 for entry in matched if entry.portrait)
+        stage.notes.append(
+            f"{len(profiles)} listed MPs → {len(matched)} matched to the roster, "
+            f"{with_portrait} with a credited portrait"
+        )
+        if unmatched:
+            # Not an error, and specifically not a reason to fail the stage:
+            # the listing is the Bundestag's own roster, so a name here that
+            # resolves to nobody means the Stammdaten snapshot is behind
+            # (§7.3), which the quarantine already retries.
+            stage.notes.append(
+                f"{len(unmatched)} listed names match no roster MP — the Stammdaten "
+                f"snapshot is behind (§7.3): {', '.join(sorted(unmatched)[:6])}"
+                + (" …" if len(unmatched) > 6 else "")
+            )
+
+        politicians = parse_politicians(self.abgeordnetenwatch.iter_politicians())
+        occupations = transform.politician_enrichment(politicians, resolver)
+        resolver.attach_enrichment(occupations)
+        stage.notes.append(
+            f"{len(politicians)} abgeordnetenwatch politicians carry a Stammdaten id → "
+            f"{len(occupations)} roster MPs with occupation or education"
+        )
+
+        stage.notes.append(self._load_contacts(profiles, resolver, full=full))
+
+        # The write. Everything above only populated the resolver.
+        stage.result = self.loader.upsert_mps(transform.roster_payloads(resolver))
+        unenriched = resolver.unenriched_internal_ids()
+        if unenriched:
+            stage.notes.append(
+                f"{len(unenriched)} of {roster_size} roster MPs have no enrichment at all — "
+                "they retry on the next sync (§7.3)"
+            )
+
+    def _load_contacts(
+        self, profiles: Sequence[MPProfileLink], resolver: MPResolver, *, full: bool
+    ) -> str:
+        """Biography pages for the MPs whose contact block is missing or stale.
+
+        The expensive half of the enrich stage, and the reason the stage has a
+        `full` flag: a backfill wants all 639 pages, a daily sync wants the
+        handful that have aged past `CONTACT_TTL`.
+
+        One page failing is noted and stepped over rather than ending the
+        stage. Its timestamp is not recorded, so the next sync retries it —
+        the same rule `load_speeches` applies to an unreadable protocol.
+        """
+        due: list[tuple[str, str]] = []
+        fresh = 0
+        for profile in profiles:
+            name = normalise_printed_name(profile.printed_name)
+            if name is None:
+                continue
+            internal = resolver.resolve_printed_name(name.nachname, name.vorname, name.particle)
+            if internal is None:
+                # Counted by the caller's "match no roster MP" note, not here:
+                # an unmatched name has no contact block to be fresh or stale,
+                # and folding it into the skipped count would report a name the
+                # roster has never heard of as an MP whose page was up to date.
+                continue
+            if full or self.state.contact_is_stale(internal):
+                due.append((internal, profile.profile_url))
+            else:
+                fresh += 1
+
+        fetched = 0
+        published = 0
+        failed = 0
+        for internal, url in due:
+            try:
+                contact = self.profiles.fetch_contact(url)
+            except BundestagAPIError as error:
+                failed += 1
+                logger.warning("Contact page %s failed: %s", url, error)
+                continue
+            resolver.attach_enrichment([transform.contact_enrichment(internal, contact)])
+            # Stamped even when the page published nothing: about half of MPs
+            # list no constituency office, and re-reading 280 KB every sync to
+            # rediscover the same absence is the cost this gate exists to avoid.
+            self.state.record_contact_fetch(internal)
+            fetched += 1
+            if not contact.is_empty:
+                published += 1
+
+        note = f"contact: {fetched} biography pages fetched, {published} with published details" + (
+            f", {failed} failed and retry next sync" if failed else ""
+        )
+        return note + (f", {fresh} still fresh (<{CONTACT_TTL.days} days)" if fresh else "")
+
+    # -- stage 4: committees ----------------------------------------------
 
     def load_committees(self, report: RunReport) -> None:
         """Committee seats, from the same dump as the roster.
@@ -300,7 +450,7 @@ class Pipeline:
             return
         stage.result = self.loader.upsert_committees(payloads)
 
-    # -- stage 4: activities ----------------------------------------------
+    # -- stage 5: activities ----------------------------------------------
 
     def load_activities(self, report: RunReport, *, since: str | None) -> None:
         """DIP `/aktivitaet` → activities, questions, sponsorships and the feed.
@@ -371,7 +521,7 @@ class Pipeline:
             for sponsor in group["sponsors"]:
                 pending.setdefault(sponsor["mpInternalId"], sponsor["role"])
 
-    # -- stage 5: motions --------------------------------------------------
+    # -- stage 6: motions --------------------------------------------------
 
     def load_motions(self, report: RunReport, *, since: str | None) -> None:
         """DIP `/vorgang` and `/drucksache` → motions, then their sponsors.
@@ -430,7 +580,7 @@ class Pipeline:
             )
         self.state.advance(self.wahlperiode, STREAM_MOTIONS, max(seen) if seen else None)
 
-    # -- stage 6: speeches -------------------------------------------------
+    # -- stage 7: speeches -------------------------------------------------
 
     def load_speeches(self, report: RunReport, *, since: str | None) -> None:
         """Protocol XML → speech segments and the feed's speech events.
@@ -497,7 +647,7 @@ class Pipeline:
             stage.notes.append(f"{skipped_unchanged} protocols unchanged since the last sync")
         self.state.advance(self.wahlperiode, STREAM_PROTOCOLS, max(seen) if seen else None)
 
-    # -- stage 7: votes ----------------------------------------------------
+    # -- stage 8: votes ----------------------------------------------------
 
     def load_votes(self, report: RunReport, *, incremental: bool) -> None:
         """Named-vote XLSX sheets → ballots and per-MP votes.
@@ -590,7 +740,7 @@ class Pipeline:
             )
         )
 
-    # -- stage 8: seating --------------------------------------------------
+    # -- stage 9: seating --------------------------------------------------
 
     def generate_seating(self, report: RunReport) -> None:
         """Regenerate the synthetic hemicycle from the roster.
@@ -805,6 +955,10 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
         return
 
     _guard(report, "dip-persons", lambda: run.link_dip_persons(report))
+    # `full` on a backfill: a sync wants the contact pages that have aged past
+    # `CONTACT_TTL`, a backfill wants all 639 regardless of when they were last
+    # read. Both re-post the roster, so neither can blank what the other wrote.
+    _guard(report, "enrichment", lambda: run.load_enrichment(report, full=not incremental))
     _guard(report, "committees", lambda: run.load_committees(report))
     _guard(report, "activities", lambda: run.load_activities(report, since=since))
     _guard(report, "motions", lambda: run.load_motions(report, since=since))
