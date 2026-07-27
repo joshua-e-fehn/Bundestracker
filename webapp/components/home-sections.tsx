@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react"
 import { ArrowRightIcon } from "lucide-react"
 import Link from "next/link"
+import { EVENT_TYPE_STYLES } from "@/components/event-type-icon"
 import { MPCard } from "@/components/mp-card"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -263,19 +264,6 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
 
 const FEED_COUNT = 10
 
-/** Event kinds are a closed union in the schema, so unlike a vote result this
- * one *can* be a lookup — and the typecheck enforces that a new kind gets a
- * translation before it can be rendered. */
-const EVENT_LABEL_KEYS: Record<string, TranslationKey> = {
-  motion: "event.motion",
-  speech: "event.speech",
-  vote: "event.vote",
-  question: "event.question",
-  bill: "event.bill",
-  committee: "event.committee",
-  activity: "event.activity",
-}
-
 export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | null | undefined }) {
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
@@ -308,9 +296,13 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
                 <p className="mt-1 line-clamp-2 text-muted-foreground text-sm">{event.title}</p>
               </div>
               <div className="shrink-0 text-right">
-                <Badge variant="secondary">
-                  {t(EVENT_LABEL_KEYS[event.eventType] ?? "event.activity")}
-                </Badge>
+                {/* `EVENT_TYPE_STYLES` rather than a second map here: it is
+                    keyed `Record<EventType, …>`, so a kind added to
+                    `EVENT_TYPES` without a translation fails the typecheck.
+                    The local copy this replaced was `Record<string, …>` with a
+                    fallback, which would have rendered a new kind as
+                    "Aktivität" instead. */}
+                <Badge variant="secondary">{t(EVENT_TYPE_STYLES[event.eventType].labelKey)}</Badge>
                 <div className="mt-1 text-muted-foreground text-xs tabular-nums">
                   {formatDateShort(event.date, locale)}
                 </div>
