@@ -387,7 +387,7 @@ def test_the_contact_block_reaches_the_roster_row() -> None:
 
 
 def test_an_unmatched_name_is_not_counted_as_a_fresh_contact_block() -> None:
-    """"Fresh" means "fetched recently". A name the roster has never heard of
+    """ "Fresh" means "fetched recently". A name the roster has never heard of
     has no contact block at all, so counting it as up to date would report a
     §7.3 staleness gap as work already done."""
     profiles = StubProfiles(

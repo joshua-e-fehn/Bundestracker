@@ -379,14 +379,26 @@ def politician_enrichment(
     (`api.abgeordnetenwatch.iter_politicians`), so §7.1's failure modes do not
     apply. The dict is keyed by that id.
 
-    Politicians outside this period's roster are skipped silently — the source
-    covers 1 890 people across every Bundestag, and only this period's are
-    being enriched.
+    Politicians outside this period's roster are skipped — the source covers
+    people across every Bundestag since 2005, and only this period's are being
+    enriched.
+
+    ⚠ Scoped against `internal_ids()` rather than on `from_stammdaten_id`
+    alone. That lookup indexes the *whole* Stammdaten dump — 4 614 MPs across
+    every period, against 635 seats in WP21 — because its own caller
+    (`speech_payloads`, §5.2) needs to resolve a `<redner id>` from a sitting
+    that may predate the period being loaded. So it answers with an internal id
+    for someone who is not on this roster, and without this check the stage
+    reported enriching **1 790 of 635** MPs: every former member the source
+    happens to carry, attached to a mandate row that does not exist. Convex
+    would have rejected those rows, but the count was wrong long before the
+    write.
     """
+    roster = resolver.internal_ids()
     enriched: list[MPEnrichment] = []
     for stammdaten_id, fields in politicians.items():
         internal = resolver.from_stammdaten_id(stammdaten_id)
-        if internal is None:
+        if internal is None or internal not in roster:
             continue
         if not (fields.get("occupation") or fields.get("education")):
             continue
