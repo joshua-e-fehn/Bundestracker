@@ -73,6 +73,11 @@ const de = {
   "nav.about": "Über",
   "nav.language": "Sprache",
   "nav.theme": "Design",
+  // The header's period chip. Abbreviated because it sits in a 56 px-tall bar
+  // beside three icon buttons; `nav.periodLabel` is what a screen reader and a
+  // hovering pointer get, so the abbreviation never has to be guessed at.
+  "nav.period": "WP {wahlperiode}",
+  "nav.periodLabel": "{wahlperiode}. Wahlperiode — die hier dargestellte",
 
   "auth.signIn": "Anmelden",
   "auth.signOut": "Abmelden",
@@ -249,6 +254,16 @@ const de = {
   "mps.searchPlaceholder": "Nach Name oder Wahlkreis suchen …",
   "mps.filterFraktion": "Fraktion",
   "mps.filterState": "Bundesland",
+  "mps.allStates": "Alle Bundesländer",
+  "mps.filterCommittee": "Ausschuss",
+  "mps.allCommittees": "Alle Ausschüsse",
+  "mps.filterElectionMethod": "Mandatsart",
+  "mps.allElectionMethods": "Alle Mandatsarten",
+  // Stammdaten's `MANDATSART` values, in the words a reader uses for them:
+  // a direct mandate is won in a Wahlkreis, a list mandate off a Landesliste.
+  "mps.electionDirect": "Direktmandat",
+  "mps.electionList": "Listenmandat",
+  "mps.sortBy": "Sortieren nach",
   "mps.filterScore": "Mindest-Aktivitätswert",
   "mps.count": "{count} von {total} Abgeordneten",
   "mps.empty": "Keine Abgeordneten entsprechen den Filtern.",
@@ -422,8 +437,7 @@ const de = {
   // counted from it. Surfaced rather than silently corrected: a mismatch is a
   // fact about the source document, and picking one number over the other
   // would hide it.
-  "votes.tallyMismatch":
-    "Die veröffentlichten Summen weichen von den gezählten Stimmen ab.",
+  "votes.tallyMismatch": "Die veröffentlichten Summen weichen von den gezählten Stimmen ab.",
   "votes.tallyPublished": "veröffentlicht",
   "votes.tallyCounted": "gezählt",
   "votes.turnout": "Beteiligung",
@@ -487,6 +501,12 @@ const de = {
   // not "how often they voted".
   "home.statNamedVotesNote":
     "Nur namentliche Abstimmungen — für alle übrigen Abstimmungen existiert kein Einzelnachweis.",
+
+  // The hero's seating card. "Sitzverteilung ansehen" rather than "Mehr": the
+  // arc is a link and a link should say where it goes, especially one whose
+  // label is otherwise carried by a picture.
+  "home.seatingPreviewLink": "Sitzverteilung des Bundestages ansehen",
+  "home.seatingPreviewCta": "Sitzverteilung ansehen",
 
   "home.topMPsTitle": "Aktivste Abgeordnete",
   "home.topMPsSubtitle": "Nach Aktivitätswert in der laufenden Wahlperiode",
@@ -574,6 +594,8 @@ const en: Dictionary = {
   "nav.about": "About",
   "nav.language": "Language",
   "nav.theme": "Theme",
+  "nav.period": "EP {wahlperiode}",
+  "nav.periodLabel": "Electoral period {wahlperiode} — the one shown here",
 
   "auth.signIn": "Sign in",
   "auth.signOut": "Sign out",
@@ -738,6 +760,14 @@ const en: Dictionary = {
   "mps.searchPlaceholder": "Search by name or constituency …",
   "mps.filterFraktion": "Parliamentary group",
   "mps.filterState": "Federal state",
+  "mps.allStates": "All federal states",
+  "mps.filterCommittee": "Committee",
+  "mps.allCommittees": "All committees",
+  "mps.filterElectionMethod": "Mandate type",
+  "mps.allElectionMethods": "All mandate types",
+  "mps.electionDirect": "Direct mandate",
+  "mps.electionList": "List mandate",
+  "mps.sortBy": "Sort by",
   "mps.filterScore": "Minimum activity score",
   "mps.count": "{count} of {total} members",
   "mps.empty": "No members match these filters.",
@@ -941,6 +971,9 @@ const en: Dictionary = {
   "home.statSpeeches": "Speech contributions",
   "home.statNamedVotesNote":
     "Named ballots only — for every other vote, no per-member record exists.",
+
+  "home.seatingPreviewLink": "View the Bundestag seating map",
+  "home.seatingPreviewCta": "View seating map",
 
   "home.topMPsTitle": "Most active members",
   "home.topMPsSubtitle": "By activity score in the current electoral period",

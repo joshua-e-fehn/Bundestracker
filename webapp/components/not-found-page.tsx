@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { DEFAULT_LOCALE, t, type TranslationKey } from "@/lib/i18n"
+import { DEFAULT_LOCALE, type TranslationKey, t } from "@/lib/i18n"
 
 /**
  * The shared body of every not-found boundary.

@@ -183,12 +183,23 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Tabs value={boardId} onValueChange={handleBoardChange}>
-        {/* Scrolls rather than wraps: nine tabs wrapped to three rows on a
-            narrow screen push the table below the fold. */}
-        <TabsList className="w-full justify-start overflow-x-auto">
+      {/* `min-w-0` is what makes the `overflow-x-auto` below actually work —
+          the same fix `ColorModeToggle` documents for the seating page's five
+          tabs, applied to the nine here, which are far wider. `Tabs` is a flex
+          container, so its child's `min-width` is `auto`: the list refused to
+          shrink past the nine labels' combined 1 516 px and the scroll
+          container therefore never became narrow enough to scroll. It pushed
+          the page instead — /rankings rendered 883 px wide inside a 768 px
+          viewport, and the whole document scrolled sideways, header and all.
+          The affordance was written for exactly this case and was unreachable.
+
+          `shrink-0` on the triggers for the other half of it: `TabsTrigger`
+          carries `flex-1`, which lets a tab shrink below its label and puts
+          nine ellipsised stubs in a row instead of a scrollable strip. */}
+      <Tabs value={boardId} onValueChange={handleBoardChange} className="min-w-0">
+        <TabsList className="w-full max-w-full justify-start overflow-x-auto">
           {boardTabs.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id} className="whitespace-nowrap">
+            <TabsTrigger key={tab.id} value={tab.id} className="shrink-0 whitespace-nowrap">
               {tab.label}
             </TabsTrigger>
           ))}
