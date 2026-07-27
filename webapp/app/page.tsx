@@ -17,6 +17,7 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { SeatingPreview } from "@/components/seating-preview"
 import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
+import { formatCount } from "@/lib/format"
 
 /**
  * The home page.
@@ -87,6 +88,7 @@ export default function Home() {
             <LatestVotes wahlperiode={wahlperiode} />
           </div>
           <ActivityFeedPreview wahlperiode={wahlperiode} />
+          <InquiryQuorumTeaser wahlperiode={wahlperiode} />
         </div>
       )}
     </main>
@@ -171,6 +173,59 @@ function Hero({ wahlperiode }: { wahlperiode: number | null | undefined }) {
 
         <SeatingPreview wahlperiode={wahlperiode} />
       </div>
+    </section>
+  )
+}
+
+/**
+ * The one card on this page that asks a question rather than ranking something.
+ *
+ * Every other section here is a view of the score — who is most active, which
+ * Fraktion averages what. This is the same data answering a constitutional
+ * question instead: whether a quarter of this Bundestag can compel a committee
+ * of inquiry. It sits last because it is the page's one editorial destination
+ * (the exclusion table on `/inquiry-quorum` is maintained, not sourced), and a
+ * dashboard should lead with what it counted.
+ *
+ * Reads the quorum query rather than restating the numbers, so the headline here
+ * and the page it links to cannot disagree about the threshold — the failure
+ * `foldFractionSizes` and `coalitionRole` both exist to prevent. Renders nothing
+ * until the figures resolve: a teaser with a blank number in mid-sentence is
+ * worse than one that arrives a moment later.
+ */
+function InquiryQuorumTeaser({ wahlperiode }: { wahlperiode: number | undefined }) {
+  const { t, locale } = useLocale()
+  // `"skip"` until the period resolves, the convention every section in
+  // components/home-sections.tsx follows: the page renders this branch while
+  // `wahlperiode` is still in flight, and a query fired with `undefined` would
+  // be a request for a Bundestag with no number.
+  const quorum = useQuery(
+    api.inquiry.getQuorum,
+    wahlperiode === undefined ? "skip" : { wahlperiode },
+  )
+
+  if (quorum === undefined || quorum.totalSeats === 0) return null
+
+  return (
+    <section
+      aria-labelledby="inquiry-teaser-heading"
+      className="rounded-xl border border-gold/30 bg-gold/5 p-5 sm:p-6"
+    >
+      <h2 id="inquiry-teaser-heading" className="font-semibold text-lg tracking-tight sm:text-xl">
+        {t("inquiry.home.title")}
+      </h2>
+      <p className="mt-2 max-w-prose text-muted-foreground text-sm leading-relaxed">
+        {t("inquiry.home.body", {
+          threshold: formatCount(quorum.threshold, locale),
+          total: formatCount(quorum.totalSeats, locale),
+        })}
+      </p>
+      <Button asChild variant="outline" size="sm" className="mt-4">
+        <Link href="/inquiry-quorum">
+          {t("inquiry.home.cta")}
+          <ArrowRightIcon />
+        </Link>
+      </Button>
     </section>
   )
 }

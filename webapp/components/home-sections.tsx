@@ -211,6 +211,8 @@ function ActivityBoard({
   titleKey,
   subtitleKey,
   caveatKey,
+  level,
+  caveatShownByPage = false,
   caveatShownByPage = false,
   level,
 }: {
@@ -318,6 +320,7 @@ export function BottomMPs({
   wahlperiode,
   caveatShownByPage,
   level,
+  caveatShownByPage,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
@@ -330,6 +333,8 @@ export function BottomMPs({
       titleKey="home.bottomMPsTitle"
       subtitleKey="home.bottomMPsSubtitle"
       caveatKey="home.bottomMPsCaveat"
+      level={level}
+      caveatShownByPage={caveatShownByPage}
       caveatShownByPage={caveatShownByPage}
       level={level}
     />
@@ -355,6 +360,8 @@ export function BottomMPs({
  */
 export function PartyComparisonPreview({
   wahlperiode,
+  level,
+  caveatShownByPage = false,
   caveatShownByPage = false,
   level,
 }: {

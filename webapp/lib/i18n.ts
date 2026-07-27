@@ -1334,6 +1334,296 @@ const de = {
   "about.questions.body":
     "Fehler in den Daten und Einwände gegen die Methodik gehören ins öffentliche Repository. Beides ist willkommen: Eine Kennzahl, die niemand prüfen kann, ist keine.",
   "about.questions.cta": "Zum Quellcode",
+
+  // --- "Das Protokoll" — the narrative home page (/home-a) ------------------
+  //
+  // The one place on this site where the copy makes an argument rather than
+  // labelling a figure, so it is written rather than assembled: five chapters,
+  // each a question a first-time reader actually has, answered in a sentence
+  // above the data that backs it.
+  //
+  // Two rules govern every string below and both are load-bearing.
+  //
+  // **The narrative may not out-claim the data.** The page's premise is that
+  // every figure comes from a Bundestag record (AGENTS.md), so a sentence that
+  // says more than the record does costs more here than a dull one. Chapter 3
+  // therefore states the score's three structural limits as part of the story
+  // instead of leaving them to the caveat boxes — a story that omits the limits
+  // of its own measure would be both a worse dashboard and a worse story.
+  //
+  // **German is written first and translated second.** These are not label
+  // strings where a literal rendering serves; "Was es tut, ist öffentlich" is a
+  // sentence with a rhythm, and the English is a sibling rather than a gloss.
+  "protokoll.title": "Das Protokoll",
+  // The subtitle under the wordmark, before Chapter 1 opens. Says what the page
+  // is about to do, so a reader who wants none of it can take the skip link
+  // beside it knowing what they are skipping.
+  "protokoll.lead":
+    "Fünf Kapitel über ein Parlament, das seine Arbeit veröffentlicht — und darüber, was sich daraus messen lässt und was nicht.",
+  // §7's requirement #1, and the one this redesign is most likely to lose: a
+  // returning reader who wants today's Abstimmungen must not have to scroll
+  // through a story they have read. A quiet link, not a modal and not a stored
+  // preference.
+  "protokoll.skipToData": "Direkt zu den Daten",
+  "protokoll.readTheRecord": "Das Protokoll lesen",
+  // The rail down the left gutter. Decorative to the eye, but it is also the
+  // chapter navigation, so it is named for a screen reader.
+  "protokoll.progressLabel": "Fortschritt im Protokoll",
+  "protokoll.chapterLabel": "Kapitel {index}: {title}",
+
+  "protokoll.chapter1Number": "Kapitel eins",
+  "protokoll.chapter1Title": "Ein Parlament, 630 Sitze",
+  "protokoll.chapter1Standfirst":
+    "Der 21. Deutsche Bundestag hat 630 Sitze — jeder davon ein Mandat, jedes Mandat eine Person, die im Namen von rund 60 Millionen Wahlberechtigten abstimmt. Das ist der Gegenstand dieser Seite.",
+  // Scrolls into view as the arc completes. The one sentence that says what the
+  // picture is *not*, because a picture of a parliament is read as a picture of
+  // *that* parliament — the same warning components/seating-notice.tsx carries.
+  "protokoll.chapter1Note":
+    "Die Fraktionsgrößen sind amtlich belegt; die Position eines einzelnen Sitzes im Bogen ist es nicht — eine maschinenlesbare Sitzordnung veröffentlicht der Bundestag nicht.",
+  // Why the arc can say more than 630 while the Kapitelüberschrift says 630.
+  // Both Zahlen sind richtig und meinen Verschiedenes: 630 sind die
+  // gleichzeitig besetzten Sitze, der Bogen zählt Mandate, und ein Sitz kann in
+  // einer Wahlperiode zwei davon tragen. Ohne diesen Satz stehen zwei Zahlen
+  // nebeneinander, von denen eine falsch aussieht — genau die Sorte plausibler
+  // Fehlzahl, die diese Codebasis sonst überall vermeidet.
+  "protokoll.chapter1MandateNote":
+    "Der Bogen zählt Mandate, nicht gleichzeitig besetzte Sitze: Scheidet jemand aus und rückt jemand nach, trägt ein Sitz in einer Wahlperiode zwei Mandate. Deshalb liegt die Summe der Fraktionen über den 630 Sitzen des Bundestages.",
+
+  "protokoll.chapter2Number": "Kapitel zwei",
+  "protokoll.chapter2Title": "Was es tut, ist öffentlich",
+  "protokoll.chapter2Standfirst":
+    "Jeder Antrag, jede Rede, jede namentliche Abstimmung und jede Anfrage wird protokolliert und als offene Daten veröffentlicht. Diese Seite rechnet nichts hinzu — sie zählt, was ohnehin im Protokoll steht.",
+
+  "protokoll.chapter3Number": "Kapitel drei",
+  "protokoll.chapter3Title": "Wie wir messen",
+  "protokoll.chapter3Standfirst":
+    "Sieben Größen, jede mit einem Gewicht, aufsummiert zu einer Zahl. Die Gewichtung ist eine Setzung — deshalb steht sie hier offen, statt hinter dem Ergebnis zu verschwinden.",
+  // The thesis of the whole page, and currently invisible on the home page: the
+  // seven components collapse into one number, and the number can be taken back
+  // apart. That is what makes the measure inspectable rather than a verdict.
+  "protokoll.chapter3Collapse":
+    "Sieben Komponenten, eine Zahl — und jederzeit wieder in ihre Bestandteile zerlegbar.",
+  "protokoll.chapter3Example": "Beispielrechnung mit den Standardgewichtungen",
+  // The three structural limits from lib/scoring.ts, stated as part of the
+  // argument rather than as a footnote under it. No weighting fixes any of
+  // them, which is exactly why they belong in the chapter that explains the
+  // weighting.
+  "protokoll.chapter3Limits":
+    "Drei Grenzen bleiben, unabhängig von jeder Gewichtung: Abstimmungsteilnahme umfasst nur namentliche Abstimmungen, Ausschussdaten liegen nur für die laufende Wahlperiode vor, und Redebeiträge werden nach Wörtern gezählt, nicht nach Wortmeldungen. Ein niedriger Wert heißt „wenig erfasst“, nie „wenig gearbeitet“.",
+
+  "protokoll.chapter4Number": "Kapitel vier",
+  "protokoll.chapter4Title": "Wer ist aktiv?",
+  "protokoll.chapter4Standfirst":
+    "Beide Enden derselben Rangliste, nebeneinander. Ein Tracker, der nur die Spitze veröffentlicht, veröffentlicht eine Bestenliste — und keine überprüfbare Messung.",
+
+  "protokoll.chapter5Number": "Kapitel fünf",
+  "protokoll.chapter5Title": "Was heute geschah",
+  "protokoll.chapter5Standfirst":
+    "Der laufende Betrieb: die zuletzt namentlich abgestimmten Vorlagen und die jüngsten Einträge im Protokoll. Diese Seite aktualisiert sich, sobald die nächtliche Auswertung neue Daten geladen hat.",
+
+  // The closing line, after the last chapter. Ends on what the reader can do
+  // rather than on a summary of what they just read.
+  "protokoll.outroTitle": "Das ganze Protokoll",
+  "protokoll.outroLead":
+    "Jede Zahl auf dieser Seite lässt sich bis zum Dokument zurückverfolgen, aus dem sie stammt.",
+
+  // --- the opening animation ("630 Sitze") ----------------------------------
+  //
+  // Everything visible in the splash is decorative and `aria-hidden`; these are
+  // the strings that are not. §6: it runs once per session, never blocks the
+  // data fetch underneath it, is skipped entirely under reduced motion or
+  // Datensparmodus, and can be dismissed by any key, click or scroll.
+  "protokoll.splashLabel": "Eröffnungssequenz",
+  "protokoll.splashSkip": "Überspringen",
+  "protokoll.splashCounting": "630 Sitze",
+
+  "homeC.claimIntro":
+    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
+  // Chapter 2 — the four summary figures. Names the honest limit of two of them
+  // in the sentence itself: `getChamberStats` reports a floor where it cannot
+  // count exactly, and the `+` on the card is meaningless unless the reader has
+  // been told what it means.
+  "homeC.claimStats":
+    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
+  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
+  // that is what the two boards together put on trial.
+  "homeC.claimActivity":
+    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
+  // Chapter 4 — parties and votes. Two sections under one claim because they
+  // make the same move: both aggregate individuals into a group, and both are
+  // read as statements about the group.
+  "homeC.claimParties":
+    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
+  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
+  // no measurement: it reports what was published, and says so.
+  "homeC.claimFeed":
+    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
+
+  // The skip link, and §7's first defence: a returning reader who wants today's
+  // votes should not have to scroll through a story they have read. Named for
+  // where it goes rather than for what it skips.
+  "homeC.skipToData": "Direkt zu den Daten",
+  // The pledge under the hero. Short enough to be read, specific enough to be
+  // checked — it names the two things the site will not do rather than
+  // promising that it is trustworthy.
+  "homeC.heroPledge":
+    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
+
+  // --- Untersuchungsausschuss: das Quorum ---------------------------------
+  //
+  // Die eine Seite dieser Website, auf der eine gezählte Zahl und eine
+  // gepflegte politische Aussage nebeneinander stehen. Die Trennung ist keine
+  // Formalie: Sitzzahlen sind amtlich belegt (§9 — die Verteilung ist
+  // ableitbar), die Ausschlusserklärungen sind es nicht. Jeder String unten
+  // gehört sichtbar zu genau einer der beiden Hälften, und die Strings der
+  // gepflegten Hälfte sagen das selbst — nicht erst die Fußnote.
+
+  "nav.inquiry": "Untersuchungsausschuss",
+
+  "inquiry.title": "Untersuchungsausschuss — das Viertel",
+  "inquiry.subtitle":
+    "Ein Viertel der Mitglieder des Bundestages kann einen Untersuchungsausschuss erzwingen. Welche Fraktionen zusammen dieses Viertel erreichen — und welche Kombinationen öffentlich ausgeschlossen wurden.",
+
+  // Die Kernaussage, ganz oben und in voller Deutlichkeit. Zwei Sätze: der
+  // erste ist Arithmetik, der zweite nennt die gepflegte Hälfte beim Namen.
+  "inquiry.lead":
+    "Ein Untersuchungsausschuss ist ein Minderheitenrecht — er richtet sich gegen die Regierung. Die Regierungsfraktionen erreichen das Viertel mühelos; auf sie kommt es nicht an. Entscheidend ist, ob die Opposition es erreicht. Sie erreicht es nur zusammen mit der AfD, deren Zusammenarbeit alle anderen ausgeschlossen haben.",
+
+  // --- der Maßstab ---
+  "inquiry.threshold.title": "Die Schwelle",
+  "inquiry.threshold.seats": "Sitze im Bundestag",
+  "inquiry.threshold.needed": "Unterschriften nötig",
+  "inquiry.threshold.rule": "Ein Viertel der Mitglieder",
+  "inquiry.threshold.explainer":
+    "{threshold} von {total} Mandaten. Art. 44 Abs. 1 GG spricht von „einem Viertel seiner Mitglieder“ — bei einer ungeraden Viertelzahl wird aufgerundet, denn {below} Abgeordnete sind weniger als ein Viertel.",
+
+  // --- die Fraktionen ---
+  "inquiry.groups.title": "Die Fraktionen und ihre Sitze",
+  "inquiry.groups.subtitle":
+    "Gezählt aus dem Abgeordnetenverzeichnis der laufenden Wahlperiode — die einzige Sitzangabe, die amtlich ableitbar ist.",
+  "inquiry.groups.column.group": "Fraktion",
+  "inquiry.groups.column.seats": "Sitze",
+  "inquiry.groups.column.share": "Anteil",
+  "inquiry.groups.column.toThreshold": "Bis zum Viertel",
+  "inquiry.groups.column.role": "Rolle",
+  "inquiry.groups.column.ruledOut": "Ausschluss erklärt gegenüber",
+  // Was in der Spalte steht, wenn eine Fraktion die Schwelle allein verfehlt:
+  // die Zahl, die ihr fehlt. Eine Fraktion, die sie erreicht, braucht niemanden.
+  "inquiry.groups.short": "−{count}",
+  "inquiry.groups.reachesAlone": "erreicht allein",
+  "inquiry.groups.noneDeclared": "keine",
+  // Fraktionslose zählen zur Gesamtzahl — das Viertel bemisst sich an allen
+  // Mitgliedern —, aber sie sind kein Block und können nichts gemeinsam
+  // unterzeichnen. Das steht in der Tabelle, nicht nur im Quellcode.
+  "inquiry.groups.notABloc": "kein Block",
+  "inquiry.groups.notABlocNote":
+    "Fraktionslose Abgeordnete zählen zur Gesamtzahl der Mitglieder, aus der sich das Viertel berechnet. In den Kombinationen unten erscheinen sie nicht: „die Fraktionslosen“ sind eine Restkategorie einzelner Abgeordneter, kein Block, der gemeinsam einen Antrag stellt.",
+
+  // --- die Kombinationen ---
+  "inquiry.combos.title": "Welche Kombinationen das Viertel erreichen",
+  "inquiry.combos.subtitle":
+    "Alle Zusammenschlüsse aus einer, zwei oder drei Fraktionen. Die Sitzsummen sind gezählt; ob eine Zusammenarbeit ausgeschlossen wurde, ist eine gepflegte Angabe.",
+  "inquiry.combos.column.combination": "Kombination",
+  "inquiry.combos.column.seats": "Sitze",
+  "inquiry.combos.column.share": "Anteil",
+  "inquiry.combos.column.status": "Status",
+  "inquiry.combos.showAll": "Auch Kombinationen unterhalb der Schwelle zeigen",
+  "inquiry.combos.showReaching": "Nur Kombinationen ab der Schwelle zeigen",
+  "inquiry.combos.empty": "Keine Kombination in dieser Auswahl.",
+  "inquiry.combos.countReaching": "{count} von {total} Kombinationen erreichen das Viertel.",
+
+  // Die drei Zustände einer Zeile. „Möglich“ ist arithmetisch *und*
+  // politisch offen; „ausgeschlossen“ ist arithmetisch möglich und politisch
+  // erklärt beendet; „zu klein“ ist reine Arithmetik.
+  "inquiry.status.viable": "möglich",
+  "inquiry.status.blocked": "ausgeschlossen",
+  "inquiry.status.short": "zu klein",
+  "inquiry.status.shortBy": "{count} Sitze fehlen",
+  "inquiry.status.blockedBy": "{a} hat Zusammenarbeit mit {b} ausgeschlossen",
+  "inquiry.status.viableLabel": "Erreicht das Viertel, keine Ausschlusserklärung",
+
+  // --- die zwei Betrachtungen ---
+  //
+  // Der Unterschied, an dem diese Seite hängt. Über die ganze Kammer gerechnet
+  // ist das Viertel leicht zu erreichen — die Union allein hält 208 von 630.
+  // Das ist wahr und nutzlos: Art. 44 GG ist ein Minderheitenrecht gegen die
+  // Regierung, und eine Regierung setzt keinen Untersuchungsausschuss gegen
+  // sich selbst ein. Die Frage lautet, ob die *Opposition* das Viertel
+  // erreicht.
+  "inquiry.scope.chamber": "Ganze Kammer",
+  "inquiry.scope.chamberNote":
+    "Alle Fraktionen zusammengerechnet. Hier ist das Viertel mehrfach erreichbar — die Regierungsfraktionen allein überschreiten es deutlich. Diese Betrachtung beantwortet nicht die Frage, um die es geht.",
+  "inquiry.scope.opposition": "Nur Opposition",
+  "inquiry.scope.oppositionNote":
+    "Nur die Fraktionen, die nicht der Regierung angehören. Ein Untersuchungsausschuss richtet sich gegen die Regierung, deshalb ist dies die Betrachtung, in der die Zahl etwas bedeutet.",
+  "inquiry.scope.oppositionSeats": "Sitze der Opposition",
+  // Wenn die Regierungszugehörigkeit für eine Periode nicht hinterlegt ist,
+  // wird die Oppositionsbetrachtung nicht geraten, sondern weggelassen.
+  "inquiry.scope.unavailable":
+    "Für diese Wahlperiode ist nicht hinterlegt, welche Fraktionen die Regierung stellten. Die Oppositionsbetrachtung entfällt deshalb — geraten wird sie nicht.",
+  // Der Satz, der die eigentliche Sperre benennt, mit beiden Zahlen.
+  "inquiry.scope.lock":
+    "Die Opposition hält {oppositionSeats} von {total} Sitzen — deutlich mehr als das Viertel. Ohne die AfD bleiben {withoutAfd} Sitze, {gap} unter der Schwelle. Die AfD allein kommt auf {afd} und verfehlt sie um {afdGap}.",
+
+  // --- das Ergebnis ---
+  "inquiry.result.title": "Das Ergebnis",
+  "inquiry.result.none":
+    "Keine der {reaching} Oppositionskombinationen, die das Viertel erreichen, ist frei von einer erklärten Ausschließung. Der größte Zusammenschluss ohne Ausschluss bleibt {shortfall} Sitze unter der Schwelle.",
+  "inquiry.result.some":
+    "{count} Oppositionskombination(en) erreichen das Viertel, ohne dass eine der beteiligten Fraktionen die Zusammenarbeit ausgeschlossen hätte.",
+  // Der Schluss, den die Seite zieht und den sie belegen kann: Die Sperre ist
+  // keine Mehrheitsentscheidung. Sie entsteht daraus, dass ein
+  // Minderheitenrecht eine Zusammenarbeit voraussetzt, die es nicht gibt.
+  "inquiry.result.conclusion":
+    "Das Untersuchungsrecht ist ein Minderheitenrecht: Ein Viertel kann eine Untersuchung erzwingen, ohne die Mehrheit zu fragen. Es setzt aber voraus, dass sich ein Viertel findet, das sie will. Die Regierungsfraktionen erreichen das Viertel — sie werden es gegen sich selbst nicht nutzen. Die Opposition will es und erreicht es nicht ohne die AfD. So läuft ein Recht leer, ohne dass darüber je abgestimmt wurde.",
+
+  // --- die Matrix ---
+  "inquiry.matrix.title": "Wer mit wem nicht",
+  "inquiry.matrix.subtitle":
+    "Erklärte Ausschlüsse zwischen den Fraktionen. Eine gepflegte politische Angabe — kein Bundestagsdatensatz.",
+  "inquiry.matrix.legendRuledOut": "Zusammenarbeit ausgeschlossen",
+  "inquiry.matrix.legendOpen": "nicht ausgeschlossen",
+  "inquiry.matrix.legendSelf": "dieselbe Fraktion",
+  "inquiry.matrix.cellRuledOut": "{a} und {b}: Zusammenarbeit ausgeschlossen",
+  "inquiry.matrix.cellOpen": "{a} und {b}: kein erklärter Ausschluss",
+
+  // Der wichtigste String der Seite, und der einzige, der die Prämisse der
+  // Website einschränkt: Sitzzahlen sind belegt, diese Tabelle ist es nicht.
+  // Deshalb steht er über der Matrix, nicht darunter, und in voller Stärke.
+  "inquiry.maintainedNotice":
+    "Von Bundestracker gepflegt, nicht aus amtlichen Daten: Welche Fraktion eine Zusammenarbeit mit welcher ausgeschlossen hat, steht in keinem Datensatz des Bundestages. Diese Tabelle beruht auf öffentlichen Erklärungen — Parteitagsbeschlüssen und wiederholten Festlegungen — und kann sich ändern. Die Sitzzahlen auf dieser Seite sind amtlich belegt; die Ausschlüsse sind es nicht.",
+  "inquiry.maintainedAsOf": "Stand: {date}",
+  // Was bewusst *nicht* in der Tabelle steht. Eine gepflegte Angabe ist nur
+  // dann etwas wert, wenn sie auch schweigt, wo der Beleg dünn ist.
+  "inquiry.maintainedOmissions":
+    "Nicht als Ausschluss geführt: das Verhältnis von SPD und Linke. Ein förmlicher Unvereinbarkeitsbeschluss besteht auf Bundesebene nicht mehr, und es gibt Koalitionen in den Ländern — was bleibt, ist Zurückhaltung, keine erklärte Sperre. Das BSW ist nicht aufgeführt, weil es diesem Bundestag nicht angehört und damit keine Sitze einbringen kann.",
+
+  // --- der Erklärtext ---
+  "inquiry.explainer.title": "Was ist ein Untersuchungsausschuss?",
+  "inquiry.explainer.what":
+    "Ein Untersuchungsausschuss ist das schärfste Aufklärungsinstrument des Bundestages. Er untersucht einen konkreten Vorgang — ein Regierungshandeln, eine Affäre, eine Beschaffung — und legt am Ende einen Bericht vor.",
+  "inquiry.explainer.quarterTitle": "Warum ein Viertel",
+  "inquiry.explainer.quarter":
+    "Art. 44 Abs. 1 GG verpflichtet den Bundestag, auf Antrag eines Viertels seiner Mitglieder einen Untersuchungsausschuss einzusetzen. „Verpflichtet“ ist das entscheidende Wort: Die Mehrheit kann die Einsetzung nicht verhindern. Deshalb ist das Viertel die einzige Zahl, auf die es ankommt — und deshalb ist es ein Recht der Opposition, nicht ein Verfahren der Mehrheit.",
+  "inquiry.explainer.powersTitle": "Welche Befugnisse er hat",
+  "inquiry.explainer.powers":
+    "Er kann Zeuginnen und Zeugen laden und unter Wahrheitspflicht vernehmen, die Vorlage von Akten der Bundesregierung verlangen und Sachverständige beauftragen. Die Beweiserhebung folgt sinngemäß der Strafprozessordnung; ein Viertel der Ausschussmitglieder kann Beweiserhebungen auch gegen die Ausschussmehrheit durchsetzen.",
+  "inquiry.explainer.limitsTitle": "Wo seine Grenzen liegen",
+  "inquiry.explainer.limits":
+    "Er spricht kein Urteil und verhängt keine Strafe. Sein Ergebnis ist ein Bericht — die Wirkung liegt in der Öffentlichkeit der Beweisaufnahme und im Zugang zu Unterlagen, die sonst niemand sähe. Die Mehrheit kann die Einsetzung nicht verhindern, den Bericht aber mit eigener Bewertung versehen.",
+  "inquiry.explainer.mattersTitle": "Warum das hier steht",
+  "inquiry.explainer.matters":
+    "Ein Minderheitenrecht wird nicht abgeschafft, indem man dagegen stimmt. Es läuft leer, wenn sich die nötige Minderheit nicht bilden kann. Diese Seite rechnet nur nach, ob sie sich bilden könnte — die Sitzzahlen sind amtlich, die erklärten Ausschlüsse sind gepflegt, und beide stehen getrennt.",
+
+  // Verweise. Der Bogen zeigt dieselben Sitze in derselben Reihenfolge, die
+  // Methodenseite erklärt, was auf dieser Website gepflegt und was gezählt ist.
+  "inquiry.seeSeating": "Sitzverteilung ansehen",
+  "inquiry.seeAbout": "Methodik",
+  // Der Einstieg von der Startseite: eine Frage, die die Seite beantwortet.
+  "inquiry.home.title": "Kann dieser Bundestag einen Untersuchungsausschuss einsetzen?",
+  "inquiry.home.body":
+    "Ein Viertel der Mitglieder genügt — {threshold} von {total} Sitzen. Die Regierungsfraktionen erreichen es mühelos, aber sie untersuchen sich nicht selbst. Die Opposition erreicht es nur mit der AfD, deren Zusammenarbeit alle anderen ausgeschlossen haben.",
+  "inquiry.home.cta": "Das Viertel nachrechnen",
 } as const
 
 /**
@@ -2313,6 +2603,196 @@ const en: Dictionary = {
   "about.questions.body":
     "Errors in the data and objections to the methodology belong in the public repository. Both are welcome: a measure nobody can check is not one.",
   "about.questions.cta": "View the source code",
+
+  // --- "Das Protokoll" — the narrative home page (/home-a) ------------------
+  //
+  // The German is the original here rather than the translation; see the note
+  // on the German block. "The Record" is left untranslated in the title,
+  // because the page is *about* the Bundestag's own Protokoll and the German
+  // word is the thing being named — the subtitle carries the meaning instead.
+  "protokoll.title": "Das Protokoll",
+  "protokoll.lead":
+    "Five chapters about a parliament that publishes its own work — and about what can be measured from it, and what cannot.",
+  "protokoll.skipToData": "Straight to the data",
+  "protokoll.readTheRecord": "Read the record",
+  "protokoll.progressLabel": "Progress through the record",
+  "protokoll.chapterLabel": "Chapter {index}: {title}",
+
+  "protokoll.chapter1Number": "Chapter one",
+  "protokoll.chapter1Title": "One parliament, 630 seats",
+  "protokoll.chapter1Standfirst":
+    "The 21st German Bundestag holds 630 seats — each one a mandate, each mandate a person voting on behalf of some 60 million eligible voters. That is what this site is about.",
+  "protokoll.chapter1Note":
+    "The size of each parliamentary group is backed by official records; the position of any single seat on the arc is not — the Bundestag publishes no machine-readable seating plan.",
+  "protokoll.chapter1MandateNote":
+    "The arc counts mandates, not seats occupied at one time: when a member leaves and a replacement arrives, one seat carries two mandates within an electoral period. That is why the groups sum to more than the Bundestag's 630 seats.",
+
+  "protokoll.chapter2Number": "Chapter two",
+  "protokoll.chapter2Title": "What it does is public",
+  "protokoll.chapter2Standfirst":
+    "Every motion, every speech, every named vote and every written question is recorded and published as open data. This site adds nothing — it counts what the record already says.",
+
+  "protokoll.chapter3Number": "Chapter three",
+  "protokoll.chapter3Title": "How we measure",
+  "protokoll.chapter3Standfirst":
+    "Seven quantities, each with a weight, summed into one number. The weighting is a choice — so it is stated here rather than disappearing behind the result.",
+  "protokoll.chapter3Collapse":
+    "Seven components, one number — and it can be taken apart again at any time.",
+  "protokoll.chapter3Example": "Worked example, using the default weightings",
+  "protokoll.chapter3Limits":
+    "Three limits remain whatever the weighting: voting participation covers named ballots only, committee data exists for the current electoral period only, and speeches are counted by words rather than by turns. A low figure means “little recorded”, never “little done”.",
+
+  "protokoll.chapter4Number": "Chapter four",
+  "protokoll.chapter4Title": "Who is active?",
+  "protokoll.chapter4Standfirst":
+    "Both ends of the same ranking, side by side. A tracker that publishes only the top is publishing a highlight reel — not a measurement anyone can check.",
+
+  "protokoll.chapter5Number": "Chapter five",
+  "protokoll.chapter5Title": "What happened today",
+  "protokoll.chapter5Standfirst":
+    "The chamber in motion: the most recent named ballots and the latest entries in the record. This page updates itself as the nightly sweep loads new data.",
+
+  "protokoll.outroTitle": "The whole record",
+  "protokoll.outroLead":
+    "Every figure on this page can be traced back to the document it came from.",
+
+  // --- the opening animation ("630 Sitze") ----------------------------------
+  "protokoll.splashLabel": "Opening sequence",
+  "protokoll.splashSkip": "Skip",
+  "protokoll.splashCounting": "630 seats",
+
+  "homeC.claimIntro":
+    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
+  "homeC.claimStats":
+    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
+  "homeC.claimActivity":
+    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
+  "homeC.claimParties":
+    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
+  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
+
+  "homeC.skipToData": "Straight to the data",
+  "homeC.heroPledge":
+    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
+
+  // --- committee of inquiry: the quorum ------------------------------------
+  //
+  // "Untersuchungsausschuss" is kept as the German term in the nav and
+  // explained in the body, rather than translated to "committee of inquiry"
+  // and left to stand alone. It is the name of a specific constitutional
+  // instrument under Art. 44 GG, and a reader who meets the English phrase
+  // here and the German one everywhere else in the coverage has to work out
+  // that they are the same thing. The subtitle gives the English gloss.
+
+  "nav.inquiry": "Inquiry quorum",
+
+  "inquiry.title": "Committee of inquiry — the quarter",
+  "inquiry.subtitle":
+    "A quarter of the Bundestag's members can compel a committee of inquiry (Untersuchungsausschuss). Which parliamentary groups together reach that quarter — and which combinations have been publicly ruled out.",
+
+  "inquiry.lead":
+    "A committee of inquiry is a minority right — it is aimed at the government. The governing groups clear the quarter easily; they are not the question. What matters is whether the opposition reaches it. It does so only together with the AfD, whose cooperation every other group has ruled out.",
+
+  "inquiry.threshold.title": "The threshold",
+  "inquiry.threshold.seats": "Seats in the Bundestag",
+  "inquiry.threshold.needed": "Signatures required",
+  "inquiry.threshold.rule": "A quarter of the members",
+  "inquiry.threshold.explainer":
+    "{threshold} of {total} mandates. Art. 44(1) of the Basic Law says “a quarter of its members” — where a quarter falls between two whole numbers it rounds up, because {below} members are fewer than a quarter.",
+
+  "inquiry.groups.title": "The groups and their seats",
+  "inquiry.groups.subtitle":
+    "Counted from the roster of the current electoral period — the only seating figure that is officially derivable.",
+  "inquiry.groups.column.group": "Group",
+  "inquiry.groups.column.seats": "Seats",
+  "inquiry.groups.column.share": "Share",
+  "inquiry.groups.column.toThreshold": "To the quarter",
+  "inquiry.groups.column.role": "Role",
+  "inquiry.groups.column.ruledOut": "Cooperation ruled out with",
+  "inquiry.groups.short": "−{count}",
+  "inquiry.groups.reachesAlone": "reaches it alone",
+  "inquiry.groups.noneDeclared": "none",
+  "inquiry.groups.notABloc": "not a bloc",
+  "inquiry.groups.notABlocNote":
+    "Unaffiliated members count toward the total from which the quarter is calculated. They do not appear in the combinations below: “the unaffiliated” is a residual category of individual members, not a bloc that files a joint motion.",
+
+  "inquiry.combos.title": "Which combinations reach the quarter",
+  "inquiry.combos.subtitle":
+    "Every grouping of one, two or three parliamentary groups. The seat totals are counted; whether a form of cooperation has been ruled out is a maintained figure.",
+  "inquiry.combos.column.combination": "Combination",
+  "inquiry.combos.column.seats": "Seats",
+  "inquiry.combos.column.share": "Share",
+  "inquiry.combos.column.status": "Status",
+  "inquiry.combos.showAll": "Also show combinations below the threshold",
+  "inquiry.combos.showReaching": "Show only combinations at or above the threshold",
+  "inquiry.combos.empty": "No combination in this selection.",
+  "inquiry.combos.countReaching": "{count} of {total} combinations reach the quarter.",
+
+  "inquiry.status.viable": "possible",
+  "inquiry.status.blocked": "ruled out",
+  "inquiry.status.short": "too small",
+  "inquiry.status.shortBy": "{count} seats short",
+  "inquiry.status.blockedBy": "{a} has ruled out cooperation with {b}",
+  "inquiry.status.viableLabel": "Reaches the quarter, no declared exclusion",
+
+  // --- the two scopes ---
+  "inquiry.scope.chamber": "Whole chamber",
+  "inquiry.scope.chamberNote":
+    "All groups counted together. Here the quarter is reachable several ways — the governing groups alone clear it comfortably. This scope does not answer the question that matters.",
+  "inquiry.scope.opposition": "Opposition only",
+  "inquiry.scope.oppositionNote":
+    "Only the groups outside the government. A committee of inquiry is aimed at the government, so this is the scope in which the number means something.",
+  "inquiry.scope.oppositionSeats": "Opposition seats",
+  "inquiry.scope.unavailable":
+    "Which groups formed the government in this electoral period is not recorded. The opposition scope is therefore omitted rather than guessed.",
+  "inquiry.scope.lock":
+    "The opposition holds {oppositionSeats} of {total} seats — well above the quarter. Without the AfD, {withoutAfd} seats remain, {gap} below the threshold. The AfD alone reaches {afd} and misses it by {afdGap}.",
+
+  "inquiry.result.title": "The result",
+  "inquiry.result.none":
+    "None of the {reaching} opposition combinations that reach the quarter is free of a declared exclusion. The largest grouping without one stays {shortfall} seats below the threshold.",
+  "inquiry.result.some":
+    "{count} opposition combination(s) reach the quarter without any of the groups involved having ruled out the cooperation.",
+  "inquiry.result.conclusion":
+    "The power of inquiry is a minority right: a quarter can compel an investigation without asking the majority. It does, however, require that a quarter which wants one can be assembled. The governing groups reach the quarter — and will not use it against themselves. The opposition wants it and cannot reach it without the AfD. That is how a right runs empty without anyone ever having voted it down.",
+
+  "inquiry.matrix.title": "Who will not work with whom",
+  "inquiry.matrix.subtitle":
+    "Declared exclusions between the groups. A maintained political figure — not a Bundestag dataset.",
+  "inquiry.matrix.legendRuledOut": "cooperation ruled out",
+  "inquiry.matrix.legendOpen": "not ruled out",
+  "inquiry.matrix.legendSelf": "same group",
+  "inquiry.matrix.cellRuledOut": "{a} and {b}: cooperation ruled out",
+  "inquiry.matrix.cellOpen": "{a} and {b}: no declared exclusion",
+
+  "inquiry.maintainedNotice":
+    "Maintained by Bundestracker, not sourced from official data: which group has ruled out cooperation with which appears in no Bundestag dataset. This table rests on public declarations — party congress resolutions and repeated commitments — and can change. The seat counts on this page are officially backed; the exclusions are not.",
+  "inquiry.maintainedAsOf": "As of: {date}",
+  "inquiry.maintainedOmissions":
+    "Deliberately not recorded as an exclusion: the relationship between the SPD and Die Linke. The federal incompatibility resolution no longer stands, and state-level coalitions exist — what remains is reluctance, not a declared bar. The BSW is absent because it holds no seats in this Bundestag and so has none to contribute.",
+
+  "inquiry.explainer.title": "What is an Untersuchungsausschuss?",
+  "inquiry.explainer.what":
+    "A committee of inquiry is the Bundestag's sharpest instrument of scrutiny. It investigates one specific matter — an act of government, an affair, a procurement — and ends by publishing a report.",
+  "inquiry.explainer.quarterTitle": "Why a quarter",
+  "inquiry.explainer.quarter":
+    "Art. 44(1) of the Basic Law obliges the Bundestag to set up a committee of inquiry on the motion of a quarter of its members. “Obliges” is the decisive word: the majority cannot prevent it. That is why the quarter is the only number that matters — and why this is an opposition right rather than a majority procedure.",
+  "inquiry.explainer.powersTitle": "What powers it carries",
+  "inquiry.explainer.powers":
+    "It can summon witnesses and examine them under a duty of truthfulness, require the federal government to produce files, and commission expert evidence. Evidence is taken by analogy to criminal procedure; a quarter of the committee's own members can force evidence to be taken even against the committee majority.",
+  "inquiry.explainer.limitsTitle": "Where its limits are",
+  "inquiry.explainer.limits":
+    "It passes no judgment and imposes no penalty. Its output is a report — the effect lies in the public taking of evidence and in access to documents nobody else would see. The majority cannot prevent the committee, but it can attach its own assessment to the report.",
+  "inquiry.explainer.mattersTitle": "Why this page exists",
+  "inquiry.explainer.matters":
+    "A minority right is not abolished by voting against it. It runs empty when the necessary minority cannot form. This page only does the arithmetic on whether it could — the seat counts are official, the declared exclusions are maintained, and the two are kept apart.",
+
+  "inquiry.seeSeating": "View the seating map",
+  "inquiry.seeAbout": "Methodology",
+  "inquiry.home.title": "Can this Bundestag establish a committee of inquiry?",
+  "inquiry.home.body":
+    "A quarter of the members is enough — {threshold} of {total} seats. The governing groups clear it easily, but they do not investigate themselves. The opposition reaches it only with the AfD, whose cooperation every other group has ruled out.",
+  "inquiry.home.cta": "Check the arithmetic",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }
