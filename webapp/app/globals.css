@@ -744,6 +744,214 @@
   }
 }
 
+/* --- the sitting week ("Sitzungswoche", /home-b) ----------------------------
+ *
+ * The narrative home page's motion: the chamber arriving, chapters revealing as
+ * they are reached, the background drifting, and the seal being struck while the
+ * first queries are in flight. components/home-sitzungswoche/ documents what
+ * each piece is; this is only how it moves.
+ *
+ * ## The same discipline as the hero crest above, and for the same reason
+ *
+ * Every rule outside `@media (prefers-reduced-motion: no-preference)` is the
+ * *finished* state — the chamber seated, the chapters at full opacity, the seal
+ * complete. The media query adds the arriving. Written this way round because
+ * the inverse freezes a reduced-motion reader on the animation's *first* frame:
+ * an empty chamber and a page of invisible paragraphs. §9 of the design
+ * research puts it plainly — reduced motion is the resting state, not a
+ * disabled one.
+ *
+ * That is also why the reveal below is CSS rather than a `useInView` opacity
+ * prop. A JavaScript reveal has to *decide* to skip itself under reduced
+ * motion, and the decision is one `if` away from being wrong; a CSS reveal
+ * whose base state is "revealed" cannot be wrong, because the animation is the
+ * only thing the media query withholds.
+ *
+ * ## Only `transform` and `opacity`, with one deliberate exception
+ *
+ * Both composite off the main thread, which is the rule app/globals.css already
+ * states for the crest. The exception is `fill` on the seat dots: recolouring
+ * the chamber between chapters is the whole idea of this page, and there is no
+ * transform that changes a colour. It repaints without reflowing, and it is
+ * bounded — 630 dots, one property, on a transition rather than a loop.
+ */
+@layer components {
+  /* One seat. The finished state is *seated*: in place, full size, opaque. */
+  .sitzung-seat {
+    opacity: 1;
+    transform: scale(1);
+    /* The recolouring between chapters. Long enough to read as the chamber
+     * changing its mind rather than as a cut, short enough that a reader
+     * scrolling briskly is not watching a colour catch up with them.
+     *
+     * `transform-origin` is set per dot by the component, so a seat grows from
+     * its own centre rather than from the arc's — without it the chamber
+     * inflates from the podium and the outer rows arrive from off-screen. */
+    transition: fill 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* A chapter's text. Finished: in place and readable. */
+  .sitzung-reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The order-paper grid drifting behind the page.
+   *
+   * Two hairline gradients at 3 % rather than an image: it costs no request, it
+   * takes the theme's ink in both modes, and at this opacity it reads as laid
+   * paper rather than as a grid. The drift is a `transform` on the layer, set
+   * from scroll progress by the component — declared here at rest so a
+   * reduced-motion reader gets the texture without the movement.
+   *
+   * `--sitzung-paper-drift` is the component's one input. It defaults to 0, so
+   * the layer is correct before any JavaScript has run and stays correct if
+   * none ever does. */
+  .sitzung-paper {
+    --sitzung-paper-drift: 0px;
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklch, var(--foreground) 3%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklch, var(--foreground) 3%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 2.5rem 2.5rem;
+    transform: translate3d(0, var(--sitzung-paper-drift), 0);
+  }
+
+  /* The seal, struck. Finished: ring closed, eagle present, no sheen. */
+  .sitzung-seal-ring {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+
+  .sitzung-seal-mark {
+    opacity: 1;
+  }
+
+  /* The gold pass across the seal. Parked off-canvas at rest, for the reason
+   * `hero-flag-sheen` is: a no-motion reader should get a clean seal, not a
+   * permanent bright streak across the middle of it. */
+  .sitzung-seal-sheen {
+    background-image: linear-gradient(
+      105deg,
+      transparent 42%,
+      color-mix(in oklch, var(--gold-brand) 55%, transparent) 50%,
+      transparent 58%
+    );
+    background-size: 260% 100%;
+    background-repeat: no-repeat;
+    background-position: 150% 0;
+  }
+
+  /* The splash itself, leaving. `AnimatePresence` would be the framer-motion
+   * way and is not used: this element is rendered before any chapter and its
+   * only job is to stop existing, which an exit animation makes into a piece of
+   * state that can get stuck. A fade on unmount-by-class cannot. */
+  .sitzung-splash {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @layer components {
+    /* Seats arrive from the centre outward. The stagger is per dot, set by the
+     * component as a custom property, because 630 nth-child rules is not a
+     * stylesheet — see components/home-sitzungswoche/chamber.tsx for why the
+     * delay is capped rather than proportional to the index.
+     *
+     * `backwards` so a dot is invisible during its own delay rather than
+     * appearing, waiting, then animating. */
+    .sitzung-seat {
+      animation: sitzung-seat-in 520ms cubic-bezier(0.22, 1, 0.36, 1) var(--sitzung-seat-delay, 0ms)
+        backwards;
+    }
+
+    /* The chapter reveal. Driven by `data-revealed`, which the component sets
+     * from an `IntersectionObserver` — a ratchet, so a chapter never un-reveals
+     * on scroll-up, which is the flicker §3 of the research warns about.
+     *
+     * 12 px, not 40: the research's measured reference for a civic register is
+     * "fast and small" (KERN's own utilities are 150–500 ms), and a paragraph
+     * that travels far enough to be watched is a paragraph the reader waits
+     * for. */
+    .sitzung-reveal[data-revealed="false"] {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .sitzung-reveal {
+      transition:
+        opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* The seal being struck: the ring draws itself on, the eagle fades in
+     * behind it, one gold pass crosses. ~500 ms end to end, which is the
+     * budget §6 sets and well inside its 900 ms ceiling.
+     *
+     * The ring leads and the eagle trails by 220 ms, which is what makes it
+     * read as a seal being *struck* — border first, then the device — rather
+     * than as two things fading in together. */
+    .sitzung-seal-ring {
+      animation: sitzung-seal-draw 460ms cubic-bezier(0.65, 0, 0.35, 1) both;
+    }
+
+    .sitzung-seal-mark {
+      animation: sitzung-seal-mark-in 320ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both;
+    }
+
+    .sitzung-seal-sheen {
+      animation: sitzung-seal-sheen 520ms ease-out 300ms both;
+    }
+
+    .sitzung-splash[data-leaving="true"] {
+      animation: sitzung-splash-out 260ms ease-out both;
+    }
+  }
+}
+
+@keyframes sitzung-seat-in {
+  from {
+    opacity: 0;
+    /* Grows into place rather than sliding: a dot that travels has a direction,
+     * and 630 dots travelling in 630 directions is confetti. */
+    transform: scale(0.4);
+  }
+}
+
+@keyframes sitzung-seal-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes sitzung-seal-mark-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sitzung-seal-sheen {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@keyframes sitzung-splash-out {
+  to {
+    opacity: 0;
+  }
+}
+
 /* --- scrollable strips ------------------------------------------------------
  *
  * A horizontal strip that scrolls without showing a scrollbar, and that lands

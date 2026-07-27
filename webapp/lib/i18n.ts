@@ -649,6 +649,62 @@ const de = {
   "home.feedTitle": "Zuletzt geschehen",
   "home.showAll": "Alle ansehen",
 
+  // --- /home-b — "Sitzungswoche" ------------------------------------------
+  //
+  // The narrative home page: a sitting week, read as the chamber fills. Five
+  // chapters, declared in lib/sitzungswoche.ts, each with a title, a lead
+  // sentence and a paragraph.
+  //
+  // The register is the one the rest of this dictionary uses and the one the
+  // federal sites use — plain, declarative, and careful about what the data
+  // does not say. Two things it deliberately is not: it does not address the
+  // reader as "du", and it makes no claim the sections underneath cannot back.
+  // Every chapter that could be read as more than its evidence carries a
+  // caveat, and those are reused from the keys that already state them rather
+  // than reworded here.
+  "homeB.title": "Eine Sitzungswoche",
+  "homeB.lead":
+    "Vier Tage im Plenarsaal, wie die offenen Daten sie festhalten — vom Einzug der Fraktionen bis zum Eintrag im Protokoll.",
+  // The skip affordance. "Direkt zu den Daten" rather than "Überspringen": it
+  // says where it goes, not what it avoids, which is what a reader who has read
+  // the story once is actually looking for.
+  "homeB.skipToData": "Direkt zu den Daten",
+  "homeB.skipToDataLabel": "Erzählung überspringen und direkt zu den Zahlen",
+  // The pinned chamber's caption. A `figcaption` rather than an `aria-label` on
+  // the SVG, so it serves a sighted reader too: the colour mode is the one
+  // thing the picture changes between chapters and cannot itself say.
+  "homeB.chamberCaption": "{count} Sitze — eingefärbt nach {mode}",
+  // Chapter 1 — the chamber fills. The §9 warning belongs here above all: this
+  // is the moment a reader takes a dot for a named member's actual chair.
+  "homeB.arrivalTitle": "Der Saal füllt sich",
+  "homeB.arrivalLead": "630 Mandate, sechs Fraktionen, eine Sitzordnung nach Größe.",
+  "homeB.arrivalBody":
+    "Eine Sitzungswoche beginnt damit, dass die Fraktionen ihre Plätze einnehmen. Wie viele Sitze jede von ihnen hält, ist amtlich belegt und aus dem Abgeordnetenverzeichnis abzählbar — wer wo sitzt, ist es nicht.",
+  // Chapter 2 — a bill is tabled. Coalition colouring, because that is the
+  // division a tabled bill is read against.
+  "homeB.tabledTitle": "Eine Vorlage wird eingebracht",
+  "homeB.tabledLead": "Anträge, Gesetzentwürfe, Anfragen — der Stoff der Woche.",
+  "homeB.tabledBody":
+    "Jede Vorlage trägt die Namen derer, die sie eingebracht haben. Das ist die erste Spur, die parlamentarische Arbeit in den offenen Daten hinterlässt — und die einzige, die vollständig ist, weil eine Drucksache ohne Urheber nicht existiert.",
+  // Chapter 3 — the ballot. The chamber shows participation rather than the
+  // result: it is drawn from bloc sizes, so it cannot know how a named member
+  // voted, and painting it as though it did is the one claim §9 forbids.
+  "homeB.ballotTitle": "Es wird abgestimmt",
+  "homeB.ballotLead": "Namentlich, und damit nachvollziehbar bis zum einzelnen Mandat.",
+  "homeB.ballotBody":
+    "Die namentliche Abstimmung ist die Ausnahme im Bundestag, nicht die Regel — und zugleich die einzige Abstimmungsform, für die das Verhalten jedes einzelnen Mandats veröffentlicht wird. Der Saal zeigt hier die Teilnahmequote; wie eine Fraktion tatsächlich votiert hat, steht in den Balken daneben.",
+  // Chapter 4 — the record is written.
+  "homeB.recordTitle": "Das Protokoll entsteht",
+  "homeB.recordLead": "Reden, Ausschussarbeit, Anfragen — Zeile für Zeile.",
+  "homeB.recordBody":
+    "Was im Saal gesagt und getan wird, erscheint als Eintrag: im stenografischen Protokoll, in der Drucksachenliste, im Ausschussbericht. Der Aktivitätswert summiert genau diese Einträge — nicht die Arbeit, sondern ihre veröffentlichte Spur.",
+  // Chapter 5 — the period accumulates. Committee work closes the week
+  // deliberately: it is the part of the job that leaves the least trace.
+  "homeB.periodTitle": "Und über die Wahlperiode",
+  "homeB.periodLead": "Aus einzelnen Wochen wird ein Beitragsdiagramm.",
+  "homeB.periodBody":
+    "Eine Woche sagt wenig, vier Jahre sagen mehr. Über die Wahlperiode hinweg zeigt sich, wo ein Mandat seinen Schwerpunkt setzt — im Plenum, im Ausschuss oder in der schriftlichen Anfrage.",
+
   "footer.dataSource": "Datenquelle",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",
   "footer.sourceCode": "Quellcode",
@@ -1420,6 +1476,40 @@ const en: Dictionary = {
   "home.latestVotesTitle": "Latest named votes",
   "home.feedTitle": "Latest activity",
   "home.showAll": "Show all",
+
+  // --- /home-b — "Sitzungswoche" ---
+  //
+  // "Sitzungswoche" is kept untranslated in the title below and glossed in the
+  // lead, the way this dictionary already keeps "Fraktion" and "Wahlperiode":
+  // it is the parliament's own term for the thing, "sitting week" is not
+  // idiomatic English for it, and an English reader of a Bundestag tracker is
+  // better served by the word they will meet everywhere else on the site.
+  "homeB.title": "A sitting week",
+  "homeB.lead":
+    "Four days in the chamber, as the open data records them — from the groups taking their seats to the entry in the record.",
+  "homeB.skipToData": "Straight to the data",
+  "homeB.skipToDataLabel": "Skip the narrative and go straight to the figures",
+  "homeB.chamberCaption": "{count} seats — coloured by {mode}",
+  "homeB.arrivalTitle": "The chamber fills",
+  "homeB.arrivalLead": "630 mandates, six groups, seated by size.",
+  "homeB.arrivalBody":
+    "A sitting week begins with the parliamentary groups taking their places. How many seats each of them holds is officially recorded and countable from the register of members — who sits where is not.",
+  "homeB.tabledTitle": "A motion is tabled",
+  "homeB.tabledLead": "Motions, bills, questions — the substance of the week.",
+  "homeB.tabledBody":
+    "Every paper carries the names of those who brought it. That is the first trace parliamentary work leaves in the open data, and the only one that is complete, because a paper without an author does not exist.",
+  "homeB.ballotTitle": "The vote is taken",
+  "homeB.ballotLead": "By name, and so traceable to the individual mandate.",
+  "homeB.ballotBody":
+    "The named ballot is the exception in the Bundestag rather than the rule — and at the same time the only form of vote for which each individual mandate's position is published. The chamber here shows participation; how a group actually voted is in the bars beside it.",
+  "homeB.recordTitle": "The record is written",
+  "homeB.recordLead": "Speeches, committee work, questions — line by line.",
+  "homeB.recordBody":
+    "What is said and done in the chamber appears as an entry: in the stenographic record, in the list of papers, in the committee report. The activity score adds up exactly those entries — not the work, but its published trace.",
+  "homeB.periodTitle": "And across the electoral period",
+  "homeB.periodLead": "Single weeks become a contributions graph.",
+  "homeB.periodBody":
+    "One week says little; four years say more. Across the electoral period it becomes visible where a mandate puts its weight — in the chamber, in committee, or in the written question.",
 
   "footer.dataSource": "Data source",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",

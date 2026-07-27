@@ -66,6 +66,13 @@ export const PUBLIC_PATHS = [
   // have been redirected to a 404 that looks like a broken route rather than a
   // guard. The filesystem check caught it here; nothing else would have.
   "/search",
+  // The narrative home page, as a candidate for `/`. Not in the nav and
+  // `noindex` — it is a design being looked at rather than a destination — but
+  // public all the same: it is the home page's own content, and a route that
+  // redirects to `/sign-in` cannot be judged against the one it might replace.
+  // Caught by the filesystem check, on the commit that added the page, for the
+  // seventh time.
+  "/home-b",
 ]
 
 export function isPublicPath(pathname: string) {
