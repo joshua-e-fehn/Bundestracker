@@ -33,12 +33,21 @@ export function SyntheticSeatingNotice() {
       // `alert` would have a screen reader interrupt to announce it on arrival
       // as though something had just gone wrong.
       role="note"
-      className="flex gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3.5 text-sm leading-relaxed"
+      // Gold rather than the Tailwind amber this used to carry. Two reasons
+      // beyond palette tidiness: the amber sat one hue away from the brand gold
+      // on a page that is otherwise entirely gold, which reads as a near-miss
+      // rather than as a deliberate warning colour; and `dark:text-amber-500`
+      // was a light-mode-only correction from when dark was the default, so in
+      // light mode the icon was a *darker* amber than in dark mode. `--gold`
+      // clears 4.5:1 in both themes, so the icon needs no variant.
+      //
+      // The body text stays `--foreground` rather than taking the tint. This is
+      // the most important sentence on the page (§9) and it is a paragraph, not
+      // a label: it is read at full contrast, with the gold carrying only the
+      // icon and the frame.
+      className="flex gap-2.5 rounded-lg border border-gold/40 bg-gold/10 p-3.5 text-sm leading-relaxed"
     >
-      <TriangleAlert
-        className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500"
-        aria-hidden="true"
-      />
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-gold" aria-hidden="true" />
       <span>{t("seating.syntheticNotice")}</span>
     </p>
   )

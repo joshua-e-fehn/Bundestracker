@@ -100,8 +100,14 @@ export function FilterChips<Value extends string>({
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors",
               "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              // Gold rather than `--primary` for the selected state. `--primary`
+              // is near-black in light mode, so an active chip was a grey chip
+              // beside inactive grey chips — the one control on the feed whose
+              // whole job is to show what is on. Gold is the site's accent and
+              // is unmistakable against the neutral row. The `X` and
+              // `aria-pressed` still carry the state without colour.
               active
-                ? "border-primary/40 bg-primary/10 text-foreground"
+                ? "border-gold/50 bg-gold/10 text-foreground"
                 : "border-border text-muted-foreground hover:bg-muted",
             )}
           >

@@ -471,13 +471,38 @@ const RAMP = [
  */
 export const NO_DATA_COLOR = "var(--muted)"
 
-/** Coalition colours. Government reads as the primary accent and opposition as a
- * neutral outline; `unknown` shares `NO_DATA_COLOR`, because an unrecorded
- * coalition is missing data and not a third bloc. */
+/**
+ * Coalition colours.
+ *
+ * Government takes the brand gold at full strength; opposition takes a plain
+ * neutral. `unknown` shares `NO_DATA_COLOR`, because an unrecorded coalition is
+ * missing data and not a third bloc.
+ *
+ * These used to be `--chart-4` and `--chart-2`, two steps of the *same*
+ * sequential ramp the continuous modes use — which is a category error the
+ * legend made visible: government and opposition are opposed categories, not
+ * more and less of one quantity, so painting them as two shades of one hue said
+ * the government was simply a *higher* version of the opposition. It also made
+ * this mode's two swatches indistinguishable from two arbitrary steps of the
+ * score ramp one tab away.
+ *
+ * `--gold-brand` rather than `--gold`: these are 6 px filled circles carrying no
+ * text, which is the fill tier's case (see app/globals.css). The neutral is
+ * `--muted-foreground` rather than `--muted` so that opposition stays clearly
+ * distinct from `unknown`, which is `--muted` — with 630 dots at this size, two
+ * neighbouring greys would collapse into one bloc.
+ */
 const COALITION_COLORS: Record<CoalitionRole, string> = {
-  government: "var(--chart-4)",
-  opposition: "var(--chart-2)",
+  government: "var(--gold-brand)",
+  opposition: "var(--muted-foreground)",
   unknown: NO_DATA_COLOR,
+}
+
+/** The colour for one coalition role. Exported so components/seating-legend.tsx
+ * reads the same table the map does — it used to repeat the two literals, which
+ * is how a legend comes to name a colour the chart no longer uses. */
+export function coalitionColor(role: CoalitionRole): string {
+  return COALITION_COLORS[role]
 }
 
 /** Everything about one seat that any colour mode might read. Deliberately the

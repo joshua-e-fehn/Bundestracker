@@ -83,9 +83,15 @@ function heatmapWindow(): { from: string; to: string } {
  * step, and the point of the strip is comparing an MP with themselves over time.
  * The steps map onto `--chart-1…5`, a single-hue ramp in app/globals.css, so
  * intensity reads as "more" rather than as a different kind of thing.
+ *
+ * Zero is `--chart-1`, the ramp's own dimmest step, rather than `bg-muted` —
+ * matching `LEVEL_CLASSES` in components/activity-heatmap.tsx. The two grids
+ * show the same events for the same MP (this one in a card, that one on the
+ * profile), so an empty day has to look the same in both or the card and the
+ * page disagree about a quiet week.
  */
 function intensityClass(count: number): string {
-  if (count <= 0) return "bg-muted"
+  if (count <= 0) return "bg-chart-1"
   if (count === 1) return "bg-chart-2"
   if (count <= 3) return "bg-chart-3"
   if (count <= 6) return "bg-chart-4"

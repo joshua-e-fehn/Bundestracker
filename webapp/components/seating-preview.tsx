@@ -187,7 +187,11 @@ export function SeatingPreview({
         ))}
       </div>
 
-      <span className="flex items-center gap-1 font-medium text-primary text-xs">
+      {/* Gold, not `--primary`: this is a call to action inside a card, and
+          `--primary` is the page's near-black text colour in light mode, so the
+          line read as a caption rather than as a link. The arrow moves on
+          hover, so the affordance does not rest on the colour alone. */}
+      <span className="flex items-center gap-1 font-medium text-gold text-xs">
         {t("home.seatingPreviewCta")}
         <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
       </span>

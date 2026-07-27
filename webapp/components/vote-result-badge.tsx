@@ -29,10 +29,34 @@ const VOTE_LABELS: Record<Vote, TranslationKey> = {
   absent: "vote.absent",
 }
 
+/**
+ * The five positions' badge styles.
+ *
+ * Built from the `--vote-*` tokens rather than from Tailwind's palette, which
+ * is what makes this badge and the bar in components/vote-bar.tsx the same
+ * colour for the same vote — they used to be two independently-chosen greens,
+ * and the bar's abstain segment was gold while this one was yellow.
+ *
+ * The tokens are the *ink* tier: each is solved for 4.5:1 against the page in
+ * both themes (see app/globals.css), so using one as the text colour is safe
+ * and no `dark:` override is needed — the custom property already differs per
+ * theme. That is the whole reason the old `dark:text-green-300` pairs are gone
+ * rather than translated: they existed to undo a light-mode choice that the
+ * token system makes correctly on both sides.
+ *
+ * The background is the same 14 % tint `PartyBadge` and `VoteOutcomeBadge` use,
+ * so a table row carrying a party badge and a vote badge reads at one weight.
+ */
 const VOTE_STYLES: Record<Vote, string> = {
-  yes: "border-green-600/30 bg-green-600/15 text-green-700 dark:text-green-300",
-  no: "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-300",
-  abstain: "border-yellow-500/40 bg-yellow-500/20 text-yellow-800 dark:text-yellow-200",
+  yes: "border-transparent bg-vote-yes/15 text-vote-yes",
+  no: "border-transparent bg-vote-no/15 text-vote-no",
+  abstain: "border-transparent bg-vote-abstain/15 text-vote-abstain",
+  // The two neutrals keep the muted surface rather than taking `--vote-invalid`
+  // and `--vote-absent` as text: those two tokens are *bar-segment* colours,
+  // deliberately low-contrast so an absence recedes in a stacked bar, and a
+  // label painted in them would fail 4.5:1 in both themes. The distinction they
+  // encode is carried here by the word on the badge, which is the same
+  // information without the contrast cost.
   invalid: "border-border bg-muted text-muted-foreground",
   absent: "border-border bg-muted text-muted-foreground",
 }

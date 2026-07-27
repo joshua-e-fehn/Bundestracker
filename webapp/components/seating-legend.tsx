@@ -3,7 +3,13 @@
 import { useMemo } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { partyColor, partyFor, partyLabel } from "@/lib/parties"
-import { NO_DATA_COLOR, type SeatingColorMode, seatingMode, seatingRamp } from "@/lib/seating"
+import {
+  coalitionColor,
+  NO_DATA_COLOR,
+  type SeatingColorMode,
+  seatingMode,
+  seatingRamp,
+} from "@/lib/seating"
 import { cn } from "@/lib/utils"
 
 /**
@@ -80,9 +86,23 @@ export function SeatingLegend({
               />
             ))
           : (
+              // The colours come from `coalitionColor`, not from literals
+              // repeated here. They were literals, and they were the two the map
+              // happened to use at the time — so changing the map's palette
+              // silently left the legend naming the old colours, which is the
+              // one bug a legend can have that makes the chart actively
+              // misleading rather than merely plain.
               [
-                { key: "government", color: "var(--chart-4)", label: t("seating.government") },
-                { key: "opposition", color: "var(--chart-2)", label: t("seating.opposition") },
+                {
+                  key: "government",
+                  color: coalitionColor("government"),
+                  label: t("seating.government"),
+                },
+                {
+                  key: "opposition",
+                  color: coalitionColor("opposition"),
+                  label: t("seating.opposition"),
+                },
                 // Shown always, not only when a seat needs it: its absence would
                 // be the reader's only clue that a period's coalition is
                 // unrecorded, and an absent thing explains nothing.

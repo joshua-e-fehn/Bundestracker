@@ -21,8 +21,25 @@ import { cn } from "@/lib/utils"
  *
  * Colours are deliberately *not* the party palette. A feed row already carries
  * a Fraktion badge, and reusing red or green for an event kind next to it would
- * read as a second political signal. These are the neutral chart tokens plus a
- * hue per kind, chosen only to be distinguishable from each other.
+ * read as a second political signal.
+ *
+ * ## Why every kind is now one gold rather than six hues
+ *
+ * These used to be six unrelated Tailwind hues — sky, violet, emerald, amber,
+ * rose, teal — which is what the header above described as "a hue per kind,
+ * chosen only to be distinguishable from each other". Two things were wrong
+ * with that once the brand palette landed. The colours were outside it
+ * entirely, so a feed row carried six hues the rest of the site never uses. And
+ * the emerald and the rose were close enough to `--vote-yes` and `--vote-no`
+ * that a "vote" event and a "bill" event read as an approval and a rejection
+ * — a political signal from a column that is only naming a document type.
+ *
+ * So the kind is carried by the *icon*, which is already distinct per kind and
+ * survives greyscale, and the tint is one brand gold throughout. That is a
+ * deliberate trade: six hues do distinguish faster at a glance, but they were
+ * distinguishing something that the glyph beside them already says, at the cost
+ * of the two false readings above. `activity` keeps the plain muted surface,
+ * because it is the catch-all bucket rather than a kind of record.
  */
 
 type EventTypeStyle = {
@@ -35,37 +52,19 @@ type EventTypeStyle = {
   labelKey: TranslationKey
 }
 
+/** The shared tint. One constant rather than six copies of the same string, so
+ * the six kinds cannot drift apart again. `text-gold` is the ink tier — these
+ * are 14–18 px glyphs, which is exactly the hairline case app/globals.css says
+ * the fill tier is too light for. */
+const BRAND_TINT = "text-gold bg-gold/10"
+
 export const EVENT_TYPE_STYLES: Record<EventType, EventTypeStyle> = {
-  motion: {
-    Icon: FileText,
-    className: "text-sky-600 bg-sky-500/10 dark:text-sky-400",
-    labelKey: "event.motion",
-  },
-  speech: {
-    Icon: Mic,
-    className: "text-violet-600 bg-violet-500/10 dark:text-violet-400",
-    labelKey: "event.speech",
-  },
-  vote: {
-    Icon: CheckCircle2,
-    className: "text-emerald-600 bg-emerald-500/10 dark:text-emerald-400",
-    labelKey: "event.vote",
-  },
-  question: {
-    Icon: HelpCircle,
-    className: "text-amber-600 bg-amber-500/10 dark:text-amber-400",
-    labelKey: "event.question",
-  },
-  bill: {
-    Icon: FileSignature,
-    className: "text-rose-600 bg-rose-500/10 dark:text-rose-400",
-    labelKey: "event.bill",
-  },
-  committee: {
-    Icon: Users,
-    className: "text-teal-600 bg-teal-500/10 dark:text-teal-400",
-    labelKey: "event.committee",
-  },
+  motion: { Icon: FileText, className: BRAND_TINT, labelKey: "event.motion" },
+  speech: { Icon: Mic, className: BRAND_TINT, labelKey: "event.speech" },
+  vote: { Icon: CheckCircle2, className: BRAND_TINT, labelKey: "event.vote" },
+  question: { Icon: HelpCircle, className: BRAND_TINT, labelKey: "event.question" },
+  bill: { Icon: FileSignature, className: BRAND_TINT, labelKey: "event.bill" },
+  committee: { Icon: Users, className: BRAND_TINT, labelKey: "event.committee" },
   activity: {
     Icon: Activity,
     className: "text-muted-foreground bg-muted",
