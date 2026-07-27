@@ -1,16 +1,14 @@
 "use client"
 
 import { ExternalLinkIcon } from "lucide-react"
+import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
-
-/** Where the data comes from. Linked rather than merely named: the claim that
- * every figure is backed by a Bundestag record is only checkable if the reader
- * can reach the records. */
-const BUNDESTAG_OPEN_DATA_URL = "https://www.bundestag.de/services/opendata"
-
-const REPO_URL = "https://github.com/joshua-e-fehn/Bundestracker"
+// Both URLs used to be file-private constants here, which was right while the
+// footer was the only thing linking out. /about names the same two sources, and
+// two copies of an address are how the two come to disagree. See lib/links.ts.
+import { BUNDESTAG_OPEN_DATA_URL, REPO_URL } from "@/lib/links"
 
 /**
  * Site footer: attribution, source, language, byline.
@@ -36,6 +34,19 @@ export function SiteFooter() {
           </div>
 
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            {/* First, and the only internal link in this row. The disclaimer
+                below states that Bundestrack is not the Bundestag's own; this is
+                where a reader who wants to know what it *is* — and what the
+                figures do and do not measure — goes from any page on the site.
+                `Link` rather than `<a>`: an in-app route, unlike the two
+                outbound links beside it, so it has no external-link icon and
+                does not open a tab. */}
+            <Link
+              href="/about"
+              className="rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {t("nav.about")}
+            </Link>
             <a
               href={BUNDESTAG_OPEN_DATA_URL}
               target="_blank"
