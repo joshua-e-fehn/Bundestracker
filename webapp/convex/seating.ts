@@ -239,6 +239,11 @@ export const getSeatingWithMPs = query({
       fraktion: v.string(),
       party: v.string(),
       constituency: v.union(v.null(), v.string()),
+      /** `BERUF` from Stammdaten — free text, often absent. Carried so the
+       * hover card can say who someone is rather than only how they score;
+       * null where the record has none, which the card renders as an omitted
+       * line rather than as an empty one. */
+      profession: v.union(v.null(), v.string()),
       photoUrl: v.union(v.null(), v.string()),
       score: v.union(
         v.null(),
@@ -286,6 +291,7 @@ export const getSeatingWithMPs = query({
         fraktion: mp?.fraktion ?? seat.faction,
         party: mp?.party ?? "",
         constituency: mp?.constituency ?? null,
+        profession: mp?.profession ?? null,
         photoUrl: mp?.photoUrl ?? null,
         score: score
           ? {

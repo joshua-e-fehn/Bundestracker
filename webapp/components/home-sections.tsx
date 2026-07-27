@@ -1,8 +1,9 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { ArrowRightIcon } from "lucide-react"
+import { ArrowRightIcon, Info } from "lucide-react"
 import Link from "next/link"
+import { useMemo } from "react"
 import { MPCard } from "@/components/mp-card"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -12,6 +13,7 @@ import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { api } from "@/convex/_generated/api"
+import { groupFeedEvents } from "@/lib/feed-grouping"
 import { formatApproximateCount, formatDateShort } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 
@@ -169,26 +171,56 @@ export function SummaryStats({ wahlperiode }: { wahlperiode: number | null | und
   )
 }
 
-// --- top MPs --------------------------------------------------------------
+// --- top and bottom MPs ---------------------------------------------------
 
-/** How many MPs the leaderboard preview shows. */
+/** How many MPs each leaderboard preview shows. */
 const TOP_MP_COUNT = 5
 
-export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+/**
+ * One end of the activity leaderboard.
+ *
+ * Both ends are the same component with `direction` flipped, because they are
+ * the same list read from opposite ends of one ordered index (see
+ * `getRankings`). Two components would be this one copied, and the copy is how
+ * the two columns of the home page come to render at different heights or drop
+ * the heatmap from one of them.
+ *
+ * `caveatKey` is the asymmetry between them, and the only one. The top of a
+ * leaderboard needs no defence; the bottom is read as an accusation, and the
+ * score measures *recorded* activity — so the bottom passes a caveat and the
+ * top does not. Optional rather than defaulted to empty, so the section that
+ * needs one and lacks it is visibly missing something.
+ */
+function ActivityBoard({
+  wahlperiode,
+  direction,
+  headingId,
+  titleKey,
+  subtitleKey,
+  caveatKey,
+}: {
+  wahlperiode: number | null | undefined
+  direction: "asc" | "desc"
+  headingId: string
+  titleKey: TranslationKey
+  subtitleKey: TranslationKey
+  caveatKey?: TranslationKey
+}) {
+  const { t } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const rankings = useQuery(
     api.activityScores.getRankings,
     // `month: null` is the whole-period total, not a missing argument — the
     // monthly rows are the contribution-graph cells. See convex/schema.ts.
-    skip ? "skip" : { wahlperiode, month: null, limit: TOP_MP_COUNT },
+    skip ? "skip" : { wahlperiode, month: null, limit: TOP_MP_COUNT, direction },
   )
 
   return (
-    <section aria-labelledby="top-mps-heading">
+    <section aria-labelledby={headingId} className="flex flex-col">
       <SectionHeading
-        id="top-mps-heading"
-        titleKey="home.topMPsTitle"
-        subtitleKey="home.topMPsSubtitle"
+        id={headingId}
+        titleKey={titleKey}
+        subtitleKey={subtitleKey}
         href="/rankings"
       />
       {rankings === undefined ? (
@@ -205,15 +237,66 @@ export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined
               fraktion={entry.fraktion}
               photoUrl={entry.photoUrl}
               totalScore={entry.totalScore}
-              rank={entry.rank}
-              // Five cards, five calendar queries — bounded, and this is the
-              // section where the product's premise is on display.
+              // No rank number on the ascending board. `getRankings` numbers
+              // its slice from 1 in both directions, so a "1" here would read
+              // as "the least active member in the Bundestag" — a claim about
+              // the whole chamber that a five-row take cannot support, and one
+              // this section's caveat exists to avoid making.
+              rank={direction === "desc" ? entry.rank : undefined}
+              // Ten cards, ten calendar queries — bounded, and this is the
+              // section where the product's premise is on display. The strip
+              // is also what makes a low score legible: a nearly empty band
+              // shows *when* the quiet was, which the number alone does not.
               showHeatmap
             />
           ))}
         </div>
       )}
+      {caveatKey !== undefined && (
+        // Beside the number rather than behind a link, matching how every
+        // leaderboard on /rankings carries its own. `mt-auto` so the caveat
+        // sits at the bottom of the column, keeping the two boards' card rows
+        // aligned with each other rather than pushing this one's up.
+        <p className="mt-auto flex gap-2 pt-3 text-muted-foreground text-xs leading-relaxed">
+          <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          {t(caveatKey)}
+        </p>
+      )}
     </section>
+  )
+}
+
+/** The five highest activity scores of the period. */
+export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+  return (
+    <ActivityBoard
+      wahlperiode={wahlperiode}
+      direction="desc"
+      headingId="top-mps-heading"
+      titleKey="home.topMPsTitle"
+      subtitleKey="home.topMPsSubtitle"
+    />
+  )
+}
+
+/**
+ * The five lowest — the other half of the same claim.
+ *
+ * Shown because a tracker that only publishes the top of its own ranking is
+ * publishing a highlight reel: the premise here is that the measure is
+ * objective and inspectable (AGENTS.md), and a measure whose unflattering end
+ * is hidden cannot be inspected. It comes with the caveat that end requires.
+ */
+export function BottomMPs({ wahlperiode }: { wahlperiode: number | null | undefined }) {
+  return (
+    <ActivityBoard
+      wahlperiode={wahlperiode}
+      direction="asc"
+      headingId="bottom-mps-heading"
+      titleKey="home.bottomMPsTitle"
+      subtitleKey="home.bottomMPsSubtitle"
+      caveatKey="home.bottomMPsCaveat"
+    />
   )
 }
 
@@ -281,7 +364,32 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
   const skip = wahlperiode === null || wahlperiode === undefined
   const feed = useQuery(
     api.activityEvents.getChamberFeed,
-    skip ? "skip" : { wahlperiode, limit: FEED_COUNT },
+    // Over-fetched: `FEED_COUNT` is how many *rows* this card shows, and
+    // grouping turns many events into one row. A Kleine Anfrage signed by forty
+    // members would otherwise be the entire preview — ten rows of one document.
+    // Four times is enough for the common case without turning a ten-row card
+    // into a scan; a group larger than that simply consumes the whole fetch and
+    // the card shows fewer rows, which is honest rather than padded.
+    skip ? "skip" : { wahlperiode, limit: FEED_COUNT * 4 },
+  )
+
+  // Same collapse as the feed page, and the same module — a second grouping
+  // rule here is how the preview and the page it links to come to disagree
+  // about what one entry is. See lib/feed-grouping.ts.
+  const groups = useMemo(
+    () =>
+      groupFeedEvents(
+        (feed ?? []).map(({ event, name, fraktion }) => ({
+          ...event,
+          name,
+          fraktion,
+          // `getChamberFeed` joins the name and group but not the portrait.
+          // Null rather than fetching it: this card renders no avatars, so the
+          // extra field would be read and discarded.
+          photoUrl: null,
+        })),
+      ).slice(0, FEED_COUNT),
+    [feed],
   )
 
   return (
@@ -289,30 +397,41 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
       <SectionHeading id="feed-heading" titleKey="home.feedTitle" href="/feed" />
       {feed === undefined ? (
         <RowSkeletons count={FEED_COUNT} height="h-12" />
-      ) : feed.length === 0 ? (
+      ) : groups.length === 0 ? (
         <EmptyState />
       ) : (
         <Card size="sm" className="gap-0 divide-y divide-border/60 p-0">
-          {feed.map(({ event, name, fraktion }) => (
-            <div key={event.id} className="flex items-start gap-3 px-4 py-3">
+          {groups.map((group) => (
+            <div key={group.id} className="flex items-start gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {/* The first name and a count, not every name: this is a
+                      ten-row preview, and the feed page is where a joint act's
+                      full list belongs. "+ 39 weitere" rather than a rank —
+                      DIP publishes no signing order, so the first name here is
+                      the first the query returned and nothing more. */}
                   <Link
-                    href={`/mps/${encodeURIComponent(event.mpInternalId)}`}
+                    href={`/mps/${encodeURIComponent(group.actors[0].mpInternalId)}`}
                     className="rounded-md font-medium text-sm outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    {name}
+                    {group.actors[0].name}
                   </Link>
-                  <PartyBadge fraktion={fraktion} />
+                  {group.actors.length > 1 ? (
+                    <span className="text-muted-foreground text-xs">
+                      {t("feed.andOthers", { count: group.actors.length - 1 })}
+                    </span>
+                  ) : (
+                    <PartyBadge fraktion={group.actors[0].fraktion} />
+                  )}
                 </div>
-                <p className="mt-1 line-clamp-2 text-muted-foreground text-sm">{event.title}</p>
+                <p className="mt-1 line-clamp-2 text-muted-foreground text-sm">{group.title}</p>
               </div>
               <div className="shrink-0 text-right">
                 <Badge variant="secondary">
-                  {t(EVENT_LABEL_KEYS[event.eventType] ?? "event.activity")}
+                  {t(EVENT_LABEL_KEYS[group.eventType] ?? "event.activity")}
                 </Badge>
                 <div className="mt-1 text-muted-foreground text-xs tabular-nums">
-                  {formatDateShort(event.date, locale)}
+                  {formatDateShort(group.date, locale)}
                 </div>
               </div>
             </div>

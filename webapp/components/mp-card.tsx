@@ -26,21 +26,32 @@ import { cn } from "@/lib/utils"
 /**
  * The mini heatmap's shape.
  *
- * Wide and short, like GitHub's contribution graph read at a glance: 4 rows of
- * 21 days rather than the calendar-accurate 7×12. A card strip is not a
- * calendar — it has no weekday axis, no month labels and no tooltips (the
+ * Wide and short, like GitHub's contribution graph read at a glance: rows of
+ * consecutive days rather than the calendar-accurate 7×12. A card strip is not
+ * a calendar — it has no weekday axis, no month labels and no tooltips (the
  * profile page's `ActivityHeatmap` is the one that is all three), so the 7-row
  * grid was paying a calendar's aspect ratio for none of a calendar's meaning.
  * At 7 rows the strip came out 94 px wide and 54 px tall, a near-square block
- * that read as a texture; at 4 it is a band, which is the shape the eye already
+ * that read as a texture; at 3 it is a band, which is the shape the eye already
  * knows how to scan left-to-right as time.
  *
- * `HEATMAP_DAYS` stays 84 — twelve weeks is still the window, and it divides
- * evenly by 4 — so the same indexed range is read and only the wrapping changes.
+ * ## Why it shrank again
+ *
+ * 4 rows of 21 at `size-2` with 3 px gaps measured 94 × 41 px. That fitted a
+ * full-width card and stopped fitting when the home page put two boards in one
+ * row (app/page.tsx): the strip, the name, the group badge and a fixed-width
+ * score column together overflowed a half-width card, and the strip is the
+ * piece that loses — it is the only one whose job survives being smaller.
+ *
+ * 3 rows of 28 at `size-1.5` with 2 px gaps is 55 × 14 px: 40 % narrower and a
+ * third the height, still legible as a band. `HEATMAP_DAYS` stays 84 — twelve
+ * weeks is still the window, and 84 divides evenly by 3 as it did by 4 — so
+ * the same indexed range is read and only the wrapping changes. Nothing about
+ * the query moves.
  */
 const HEATMAP_DAYS = 84
 
-const HEATMAP_ROWS = 4
+const HEATMAP_ROWS = 3
 
 const HEATMAP_COLUMNS = HEATMAP_DAYS / HEATMAP_ROWS
 
@@ -100,12 +111,12 @@ function ActivityHeatmap({ mpInternalId }: { mpInternalId: string }) {
 
   return (
     <div
-      // `grid-flow-row`, not `-col`: with four rows the columns are no longer
+      // `grid-flow-row`, not `-col`: with three rows the columns are no longer
       // weeks, so filling downward would scatter consecutive days across the
-      // strip. Filling across makes each row a run of 21 consecutive days and
+      // strip. Filling across makes each row a run of 28 consecutive days and
       // time read left to right, which is the only ordering a stripped-down
       // band can claim.
-      className="grid grid-flow-row gap-[3px]"
+      className="grid grid-flow-row gap-[2px]"
       style={{
         gridTemplateRows: `repeat(${HEATMAP_ROWS}, minmax(0, 1fr))`,
         gridTemplateColumns: `repeat(${HEATMAP_COLUMNS}, minmax(0, 1fr))`,
@@ -119,7 +130,7 @@ function ActivityHeatmap({ mpInternalId }: { mpInternalId: string }) {
           key={cell.iso}
           title={`${cell.iso}: ${cell.count}`}
           className={cn(
-            "size-2 rounded-[2px] transition-colors",
+            "size-1.5 rounded-[1px] transition-colors",
             // Undefined means the query has not resolved. Rendering every cell
             // at zero would claim a quiet quarter before knowing.
             days === undefined ? "bg-muted/50" : intensityClass(cell.count),
@@ -198,7 +209,14 @@ export function MPCard({
         </div>
 
         {showHeatmap ? (
-          <div className="hidden shrink-0 sm:block">
+          // `@container`-free and deliberately so: the breakpoint that matters
+          // is the *card's* width, not the viewport's, and these cards now
+          // appear at two widths on one page — full-width in a list, half-width
+          // in the home page's two-column board row (app/page.tsx). `md` is
+          // where the half-width column clears the strip's 55 px plus a name
+          // worth reading; below it the name and the score are what a narrow
+          // card is for.
+          <div className="hidden shrink-0 md:block">
             <ActivityHeatmap mpInternalId={mpInternalId} />
           </div>
         ) : null}
@@ -206,11 +224,26 @@ export function MPCard({
         {totalScore === undefined ? null : (
           // A fixed width, so the scores form a column down the list instead of
           // each card's number sitting wherever its own digit count puts it.
-          <div className="w-20 shrink-0 text-right">
+          // `w-14` rather than `w-20`: `formatScore` gives at most five
+          // characters ("441,5"), so that is all the column needs once the
+          // label below it is gone — see the next comment.
+          //
+          // The label *was* here and is now the `title`. In a half-width card
+          // "Aktivitätswert" is wider than the number it labels, so the column
+          // either grew to fit a word or clipped it — it clipped, and every
+          // card on the home page read "Aktivitätswer". Naming the metric is
+          // the *section heading's* job ("Nach Aktivitätswert in der laufenden
+          // Wahlperiode"), so repeating it under all ten numbers was buying a
+          // layout problem with a word nobody needed twice. The `title` keeps
+          // it reachable on hover; `aria-label` keeps it announced.
+          <div
+            className="w-14 shrink-0 text-right"
+            title={t("mp.activityScore")}
+            aria-label={t("mp.activityScore")}
+          >
             <div className="font-semibold text-base tabular-nums">
               {formatScore(totalScore, locale)}
             </div>
-            <div className="text-[0.7rem] text-muted-foreground">{t("mp.activityScore")}</div>
           </div>
         )}
       </div>

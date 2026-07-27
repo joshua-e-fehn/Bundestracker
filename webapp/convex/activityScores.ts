@@ -356,6 +356,26 @@ export const getRankings = query({
     wahlperiode: v.number(),
     month: v.union(v.null(), v.string()),
     limit: v.optional(v.number()),
+    /**
+     * Which end of the board to read. `"desc"` (the default) is the top;
+     * `"asc"` is the bottom, which the home page shows beside it.
+     *
+     * An argument rather than a second query, because it is one word of
+     * difference against the same index — `by_wahlperiode_and_month_and_totalScore`
+     * is ordered, so both ends are a `.take()` off it and neither reads the
+     * 630 rows in between. A `getBottomRankings` would be this function
+     * copied, and the copy is how the two ends come to disagree about whether
+     * an unscored MP is included.
+     *
+     * ⚠ The two ends are **not** symmetric in what they claim. The top of a
+     * leaderboard needs no caveat; the bottom is read as an accusation, and
+     * the score measures *recorded* activity only — committee deliberation and
+     * constituency work leave almost no machine-readable trace, and a member
+     * holding government office is doing different work rather than less. The
+     * UI must carry that caveat beside the section; `home.bottomMPsCaveat` is
+     * it. This query returns the number, not the reading of it.
+     */
+    direction: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   returns: v.array(
     v.object({
@@ -374,13 +394,18 @@ export const getRankings = query({
       .withIndex("by_wahlperiode_and_month_and_totalScore", (q) =>
         q.eq("wahlperiode", args.wahlperiode).eq("month", args.month),
       )
-      .order("desc")
+      .order(args.direction === "asc" ? "asc" : "desc")
       .take(pageLimit(args.limit, 50))
 
     const ranked = []
     for (const [index, row] of rows.entries()) {
       const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
       ranked.push({
+        // Position within what was asked for, in both directions: read
+        // ascending, rank 1 is the lowest score. Numbering the bottom five
+        // 626…630 would be a claim about the size of the board that this
+        // query — which takes a slice and never counts the rest — cannot
+        // make, and it would be wrong for every MP the sweep has not scored.
         rank: index + 1,
         mpInternalId: row.mpInternalId,
         name: mp.name,

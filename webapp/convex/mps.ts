@@ -147,12 +147,8 @@ export async function requireMandate(
   if (!mp) {
     // Also try without the bt- prefix in case the caller passed a raw
     // Stammdaten ID, and with the bt- prefix in case they passed a raw one.
-    const withPrefix = mpInternalId.startsWith("bt-")
-      ? mpInternalId
-      : `bt-${mpInternalId}`
-    const withoutPrefix = mpInternalId.startsWith("bt-")
-      ? mpInternalId.slice(3)
-      : mpInternalId
+    const withPrefix = mpInternalId.startsWith("bt-") ? mpInternalId : `bt-${mpInternalId}`
+    const withoutPrefix = mpInternalId.startsWith("bt-") ? mpInternalId.slice(3) : mpInternalId
     const alt1 = await findMandate(ctx, withPrefix, wahlperiode)
     if (alt1) return alt1
     const alt2 = await findMandate(ctx, withoutPrefix, wahlperiode)

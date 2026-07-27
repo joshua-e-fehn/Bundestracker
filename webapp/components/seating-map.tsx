@@ -1,11 +1,10 @@
 "use client"
 
 import { Minus, Plus, RotateCcw } from "lucide-react"
-import { useCallback, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SeatTooltip, type SeatTooltipData } from "@/components/seat-tooltip"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { layoutHemicycle, type SeatingColorMode, seatColor, seatingMaxima } from "@/lib/seating"
 import { cn } from "@/lib/utils"
 
@@ -41,6 +40,30 @@ import { cn } from "@/lib/utils"
  * radius stays in user units, so dots keep their relative size and the arc scales
  * as a picture rather than reflowing. `touch-action: none` is what stops a phone
  * scrolling the page while panning.
+ *
+ * ## Hovering a seat, and why this is not `<Tooltip>`
+ *
+ * Each seat used to be its own Radix `Tooltip` root. It reported as broken —
+ * the card appeared on *click*, which also navigated, so it flashed and was
+ * gone — and the reason is structural rather than a missing handler:
+ *
+ *  - **630 tooltip roots share one `TooltipProvider`**, and the provider owns a
+ *    single `isPointerInTransitRef`. Radix sets it while the pointer crosses
+ *    the grace area between a trigger and its open content, and
+ *    `TooltipTrigger`'s `onPointerMove` refuses to open while it is set. With
+ *    seats a few pixels apart the pointer is *always* leaving one trigger as it
+ *    enters the next, so the flag is set far more often than the design
+ *    assumes and the hover open is skipped.
+ *  - **Click still worked**, because `TooltipTrigger`'s `onFocus` calls
+ *    `onOpen()` directly and bypasses the pointer path entirely. That is
+ *    exactly the reported symptom: nothing on hover, a flash on click.
+ *
+ * So the map owns the hover itself. One card, one piece of state, and the
+ * handlers live on the `<svg>` rather than on 630 elements — `pointerover`,
+ * `pointerout`, `focusin` and `focusout` all bubble, so a single listener
+ * covers every seat and the seat layer never re-renders as the pointer moves
+ * across it. Each seat stays a real `<a>`, so middle-click, "open in new tab"
+ * and Enter keep working, and the click still navigates.
  */
 
 export type SeatingMapSeat = SeatTooltipData & {
@@ -53,6 +76,19 @@ export type SeatingMapSeat = SeatTooltipData & {
 const MIN_ZOOM = 1
 const MAX_ZOOM = 6
 const ZOOM_STEP = 1.4
+
+/** How far the hover card sits from the pointer, and from the viewport edge it
+ * would otherwise overhang. */
+const CARD_OFFSET = 16
+
+type HoverState = {
+  seat: SeatingMapSeat
+  /** Viewport coordinates. Read from the pointer (or from the focused seat's
+   * box), so zoom and pan need no special handling — a `getBoundingClientRect`
+   * is already post-transform. */
+  x: number
+  y: number
+}
 
 export function SeatingMap({
   seats,
@@ -68,7 +104,9 @@ export function SeatingMap({
   const { t } = useLocale()
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [hover, setHover] = useState<HoverState | null>(null)
   const dragState = useRef<{ pointerId: number; startX: number; startY: number } | null>(null)
+  const tooltipId = useId()
 
   const layout = useMemo(() => layoutHemicycle(seats.length), [seats.length])
   const maxima = useMemo(() => seatingMaxima(seats), [seats])
@@ -86,6 +124,25 @@ export function SeatingMap({
     })
   }, [seats, layout])
 
+  /**
+   * The seat an event happened on, by the index stamped on its circle.
+   *
+   * `closest` rather than reading `event.target` directly: the target is the
+   * `<circle>`, but a future child of the anchor (a label, a focus ring) would
+   * be the target instead, and a lookup that only handles today's markup breaks
+   * silently when that changes.
+   */
+  const seatAt = useCallback(
+    (target: EventTarget | null): SeatingMapSeat | null => {
+      if (!(target instanceof Element)) return null
+      const element = target.closest("[data-seat-index]")
+      if (element === null) return null
+      const index = Number(element.getAttribute("data-seat-index"))
+      return Number.isInteger(index) ? (placed[index]?.seat ?? null) : null
+    },
+    [placed],
+  )
+
   const resetView = useCallback(() => {
     setZoom(1)
     setPan({ x: 0, y: 0 })
@@ -102,6 +159,9 @@ export function SeatingMap({
   }, [])
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    // A drag is not a hover. Clearing here also covers the touch tap, where the
+    // card would otherwise sit over the chamber until the next tap.
+    setHover(null)
     // Only pan when there is something to pan to.
     if (zoom <= MIN_ZOOM) return
     dragState.current = {
@@ -124,6 +184,74 @@ export function SeatingMap({
     if (dragState.current?.pointerId !== event.pointerId) return
     dragState.current = null
     event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  /**
+   * Pointer entering, moving within, and leaving a seat.
+   *
+   * `pointerover`/`pointerout` rather than `pointerenter`/`pointerleave`: only
+   * the first pair bubbles, which is what lets one listener on the `<svg>`
+   * serve every seat. The move handler tracks the card to the pointer *and*
+   * covers the case where the pointer was already over a seat before this
+   * component could listen — a re-render under a stationary cursor.
+   *
+   * Touch is skipped: a tap navigates, and a card that appears under the finger
+   * on the way there covers the thing being tapped.
+   */
+  function handleSeatOver(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType === "touch" || dragState.current !== null) return
+    const seat = seatAt(event.target)
+    if (seat !== null) setHover({ seat, x: event.clientX, y: event.clientY })
+  }
+
+  function handleSeatMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType === "touch" || dragState.current !== null) return
+    const seat = seatAt(event.target)
+    if (seat !== null) setHover({ seat, x: event.clientX, y: event.clientY })
+  }
+
+  /**
+   * Leaving a seat, or the chamber.
+   *
+   * `relatedTarget` is where the pointer went, so moving from one seat to its
+   * neighbour is not treated as leaving — the `pointerover` on the new seat has
+   * already replaced the card, and clearing here would blank it for a frame.
+   * Null (`pointerout` off the document, or into a non-Element) means gone.
+   */
+  function handleSeatOut(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType === "touch") return
+    if (seatAt(event.relatedTarget) !== null) return
+    setHover(null)
+  }
+
+  /**
+   * Keyboard focus opens the same card.
+   *
+   * `focus`/`blur` are `focusin`/`focusout` in React, so they bubble and the
+   * one listener on the `<svg>` covers all 630 anchors — the same reason the
+   * pointer pair above is `over`/`out`.
+   *
+   * Positioned from the seat's own box rather than from a pointer that may be
+   * somewhere else entirely, and `aria-describedby` is set on the focused
+   * anchor so a screen reader reads the figures rather than only "Sitz von X,
+   * Link". Set imperatively because the alternative is a prop on every seat,
+   * which would re-render all 630 on every focus move — the exact cost the
+   * memoised layer below exists to avoid.
+   */
+  function handleSeatFocus(event: React.FocusEvent<SVGSVGElement>) {
+    const seat = seatAt(event.target)
+    if (seat === null) return
+    const anchor = (event.target as Element).closest("[data-seat-index]")
+    if (anchor === null) return
+    anchor.setAttribute("aria-describedby", tooltipId)
+    const box = anchor.getBoundingClientRect()
+    setHover({ seat, x: box.left + box.width / 2, y: box.bottom })
+  }
+
+  function handleSeatBlur(event: React.FocusEvent<SVGSVGElement>) {
+    const anchor = (event.target as Element).closest?.("[data-seat-index]")
+    anchor?.removeAttribute("aria-describedby")
+    setHover(null)
   }
 
   return (
@@ -183,95 +311,179 @@ export function SeatingMap({
           <svg
             viewBox={`${layout.viewBox.x} ${layout.viewBox.y} ${layout.viewBox.width} ${layout.viewBox.height}`}
             className="h-auto w-full"
+            onPointerOver={handleSeatOver}
+            onPointerMove={handleSeatMove}
+            onPointerOut={handleSeatOut}
+            onFocus={handleSeatFocus}
+            onBlur={handleSeatBlur}
           >
             <title>{t("seating.mapLabel")}</title>
-            {placed.map(({ seat, position }) => (
-              <Seat
-                key={seat.mpInternalId}
-                seat={seat}
-                cx={position.x}
-                cy={position.y}
-                r={layout.seatRadius}
-                fill={seatColor(
-                  {
-                    fraktion: seat.fraktion,
-                    totalScore: seat.totalScore,
-                    voteParticipationRate: seat.voteParticipationRate,
-                    committeeCount: seat.committeeCount,
-                  },
-                  mode,
-                  wahlperiode,
-                  maxima,
-                )}
-                mode={mode}
-              />
-            ))}
+            <SeatLayer
+              placed={placed}
+              radius={layout.seatRadius}
+              maxima={maxima}
+              mode={mode}
+              wahlperiode={wahlperiode}
+            />
           </svg>
         </div>
       </div>
+
+      {/* Outside the panned wrapper, deliberately. A `transform` makes an
+          ancestor the containing block for `position: fixed`, so a card
+          rendered inside it would be positioned against the transformed box and
+          then clipped by that wrapper's `overflow-hidden`. Out here it is
+          positioned against the viewport, which is what its coordinates are. */}
+      {hover !== null && <SeatHoverCard id={tooltipId} hover={hover} mode={mode} />}
     </div>
   )
 }
 
 /**
- * One seat: a link to an MP's profile, shaped like a circle.
+ * Every seat, drawn once.
  *
- * An `<a>` rather than a circle carrying `role="button"`. A seat *navigates*, so
- * a link is what it is — and being one for real is what gives it middle-click,
- * "open in new tab", a status-bar preview and Enter, none of which a scripted
- * button reimplements for free. `next/link` does not accept SVG children, so
- * this is a plain anchor inside the SVG; the route is a normal href either way.
- *
- * This is a deliberate departure from `activity-heatmap.tsx`, where 365 cells
- * are `role="img"` and *not* focusable: those cells are read-only, so focus
- * stops would be 365 dead ends between the graph and the next link. Here every
- * seat goes somewhere, so it must be reachable without a mouse.
- *
- * The accessible name carries the MP's name, so a screen reader announces whose
- * seat it is rather than "link".
+ * `memo` is load-bearing rather than a precaution: hovering updates state in the
+ * parent, and without this all 630 anchors would re-render on every pointer
+ * move across the chamber. Its props are the layout and the colour inputs, none
+ * of which change while the pointer moves, so the layer renders when the arc or
+ * the colour mode changes and at no other time.
  */
-function Seat({
-  seat,
-  cx,
-  cy,
-  r,
-  fill,
+const SeatLayer = memo(function SeatLayer({
+  placed,
+  radius,
+  maxima,
   mode,
+  wahlperiode,
 }: {
-  seat: SeatingMapSeat
-  cx: number
-  cy: number
-  r: number
-  fill: string
+  placed: ReadonlyArray<{ seat: SeatingMapSeat; position: { x: number; y: number } }>
+  radius: number
+  maxima: ReturnType<typeof seatingMaxima>
   mode: SeatingColorMode
+  wahlperiode: number
 }) {
   const { t } = useLocale()
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <>
+      {placed.map(({ seat, position }, index) => (
+        /**
+         * An `<a>` rather than a circle carrying `role="button"`. A seat
+         * *navigates*, so a link is what it is — and being one for real is what
+         * gives it middle-click, "open in new tab", a status-bar preview and
+         * Enter, none of which a scripted button reimplements for free.
+         * `next/link` does not accept SVG children, so this is a plain anchor
+         * inside the SVG; the route is a normal href either way.
+         *
+         * This is a deliberate departure from `activity-heatmap.tsx`, where 365
+         * cells are `role="img"` and *not* focusable: those cells are
+         * read-only, so focus stops would be 365 dead ends between the graph
+         * and the next link. Here every seat goes somewhere, so it must be
+         * reachable without a mouse.
+         *
+         * `data-seat-index` is how the one listener on the `<svg>` finds which
+         * seat an event came from — see `seatAt`.
+         */
         <a
+          key={seat.mpInternalId}
+          data-seat-index={index}
           href={`/mps/${seat.mpInternalId}`}
           aria-label={t("seating.seatOf", { name: seat.name })}
           className="outline-none [&>circle]:hover:stroke-foreground [&>circle]:focus-visible:stroke-foreground"
         >
           <circle
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill={fill}
+            cx={position.x}
+            cy={position.y}
+            r={radius}
+            fill={seatColor(
+              {
+                fraktion: seat.fraktion,
+                totalScore: seat.totalScore,
+                voteParticipationRate: seat.voteParticipationRate,
+                committeeCount: seat.committeeCount,
+              },
+              mode,
+              wahlperiode,
+              maxima,
+            )}
             className="cursor-pointer"
             // Stroke in user units, so the highlight keeps its weight relative
             // to the dot at every zoom level rather than thickening as you zoom.
-            strokeWidth={r * 0.35}
+            strokeWidth={radius * 0.35}
             stroke="transparent"
             paintOrder="stroke"
           />
         </a>
-      </TooltipTrigger>
-      <TooltipContent>
-        <SeatTooltip seat={seat} mode={mode} />
-      </TooltipContent>
-    </Tooltip>
+      ))}
+    </>
+  )
+})
+
+/**
+ * The card that follows the pointer.
+ *
+ * A popover surface (`bg-popover`) rather than the inverted one `TooltipContent`
+ * uses. This is not a one-line hint: it carries a portrait, a group badge and
+ * three figures, and `SeatTooltip` renders its labels in `text-muted-foreground`
+ * — a token defined against `--background`, which on the inverted surface came
+ * out as low-contrast grey on near-black. On the popover surface those tokens
+ * mean what they were defined to mean.
+ *
+ * `pointer-events-none` so the card can never sit between the pointer and the
+ * seat it describes. That is also why there is no grace area to cross and none
+ * of the transit bookkeeping the Radix version needed.
+ */
+function SeatHoverCard({
+  id,
+  hover,
+  mode,
+}: {
+  id: string
+  hover: HoverState
+  mode: SeatingColorMode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [placement, setPlacement] = useState({
+    left: hover.x + CARD_OFFSET,
+    top: hover.y + CARD_OFFSET,
+  })
+
+  /**
+   * Keeps the card inside the viewport.
+   *
+   * Measured rather than assumed: the card's height depends on whether the seat
+   * has a constituency line and on how long the group's name is, so a fixed
+   * offset would push it off the bottom for some seats and not others.
+   * `useLayoutEffect` so the correction lands before paint — in an effect the
+   * card would be visible for one frame at the unclamped position, which reads
+   * as a jump.
+   */
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const { width, height } = element.getBoundingClientRect()
+
+    // Flip to the other side of the pointer when the preferred side overhangs,
+    // then clamp — flipping alone is not enough for a pointer near a corner.
+    let left = hover.x + CARD_OFFSET
+    if (left + width > window.innerWidth - CARD_OFFSET) left = hover.x - width - CARD_OFFSET
+    left = Math.max(CARD_OFFSET, Math.min(left, window.innerWidth - width - CARD_OFFSET))
+
+    let top = hover.y + CARD_OFFSET
+    if (top + height > window.innerHeight - CARD_OFFSET) top = hover.y - height - CARD_OFFSET
+    top = Math.max(CARD_OFFSET, Math.min(top, window.innerHeight - height - CARD_OFFSET))
+
+    setPlacement({ left, top })
+  }, [hover])
+
+  return (
+    <div
+      ref={ref}
+      id={id}
+      role="tooltip"
+      className="pointer-events-none fixed z-50 rounded-md border border-border bg-popover px-3 py-2 text-popover-foreground shadow-md"
+      style={{ left: placement.left, top: placement.top }}
+    >
+      <SeatTooltip seat={hover.seat} mode={mode} />
+    </div>
   )
 }

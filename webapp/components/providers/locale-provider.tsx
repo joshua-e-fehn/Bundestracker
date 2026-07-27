@@ -6,6 +6,7 @@ import {
   getTranslator,
   isLocale,
   type Locale,
+  localeFromNavigator,
   type TranslationKey,
   type TranslationValues,
 } from "@/lib/i18n"
@@ -32,6 +33,26 @@ const LocaleContext = createContext<LocaleContextValue | null>(null)
  * German at an English reader. The stored preference is read in an effect
  * afterwards, because localStorage does not exist during SSR; reading it in
  * `useState` would desync hydration.
+ *
+ * ## Three sources, in this precedence
+ *
+ * 1. **The stored choice.** A reader who pressed the toggle has stated a
+ *    preference, and nothing may override it.
+ * 2. **The browser's own language list** (`navigator.languages`), for a first
+ *    visit. Consulted rather than trusting `initialLocale` alone because the
+ *    two disagree in practice: `Accept-Language` can be stripped by a proxy,
+ *    absent on a prefetch, or normalised to one tag by a CDN, in which case
+ *    the server negotiated against nothing and handed back the default. The
+ *    browser still knows, so it is asked.
+ * 3. **German**, the default — see `DEFAULT_LOCALE`. A browser set to French
+ *    gets German, not English: the audience is German and the subject is the
+ *    Bundestag.
+ *
+ * The browser check only ever *upgrades* away from the fallback. If the server
+ * already negotiated a locale off a real header, that answer stands — it saw
+ * quality values, which `navigator.languages` does not carry — so this cannot
+ * flip a reader whose header said `en;q=0.9, de;q=0.3` into German just
+ * because German appears later in their browser's list.
  */
 export function LocaleProvider({
   children,
@@ -46,8 +67,15 @@ export function LocaleProvider({
     const stored = window.localStorage.getItem(STORAGE_KEY)
     if (stored && isLocale(stored)) {
       setLocaleState(stored)
+      return
     }
-  }, [])
+    // No stored choice: this is a first visit, so fall back to the browser's
+    // own list. Only when the server landed on the default — see the note
+    // above on why a negotiated answer is not second-guessed.
+    if (initialLocale === DEFAULT_LOCALE) {
+      setLocaleState(localeFromNavigator(navigator.languages ?? [navigator.language]))
+    }
+  }, [initialLocale])
 
   // Keeps <html lang> honest as the toggle is used. It matters beyond tidiness:
   // screen readers pick pronunciation from it, and so does the browser's

@@ -1,6 +1,7 @@
 "use client"
 
 import { LogOutIcon } from "lucide-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -25,10 +26,19 @@ import { initials } from "@/lib/format"
  * (see lib/auth-routes.ts). So this is a small affordance in the corner, not a
  * gate, and the signed-out state is the common one rather than the error one.
  *
- * OAuth only: `signIn.social` posts to Better Auth and the client's built-in
- * redirect plugin navigates the tab to the provider itself, so there is no
- * `window.location` assignment here and no code after the call that can be
- * relied on to run.
+ * ## Signed out, this is a link — it does not sign anyone in
+ *
+ * It used to call `authClient.signIn.social({ provider: "github" })` straight
+ * from the click handler, so pressing "Anmelden" navigated the tab to
+ * github.com with no intervening page. Two things were wrong with that: it
+ * offered no choice between the two configured providers, and it handed the
+ * reader to a third party before saying what an account is for — on a site
+ * where the answer is *not* "to see the data", since all of it is public.
+ *
+ * So the button is now a link to `/sign-in`, and `components/sign-in-panel.tsx`
+ * owns the OAuth call. One sign-in flow rather than two: a second `signIn`
+ * call here is how the header ends up offering a provider the picker has
+ * disabled (see lib/auth-providers.ts).
  */
 export function UserMenu({ className }: { className?: string }) {
   const { t } = useLocale()
@@ -43,18 +53,8 @@ export function UserMenu({ className }: { className?: string }) {
 
   if (!session) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        className={className}
-        onClick={() => {
-          // GitHub rather than a provider picker: both are configured, and a
-          // one-click path beats a dialog for an optional account. The sign-in
-          // page (not built yet) is where the full choice belongs.
-          void authClient.signIn.social({ provider: "github", callbackURL: "/" })
-        }}
-      >
-        {t("auth.signIn")}
+      <Button asChild variant="outline" size="sm" className={className}>
+        <Link href="/sign-in">{t("auth.signIn")}</Link>
       </Button>
     )
   }

@@ -39,7 +39,11 @@ const toEventDoc = withId<"activityEvents">
 
 // --- ingestion ------------------------------------------------------------
 
-async function addOne(ctx: MutationCtx, input: ObjectType<typeof activityEventInput>, now: number): Promise<{ created: boolean; skipped: boolean }> {
+async function addOne(
+  ctx: MutationCtx,
+  input: ObjectType<typeof activityEventInput>,
+  now: number,
+): Promise<{ created: boolean; skipped: boolean }> {
   // Skip records for MPs not on the roster rather than aborting the batch
   const mp = await findMandate(ctx, input.mpInternalId, input.wahlperiode)
   if (!mp) return { created: false, skipped: true }
@@ -69,7 +73,11 @@ async function addOne(ctx: MutationCtx, input: ObjectType<typeof activityEventIn
 
 export const addActivityEvent = internalMutation({
   args: activityEventInput,
-  returns: v.object({ id: v.optional(v.id("activityEvents")), created: v.boolean(), skipped: v.boolean() }),
+  returns: v.object({
+    id: v.optional(v.id("activityEvents")),
+    created: v.boolean(),
+    skipped: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const r = await addOne(ctx, args, Date.now())
     return { id: undefined, created: r.created, skipped: r.skipped }

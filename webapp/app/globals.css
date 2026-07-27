@@ -233,3 +233,81 @@
     @apply font-sans;
   }
 }
+
+/* --- scrollable strips ------------------------------------------------------
+ *
+ * A horizontal strip that scrolls without showing a scrollbar, and that lands
+ * on a whole item rather than mid-label.
+ *
+ * Written as a `@utility` rather than as classes on the call sites because
+ * `scrollbar-width` and `::-webkit-scrollbar` have no Tailwind equivalent, and
+ * because two places want the same behaviour — the rankings' nine boards and
+ * the seating map's five colour modes. A second copy is how the two would drift
+ * into scrolling differently.
+ *
+ * ## Why the bar is hidden rather than styled
+ *
+ * A native horizontal scrollbar under a row of tabs reads as a defect: it is
+ * the same control the *page* uses for a layout that broke, and on Windows it
+ * is an opaque 15 px band that shifts the tabs upward and moves the underline.
+ * Hiding it is only defensible because the affordance survives elsewhere — the
+ * strip still scrolls by wheel, trackpad, touch and, crucially, by keyboard:
+ * `Tabs` is a Radix roving-tabindex, so arrow keys move between boards and the
+ * browser scrolls the focused one into view. The mask below is what keeps the
+ * fact that there is more to see visible.
+ *
+ * ## The fade is a mask, not a gradient overlay
+ *
+ * `mask-image` on the scroller itself, so the fade tracks the scroll position:
+ * an absolutely-positioned gradient would sit at a fixed edge and keep fading
+ * the first tab after you had scrolled past it. Two stops each side, at 0 and
+ * 1.5 rem, which is roughly half a label — enough to read as "cut off" without
+ * making the edge tab unreadable.
+ */
+@utility scroll-strip {
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  /* `proximity`, not `mandatory`: nine tabs are wider than the strip, and
+   * mandatory snapping fights a reader dragging to see two at once. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Chrome, Safari and every WebKit browser; `scrollbar-width` covers Firefox
+   * and Chromium 121+, and this covers everything older. Both are needed. */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  /* Only once something is actually hidden. A strip that fits needs no fade,
+   * and masking it anyway would dim the first and last tab of a row with
+   * nothing hidden either side.
+   *
+   * The condition is `data-overflow`, set by `useOverflowEdges` from a measured
+   * `scrollWidth > clientWidth` — not a media query. Width is the wrong axis:
+   * the rankings' nine tabs overflow a 1152 px container at *every* viewport,
+   * while the seating map's five fit from `sm` up. Only measurement can tell
+   * the two apart, and the same utility serves both.
+   *
+   * The two edges are independent, so a strip scrolled to its end fades on the
+   * left and not the right — a fade over content that is already flush against
+   * the edge would suggest more to come. */
+  &[data-overflow~="start"] {
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+  }
+  &[data-overflow~="end"] {
+    mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
+  }
+  &[data-overflow~="start"][data-overflow~="end"] {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      black 1.5rem,
+      black calc(100% - 1.5rem),
+      transparent 100%
+    );
+  }
+}
+
+/** An item in a `scroll-strip`: the strip stops with this fully in view. */
+@utility scroll-strip-item {
+  scroll-snap-align: start;
+  scroll-margin-inline: 0.25rem;
+}

@@ -10,6 +10,11 @@ import { type FeedEvent, referenceHref } from "./activity-feed-item"
  * the right shape, the right length and entirely plausible — and 404s. The
  * typecheck sees a string either way, and a reviewer reading the arithmetic has
  * to do the division in their head.
+ *
+ * The helper still builds a whole `FeedEvent` even though `referenceHref` now
+ * takes only the reference pair: the point of these cases is that a *real* feed
+ * row produces the right URL, and narrowing the fixture to the two fields under
+ * test would stop catching a caller that passes the wrong ones.
  */
 
 function event(overrides: Partial<FeedEvent>): FeedEvent {
