@@ -46,11 +46,22 @@ dropped** — see `.vibe/TASK.md` and `docs/api-research.md` §6.5a:
 
 ## In Progress
 
-Nothing. The structure pass was still finishing its last verifier when this was
-written; 8 of 9 findings were adversarially refuted and the one that survived is
-already fixed (`93fb9c8`, the dead `occupation` field on the rankings query). If
-a later verdict confirms another, it is a fresh `refactor:` commit, not a change
-to what is here.
+Nothing.
+
+**Structure pass: complete. 17 findings raised across four lenses, 16 refuted
+under adversarial verification, 2 acted on.**
+
+- `93fb9c8` — a dead `occupation` field on the rankings query. I had added it
+  assuming the member table read from `rankings`; it reads from
+  `mps.getMPsWithScores`, and no rankings consumer renders the field. It was
+  payload on 630 rows per request, and a second way to resolve an occupation.
+- `02e48be` — three unreachable branches in `ACADEMIC_TITLE`. `LL`, `B` and `M`
+  are each within `{1,6}` letters, so the first character class already matched
+  them; they read as load-bearing only because the comment above cites `M. A.`
+  and `LL.M.` by name.
+
+Both are refactor-only and were re-verified against the live 639-name corpus:
+still 635/639, same four misses.
 
 ## Next
 
@@ -86,7 +97,7 @@ None outstanding. Two were hit and resolved:
 
 ## Exact State
 
-- Last commit: `93fb9c8` — `refactor: drop the unused occupation field from the rankings query`
+- Last commit: `02e48be` — `refactor: drop three unreachable branches from ACADEMIC_TITLE`
 - Tests: **passing** — 256 Python (`pytest`), 276 JS (`bun test`), `tsc --noEmit` clean, `ruff check` clean.
 - Lint: one pre-existing Biome a11y error in `components/mp-card.tsx:239`, on `main` before this branch and untouched by it.
 - Uncommitted changes: none.
