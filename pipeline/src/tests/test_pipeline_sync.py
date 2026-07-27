@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
 from bundestrack.models.dip import Aktivitaet
+from bundestrack.models.enrichment import MPContact, MPPortrait, MPProfileLink, SocialProfile
 from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
 from bundestrack.pipeline.state import (
@@ -80,16 +82,58 @@ class StubVotes(StubClient):
         return iter(())
 
 
+class StubProfiles(StubClient):
+    """The MP listing and the biography pages, from memory.
+
+    Empty by default and *never* reaching the network: the enrich stage is on
+    the default path for every run, so a stub that fell through to the real
+    client would put all 639 biography pages behind `pytest`.
+    """
+
+    def __init__(self, profiles: list[MPProfileLink] | None = None) -> None:
+        self.profiles = profiles or []
+        #: Every URL `fetch_contact` was asked for — which is what the
+        #: staleness gate is asserted on.
+        self.fetched: list[str] = []
+        self.contacts: dict[str, MPContact] = {}
+
+    def iter_profiles(self, **kwargs):
+        return iter(self.profiles)
+
+    def fetch_contact(self, profile_url: str) -> MPContact:
+        self.fetched.append(profile_url)
+        return self.contacts.get(profile_url, MPContact())
+
+
+class StubAbgeordnetenwatch(StubClient):
+    def __init__(self, politicians: list[dict] | None = None) -> None:
+        self.politicians = politicians or []
+
+    def iter_politicians(self):
+        return iter(self.politicians)
+
+
 class RecordingLoader(ConvexLoader):
     """A loader that records the routes it was asked for, in order."""
 
     def __init__(self) -> None:
         super().__init__("https://example.convex.site", "test-key", dry_run=True)
         self.paths: list[str] = []
+        self.payloads: list[tuple[str, dict]] = []
 
     def post(self, path: str, payload: dict) -> dict:
         self.paths.append(path)
+        self.payloads.append((path, payload))
         return super().post(path, payload)
+
+    def posted(self, path: str) -> list[dict]:
+        """Every payload sent to one route, in order.
+
+        The roster is posted more than once per run on purpose — the crosswalk
+        and the enrichment each re-post it — so the assertions that matter are
+        usually about the *last* one.
+        """
+        return [payload for sent, payload in self.payloads if sent == path]
 
 
 def build(
@@ -97,6 +141,8 @@ def build(
     dip: StubDIP | None = None,
     state: SyncState | None = None,
     tmp_path=None,
+    profiles: StubProfiles | None = None,
+    abgeordnetenwatch: StubAbgeordnetenwatch | None = None,
 ) -> tuple[Pipeline, RecordingLoader]:
     loader = RecordingLoader()
     settings = Settings(
@@ -114,6 +160,8 @@ def build(
         stammdaten=StubStammdaten(),
         protocols=StubClient(),
         votes=StubVotes(),
+        profiles=profiles or StubProfiles(),
+        abgeordnetenwatch=abgeordnetenwatch or StubAbgeordnetenwatch(),
         loader=loader,
         state=state if state is not None else SyncState(),
     )
@@ -202,6 +250,211 @@ def test_one_stage_failing_does_not_end_the_run(tmp_path) -> None:
     assert "WAF" in failed.error
     # …and the stages after it still ran.
     assert [stage.name for stage in report.stages][-1] == "seating"
+
+
+# --- enrichment -----------------------------------------------------------
+
+
+def profile(
+    printed_name: str,
+    url: str = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1",
+    *,
+    credit: str | None = "Foto/Fraktion",
+) -> MPProfileLink:
+    return MPProfileLink(
+        printed_name=printed_name,
+        profile_url=url,
+        portrait=(
+            MPPortrait(url="https://www.bundestag.de/resource/image/1.jpg", credit=credit)
+            if credit
+            else None
+        ),
+    )
+
+
+def test_the_portrait_reaches_the_roster_upsert_rather_than_a_write_of_its_own() -> None:
+    """The `mps` upsert is the only write that carries `photoUrl`.
+
+    A portrait posted by a mutation of its own would survive until the next
+    roster write and no longer — and `link_dip_persons` re-posts the roster
+    within the very same run.
+    """
+    profiles = StubProfiles([profile("Bilger, Steffen")])
+    pipeline, loader = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
+    assert bilger["photoUrl"] == "https://www.bundestag.de/resource/image/1.jpg"
+    assert bilger["photoCredit"] == "Foto/Fraktion"
+
+
+def test_occupation_joins_by_stammdaten_id_rather_than_by_name() -> None:
+    """abgeordnetenwatch carries the Stammdaten id verbatim, so §7.1 does not
+    apply to this source — the join is exact and needs no name at all."""
+    politicians = StubAbgeordnetenwatch(
+        [
+            {
+                "ext_id_bundestagsverwaltung": "11004011",
+                "occupation": "Diplom-Verwaltungswirt",
+                "education": "Jura",
+            }
+        ]
+    )
+    pipeline, loader = build(abgeordnetenwatch=politicians)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
+    assert bilger["occupation"] == "Diplom-Verwaltungswirt"
+    assert bilger["education"] == "Jura"
+
+
+def test_a_fresh_contact_block_is_not_re_fetched() -> None:
+    """~280 KB per MP against a WAF that counts bytes (§2.6). A daily sync must
+    re-read the pages that have aged, not all 639 of them."""
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    state = SyncState()
+    state.record_contact_fetch("bt-11004011")
+    pipeline, _ = build(profiles=profiles, state=state)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    assert profiles.fetched == []
+
+
+def test_a_backfill_re_reads_every_contact_page_however_fresh() -> None:
+    """`full` is what separates the two modes: a backfill is the run that is
+    allowed to spend the whole ~175 MB."""
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    state = SyncState()
+    state.record_contact_fetch("bt-11004011")
+    pipeline, _ = build(profiles=profiles, state=state)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report, full=True)
+
+    assert profiles.fetched == [url]
+
+
+def test_a_page_that_published_nothing_is_still_stamped() -> None:
+    """About half of MPs list no constituency office. Stamping only non-empty
+    responses would re-read those pages forever to rediscover the same
+    absence."""
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    pipeline, _ = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    assert profiles.fetched == [url]
+    assert not pipeline.state.contact_is_stale("bt-11004011")
+
+
+def test_the_contact_block_reaches_the_roster_row() -> None:
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    profiles.contacts[url] = MPContact(
+        form_url="https://www.bundestag.de/services/formular/contactform?mdbId=1",
+        constituency_office="Wahlkreisbüro\nLudwigsburg",
+        homepage="https://example.de",
+        socials=(SocialProfile(platform="X", url="https://x.com/example"),),
+    )
+    pipeline, loader = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    contact = [row for row in rows if row["internalId"] == "bt-11004011"][-1]["contact"]
+    assert contact["formUrl"].endswith("mdbId=1")
+    assert contact["constituencyOffice"] == "Wahlkreisbüro\nLudwigsburg"
+    assert contact["socials"] == [{"platform": "X", "url": "https://x.com/example"}]
+
+
+def test_a_listed_name_matching_no_roster_mp_is_reported_not_fatal() -> None:
+    """The listing is the Bundestag's own roster, so a name that resolves to
+    nobody means the Stammdaten snapshot is behind (§7.3) — which the
+    quarantine already retries. It must not fail the stage."""
+    profiles = StubProfiles([profile("Nichtexistent, Erika")])
+    pipeline, _ = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    stage = report.stages[-1]
+    assert stage.ok
+    assert any("match no roster MP" in note for note in stage.notes)
+
+
+def test_one_unreadable_biography_page_does_not_end_the_stage() -> None:
+    """The same rule `load_speeches` applies to an unreadable protocol: note
+    it, step over it, and leave it unstamped so the next sync retries."""
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+
+    class BlockedProfiles(StubProfiles):
+        def fetch_contact(self, profile_url: str) -> MPContact:
+            raise BundestagAPIError("the WAF answered a 303 challenge")
+
+    profiles = BlockedProfiles([profile("Bilger, Steffen", url)])
+    pipeline, _ = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    stage = report.stages[-1]
+    assert stage.ok
+    assert pipeline.state.contact_is_stale("bt-11004011")
+    assert any("retry next sync" in note for note in stage.notes)
+
+
+def test_an_uncredited_portrait_never_reaches_the_row() -> None:
+    """§6.5: these are photographer-credited works, not open-licensed ones, so
+    showing the credit is the licence condition. A portrait without one is
+    dropped rather than rendered bare."""
+    profiles = StubProfiles([profile("Bilger, Steffen", credit=None)])
+    pipeline, loader = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
+    assert bilger["photoUrl"] is None
+    assert bilger["photoCredit"] is None
+
+
+def test_enrichment_runs_after_the_crosswalk_so_the_roster_carries_both() -> None:
+    """Both stages re-post the roster. Enrichment going second is what makes
+    this run's *last* roster write the one carrying the portrait — a run that
+    enriched first would have `link_dip_persons` blank it again."""
+    profiles = StubProfiles([profile("Bilger, Steffen")])
+    pipeline, loader = build(profiles=profiles)
+
+    report = sync(21, pipeline=pipeline)
+
+    names = [stage.name for stage in report.stages]
+    assert names.index("enrichment") > names.index("dip-persons")
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
+    assert bilger["photoUrl"] is not None
 
 
 # --- the watermark --------------------------------------------------------

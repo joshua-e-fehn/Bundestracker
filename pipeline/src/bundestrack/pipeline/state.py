@@ -24,6 +24,12 @@ A JSON file beside the pipeline, holding three things:
   is re-downloaded every sync regardless, since there is no metadata endpoint
   to ask first.
 
+- **When each MP's contact block was last fetched** — the biography pages are
+  ~280 KB each and there are 639 of them, so re-reading the lot every sync is
+  ~175 MB through a WAF that counts bytes (§2.6). There is no hash and no
+  `Last-Modified` to gate on the way protocols have `xml_hash`, so the gate is
+  age: `contact_is_stale`. See `CONTACT_TTL`.
+
 A file rather than a Convex table on purpose: it is operational state about
 *fetching*, not data about parliament, and the sync must be able to decide what
 to fetch before it can reach a deployment. Losing it costs a wider window, not
@@ -59,6 +65,17 @@ STREAM_ACTIVITIES = "activities"
 STREAM_MOTIONS = "motions"
 STREAM_PROTOCOLS = "protocols"
 
+#: How long a fetched contact block stays fresh.
+#:
+#: Unlike the protocol XML, which publishes an `xml_hash` that makes "has this
+#: changed?" a free question (§5.1), the biography pages offer nothing to
+#: compare — so freshness here is age rather than identity. Thirty days is
+#: chosen against what actually changes on those pages: a constituency office
+#: address or a new social account, neither of which is time-critical, against
+#: a re-read that costs ~280 KB per MP through a WAF that counts bytes (§2.6).
+#: A daily sync therefore refreshes roughly a thirtieth of the roster.
+CONTACT_TTL = timedelta(days=30)
+
 
 class SyncState(BaseModel):
     """Everything a run inherits from the one before it."""
@@ -78,6 +95,9 @@ class SyncState(BaseModel):
     #: (§4.1), so an incremental run cannot ask the server for new ballots — it
     #: pages from the newest and stops at the first one in here.
     ingested_ballot_keys: dict[str, list[str]] = Field(default_factory=dict)
+    #: internal id → when that MP's contact block was last fetched, ISO 8601.
+    #: The gate on a ~280 KB-per-MP re-read — see `CONTACT_TTL`.
+    contact_fetched_at: dict[str, str] = Field(default_factory=dict)
     #: When the last run finished. Reported by `status`, never used as a
     #: watermark — see the module docstring for why that distinction matters.
     last_run: str | None = None
@@ -138,9 +158,7 @@ class SyncState(BaseModel):
         this and the per-stream detail beneath it.
         """
         marks = [
-            value
-            for key, value in self.watermarks.items()
-            if key.startswith(f"{wahlperiode}:")
+            value for key, value in self.watermarks.items() if key.startswith(f"{wahlperiode}:")
         ]
         return max(marks) if marks else None
 
@@ -166,6 +184,39 @@ class SyncState(BaseModel):
         time instead of skipping it forever.
         """
         self.protocol_hashes[protocol_id] = xml_hash
+
+    # -- contact freshness -------------------------------------------------
+
+    def contact_is_stale(self, internal: str, *, now: datetime | None = None) -> bool:
+        """Whether this MP's biography page is worth re-reading.
+
+        True for an MP never fetched, which is what makes a first run fetch
+        everyone. After that it is age against `CONTACT_TTL` — the pages carry
+        no hash or `Last-Modified` to ask a cheaper question with.
+
+        An unparseable stamp is treated as stale rather than fresh: the cost of
+        being wrong is one ~280 KB re-read, against a contact block that would
+        otherwise never refresh again.
+        """
+        stamp = self.contact_fetched_at.get(internal)
+        if not stamp:
+            return True
+        try:
+            fetched = datetime.fromisoformat(stamp)
+        except ValueError:
+            logger.warning("Ignoring unparseable contact timestamp %r for %s", stamp, internal)
+            return True
+        return (now or datetime.now(UTC)) - fetched >= CONTACT_TTL
+
+    def record_contact_fetch(self, internal: str, *, now: datetime | None = None) -> None:
+        """Mark an MP's contact block as fetched, whatever it contained.
+
+        Recorded for an *empty* result too. Roughly half of MPs list no
+        constituency office, and a pipeline that only stamped non-empty
+        responses would re-read those pages on every sync forever — paying the
+        full ~280 KB to rediscover the same absence.
+        """
+        self.contact_fetched_at[internal] = (now or datetime.now(UTC)).isoformat()
 
     # -- ballots -----------------------------------------------------------
 
