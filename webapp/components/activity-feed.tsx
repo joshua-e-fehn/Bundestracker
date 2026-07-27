@@ -2,7 +2,7 @@
 
 import { usePaginatedQuery, useQuery } from "convex/react"
 import { useMemo, useState } from "react"
-import { ActivityFeedItem, type FeedEvent } from "@/components/activity-feed-item"
+import { ActivityFeedItem } from "@/components/activity-feed-item"
 import { EVENT_TYPE_STYLES, EventTypeIcon } from "@/components/event-type-icon"
 import { FilterChips } from "@/components/filter-chips"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
+import { type GroupableEvent, groupFeedEvents } from "@/lib/feed-grouping"
 import { EVENT_TYPES, type EventType } from "@/lib/taxonomy"
 
 /**
@@ -98,6 +99,21 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
    */
   const nowMs = useMemo(() => Date.now(), [])
 
+  /**
+   * Joint acts collapsed into one row each.
+   *
+   * Applied to the *accumulated* results rather than inside `convex/feed.ts`,
+   * and that placement is the point: the pagination cursor is defined over
+   * events, so grouping server-side would deliver a page of 25 as 3 rows and
+   * reintroduce the short-page ambiguity that module is built to avoid. Here a
+   * group split across a page boundary simply merges when the next page lands,
+   * because `results` grows rather than being replaced.
+   *
+   * See lib/feed-grouping.ts for what groups and — more importantly — what
+   * must not.
+   */
+  const groups = useMemo(() => groupFeedEvents(results as unknown as GroupableEvent[]), [results])
+
   const chipOptions = useMemo(
     () =>
       EVENT_TYPES.map((type) => {
@@ -163,8 +179,8 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {results.map((event) => (
-            <ActivityFeedItem key={event.id} event={event as FeedEvent} nowMs={nowMs} />
+          {groups.map((group) => (
+            <ActivityFeedItem key={group.id} group={group} nowMs={nowMs} />
           ))}
         </div>
       )}
