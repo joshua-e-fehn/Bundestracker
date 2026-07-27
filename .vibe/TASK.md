@@ -1,3 +1,3 @@
-# Task — feed-score-grouping
+# Task — homepage-animations
 
-Activity feed grouping with score differentiation. Read /tmp/task-feed-grouping.md for full instructions.
+Three homepage hero variations with Eagle/Coin/Flag animations. Read /tmp/task-homepage-animations.md for full instructions.
