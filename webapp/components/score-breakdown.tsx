@@ -60,9 +60,16 @@ const SCORE_COMPONENT_CAVEATS: Partial<Record<ScoreComponent, TranslationKey>> =
   speeches: "score.caveat.speechWords",
 }
 
-/** `voteParticipation` is a 0…1 rate; the other six are counts. Formatting it
- * as "0.87" would read as a number of things. */
-function formatRaw(component: ScoreComponent, raw: number, locale: Locale): string {
+/**
+ * `voteParticipation` is a 0…1 rate; the other six are counts. Formatting it as
+ * "0.87" would read as a number of things.
+ *
+ * Exported because the narrative home page's Chapter 3
+ * (components/home-protokoll/chapter-measure.tsx) shows the same seven rows as
+ * a worked example, and a second copy of this rule there is how one of the two
+ * comes to print voting participation as "0.94". One rule, both readers.
+ */
+export function formatRawComponent(component: ScoreComponent, raw: number, locale: Locale): string {
   if (component === "voteParticipation") return formatPercent(raw, locale)
   return formatNumber(raw, locale)
 }
@@ -103,8 +110,8 @@ export function ScoreBreakdown({
                 {t(SCORE_COMPONENT_LABELS[row.component], locale)}
               </span>
               <span className="text-muted-foreground text-xs tabular-nums">
-                {formatRaw(row.component, row.raw, locale)} × {formatNumber(row.weight, locale, 2)}{" "}
-                ={" "}
+                {formatRawComponent(row.component, row.raw, locale)} ×{" "}
+                {formatNumber(row.weight, locale, 2)} ={" "}
                 <span className="font-medium text-foreground">
                   {formatNumber(row.weighted, locale, 1)}
                 </span>

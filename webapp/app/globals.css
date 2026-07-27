@@ -744,6 +744,56 @@
   }
 }
 
+/* --- the pinned chamber -----------------------------------------------------
+ *
+ * The scroll track Chapter 1 of `/home-a` pins its hemicycle inside — see
+ * components/home-protokoll/chapter-chamber.tsx. The track's *height* is the
+ * length of the pin, and the sticky frame inside it is what stays on screen
+ * while that height scrolls past.
+ *
+ * ## Why this is CSS and not a style prop
+ *
+ * It was a style prop, and the bug it caused is the exact one the hero rules
+ * two hundred lines above this exist to prevent — in a new disguise, so it is
+ * worth recording.
+ *
+ * `useReducedMotion()` returns `null` during SSR: there is no `matchMedia` on
+ * the server, so the *server* cannot know. The markup therefore shipped with
+ * the tall track baked in, and the client render — which correctly omitted the
+ * height for a reduced-motion reader — did not remove it, because React does
+ * not clear a DOM attribute that its new output merely lacks. Measured: a
+ * reduced-motion reader got a fully-drawn chamber (right) with two viewport
+ * heights of empty scrolling after it (wrong), and the page was exactly as
+ * tall as it is for everyone else.
+ *
+ * The media query has no such problem. It is evaluated by the browser against
+ * the reader's own OS, at parse time, before any JavaScript — so the resting
+ * state is right on the first paint and there is nothing to hydrate.
+ *
+ * Written destination-first like the hero: the base rule is `auto`, which is
+ * the *finished* state — no pin, chamber at its natural height — and the pin is
+ * added inside `no-preference`. The inverse would leave a reduced-motion reader
+ * on whatever the unqualified rule said, which is how this went wrong the first
+ * time.
+ *
+ * `svh` rather than `vh`: on a phone `vh` is the viewport with the browser
+ * chrome hidden, so a `220vh` track is meaningfully longer than two screens of
+ * actual scrolling and the arc finishes early with a blank screen after it.
+ */
+@layer components {
+  .chamber-pin {
+    height: auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @layer components {
+    .chamber-pin {
+      height: 220svh;
+    }
+  }
+}
+
 /* --- scrollable strips ------------------------------------------------------
  *
  * A horizontal strip that scrolls without showing a scrollbar, and that lands
