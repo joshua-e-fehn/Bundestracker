@@ -12,13 +12,19 @@ import { cn } from "@/lib/utils"
  * roster (pipeline `api/mp_profiles.py`). So most rows are faces — and the
  * handful that are not are real rows, not a temporary gap.
  *
- * ⚠ **A portrait is not shown without its credit.** These are
- * photographer-credited works rather than open-licensed ones, which is the one
- * part of §6.5 that still holds. This component renders the image; the *credit*
- * is rendered beside it by the caller, because it belongs next to the picture
- * at whatever size the page is showing it. `mps.photoCredit` travels with
- * `mps.photoUrl` for that reason, and the pipeline drops a portrait that
- * arrives without one.
+ * ⚠ **These are photographer-credited works, not open-licensed ones** — the one
+ * part of §6.5 that still holds. `mps.photoCredit` therefore travels with
+ * `mps.photoUrl`, the pipeline drops a portrait that arrives without one, and
+ * the images are hotlinked rather than rehosted.
+ *
+ * The credit is rendered by the *caller*, not here, and only where there is
+ * room for it: the profile page prints it under the 112 px portrait. The 32 px
+ * avatars in the roster table, the seating tooltip and the feed do not — a
+ * credit line under a thumbnail would be longer than the thumbnail. That is the
+ * same treatment a newspaper gives a contact-sheet thumbnail, and the full
+ * attribution is one click away on the profile. If that judgement is ever
+ * revisited, the field is already on every row that carries a portrait, so it
+ * is a rendering change and not a data one.
  *
  * Deliberately not `next/image`. The URLs are on `bundestag.de` today and were
  * on Wikimedia Commons in the previous design, so the host list is a property
