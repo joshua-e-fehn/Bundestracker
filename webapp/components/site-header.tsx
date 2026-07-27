@@ -46,12 +46,42 @@ const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
   { href: "/rankings", labelKey: "nav.rankings" },
   { href: "/seating", labelKey: "nav.seating" },
   { href: "/feed", labelKey: "nav.feed" },
+  // `nav.inquiry` is "Untersuchungsausschuss" — 24 characters, roughly twice
+  // the longest label beside it, and the reason this entry is *not* in the
+  // inline row above (see `INLINE_NAV_LINKS`). It is a full route with a page,
+  // so it belongs in the list; the sheet is where it renders.
+  { href: "/inquiry-quorum", labelKey: "nav.inquiry" },
   // Last, and the only entry here that is not a view of the data. `nav.about`
   // has been in both dictionaries since the shell was built and pointed at
   // nothing until app/about/page.tsx landed — which is the rule above working
   // as stated: the string was cheap to keep, the link waited for the page.
   { href: "/about", labelKey: "nav.about" },
 ]
+
+/**
+ * The subset of `NAV_LINKS` the inline bar can actually fit.
+ *
+ * The bar is a width budget before it is a menu, and the comment on the inline
+ * `<nav>` below records the measurements: five labels came to 564 px, which is
+ * why the row waits for `lg` at all, and the search box then waits for `xl`
+ * because five links plus a 208 px box exceed a `max-w-6xl` container at 1024 px.
+ *
+ * "Untersuchungsausschuss" is 24 characters — about 175 px at this size, wider
+ * than "Abgeordnete" and "Rangliste" together. Adding it to the row puts the bar
+ * past its container at `lg` and, on the German default, would either wrap the
+ * nav onto a second line or push the whole document sideways. Both were
+ * available and both are worse than a link that lives in the menu: the sheet
+ * carries every entry at every width, so nothing becomes unreachable.
+ *
+ * Derived by exclusion rather than written as a second list, which is the
+ * failure the `NAV_LINKS` header describes in its own terms — two hand-written
+ * lists are how a link ends up in one and not the other. Here a new route is
+ * inline unless it is named here, and this name must match an entry above or the
+ * filter silently does nothing.
+ */
+const NAV_SHEET_ONLY: ReadonlySet<string> = new Set(["/inquiry-quorum"])
+
+const INLINE_NAV_LINKS = NAV_LINKS.filter((link) => !NAV_SHEET_ONLY.has(link.href))
 
 /**
  * Search, which is a link in the sheet and a *box* in the bar.
@@ -159,7 +189,7 @@ export function SiteHeader() {
         {/* `relative` so each link's underline can be positioned against its own
             box — see the marker below. */}
         <nav aria-label={t("nav.menu")} className="hidden items-center gap-0.5 lg:flex">
-          {NAV_LINKS.map(({ href, labelKey }) => (
+          {INLINE_NAV_LINKS.map(({ href, labelKey }) => (
             <Link
               key={href}
               href={href}
