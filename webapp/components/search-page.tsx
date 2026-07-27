@@ -4,18 +4,11 @@ import { useQuery } from "convex/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback } from "react"
 import { EVENT_TYPE_STYLES } from "@/components/event-type-icon"
+import { ALL, FilterSelect } from "@/components/filter-select"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
 import { SearchResults } from "@/components/search-results"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
 import { EVENT_TYPES, type EventType, isEventType } from "@/lib/taxonomy"
 
@@ -43,11 +36,6 @@ import { EVENT_TYPES, type EventType, isEventType } from "@/lib/taxonomy"
  * membership is published for the **current period only**, so a past period has
  * no committees to offer — not a chamber that sat on none.
  */
-
-/** Sentinel for "no filter". Radix's Select reserves the empty string for its
- * cleared state, so the all-values option needs a value of its own — the same
- * constant components/mp-table.tsx defines for the same reason. */
-const ALL = "__all__"
 
 export function SearchPage({ defaultWahlperiode }: { defaultWahlperiode: number }) {
   const { t } = useLocale()
@@ -191,48 +179,6 @@ export function SearchPage({ defaultWahlperiode }: { defaultWahlperiode: number 
         committee={committee === ALL ? undefined : committee}
         eventType={eventType}
       />
-    </div>
-  )
-}
-
-/**
- * One labelled filter dropdown with its "no filter" option.
- *
- * The same shape components/mp-table.tsx uses, and for the labelling reason
- * stated there: Radix renders the trigger as a `<button>`, so `<Label htmlFor>`
- * associates with it only because the trigger carries the matching `id`.
- */
-function FilterSelect({
-  id,
-  label,
-  value,
-  onChange,
-  allLabel,
-  options,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  allLabel: string
-  options: ReadonlyArray<{ value: string; label: string }>
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="max-w-[min(24rem,90vw)]">
-          <SelectItem value={ALL}>{allLabel}</SelectItem>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   )
 }
