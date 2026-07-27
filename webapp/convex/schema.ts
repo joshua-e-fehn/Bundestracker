@@ -229,20 +229,20 @@ export const mpInput = {
    */
   contact: v.optional(
     v.union(
-    v.null(),
-    v.object({
-      /** `bundestag.de/services/formular/contactform?mdbId=…`. The `mdbId` is a
-       * *fourth* MP id space — bundestag.de's own CMS id — so it stays inside
-       * the URL and is never used as a join key. */
-      formUrl: v.union(v.null(), v.string()),
-      /** Constituency office(s), newline-separated as printed. Roughly half of
-       * MPs list none. */
-      constituencyOffice: v.union(v.null(), v.string()),
-      homepage: v.union(v.null(), v.string()),
-      /** `platform` is free text (`Facebook`, `X`, `TikTok`, `Mastodon`…), not
-       * an enum: the list is the Bundestag's and it grows. */
-      socials: v.array(v.object({ platform: v.string(), url: v.string() })),
-    }),
+      v.null(),
+      v.object({
+        /** `bundestag.de/services/formular/contactform?mdbId=…`. The `mdbId` is a
+         * *fourth* MP id space — bundestag.de's own CMS id — so it stays inside
+         * the URL and is never used as a join key. */
+        formUrl: v.union(v.null(), v.string()),
+        /** Constituency office(s), newline-separated as printed. Roughly half of
+         * MPs list none. */
+        constituencyOffice: v.union(v.null(), v.string()),
+        homepage: v.union(v.null(), v.string()),
+        /** `platform` is free text (`Facebook`, `X`, `TikTok`, `Mastodon`…), not
+         * an enum: the list is the Bundestag's and it grows. */
+        socials: v.array(v.object({ platform: v.string(), url: v.string() })),
+      }),
     ),
   ),
   /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`). */
@@ -299,6 +299,87 @@ export const voteRecordInput = {
   /** The sheet's `Bemerkung`, e.g. `gesetzlicher Mutterschutz` — the published
    * reason an absence was excused. */
   remark: v.union(v.null(), v.string()),
+}
+
+/**
+ * Whether this record went against its group's line — decided at ingest, stored
+ * on the row.
+ *
+ * ## Why this is stored rather than derived on read
+ *
+ * Dissent is a property of a *ballot*, not of a record: it exists only relative
+ * to how the other ~209 members of the group voted in the same division. So
+ * answering it on read costs a group-scoped scan per record, which is why
+ * `getVotesByMP` caps itself at 25 rows and why `getCrossPartyRankings` could
+ * only ever report the last 20 ballots — ~630 records each against Convex's
+ * ~16 000-document read limit. A period-wide figure is not a bigger version of
+ * that query; it is the same answer computed once, when the ballot lands, by the
+ * one caller that already holds all 630 of its records.
+ *
+ * **Derived, never posted.** `recomputeBallotDissent` in convex/votes.ts writes
+ * these from `tallyByGroup`/`isRebel`, the same functions the ballot page and the
+ * profile page apply — so the stored flag cannot disagree with the rendered one.
+ * They are deliberately absent from `voteRecordInput` for that reason: a payload
+ * carrying `dissent: true` would let the pipeline assert a claim about a named
+ * person's conduct that no group tally supports. Same construction, and same
+ * reasoning, as `searchText` on `activityEvents`.
+ *
+ * `v.optional` because they were added to a populated table — a required field
+ * there fails the whole deploy (`bundestrack-convex-schema-deploys`). Absent
+ * means "not yet computed", which is distinct from `false`: `backfillDissent`
+ * fills them in slices, and until it has run those ballots are missing from the
+ * tally rather than counted as loyal votes.
+ */
+const dissentFields = {
+  /** True where the MP cast a vote that was not their group's line. Never true
+   * for an absence, for a group with no line, or for a record with no group —
+   * see `isRebel`, which is where all three exclusions live. */
+  dissent: v.optional(v.boolean()),
+  /**
+   * Whether this record is in the *denominator*: a vote cast, in a group that
+   * had a line to keep.
+   *
+   * Not the same as `dissent === false`, and conflating them is the mistake this
+   * field exists to prevent. An absence and a vote in an evenly-split group are
+   * both `dissent: false`, and neither belongs in "ballots on which this member
+   * could have dissented" — counting them would inflate the denominator with
+   * ballots that had no line, quietly deflating every rate on the site.
+   */
+  dissentCounted: v.optional(v.boolean()),
+}
+
+/**
+ * One member's dissent across a whole electoral period — the roll-up
+ * `getCrossPartyRankings` reads instead of re-tallying every ballot.
+ *
+ * One row per `(mpInternalId, wahlperiode)`, maintained by
+ * `recomputeMPDissent` in convex/votes.ts from that member's own
+ * `voteRecords` — which is a per-MP scan bounded by the corpus (§4.4: ~1 015
+ * named ballots in the Bundestag's entire history), not by the chamber. That is
+ * the asymmetry the whole table turns on: reading *one* member's record set is
+ * cheap and reading *every* member's is not, so the expensive direction is paid
+ * once per ballot at ingest and the leaderboard becomes a 630-row index scan.
+ *
+ * Recomputed from the flags rather than incremented. A tally that added `+1` per
+ * dissent would double-count every re-ingest — and the pipeline re-ingests by
+ * design, since a daily sync re-reads anything whose `aktualisiert` moved (§2.5).
+ * Idempotence is what makes a half-finished sync a no-op instead of a corruption.
+ */
+export const dissentTallyInput = {
+  mpInternalId: v.string(),
+  wahlperiode: v.number(),
+  /** Ballots in this period voted against the own group's line. */
+  dissents: v.number(),
+  /** Cast votes in a group that had a line — the denominator. Below the member's
+   * participation count, because a ballot where their group split exactly has no
+   * line to break. See `dissentCounted`. */
+  ballotsCast: v.number(),
+  /** `dissents / ballotsCast`, or 0 when nothing was cast. Stored so the
+   * leaderboard can sort on it without recomputing 630 divisions, and so the
+   * index below can carry it. ⚠ A stored 0 here is ambiguous where
+   * `dissentRate` in lib/dissent.ts returns null — read `ballotsCast` to tell
+   * "never dissented" from "never voted". */
+  dissentRate: v.number(),
 }
 
 /**
@@ -551,7 +632,7 @@ const schema = defineSchema({
     // Chamber-wide recency across periods — the home page, not an archive.
     .index("by_date", ["date"]),
 
-  voteRecords: defineTable({ ...voteRecordInput, createdAt: v.number() })
+  voteRecords: defineTable({ ...voteRecordInput, ...dissentFields, createdAt: v.number() })
     // One MP votes once per ballot, so this is both the natural key and, by its
     // `voteSheetId` prefix, the "everyone who voted on this" read.
     .index("by_voteSheetId_and_mpInternalId", ["voteSheetId", "mpInternalId"])
@@ -564,6 +645,20 @@ const schema = defineSchema({
     // printed. Without this index the tally would read all 630 records of a
     // sheet to look at one group of at most 209 (§9).
     .index("by_voteSheetId_and_partyAtVote", ["voteSheetId", "partyAtVote"]),
+
+  dissentTallies: defineTable({
+    ...dissentTallyInput,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    // The natural key, and the profile page's read: one member, one period.
+    .index("by_mpInternalId_and_wahlperiode", ["mpInternalId", "wahlperiode"])
+    // The leaderboard, off the index already sorted — the whole reason this
+    // table exists. `dissents` rather than `dissentRate` is the trailing column
+    // because the board ranks on the count (see `getCrossPartyRankings`); the
+    // rate rides along on the row rather than being a second index, since 630
+    // rows re-sort in memory for free once they have been read.
+    .index("by_wahlperiode_and_dissents", ["wahlperiode", "dissents"]),
 
   motions: defineTable({ ...motionInput, createdAt: v.number() })
     // Two candidate keys, tried in this order — see the note on `motionInput`.

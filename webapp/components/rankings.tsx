@@ -16,7 +16,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api } from "@/convex/_generated/api"
 import { boardById, DEFAULT_BOARD_ID, LEADERBOARDS } from "@/lib/leaderboards"
-import { useOverflowEdges } from "@/lib/use-overflow-edges"
 import {
   type AgeGroup,
   isAgeGroup,
@@ -25,6 +24,7 @@ import {
   type RankingMetric,
   type SortDirection,
 } from "@/lib/taxonomy"
+import { useOverflowEdges } from "@/lib/use-overflow-edges"
 
 /**
  * The rankings page: nine boards, four filters, one table.
@@ -249,11 +249,18 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
       {board.caveatKey !== undefined && <CaveatNote>{t(board.caveatKey)}</CaveatNote>}
 
       {board.kind === "crossParty" && crossPartyResult !== undefined && (
-        // The window this board was computed over. Stated because a dissent
-        // count over an unnamed subset of ballots is a number with no meaning —
-        // see `getCrossPartyRankings`, which bounds the read explicitly.
+        // What this board's number is *of*. Stated because a dissent count over
+        // an unnamed set of ballots is a number with no meaning — and the two
+        // scopes `getCrossPartyRankings` offers are very different sets, so
+        // which one produced these rows has to be said rather than assumed.
+        //
+        // The period scope reports no `ballotsExamined` (it examined all of
+        // them, which is not a window), so this reads `scope` rather than
+        // printing a count that would be 0.
         <p className="text-muted-foreground text-xs">
-          {t("rankings.column.ballots")}: {crossPartyResult.ballotsExamined}
+          {crossPartyResult.scope === "period"
+            ? t("rankings.crossPartyPeriod")
+            : t("rankings.crossPartyWindow", { count: crossPartyResult.ballotsExamined })}
         </p>
       )}
 

@@ -2,9 +2,10 @@
 
 import { useQuery } from "convex/react"
 import Link from "next/link"
+import { DissentBadge } from "@/components/dissent-badge"
+import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
-import { MPPhoto } from "@/components/mp-photo"
 import { Card } from "@/components/ui/card"
 import { api } from "@/convex/_generated/api"
 import { formatScore, initials } from "@/lib/format"
@@ -156,6 +157,7 @@ export function MPCard({
   photoUrl,
   photoCredit,
   totalScore,
+  dissent,
   rank,
   showHeatmap = false,
   className,
@@ -168,6 +170,23 @@ export function MPCard({
    * shown — the licence condition, enforced in components/mp-photo.tsx. */
   photoCredit?: string | null
   totalScore?: number
+  /**
+   * This MP's period-wide dissent, where the list already has it.
+   *
+   * A **prop, not a query**, unlike the heatmap below — and the difference is
+   * the roster. The heatmap is opt-in precisely because it costs a query per
+   * card, which is fine for five and not for 630; a badge that did the same
+   * would put that cost on every list on the site, including the ones the
+   * heatmap is switched off for. `getRankings` joins it per row instead, beside
+   * the `mpLabel` lookup it already does.
+   *
+   * Undefined means "this list does not carry the figure", which renders the
+   * same as "below the threshold" — nothing. That is the right collapse here:
+   * the absence of a badge is the unremarkable case either way, and no list
+   * should imply a member is *not* a dissenter by omitting data it never
+   * fetched. See `isNotableDissenter`, which draws the same line for null.
+   */
+  dissent?: { dissents: number; ballotsCast: number } | null
   /** Position in a ranked list, if this card is in one. */
   rank?: number
   /** Fetches this MP's recent activity. One query per card — fine for a handful,
@@ -216,7 +235,22 @@ export function MPCard({
           >
             {name}
           </Link>
-          <PartyBadge fraktion={fraktion} className="w-fit" />
+          {/* On the group badge's line rather than the name's, and `compact` so
+              it is a dot rather than a word. The name row is the one part of
+              this card that can give — it is the `min-w-0 flex-1` slot every
+              other column takes its width from, and at the home page's
+              half-width board it has 126 px. A worded badge there would take a
+              third of it and truncate the name, which is the failure
+              components/home-sitzungswoche/index.tsx documents at length. The
+              badge row already carries a short `PartyBadge` and has the room.
+
+              `shrink-0` because a flex child's `min-width` is `auto`: without
+              it the badge would compress to nothing beside a long group name
+              instead of pushing it. */}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <PartyBadge fraktion={fraktion} className="w-fit" />
+            <DissentBadge tally={dissent} locale={locale} compact className="shrink-0" />
+          </div>
         </div>
 
         {showHeatmap ? (

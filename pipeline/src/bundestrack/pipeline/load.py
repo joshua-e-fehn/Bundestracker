@@ -384,6 +384,52 @@ class ConvexLoader:
             result.record(self.post("vote-records", {**payload, "records": list(batch)}))
         return result
 
+    def backfill_dissent(
+        self,
+        wahlperiode: int,
+        *,
+        batch_size: int = 3,
+        max_slices: int = 2_000,
+    ) -> int:
+        """Compute the dissent flags and period tally for a period's ballots.
+
+        Whether a vote broke with the voter's own group is a property of the
+        *ballot*, not of the record — it depends on how the other ~630 members
+        voted in the same division — so it is decided once, when the ballot
+        lands, and stored (webapp/convex/votes.ts). This walks the ballots that
+        predate that: `upsertVoteRecords` maintains the tally from now on, but
+        nothing has ever computed it for a ballot already in the database.
+
+        Sliced for the same reason `recompute_scores` above is: one ballot's
+        refresh reads all of its ~630 records plus the roster, so only a few fit
+        in one Convex transaction. The route returns `done` and leaves
+        continuing to the caller.
+
+        Idempotent — every write is the delta between the stored flags and the
+        recomputed ones — so re-running repairs a drifted tally rather than
+        doubling it. Returns the number of records whose flags changed, which is
+        the useful signal: a second run over unchanged ballots returns 0.
+        """
+        records = 0
+        cursor = 0
+        for _ in range(max_slices):
+            response = self.post(
+                "votes/backfill-dissent",
+                {"wahlperiode": wahlperiode, "cursor": cursor, "batchSize": batch_size},
+            )
+            records += int(response.get("records", 0))
+            if self.dry_run or response.get("done"):
+                return records
+            next_cursor = response.get("nextCursor")
+            if next_cursor is None or next_cursor == cursor:
+                return records
+            cursor = int(next_cursor)
+        logger.warning(
+            "Dissent backfill stopped at the %d-slice limit — the tally may be incomplete",
+            max_slices,
+        )
+        return records
+
     def generate_seating(self, wahlperiode: int) -> dict[str, Any]:
         """Regenerate the synthetic hemicycle from the roster.
 

@@ -1,6 +1,7 @@
 import { type Infer, v } from "convex/values"
+import { internal } from "./_generated/api"
 import type { Doc, Id } from "./_generated/dataModel"
-import { internalMutation, type QueryCtx, query } from "./_generated/server"
+import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -184,7 +185,312 @@ export const upsertVoteRecords = internalMutation({
       )
       recordBatch(result, created)
     }
+
+    // The dissent flags and the period tally, in their own transaction — see
+    // `refreshBallotDissent`. Scheduled rather than inlined because deciding
+    // dissent needs the *whole* ballot plus the roster, and this mutation has
+    // already spent its read budget resolving 500 mandates.
+    //
+    // Once per call, so a 630-row ballot posted in two chunks schedules two
+    // refreshes. Both are wanted: the first computes lines from a half-ingested
+    // ballot and is therefore wrong, and the second — seeing the complete set —
+    // corrects it. That correction is exact rather than approximate because the
+    // refresh works from the flags already on the rows; see its header.
+    await ctx.scheduler.runAfter(0, internal.votes.refreshBallotDissent, {
+      voteSheetId: sheet._id,
+    })
     return result
+  },
+})
+
+// --- the dissent tally ----------------------------------------------------
+
+/**
+ * The dissent flags for one ballot, and the period tallies they feed.
+ *
+ * ## Why the tally is maintained here rather than computed on read
+ *
+ * Dissent is relative: it exists only against how the rest of the group voted in
+ * the same division, so answering it for one record costs a scan of that group's
+ * ~209 rows. `getVotesByMP` caps itself at 25 rows for exactly that reason, and
+ * `getCrossPartyRankings` could only ever report the most recent 20 ballots —
+ * ~630 records each against Convex's ~16 000-document read limit, which is 25
+ * ballots' worth of budget for a question about four years.
+ *
+ * A period-wide figure is therefore not a larger version of that read. It is the
+ * same answer computed once, at the moment a ballot lands, by the one caller
+ * that already holds all 630 of its records — and then summed off an index.
+ *
+ * ## The write is a delta, and that is what makes it idempotent
+ *
+ * Each record's new flags are compared against the flags **already stored on
+ * it**, and only the difference is applied to the member's tally. Three
+ * consequences, all of them the point:
+ *
+ *  - Re-ingesting an unchanged ballot writes nothing at all. The pipeline
+ *    re-ingests by design — a daily sync re-reads anything whose `aktualisiert`
+ *    moved (§2.5) — so a tally that added `+1` per dissent would drift upward
+ *    every night.
+ *  - A ballot ingested in two chunks self-corrects. The first refresh derives
+ *    group lines from a partial ballot and stores whatever they imply; the
+ *    second sees the full set, and the delta it applies is exactly the
+ *    difference between the wrong answer and the right one.
+ *  - The tally is a running sum of the flags, and both are written in the same
+ *    transaction. They cannot disagree, which is why nothing here re-reads a
+ *    member's whole voting record to check.
+ *
+ * ## What the flags mean
+ *
+ * `isRebel` decides, not this function — the same rule the ballot page and the
+ * profile page render, so a stored flag and a displayed badge cannot come apart.
+ * `dissentCounted` is the denominator and is deliberately **not** `!dissent`:
+ * an absence and a vote in an evenly-split group are both "not a dissent" and
+ * neither belongs among the ballots on which the member could have dissented.
+ *
+ * ## Read cost
+ *
+ * One ballot's records (~630), the roster (~630, for the group fallback), and
+ * one tally row per member whose flags moved. Bounded by the chamber, like
+ * `getVoteSheetById` — and *unlike* the leaderboard read it replaces, which was
+ * bounded by nothing but its own `maxBallots` argument.
+ */
+export const refreshBallotDissent = internalMutation({
+  args: { voteSheetId: v.id("voteSheets") },
+  returns: v.object({
+    /** Records whose stored flags changed. Zero on a re-ingest that changed
+     * nothing, which is the common case and the cheap one. */
+    updated: v.number(),
+    /** Members whose period tally was adjusted as a result. */
+    mpsTouched: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const sheet = await ctx.db.get(args.voteSheetId)
+    // Deleted between the schedule and the run. Not an error: there is no ballot
+    // left to have dissented in.
+    if (!sheet) return { updated: 0, mpsTouched: 0 }
+
+    const records = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+      .collect()
+
+    // The roster, once, for the records that carry no group of their own — the
+    // same fallback `tallyByGroup` documents. One scan rather than `mpLabel` per
+    // record, which would be 630 indexed lookups.
+    const roster = await ctx.db
+      .query("mps")
+      .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", sheet.wahlperiode))
+      .collect()
+    const fraktionOf = new Map(roster.map((mp) => [mp.internalId, mp.fraktion]))
+    const groups = tallyByGroup(records, (id) => fraktionOf.get(id) ?? "")
+
+    /** How much this ballot moves one member's tally. */
+    const deltas = new Map<string, { dissents: number; ballotsCast: number }>()
+    const now = Date.now()
+    let updated = 0
+
+    for (const record of records) {
+      const group = groupOf(record, (id) => fraktionOf.get(id) ?? "")
+      const majority = groups.get(group)?.majority ?? null
+      // `dissentFlagsFor` decides both, including why the denominator is not
+      // simply "not a dissent" — see its header.
+      const { dissent, counted: dissentCounted } = dissentFlagsFor(record.vote, majority)
+
+      // An unset flag is "not yet computed", not `false` — so the first pass
+      // over an existing row adds its full contribution rather than nothing.
+      const wasDissent = record.dissent ?? false
+      const wasCounted = record.dissentCounted ?? false
+      if (record.dissent === dissent && record.dissentCounted === dissentCounted) {
+        continue
+      }
+
+      await ctx.db.patch(record._id, { dissent, dissentCounted })
+      updated++
+
+      const delta = deltas.get(record.mpInternalId) ?? { dissents: 0, ballotsCast: 0 }
+      delta.dissents += Number(dissent) - Number(wasDissent)
+      delta.ballotsCast += Number(dissentCounted) - Number(wasCounted)
+      deltas.set(record.mpInternalId, delta)
+    }
+
+    let mpsTouched = 0
+    for (const [mpInternalId, delta] of deltas) {
+      if (delta.dissents === 0 && delta.ballotsCast === 0) continue
+      await applyDissentDelta(ctx, mpInternalId, sheet.wahlperiode, delta, now)
+      mpsTouched++
+    }
+
+    return { updated, mpsTouched }
+  },
+})
+
+/**
+ * Adds one ballot's contribution to a member's period tally.
+ *
+ * Clamped at zero on both counts. The arithmetic cannot go negative while the
+ * flags and the tally are written together, so a negative here means they have
+ * already come apart — a row deleted out from under the tally, most plausibly —
+ * and the right response is a figure that is merely stale rather than one that
+ * reports a negative number of dissents on a public leaderboard. `backfillDissent`
+ * is the repair.
+ *
+ * `dissentRate` is stored alongside rather than derived on read so the
+ * leaderboard can order 630 rows without 630 divisions, and so a future index
+ * can carry it. It is 0 when nothing was cast — ambiguous with "never
+ * dissented", which is why `lib/dissent.ts` reads `ballotsCast` and returns null
+ * for that case rather than trusting this field.
+ */
+async function applyDissentDelta(
+  ctx: MutationCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  delta: { dissents: number; ballotsCast: number },
+  now: number,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("dissentTallies")
+    .withIndex("by_mpInternalId_and_wahlperiode", (q) =>
+      q.eq("mpInternalId", mpInternalId).eq("wahlperiode", wahlperiode),
+    )
+    .unique()
+
+  const dissents = Math.max(0, (existing?.dissents ?? 0) + delta.dissents)
+  const ballotsCast = Math.max(0, (existing?.ballotsCast ?? 0) + delta.ballotsCast)
+
+  await upsertRow(
+    ctx,
+    "dissentTallies",
+    existing,
+    {
+      mpInternalId,
+      wahlperiode,
+      dissents,
+      ballotsCast,
+      dissentRate: ballotsCast === 0 ? 0 : dissents / ballotsCast,
+    },
+    now,
+    { touchUpdatedAt: true },
+  )
+}
+
+/**
+ * Computes the flags and tallies for ballots that predate them — one slice per
+ * call, oldest ballot first.
+ *
+ * The migration half of this feature, in the same shape as `backfillSearchText`
+ * in convex/search.ts and for the same reason: the flags are `v.optional` because
+ * they were added to a populated table, and until this has run those ballots are
+ * *missing* from the tally rather than counted as loyal votes. A required field
+ * would have failed the deploy outright.
+ *
+ * A route rather than a cron (`POST /api/pipeline/votes/backfill-dissent`), and
+ * a slice rather than a sweep, because one ballot's refresh is already a
+ * chamber-sized read: `BALLOT_BACKFILL_BATCH` of them is the most that fits in a
+ * transaction. Loop on `cursor` until `done`.
+ *
+ * Safe to re-run and safe to run against a fully-populated deployment: every
+ * write is the delta between the stored flags and the recomputed ones, so a
+ * second pass over an unchanged ballot writes nothing. That is also what makes
+ * it the repair for a tally that has drifted — re-running it does not double
+ * anything.
+ *
+ * ⚠ It cannot repair a tally row whose *records* were deleted, because a deleted
+ * record carries no flag to subtract. `purgeSeedData` is the one thing that
+ * deletes vote records, and it deletes the tally row alongside them.
+ */
+const BALLOT_BACKFILL_BATCH = 3
+
+export const backfillDissent = internalMutation({
+  args: {
+    wahlperiode: v.number(),
+    cursor: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    ballots: v.number(),
+    records: v.number(),
+    nextCursor: v.union(v.null(), v.number()),
+    done: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(10, Math.floor(args.batchSize ?? BALLOT_BACKFILL_BATCH)))
+    const cursor = Math.max(0, Math.floor(args.cursor ?? 0))
+
+    // Ascending by date, so the cursor is stable while a sync appends newer
+    // ballots underneath a run in progress — the failure a descending order
+    // would produce is a ballot skipped entirely, which reads as a member who
+    // never dissented rather than as an unfinished migration.
+    const sheets = await ctx.db
+      .query("voteSheets")
+      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .collect()
+
+    const slice = sheets.slice(cursor, cursor + batchSize)
+    let records = 0
+    for (const sheet of slice) {
+      const { updated } = await ctx.runMutation(internal.votes.refreshBallotDissent, {
+        voteSheetId: sheet._id,
+      })
+      records += updated
+    }
+
+    const nextCursor = cursor + slice.length
+    const done = nextCursor >= sheets.length
+    return { ballots: slice.length, records, nextCursor: done ? null : nextCursor, done }
+  },
+})
+
+/**
+ * One member's period-wide dissent, or null where none has been computed.
+ *
+ * Null rather than a zeroed row, and the whole surface depends on the
+ * difference: a member the backfill has not reached and a member who has never
+ * voted against their group are opposite claims, and only one of them is a
+ * finding. The profile panel renders the first as "not computed" and the second
+ * as a figure. See `dissentRate` in lib/dissent.ts, which draws the same line for
+ * a member who has cast no votes.
+ *
+ * Two indexed reads: the tally row, and the period's ballot count for context —
+ * "3 of 412 ballots" is a different statement from "3 of 20", and the number the
+ * page could previously print was the second one.
+ */
+export const getDissentTally = query({
+  args: { mpInternalId: v.string(), wahlperiode: v.number() },
+  returns: v.union(
+    v.null(),
+    v.object({
+      dissents: v.number(),
+      ballotsCast: v.number(),
+      dissentRate: v.number(),
+      /** Named ballots in the period, whether or not this member voted in them.
+       * Context for the denominator rather than part of it: `ballotsCast`
+       * excludes absences and ballots where the group had no line. */
+      ballotsInPeriod: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const tally = await ctx.db
+      .query("dissentTallies")
+      .withIndex("by_mpInternalId_and_wahlperiode", (q) =>
+        q.eq("mpInternalId", args.mpInternalId).eq("wahlperiode", args.wahlperiode),
+      )
+      .unique()
+    if (!tally) return null
+
+    // Bounded by the corpus, not by a limit: §4.4 puts named ballots at ~1 015
+    // in the Bundestag's entire history, so one period's sheets are a few
+    // hundred rows. The same read `getVoteSheetsPage` makes for its pager.
+    const sheets = await ctx.db
+      .query("voteSheets")
+      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .collect()
+
+    return {
+      dissents: tally.dissents,
+      ballotsCast: tally.ballotsCast,
+      dissentRate: tally.dissentRate,
+      ballotsInPeriod: sheets.length,
+    }
   },
 })
 
@@ -639,6 +945,39 @@ export function isRebel(vote: Vote, majority: { vote: Vote; share: number } | nu
   if (vote === "absent") return false
   if (majority === null) return false
   return vote !== majority.vote
+}
+
+/**
+ * The two stored flags for one record — `isRebel`, plus the denominator it is
+ * read against.
+ *
+ * `counted` is deliberately **not** `!dissent`, and that is the whole reason
+ * this is a function rather than two expressions at the call site. Three
+ * different situations all produce `dissent: false`:
+ *
+ *  - The MP voted their group's line. In the denominator.
+ *  - The MP was absent. `nichtabgegeben` is not a position (§4.1), so there was
+ *    no opportunity to dissent — **not** in the denominator.
+ *  - The MP's group had no line: an exact split, a group nobody voted in, or no
+ *    group on the record at all. Nothing to break — **not** in the denominator.
+ *
+ * Folding the last two into the denominator is the plausible mistake, and it is
+ * invisible: it inflates every MP's `ballotsCast` by the ballots they missed,
+ * which deflates every rate on the site by a third or so without any number
+ * looking wrong. `dissentRate` in lib/dissent.ts and the badge threshold both
+ * read that denominator.
+ *
+ * Exported and pure for convex/votes.test.ts — the rule is what needs testing,
+ * and the mutation that applies it needs a database.
+ */
+export function dissentFlagsFor(
+  vote: Vote,
+  majority: { vote: Vote; share: number } | null,
+): { dissent: boolean; counted: boolean } {
+  return {
+    dissent: isRebel(vote, majority),
+    counted: vote !== "absent" && majority !== null,
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { breakdownRows, isRebel, majorityOf, tallyByGroup } from "./votes"
+import { breakdownRows, dissentFlagsFor, isRebel, majorityOf, tallyByGroup } from "./votes"
 
 /**
  * Tests for the group-line rules behind rebel highlighting.
@@ -87,6 +87,65 @@ describe("isRebel", () => {
 
   test("no majority means nothing to dissent from", () => {
     expect(isRebel("no", null)).toBe(false)
+  })
+})
+
+describe("dissentFlagsFor", () => {
+  const line = { vote: "yes" as const, share: 0.9 }
+
+  test("a vote against the line is a dissent, and is counted", () => {
+    expect(dissentFlagsFor("no", line)).toEqual({ dissent: true, counted: true })
+  })
+
+  test("a vote with the line is counted and is not a dissent", () => {
+    expect(dissentFlagsFor("yes", line)).toEqual({ dissent: false, counted: true })
+  })
+
+  test("an absence is not a dissent and is not in the denominator", () => {
+    // The distinction the whole tally turns on. Counting an absence in the
+    // denominator inflates every member's `ballotsCast` by the sittings they
+    // missed, which deflates every rate on the site — invisibly, because no
+    // number looks wrong.
+    expect(dissentFlagsFor("absent", line)).toEqual({ dissent: false, counted: false })
+  })
+
+  test("a group with no line puts the vote in neither half of the fraction", () => {
+    // A tie, a group nobody voted in, or no group on the record: there was no
+    // line to keep, so keeping it is not a fact about this member.
+    expect(dissentFlagsFor("yes", null)).toEqual({ dissent: false, counted: false })
+    expect(dissentFlagsFor("no", null)).toEqual({ dissent: false, counted: false })
+  })
+
+  test("counted is not the negation of dissent", () => {
+    // Three situations give `dissent: false` and only one of them is counted.
+    // Written as its own assertion because `counted = !dissent` passes every
+    // test above except this one.
+    const withLine = dissentFlagsFor("yes", line)
+    const absent = dissentFlagsFor("absent", line)
+    const noLine = dissentFlagsFor("yes", null)
+    expect([withLine.dissent, absent.dissent, noLine.dissent]).toEqual([false, false, false])
+    expect([withLine.counted, absent.counted, noLine.counted]).toEqual([true, false, false])
+  })
+
+  test("abstain and invalid are cast votes that can dissent", () => {
+    // `Enthaltung` is a position — the member was present and chose — so
+    // abstaining against a `yes` line is a dissent, not an absence.
+    expect(dissentFlagsFor("abstain", line)).toEqual({ dissent: true, counted: true })
+    expect(dissentFlagsFor("invalid", line)).toEqual({ dissent: true, counted: true })
+    // And where abstention *is* the line, voting yes breaks it.
+    const abstained = { vote: "abstain" as const, share: 0.8 }
+    expect(dissentFlagsFor("abstain", abstained)).toEqual({ dissent: false, counted: true })
+    expect(dissentFlagsFor("yes", abstained)).toEqual({ dissent: true, counted: true })
+  })
+
+  test("agrees with isRebel on every position", () => {
+    // The two must not drift: the stored flag and the badge on the ballot page
+    // are the same claim, and this is the assertion that keeps them one rule.
+    for (const vote of ["yes", "no", "abstain", "invalid", "absent"] as const) {
+      for (const majority of [line, null]) {
+        expect(dissentFlagsFor(vote, majority).dissent).toBe(isRebel(vote, majority))
+      }
+    }
   })
 })
 

@@ -201,6 +201,22 @@ async function deleteRowsFor(
           .take(take),
     },
     {
+      // The roll-up over the rows above, and it must go with them. It is a
+      // *stored sum* maintained by delta (convex/votes.ts), so unlike every
+      // other table here it does not become empty merely because its inputs
+      // did: deleting a synthetic MP's vote records without this would leave a
+      // tally counting votes that no longer exist, on the one board where the
+      // number is a claim about a named person's conduct. `backfillDissent`
+      // cannot repair that either — a deleted record carries no flag to
+      // subtract.
+      table: "dissentTallies",
+      read: (take: number) =>
+        ctx.db
+          .query("dissentTallies")
+          .withIndex("by_mpInternalId_and_wahlperiode", (q) => q.eq("mpInternalId", mpInternalId))
+          .take(take),
+    },
+    {
       table: "speeches",
       read: (take: number) =>
         ctx.db
