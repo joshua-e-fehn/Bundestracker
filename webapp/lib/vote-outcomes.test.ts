@@ -91,17 +91,43 @@ describe("the German dictionary values are the stored strings", () => {
     for (const tenor of TRANSLATABLE_OUTCOMES) {
       const key = outcomeKey(tenor)
       expect(key, tenor).not.toBeNull()
-      // biome-ignore lint/style/noNonNullAssertion: asserted non-null above
       expect(t(key!, "de").toLowerCase(), tenor).toBe(tenor)
     }
   })
 
   test("every known tenor has an English rendering that differs from the German", () => {
     for (const tenor of TRANSLATABLE_OUTCOMES) {
-      // biome-ignore lint/style/noNonNullAssertion: covered by the test above
       const key = outcomeKey(tenor)!
       expect(t(key, "en").length, tenor).toBeGreaterThan(0)
       expect(t(key, "en"), tenor).not.toBe(t(key, "de"))
     }
+  })
+})
+
+describe("tenors discovered when the outcomes were first ingested", () => {
+  // The map was written from the tenors visible before any outcome had been
+  // stored. Running the enrichment against WP21 surfaced two more, and one of
+  // them exposed a gap in the colour rule rather than only in the map.
+  test("Zustimmung is a pass, not a neutral outcome", () => {
+    // A Bundesrat-facing consent to a bill. It contains neither "annahme" nor
+    // "angenommen", so it rendered grey — an approved bill shown as though the
+    // chamber had decided nothing.
+    expect(outcomeTone("Zustimmung")).toBe("passed")
+    expect(outcomeKey("Zustimmung")).toBe("votes.outcome.zustimmung")
+  })
+
+  test("a rejected amendment is rejected, and says which", () => {
+    expect(outcomeTone("Ablehnung des Änderungsantrags")).toBe("rejected")
+    expect(outcomeKey("Ablehnung des Änderungsantrags")).toBe(
+      "votes.outcome.ablehnungDesAenderungsantrags",
+    )
+  })
+
+  test("an outcome naming both sides is read as the side that won", () => {
+    // Live: "Ablehnung der Vorlage" arrives with the bemerkung "(Annahme der
+    // Beschlussempfehlung auf Ablehnung)" — the chamber adopted a
+    // recommendation *to reject*. Testing rejection first is what gets this
+    // right; the reverse order would colour a defeated motion green.
+    expect(outcomeTone("Annahme der Beschlussempfehlung auf Ablehnung")).toBe("rejected")
   })
 })

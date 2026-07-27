@@ -34,9 +34,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
-#: The vote counts at the head of `abstimm_ergebnis_bemerkung` — see
-#: `Beschlussfassung.tally`, which is where the shape is explained.
-_TALLY_PATTERN = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*:\s*(\d+)")
+#: The vote counts inside `abstimm_ergebnis_bemerkung` — see
+#: `Beschlussfassung.tally`, which is where the four live shapes are set out.
+#: Bounded by non-digits on both sides so `1:2:34` cannot be read out of the
+#: middle of a longer run, and searched rather than anchored: real values put
+#: prose on either side of the counts.
+_TALLY_PATTERN = re.compile(r"(?<!\d)(\d+)\s*:\s*(\d+)\s*:\s*(\d+)(?!\d)")
 
 
 def _unwrap_single(value: Any) -> Any:
@@ -184,24 +187,28 @@ class Beschlussfassung(DIPModel):
     def tally(self) -> tuple[int, int, int] | None:
         """`(yes, no, abstain)` from `abstimm_ergebnis_bemerkung`, or None.
 
-        The field is free text that *usually* opens with the counts —
-        `"519:43:0"` — and sometimes carries prose after them, e.g.
-        `"539:56:1 (Annahme der Beschlussempfehlung auf Ablehnung)"`. It is also
-        sometimes prose alone, with no counts at all.
+        The field is free text with the counts somewhere inside it. All four
+        shapes below are live WP21 values, and each breaks a different naive
+        parse:
 
-        So the pattern is anchored at the start and a `split(":")` is wrong
-        twice over: it raises on the prose-only form and mis-slices the
-        parenthesised one. None is returned for anything that does not begin
-        with three counts, which is what lets the caller treat "no tally here"
-        as ordinary rather than exceptional.
+            "519:43:0"                                      bare
+            "539:56:1 (Annahme der Beschlussempfehlung …)"  trailing prose
+            "übrige Teile; 297:130:134"                     *leading* prose
+            "Festlegung der Federführung gegen den Wunsch"  no counts at all
+
+        So the counts are *searched for* rather than matched at the start, and
+        `split(":")` is wrong three ways over — it raises on the last form and
+        mis-slices the middle two. None is returned when there are no counts,
+        which is what lets the caller treat "no tally here" as ordinary.
 
         This is the only field that distinguishes two ballots taken in the same
         sitting, so it is what joins a DIP outcome to a parsed vote sheet — see
-        `transform.vote_outcome_index`.
+        `transform.vote_outcome_index`. Anchoring it cost the join two of WP21's
+        68 ballots, silently: they simply kept an empty outcome.
         """
         if not self.abstimm_ergebnis_bemerkung:
             return None
-        match = _TALLY_PATTERN.match(self.abstimm_ergebnis_bemerkung)
+        match = _TALLY_PATTERN.search(self.abstimm_ergebnis_bemerkung)
         if match is None:
             return None
         yes, no, abstain = match.groups()

@@ -42,8 +42,19 @@ export function outcomeTone(result: string): OutcomeTone {
   if (result.trim() === "") return "pending"
 
   const folded = result.toLowerCase()
+  // Rejection is tested first because several real tenors name both sides —
+  // "Ablehnung der Vorlage" arrives as "… (Annahme der Beschlussempfehlung auf
+  // Ablehnung)", where the chamber adopted a recommendation *to reject*.
   if (folded.includes("ablehnung") || folded.includes("abgelehnt")) return "rejected"
-  if (folded.includes("annahme") || folded.includes("angenommen")) return "passed"
+  // `zustimmung` is a Bundesrat-facing approval and appears in WP21 on its own;
+  // it is a pass by any reading, and was rendering neutral for want of the word.
+  if (
+    folded.includes("annahme") ||
+    folded.includes("angenommen") ||
+    folded.includes("zustimmung")
+  ) {
+    return "passed"
+  }
   return "neutral"
 }
 
@@ -74,6 +85,9 @@ const OUTCOME_KEYS: Record<string, TranslationKey> = {
   "annahme der vorlage": "votes.outcome.annahmeDerVorlage",
   "ablehnung der vorlage": "votes.outcome.ablehnungDerVorlage",
   "annahme in ausschussfassung": "votes.outcome.annahmeInAusschussfassung",
+  // Both observed in WP21 once the outcomes were first ingested.
+  zustimmung: "votes.outcome.zustimmung",
+  "ablehnung des änderungsantrags": "votes.outcome.ablehnungDesAenderungsantrags",
   überweisung: "votes.outcome.ueberweisung",
   erledigt: "votes.outcome.erledigt",
   zurückgezogen: "votes.outcome.zurueckgezogen",

@@ -388,6 +388,23 @@ def test_a_ballots_tally_is_read_from_the_head_of_free_text() -> None:
     assert annotated.beschlussfassung[0].tally == (539, 56, 1)
 
 
+def test_a_tally_behind_leading_prose_is_still_found() -> None:
+    """Two live WP21 values put the prose *before* the counts —
+    `"übrige Teile; 297:130:134"` and `"Artikel 3, 430:132:0"`.
+
+    An anchored pattern misses both, and the failure is silent: the ballot
+    simply keeps an empty outcome. That cost two of WP21's 68 before this.
+    """
+    for bemerkung, expected in (
+        ("übrige Teile; 297:130:134", (297, 130, 134)),
+        ("Artikel 3, 430:132:0", (430, 132, 0)),
+    ):
+        position = _position(
+            beschlussfassung=[{"beschlusstenor": "A", "abstimm_ergebnis_bemerkung": bemerkung}]
+        )
+        assert position.beschlussfassung[0].tally == expected, bemerkung
+
+
 def test_a_bemerkung_that_is_only_prose_has_no_tally() -> None:
     # The recorded fixture carries exactly this shape, so `split(":")` would
     # raise on real data rather than on a hypothetical.

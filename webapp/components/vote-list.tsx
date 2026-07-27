@@ -142,10 +142,7 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
             <SelectContent>
               <SelectItem value={ANY}>{t("votes.allResults")}</SelectItem>
               {data?.results.map((entry) => (
-                <SelectItem
-                  key={entry.value}
-                  value={entry.value === "" ? PENDING : entry.value}
-                >
+                <SelectItem key={entry.value} value={entry.value === "" ? PENDING : entry.value}>
                   {entry.value === "" ? t("votes.outcome.pending") : entry.value} ({entry.count})
                 </SelectItem>
               ))}

@@ -422,6 +422,8 @@ const de = {
   "votes.outcome.annahmeDerVorlage": "Annahme der Vorlage",
   "votes.outcome.ablehnungDerVorlage": "Ablehnung der Vorlage",
   "votes.outcome.annahmeInAusschussfassung": "Annahme in Ausschussfassung",
+  "votes.outcome.zustimmung": "Zustimmung",
+  "votes.outcome.ablehnungDesAenderungsantrags": "Ablehnung des Änderungsantrags",
   "votes.outcome.ueberweisung": "Überweisung",
   "votes.outcome.erledigt": "Erledigt",
   "votes.outcome.zurueckgezogen": "Zurückgezogen",
@@ -925,6 +927,10 @@ const en: Dictionary = {
   "votes.outcome.annahmeDerVorlage": "Motion adopted",
   "votes.outcome.ablehnungDerVorlage": "Motion rejected",
   "votes.outcome.annahmeInAusschussfassung": "Adopted as amended in committee",
+  // "Zustimmung" is the Bundesrat-facing consent to a bill, distinct from the
+  // chamber adopting its own motion — "Approved" rather than "Adopted".
+  "votes.outcome.zustimmung": "Approved",
+  "votes.outcome.ablehnungDesAenderungsantrags": "Amendment rejected",
   "votes.outcome.ueberweisung": "Referred to committee",
   "votes.outcome.erledigt": "Concluded",
   "votes.outcome.zurueckgezogen": "Withdrawn",

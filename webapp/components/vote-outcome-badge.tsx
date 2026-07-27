@@ -54,17 +54,15 @@ export function VoteOutcomeBadge({
     return (
       <Badge
         variant="outline"
-        className={cn(
-          "shrink-0 border-dashed bg-muted/40 text-muted-foreground",
-          className,
-        )}
+        className={cn("shrink-0 border-dashed bg-muted/40 text-muted-foreground", className)}
       >
         {t("votes.outcome.pending", locale)}
       </Badge>
     )
   }
 
-  const color = tone === "passed" ? "var(--vote-yes)" : tone === "rejected" ? "var(--vote-no)" : null
+  const color =
+    tone === "passed" ? "var(--vote-yes)" : tone === "rejected" ? "var(--vote-no)" : null
   const key = outcomeKey(result)
   // German prints the source wording; English prints it too unless the tenor is
   // one of the known ones. See the header.
