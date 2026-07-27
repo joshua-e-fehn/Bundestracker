@@ -48,8 +48,10 @@ from pydantic import BaseModel, ConfigDict
 #: MP silently fails to match. Measured: the bare form cost 7 of 639, the
 #: period-anchored form costs 0. Every abbreviation the source prints ends in a
 #: period (`Prof.`, `Dr.-Ing.`, `habil.`, `M. A.`, `LL.M.`), so requiring one
-#: keeps the rule both correct and complete.
-ACADEMIC_TITLE = re.compile(r"\b(?:[A-Za-zÄÖÜäöüß]{1,6}|LL|B|M)\.(?:-[A-Za-zÄÖÜäöüß]+\.)?")
+#: keeps the rule both correct and complete — including the post-nominals, which
+#: need no branch of their own: `LL`, `B` and `M` are all within `{1,6}` letters
+#: and are matched by the same class as `Prof`.
+ACADEMIC_TITLE = re.compile(r"\b[A-Za-zÄÖÜäöüß]{1,6}\.(?:-[A-Za-zÄÖÜäöüß]+\.)?")
 
 #: Name particles the listing prints on the *forename* side of the comma —
 #: `Aken, Jan van` — where Stammdaten files them with the surname. Moving them
