@@ -28,6 +28,7 @@ from bundestrack.models.stammdaten import (
     Mandate,
     MPName,
     NameIndex,
+    StammdatenDump,
     fold_name,
     parse_german_date,
 )
@@ -310,6 +311,65 @@ def test_a_scoped_match_is_not_flagged_stale(dump) -> None:
 
     assert match.id == "11004011"
     assert not match.stale
+
+
+# --- the period window -----------------------------------------------------
+
+
+def _period(wahlperiode: int, spans: list[tuple[str | None, str | None]]) -> StammdatenDump:
+    """A dump of one mandate per span, for exercising the window arithmetic."""
+    return StammdatenDump(
+        mps=[
+            MP(
+                id=f"1100{index:04d}",
+                names=[MPName(nachname=f"Test{index}", vorname="A")],
+                mandates=[
+                    Mandate(
+                        wahlperiode=wahlperiode,
+                        start_date=parse_german_date(start),
+                        end_date=parse_german_date(end),
+                    )
+                ],
+            )
+            for index, (start, end) in enumerate(spans)
+        ]
+    )
+
+
+def test_a_closed_period_spans_its_earliest_start_to_its_latest_end() -> None:
+    """Mid-period replacements sit strictly inside the period, so the extremes
+    of the mandate dates are the period itself."""
+    dump = _period(
+        20,
+        [
+            ("26.10.2021", "25.03.2025"),  # a full term
+            ("14.02.2023", "25.03.2025"),  # a late replacement
+            ("26.10.2021", "30.06.2024"),  # an early departure
+        ],
+    )
+
+    assert dump.wahlperiode_window(20) == (dt.date(2021, 10, 26), dt.date(2025, 3, 25))
+
+
+def test_an_unfinished_period_has_no_upper_bound() -> None:
+    """An open `MDBWP_BIS` is someone still serving, so the period has not
+    ended — and None must not be filled in with today's date, or a record
+    dated tomorrow is silently excluded."""
+    dump = _period(21, [("25.03.2025", None), ("25.03.2025", "01.06.2026")])
+
+    assert dump.wahlperiode_window(21) == (dt.date(2025, 3, 25), None)
+
+
+def test_a_period_the_dump_does_not_cover_has_no_window() -> None:
+    # Answering with a bound here would filter a period's data down to nothing.
+    assert StammdatenDump(mps=[]).wahlperiode_window(14) == (None, None)
+
+
+def test_the_real_dump_gives_the_current_period_an_open_window(dump) -> None:
+    start, end = dump.wahlperiode_window(21)
+
+    assert start == dt.date(2025, 3, 25), "WP21's constitutive sitting"
+    assert end is None, "WP21 has not ended"
 
 
 # --- streaming -------------------------------------------------------------

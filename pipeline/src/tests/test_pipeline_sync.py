@@ -20,6 +20,8 @@ from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
 from bundestrack.models.dip import Aktivitaet
 from bundestrack.models.enrichment import MPContact, MPPortrait, MPProfileLink, SocialProfile
+from bundestrack.models.stammdaten import parse_german_date
+from bundestrack.models.votes import VoteSheetLink
 from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
 from bundestrack.pipeline.state import (
@@ -78,8 +80,23 @@ class StubDIP(StubClient):
 
 
 class StubVotes(StubClient):
+    """The ballot listing, remembering which sheets were actually downloaded.
+
+    `fetched` is the assertion surface for the period filter: the listing is
+    every ballot since 1949 and the sheets are ~200 KB each, so what matters is
+    not only which ballots are ingested but which ones were paid for.
+    """
+
+    def __init__(self, links: list[VoteSheetLink] | None = None) -> None:
+        self.links = links or []
+        self.fetched: list[str] = []
+
     def iter_vote_links(self, **kwargs):
-        return iter(())
+        return iter(self.links)
+
+    def fetch_sheet(self, link: VoteSheetLink):
+        self.fetched.append(link.title)
+        raise BundestagAPIError(f"stub: no sheet bytes for {link.title!r}")
 
 
 class StubProfiles(StubClient):
@@ -139,6 +156,7 @@ class RecordingLoader(ConvexLoader):
 def build(
     *,
     dip: StubDIP | None = None,
+    votes: StubVotes | None = None,
     state: SyncState | None = None,
     tmp_path=None,
     profiles: StubProfiles | None = None,
@@ -159,7 +177,7 @@ def build(
         dip=dip or StubDIP(),
         stammdaten=StubStammdaten(),
         protocols=StubClient(),
-        votes=StubVotes(),
+        votes=votes or StubVotes(),
         profiles=profiles or StubProfiles(),
         abgeordnetenwatch=abgeordnetenwatch or StubAbgeordnetenwatch(),
         loader=loader,
@@ -593,6 +611,63 @@ def test_an_explicit_since_overrides_every_stream(tmp_path) -> None:
     assert set(dip.since) == {"2026-01-01T00:00:00+01:00"}
 
 
+def test_a_backfill_ignores_a_watermark_left_by_an_earlier_attempt(tmp_path) -> None:
+    """A backfill means the whole period, not the part a dead run missed.
+
+    The failure this guards is silent and unrecoverable by any later run: a
+    backfill blocked by the WAF leaves a watermark at whatever it *had* read,
+    and `aktualisiert` order is not `datum` order — so resuming from that mark
+    fetches the records amended since, never the ones not yet seen.
+    """
+    # WP21 because the Stammdaten excerpt only has mandates for that period —
+    # a period with no roster skips every dependent stage, so the assertion
+    # below would hold vacuously.
+    state = SyncState(
+        watermarks={
+            f"21:{STREAM_ACTIVITIES}": "2026-07-25T09:00:00+02:00",
+            f"21:{STREAM_MOTIONS}": "2026-07-25T09:00:00+02:00",
+            f"21:{STREAM_PROTOCOLS}": "2026-07-25T09:00:00+02:00",
+        }
+    )
+    dip = StubDIP()
+    pipeline, _ = build(dip=dip, state=state, tmp_path=tmp_path)
+
+    backfill(21, pipeline=pipeline)
+
+    assert dip.since, "the fetching stages must have run at all"
+    assert all(window is None for window in dip.since), (
+        "every stream must re-fetch the period whole, not resume from a partial run"
+    )
+
+
+def test_a_backfill_still_honours_an_explicit_since(tmp_path) -> None:
+    # `full` overrides the *stored* mark, not a human naming a window.
+    state = SyncState(watermarks={f"21:{STREAM_ACTIVITIES}": "2026-07-25T09:00:00+02:00"})
+    dip = StubDIP()
+    pipeline, _ = build(dip=dip, state=state, tmp_path=tmp_path)
+    pipeline.full = True
+
+    assert pipeline._window(STREAM_ACTIVITIES, "2026-01-01T00:00:00+01:00") == (
+        "2026-01-01T00:00:00+01:00"
+    )
+
+
+def test_a_sync_still_resumes_from_its_watermark(tmp_path) -> None:
+    """The counterpart of the two above: `full` is a backfill's property alone.
+
+    A daily sync that started fetching from scratch would re-read the whole
+    period against a WAF that IP-blocks on volume (§2.6).
+    """
+    state = SyncState(watermarks={f"21:{STREAM_ACTIVITIES}": "2026-07-25T09:00:00+02:00"})
+    dip = StubDIP()
+    pipeline, _ = build(dip=dip, state=state, tmp_path=tmp_path)
+
+    sync(21, pipeline=pipeline)
+
+    assert dip.since, "the fetching stages must have run at all"
+    assert dip.since[0] is not None
+
+
 def test_a_host_with_no_watermark_does_a_full_fetch(tmp_path) -> None:
     """Rather than starting from now, which would leave the deployment
     permanently missing whatever happened before it was first run."""
@@ -721,3 +796,68 @@ def test_an_older_period_says_committee_data_was_never_published(tmp_path) -> No
 
     (stage,) = [s for s in report.stages if s.name == "committees"]
     assert any("§6.4" in note for note in stage.notes)
+
+
+# --- the ballot listing ----------------------------------------------------
+
+
+def _link(title: str, when: str | None) -> VoteSheetLink:
+    return VoteSheetLink(
+        title=title,
+        pdf_url=f"https://example.invalid/{title}.pdf",
+        xlsx_url=f"https://example.invalid/{title}.xlsx",
+        date=parse_german_date(when),
+    )
+
+
+def test_a_ballot_dated_outside_the_period_is_not_downloaded(tmp_path) -> None:
+    """The listing is every ballot since 1949 and carries no period filter.
+
+    Without a date check each backfill downloads the whole listing — hundreds
+    of ~200 KB sheets — to keep the handful that match, against a WAF that
+    counts bytes as well as requests (§2.6).
+    """
+    votes = StubVotes(
+        [
+            _link("during-wp21", "01.06.2026"),
+            _link("before-wp21", "01.06.2019"),
+        ]
+    )
+    pipeline, _ = build(votes=votes, tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+    pipeline.load_votes(report, incremental=False)
+
+    assert votes.fetched == ["during-wp21"]
+    (stage,) = [s for s in report.stages if s.name == "votes"]
+    assert any("outside WP21" in note for note in stage.notes)
+
+
+def test_an_undated_ballot_is_downloaded_rather_than_assumed_out_of_period(
+    tmp_path,
+) -> None:
+    """The pre-2012 tail of the listing prints no date at all (§4.1).
+
+    Excluding those would discard ballots on a missing field, and the sheets
+    are the only source that records absences (§4.2) — so an unknown date must
+    cost a download, not a row. The sheet's own `Wahlperiode` column decides.
+    """
+    votes = StubVotes([_link("undated", None)])
+    pipeline, _ = build(votes=votes, tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+    pipeline.load_votes(report, incremental=False)
+
+    assert votes.fetched == ["undated"]
+
+
+def test_an_open_period_does_not_exclude_a_recent_ballot(tmp_path) -> None:
+    # WP21 has not ended, so its window has no upper bound — a ballot dated
+    # after the dump was published is still this period's.
+    votes = StubVotes([_link("tomorrow", "31.12.2028")])
+    pipeline, _ = build(votes=votes, tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+    pipeline.load_votes(report, incremental=False)
+
+    assert votes.fetched == ["tomorrow"]
