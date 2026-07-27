@@ -14,8 +14,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { api } from "@/convex/_generated/api"
 import { groupFeedEvents } from "@/lib/feed-grouping"
-import { formatApproximateCount, formatDateShort } from "@/lib/format"
+import { formatApproximateCount, formatDateShort, formatScore } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
+import { partyByKey, partyColor } from "@/lib/parties"
+import { rankPartiesBy } from "@/lib/party-comparison"
 
 /**
  * The home page's data sections.
@@ -297,6 +299,98 @@ export function BottomMPs({ wahlperiode }: { wahlperiode: number | null | undefi
       subtitleKey="home.bottomMPsSubtitle"
       caveatKey="home.bottomMPsCaveat"
     />
+  )
+}
+
+// --- party comparison -----------------------------------------------------
+
+/**
+ * The Fraktionen, ranked by mean activity — the home page's link to `/parties`.
+ *
+ * A compact ranked list rather than a chart. The dashboard's radar needs its
+ * normalisation caveat to be readable at all (see `buildRadarSeries`), and a
+ * caveat that long does not belong in a home-page card; a bar chart would need
+ * an axis, a legend and the same explanation of what a mean is. Six rows with a
+ * proportional rule need none of it — the number is printed, and the rule is
+ * read as "more" without claiming a unit.
+ *
+ * `parties.meansNotice` is not repeated here, but the subtitle says "je
+ * Mandat" / "per mandate", which is the part a reader must not miss: these are
+ * averages, and a party total would be several times larger. The full reasoning
+ * is one click away on the page these rows link to.
+ */
+export function PartyComparisonPreview({
+  wahlperiode,
+}: {
+  wahlperiode: number | null | undefined
+}) {
+  const { t, locale } = useLocale()
+  const skip = wahlperiode === null || wahlperiode === undefined
+  const comparison = useQuery(api.parties.getPartyComparison, skip ? "skip" : { wahlperiode })
+
+  // Only groups the sweep has scored: a mean over nobody is undefined, and a
+  // bar at the origin would put an unscored Fraktion at the bottom of a ranking
+  // it is not in. `rankPartiesBy` is the shared rule — the dashboard's table and
+  // this card must not disagree about who leads.
+  const ranked = rankPartiesBy(comparison?.parties ?? [], "totalScore")
+  // The scale's top, so the rules are proportional to the leader rather than to
+  // an invented ceiling. Guarded because a chamber where every scored member
+  // scored zero is a real state on a fresh deployment.
+  const leader = ranked[0]?.means.totalScore ?? 0
+
+  return (
+    <section aria-labelledby="parties-heading">
+      <SectionHeading
+        id="parties-heading"
+        titleKey="home.partiesTitle"
+        subtitleKey="home.partiesSubtitle"
+        href="/parties"
+      />
+      {comparison === undefined ? (
+        <RowSkeletons count={5} height="h-9" />
+      ) : ranked.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <Card size="sm" className="gap-0 divide-y divide-border/60 p-0">
+          {ranked.map((row) => {
+            const party = partyByKey(row.partyKey)
+            const color = partyColor(party.label)
+            return (
+              <Link
+                key={row.partyKey}
+                href={`/parties/${row.partyKey}`}
+                className="flex items-center gap-3 px-4 py-2.5 outline-none transition-colors first:rounded-t-[inherit] last:rounded-b-[inherit] hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <span
+                  aria-hidden
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="w-20 shrink-0 truncate font-medium text-sm">{party.label}</span>
+                <span className="h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-muted">
+                  <span
+                    className="block h-full rounded-full"
+                    style={{
+                      width: `${leader > 0 ? (row.means.totalScore / leader) * 100 : 0}%`,
+                      backgroundColor: color,
+                    }}
+                  />
+                </span>
+                <span className="shrink-0 text-right font-medium text-sm tabular-nums">
+                  {formatScore(row.means.totalScore, locale)}
+                </span>
+              </Link>
+            )
+          })}
+        </Card>
+      )}
+      {/* The one thing this card cannot be read without: every figure is an
+          average over a group's scored members, not the group's output. */}
+      <p className="mt-3 flex gap-2 text-muted-foreground text-xs leading-relaxed">
+        <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+        {t("parties.smallGroupCaveat")}
+      </p>
+    </section>
   )
 }
 

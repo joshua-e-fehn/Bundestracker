@@ -27,18 +27,35 @@ import { api } from "@/convex/_generated/api"
  * rendered.
  *
  * So the boundary carries a component *reference* instead, which the bundler
- * can serialise as a client-module pointer, and this component calls it. That
- * fixes the props to `{ wahlperiode }` for anything used here, which both
- * consumers already had.
+ * can serialise as a client-module pointer, and this component calls it.
+ *
+ * ## Why `props` exists
+ *
+ * Most consumers need nothing but the period. `/parties/[party]` needs the
+ * period *and* the group its route names, and there are only two other ways to
+ * give it one: resolve the period a second time inside that page, or wrap the
+ * component in a closure — which is the exact thing the paragraph above
+ * explains cannot cross the boundary. A second period resolution would be a
+ * second answer to "which Bundestag is this", and the one this component exists
+ * to prevent. So the extra props ride along, serialised like any other prop.
+ *
+ * They are constrained to a plain object for that reason: whatever goes in here
+ * crosses the server/client boundary and must survive serialisation, so a
+ * function passed as a prop fails at runtime in the same way a render prop
+ * would.
  *
  * The empty state is a real one, not a defensive branch: a fresh deployment has
  * no roster until the first pipeline run, and a page that says so beats one
  * that renders an empty table for period 0.
  */
-export function CurrentPeriod({
+export function CurrentPeriod<Extra extends Record<string, unknown> = Record<string, never>>({
   component: Component,
+  props,
 }: {
-  component: React.ComponentType<{ wahlperiode: number }>
+  component: React.ComponentType<Extra & { wahlperiode: number }>
+  /** Extra props for `component`, merged with the resolved period. Must be
+   * serialisable — see the note above. */
+  props?: Extra
 }) {
   const { t } = useLocale()
   const wahlperiode = useQuery(api.rankings.getCurrentWahlperiode, {})
@@ -62,5 +79,8 @@ export function CurrentPeriod({
     )
   }
 
-  return <Component wahlperiode={wahlperiode} />
+  // The cast is the price of being generic over `Extra`: the spread produces
+  // exactly `Extra & { wahlperiode: number }`, which is the signature, but
+  // TypeScript cannot prove that for an unresolved type parameter.
+  return <Component {...({ ...props, wahlperiode } as Extra & { wahlperiode: number })} />
 }

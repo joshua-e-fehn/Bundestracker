@@ -628,66 +628,162 @@ const de = {
   "seating.seatOf": "Sitz von {name}",
   "seating.openProfile": "Profil ansehen",
 
-  // --- keyword search -----------------------------------------------------
+  // --- party comparison ---------------------------------------------------
   //
-  // The search returns *people*, not documents, and several strings below exist
-  // only to keep that clear: `search.subtitle` says so outright, and
-  // `search.matchedBecause` labels the evidence under each name. A reader who
-  // takes the result list for a document list will misread every count on it.
-  "search.title": "Suche",
-  "search.subtitle":
-    "Stichwortsuche über Anträge, Reden, Anfragen und Ausschüsse. Das Ergebnis sind Abgeordnete — mit dem Nachweis, warum sie gefunden wurden.",
-  "search.placeholder": "Thema, Stichwort oder Beruf suchen …",
-  "search.navPlaceholder": "Suchen …",
-  "search.open": "Suche öffnen",
-  "search.submit": "Suchen",
-  "search.clear": "Suche leeren",
-  "search.prompt": "Geben Sie ein Stichwort ein, um Abgeordnete zu finden.",
-  // Distinct from `search.prompt`: nothing was found, as opposed to nothing was
-  // asked. The hint carries the one thing the reader can act on, which is also
-  // the honest limit of the feature — see `search.noFuzzyNotice`.
-  "search.empty": "Keine Abgeordneten gefunden.",
-  "search.emptyHint":
-    "Prüfen Sie die Schreibweise oder versuchen Sie ein kürzeres Stichwort — „Klima“ findet auch „Klimaschutzgesetz“.",
-  "search.resultCount": "{count} Abgeordnete gefunden",
-  "search.resultCountOne": "1 Abgeordnete:r gefunden",
-  "search.matchedBecause": "Gefunden wegen",
-  "search.matchCount": "{count} Treffer",
-  "search.matchCountOne": "1 Treffer",
-  "search.moreMatches": "und {count} weitere Treffer",
-  "search.breakdown": "Nach Fraktion",
-  // Shown when a synonym or translation was searched alongside the reader's own
-  // words. Named rather than silent: a result matching "Rechtsanwalt" for a
-  // query of "lawyer" is otherwise inexplicable on the page.
-  "search.alsoSearched": "Auch gesucht nach: {terms}",
-  // The structural limit of the search, stated where it is felt. Convex's
-  // search index has no typo tolerance whatever — "Klimq" finds nothing — and a
-  // reader who assumes otherwise concludes the Bundestag never discussed the
-  // subject. Prefix matching *is* offered, so the sentence says what does work.
-  "search.noFuzzyNotice":
-    "Die Suche gleicht Wortanfänge ab: „Klima“ findet „Klimaschutzgesetz“. Tippfehler werden nicht korrigiert.",
-  // Cross-language matching comes from a hand-gepflegte Wortliste, not a
-  // translation service — so its coverage is finite and saying so is fairer
-  // than letting an unfound English term read as an empty Bundestag.
-  "search.bilingualNotice":
-    "Deutsche und englische Stichwörter werden über eine gepflegte Wortliste verknüpft — „lawyer“ findet „Rechtsanwalt“. Die Liste deckt gängige Themen und Berufe ab, nicht den gesamten Wortschatz.",
-  // The read ceiling reached. A capped count that reads as exact understates an
-  // MP's work, so the number is marked rather than quietly wrong.
-  "search.truncatedNotice":
-    "Sehr viele Treffer — die Trefferzahlen sind Mindestwerte. Grenzen Sie die Suche weiter ein.",
-  "search.filterFraktion": "Fraktion",
-  "search.filterCommittee": "Ausschuss",
-  "search.filterPeriod": "Wahlperiode",
-  "search.filterType": "Art des Nachweises",
-  "search.allFraktionen": "Alle Fraktionen",
-  "search.allCommittees": "Alle Ausschüsse",
-  "search.allTypes": "Alle Arten",
-  "search.period": "{wahlperiode}. Wahlperiode",
-  // Committee seats are searchable but only exist for the current period
-  // (§6.4). Said here because an empty committee filter on a historical period
-  // is "nicht veröffentlicht", not "keine Ausschüsse".
-  "search.committeeScopeNotice":
-    "Ausschussmitgliedschaften sind nur für die laufende Wahlperiode veröffentlicht.",
+  // Every figure on `/parties` is a **Durchschnitt je bewertetem Mandat**,
+  // never a Fraktionssumme, and the strings say so repeatedly rather than once
+  // in a footnote. convex/stats.ts explains why a per-MP count may not be
+  // summed (§3.4 emits one record per MP per document, so a Kleine Anfrage with
+  // forty signatories is forty rows) — and the error would grow with the
+  // Fraktion, which is exactly the axis this page compares on. A reader who
+  // takes a bar for a party total has been misled by us.
+
+  "nav.parties": "Fraktionen",
+
+  "parties.title": "Fraktionsvergleich",
+  "parties.subtitle":
+    "Die Fraktionen des Bundestages nebeneinander — je Kennzahl der Durchschnitt eines Mandats, nicht die Summe der Fraktion.",
+
+  // The notice above the charts. The most important string on the page, for
+  // the reason `seating.syntheticNotice` is the most important one on its own:
+  // it names what the numbers are before any of them is read.
+  "parties.meansNotice":
+    "Alle Werte sind Mittelwerte je bewertetem Mandat. Fraktionssummen werden bewusst nicht ausgewiesen: Das DIP erfasst einen Datensatz je Abgeordneter und Dokument, sodass eine gemeinsam eingebrachte Anfrage so oft zählt, wie sie unterzeichnet wurde — eine Summe würde große Fraktionen um genau diesen Faktor überschätzen.",
+  "parties.coverage": "{scored} von {mandates} Mandaten sind bewertet.",
+  // Shown when the two diverge: a mean over an incomplete sweep is a real
+  // figure about an incomplete set, which the reader has to be able to see.
+  //
+  // Two keys rather than one with a `{missing}` placeholder doing double duty,
+  // following lib/relative-time.ts: the singular/plural choice is made *by key*
+  // so each language can split where it actually splits, and neither ends up
+  // printing "1 Mandate". German and English happen to agree at one here, which
+  // is not a reason to assume the next language will.
+  "parties.coverageGapOne":
+    "Die nächtliche Berechnung hat ein Mandat noch nicht erfasst. Es fehlt in jedem Mittelwert auf dieser Seite — es zählt nicht als Null.",
+  "parties.coverageGap":
+    "Die nächtliche Berechnung hat {missing} Mandate noch nicht erfasst. Sie fehlen in jedem Mittelwert auf dieser Seite — sie zählen nicht als Null.",
+  "parties.empty": "Für diese Wahlperiode liegen noch keine Fraktionsdaten vor.",
+
+  "parties.table.title": "Aktivitätswert je Fraktion",
+  "parties.table.subtitle": "Durchschnittlicher Aktivitätswert eines Mandats, absteigend.",
+  "parties.column.party": "Fraktion",
+  "parties.column.seats": "Mandate",
+  "parties.column.scored": "bewertet",
+  "parties.column.meanScore": "Ø Aktivitätswert",
+  // Beside the mean rather than instead of it: the two disagree exactly where
+  // it matters, because one sehr aktives Mandat hebt den Mittelwert und lässt
+  // den Median unberührt. In einer Dreier-Gruppe ist das der Unterschied
+  // zwischen Befund und Artefakt.
+  "parties.column.medianScore": "Median",
+  "parties.medianNote":
+    "Der Median steht neben dem Mittelwert, weil beide dort auseinanderfallen, wo es darauf ankommt: Ein einzelnes sehr aktives Mandat hebt den Mittelwert und lässt den Median unberührt.",
+
+  "parties.radar.title": "Alle Kennzahlen im Vergleich",
+  "parties.radar.subtitle":
+    "Sechs Kennzahlen, je Achse auf die führende Fraktion normiert. Die Fläche zeigt die relative Stellung, nicht die absolute Menge.",
+  // The caveat the radar cannot be shown without. Six axes in six different
+  // units on one radius is only readable if each is scaled — and a scaled axis
+  // says "relative to the leader", which is a different claim from the number
+  // it was built from. See lib/party-comparison.ts.
+  "parties.radarCaveat":
+    "Jede Achse ist auf die jeweils führende Fraktion normiert (100 %), weil die sechs Kennzahlen in sechs verschiedenen Einheiten gemessen werden — Wortzahlen erreichen fünf Stellen, Ausschusssitze einstellige Werte. Ein größeres Sechseck bedeutet daher „im Vergleich weiter vorn“, nicht „mehr“. Der gemessene Durchschnitt steht im Tooltip.",
+  "parties.radarLegend": "Fraktion ein- oder ausblenden",
+  "parties.radarTooltipShare": "{share} der führenden Fraktion",
+
+  "parties.metrics.title": "Einzelne Kennzahlen",
+  "parties.metrics.subtitle": "Fraktionen nach einer Kennzahl, absteigend sortiert.",
+
+  "parties.metric.score": "Aktivitätswert",
+  "parties.metric.score.short": "Wert",
+  "parties.metric.score.desc":
+    "Gewichtete Summe aller messbaren Vorgänge, im Durchschnitt je bewertetem Mandat.",
+  "parties.metric.motions": "Anträge",
+  "parties.metric.motions.short": "Anträge",
+  "parties.metric.motions.desc":
+    "Anträge und Entschließungsanträge je Mandat, gezählt aus DIP-Aktivitäten.",
+  "parties.metric.speechWords": "Redeumfang (Wörter)",
+  "parties.metric.speechWords.short": "Wörter",
+  "parties.metric.speechWords.desc":
+    "Im Plenum gesprochene Wörter je Mandat. Dies ist der Wert, den die Bewertung nutzt — und die Achse, die im Netzdiagramm für „Reden“ steht.",
+  "parties.metric.speeches": "Redebeiträge",
+  "parties.metric.speeches.short": "Reden",
+  "parties.metric.speeches.desc":
+    "Wortmeldungen je Mandat. Nicht im Netzdiagramm: Die Fragestunde zerlegt einen Ministerbeitrag in Dutzende Antworten, sodass eine Achse hierauf vor allem Regierungsämter abbilden würde.",
+  "parties.metric.questions": "Anfragen",
+  "parties.metric.questions.short": "Anfragen",
+  "parties.metric.questions.desc": "Kleine und Große Anfragen je Mandat.",
+  "parties.metric.votes": "Abstimmungsbeteiligung",
+  "parties.metric.votes.short": "Beteiligung",
+  "parties.metric.votes.desc":
+    "Anteil der namentlichen Abstimmungen, an denen abgestimmt wurde. Enthaltung zählt als Teilnahme.",
+  "parties.metric.committees": "Ausschusssitze",
+  "parties.metric.committees.short": "Ausschüsse",
+  "parties.metric.committees.desc": "Ausschussmitgliedschaften je Mandat.",
+  "parties.metric.bills": "Gesetzentwürfe",
+  "parties.metric.bills.short": "Gesetze",
+  "parties.metric.bills.desc": "Mitgezeichnete Gesetzentwürfe je Mandat.",
+  "parties.metric.reports": "Berichte",
+  "parties.metric.reports.short": "Berichte",
+  "parties.metric.reports.desc": "Berichte je Mandat — die dünnste der neun Kennzahlen.",
+
+  "parties.caveat.score":
+    "Der Aktivitätswert ist eine gewichtete Summe; die Gewichtung ist eine Setzung, keine Wertung. Ein Fraktionsdurchschnitt erbt diese Setzung.",
+  // §9 puts fraktionslos at 3 seats against CDU/CSU's 209. One busy independent
+  // moves that mean by a third. Shown anyway — an MP with no group holds a
+  // seat, the same call SEATING_ORDER makes — with the warning beside it.
+  "parties.smallGroupCaveat":
+    "Bei kleinen Gruppen ist ein Mittelwert instabil: Bei drei Mandaten verschiebt ein einzelnes sehr aktives Mitglied den Durchschnitt um ein Drittel. Die Mandatszahl steht deshalb in jeder Tabelle daneben.",
+
+  // --- coalition vs opposition ---
+  "parties.coalition.title": "Regierung und Opposition",
+  "parties.coalition.subtitle":
+    "Dieselben Kennzahlen, zu zwei Blöcken zusammengefasst — gewichtet nach bewerteten Mandaten, nicht nach Fraktionen.",
+  "parties.coalition.parties": "Fraktionen",
+  "parties.coalition.seats": "{count} Mandate",
+  // Not "die Opposition arbeitet mehr": the government answers questions rather
+  // than asking them, so the two blocs are measured on instruments they use for
+  // different purposes. That is a real asymmetry of the institution and not a
+  // finding about anyone's diligence.
+  "parties.coalition.caveat":
+    "Regierung und Opposition nutzen unterschiedliche parlamentarische Instrumente: Anfragen sind ein Mittel der Opposition, Gesetzentwürfe kommen überwiegend aus den Regierungsfraktionen. Ein Unterschied zwischen den Blöcken beschreibt daher vor allem diese Rollenverteilung.",
+  "parties.coalition.unavailable":
+    "Für diese Wahlperiode ist keine Regierungszugehörigkeit hinterlegt, deshalb ist kein Vergleich möglich.",
+  "parties.coalition.difference": "Unterschied",
+
+  // --- party discipline ---
+  "parties.discipline.title": "Fraktionsdisziplin",
+  "parties.discipline.subtitle":
+    "Anteil der Stimmen, die mit der Mehrheit der eigenen Fraktion abgegeben wurden.",
+  "parties.discipline.column.rate": "Zustimmung zur Fraktionslinie",
+  "parties.discipline.column.withLine": "auf Linie",
+  "parties.discipline.column.against": "abweichend",
+  "parties.discipline.column.ballots": "Abstimmungen",
+  "parties.discipline.window": "Ausgewertet wurden die letzten {count} namentlichen Abstimmungen.",
+  "parties.discipline.empty":
+    "Für diese Wahlperiode sind keine namentlichen Abstimmungen erfasst, aus denen sich eine Fraktionslinie ergäbe.",
+  // Two things at once: the window is bounded (a rate over an unnamed subset of
+  // ballots means nothing), and the level is uninformative while the
+  // differences are not — nearly every named ballot is whipped.
+  "parties.disciplineCaveat":
+    "Nahezu alle namentlichen Abstimmungen verlaufen innerhalb der Fraktionen einstimmig; aussagekräftig ist deshalb der Abstand zwischen 97 % und 99 %, nicht die Höhe an sich. Nicht abgegebene Stimmen bleiben außer Betracht — Abwesenheit ist keine Abweichung. Abstimmungen, in denen eine Fraktion exakt gespalten war, haben keine Linie und zählen nicht.",
+
+  // --- one party's members ---
+  "parties.members.title": "Abgeordnete der Fraktion {party}",
+  "parties.members.subtitle": "Nach Aktivitätswert in der laufenden Wahlperiode.",
+  "parties.members.count": "{scored} von {total} Mandaten bewertet",
+  "parties.members.empty": "Für diese Fraktion sind in dieser Wahlperiode keine Mandate erfasst.",
+  // Rank 0 in `getPartyMembers` — a member the nightly sweep has not reached.
+  // Listed rather than dropped, so the list agrees with the seat count above
+  // it, but unranked: they have no measured activity to be placed by.
+  "parties.members.unscored": "noch nicht bewertet",
+  "parties.backToParties": "Zurück zum Fraktionsvergleich",
+  "parties.notFound": "Diese Fraktion gibt es nicht.",
+  "parties.viewMembers": "Abgeordnete ansehen",
+
+  // --- homepage card ---
+  "home.partiesTitle": "Fraktionen im Vergleich",
+  "home.partiesSubtitle": "Durchschnittlicher Aktivitätswert je Mandat",
+  "home.partiesCta": "Fraktionsvergleich ansehen",
 } as const
 
 /**
@@ -1183,43 +1279,127 @@ const en: Dictionary = {
   "seating.seatOf": "Seat of {name}",
   "seating.openProfile": "View profile",
 
-  // --- keyword search -----------------------------------------------------
-  "search.title": "Search",
-  "search.subtitle":
-    "Keyword search across motions, speeches, questions and committees. The results are members — with the record that matched.",
-  "search.placeholder": "Search a topic, keyword or profession …",
-  "search.navPlaceholder": "Search …",
-  "search.open": "Open search",
-  "search.submit": "Search",
-  "search.clear": "Clear search",
-  "search.prompt": "Enter a keyword to find members.",
-  "search.empty": "No members found.",
-  "search.emptyHint":
-    "Check the spelling, or try a shorter keyword — “Klima” also finds “Klimaschutzgesetz”.",
-  "search.resultCount": "{count} members found",
-  "search.resultCountOne": "1 member found",
-  "search.matchedBecause": "Matched on",
-  "search.matchCount": "{count} matches",
-  "search.matchCountOne": "1 match",
-  "search.moreMatches": "and {count} more matches",
-  "search.breakdown": "By parliamentary group",
-  "search.alsoSearched": "Also searched: {terms}",
-  "search.noFuzzyNotice":
-    "The search matches the start of words: “Klima” finds “Klimaschutzgesetz”. Typos are not corrected.",
-  "search.bilingualNotice":
-    "German and English keywords are linked through a maintained word list — “lawyer” finds “Rechtsanwalt”. It covers common topics and professions, not the whole vocabulary.",
-  "search.truncatedNotice":
-    "Very many matches — the match counts are minimums. Narrow the search further.",
-  "search.filterFraktion": "Parliamentary group",
-  "search.filterCommittee": "Committee",
-  "search.filterPeriod": "Electoral period",
-  "search.filterType": "Kind of record",
-  "search.allFraktionen": "All groups",
-  "search.allCommittees": "All committees",
-  "search.allTypes": "All kinds",
-  "search.period": "Electoral period {wahlperiode}",
-  "search.committeeScopeNotice":
-    "Committee memberships are published for the current electoral period only.",
+  // --- party comparison ---------------------------------------------------
+  //
+  // "Parliamentary group" rather than "party" in the prose, matching
+  // `rankings.filter.fraktion`: CDU and CSU are two parties sitting as one
+  // Fraktion, so the two words are not interchangeable in a German context. The
+  // page title keeps "parliamentary groups" for the same reason.
+
+  "nav.parties": "Groups",
+
+  "parties.title": "Group comparison",
+  "parties.subtitle":
+    "The Bundestag's parliamentary groups side by side — each figure the average for one mandate, not the group's total.",
+
+  "parties.meansNotice":
+    "Every figure is a mean per scored mandate. Group totals are deliberately not shown: DIP records one entry per member per document, so a jointly tabled question counts once for every signatory — a total would overstate large groups by exactly that factor.",
+  "parties.coverage": "{scored} of {mandates} mandates are scored.",
+  "parties.coverageGapOne":
+    "The nightly computation has not yet reached one mandate. It is missing from every mean on this page — it does not count as zero.",
+  "parties.coverageGap":
+    "The nightly computation has not yet reached {missing} mandates. They are missing from every mean on this page — they do not count as zero.",
+  "parties.empty": "No group figures are available for this electoral period yet.",
+
+  "parties.table.title": "Activity score by group",
+  "parties.table.subtitle": "Mean activity score for one mandate, highest first.",
+  "parties.column.party": "Group",
+  "parties.column.seats": "Mandates",
+  "parties.column.scored": "scored",
+  "parties.column.meanScore": "Mean score",
+  "parties.column.medianScore": "Median",
+  "parties.medianNote":
+    "The median sits beside the mean because the two diverge exactly where it matters: one very active member lifts a mean and leaves a median untouched.",
+
+  "parties.radar.title": "All metrics compared",
+  "parties.radar.subtitle":
+    "Six metrics, each axis normalised to the leading group. The area shows relative standing, not absolute quantity.",
+  "parties.radarCaveat":
+    "Each axis is normalised to the leading group on it (100 %), because the six metrics are measured in six different units — word counts reach five digits, committee seats a single digit. A larger hexagon therefore means “further ahead in comparison”, not “more”. The measured average is in the tooltip.",
+  "parties.radarLegend": "Show or hide a group",
+  "parties.radarTooltipShare": "{share} of the leading group",
+
+  "parties.metrics.title": "Individual metrics",
+  "parties.metrics.subtitle": "Groups ranked by one metric, highest first.",
+
+  "parties.metric.score": "Activity score",
+  "parties.metric.score.short": "Score",
+  "parties.metric.score.desc":
+    "Weighted sum of all measurable records, averaged over scored mandates.",
+  "parties.metric.motions": "Motions",
+  "parties.metric.motions.short": "Motions",
+  "parties.metric.motions.desc":
+    "Motions and resolutions per mandate, counted from DIP activity records.",
+  "parties.metric.speechWords": "Speech volume (words)",
+  "parties.metric.speechWords.short": "Words",
+  "parties.metric.speechWords.desc":
+    "Words spoken in plenary per mandate. This is the figure scoring uses — and the axis that stands for “speeches” on the radar.",
+  "parties.metric.speeches": "Speech contributions",
+  "parties.metric.speeches.short": "Speeches",
+  "parties.metric.speeches.desc":
+    "Turns at the floor per mandate. Not on the radar: question time splits a minister's turn into dozens of replies, so an axis on this would largely map who holds government office.",
+  "parties.metric.questions": "Questions",
+  "parties.metric.questions.short": "Questions",
+  "parties.metric.questions.desc": "Minor and major written questions per mandate.",
+  "parties.metric.votes": "Voting participation",
+  "parties.metric.votes.short": "Participation",
+  "parties.metric.votes.desc":
+    "Share of named ballots in which a vote was cast. An abstention counts as participation.",
+  "parties.metric.committees": "Committee seats",
+  "parties.metric.committees.short": "Committees",
+  "parties.metric.committees.desc": "Committee memberships per mandate.",
+  "parties.metric.bills": "Bills",
+  "parties.metric.bills.short": "Bills",
+  "parties.metric.bills.desc": "Bills co-signed per mandate.",
+  "parties.metric.reports": "Reports",
+  "parties.metric.reports.short": "Reports",
+  "parties.metric.reports.desc": "Reports per mandate — the thinnest of the nine metrics.",
+
+  "parties.caveat.score":
+    "The activity score is a weighted sum; the weighting is a choice, not a verdict. A group average inherits that choice.",
+  "parties.smallGroupCaveat":
+    "A mean over a small group is volatile: with three mandates, one very active member shifts the average by a third. The mandate count therefore sits beside every figure.",
+
+  // --- coalition vs opposition ---
+  "parties.coalition.title": "Government and opposition",
+  "parties.coalition.subtitle":
+    "The same metrics collapsed into two blocs — weighted by scored mandates, not by group.",
+  "parties.coalition.parties": "Groups",
+  "parties.coalition.seats": "{count} mandates",
+  "parties.coalition.caveat":
+    "Government and opposition use different parliamentary instruments: questions are an opposition tool, while bills come predominantly from the governing groups. A difference between the blocs therefore mostly describes that division of roles.",
+  "parties.coalition.unavailable":
+    "No governing coalition is recorded for this electoral period, so no comparison is possible.",
+  "parties.coalition.difference": "Difference",
+
+  // --- party discipline ---
+  "parties.discipline.title": "Group discipline",
+  "parties.discipline.subtitle":
+    "Share of votes cast with the majority of the member's own parliamentary group.",
+  "parties.discipline.column.rate": "Voted with the group",
+  "parties.discipline.column.withLine": "with the line",
+  "parties.discipline.column.against": "against",
+  "parties.discipline.column.ballots": "Ballots",
+  "parties.discipline.window": "Computed over the {count} most recent named ballots.",
+  "parties.discipline.empty":
+    "No named ballots are recorded for this electoral period from which a group line could be derived.",
+  "parties.disciplineCaveat":
+    "Almost every named ballot is unanimous within each group, so what is informative is the gap between 97 % and 99 %, not the level itself. Votes not cast are disregarded — an absence is not a dissent. Ballots on which a group split exactly have no line and do not count.",
+
+  // --- one party's members ---
+  "parties.members.title": "Members of the {party} group",
+  "parties.members.subtitle": "By activity score in the current electoral period.",
+  "parties.members.count": "{scored} of {total} mandates scored",
+  "parties.members.empty": "No mandates are recorded for this group in this electoral period.",
+  "parties.members.unscored": "not scored yet",
+  "parties.backToParties": "Back to the group comparison",
+  "parties.notFound": "This parliamentary group does not exist.",
+  "parties.viewMembers": "View members",
+
+  // --- homepage card ---
+  "home.partiesTitle": "Groups compared",
+  "home.partiesSubtitle": "Mean activity score per mandate",
+  "home.partiesCta": "View the group comparison",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }

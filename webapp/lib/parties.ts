@@ -156,6 +156,28 @@ export function partyFor(fraktion: string | null | undefined): Party {
 }
 
 /**
+ * The party a key names.
+ *
+ * The counterpart to `partyFor` for callers that already hold a key rather than
+ * a Fraktion string — anything that has *grouped* by party and no longer has one
+ * representative spelling to hand, which is every consumer of
+ * `convex/parties.ts`. Folding a raw string back out of a group would mean
+ * picking one of its members' spellings arbitrarily and colouring the whole
+ * group by it.
+ */
+export function partyByKey(key: PartyKey): Party {
+  return PARTIES[key]
+}
+
+/** Whether a string is one of the keys above — the guard a route segment or a
+ * stored value has to pass before it can be used as one. Same shape as
+ * `isSeatingColorMode` in lib/seating.ts and for the same reason: narrowing at
+ * the edge beats casting in the middle. */
+export function isPartyKey(value: string): value is PartyKey {
+  return (PARTY_KEYS as readonly string[]).includes(value)
+}
+
+/**
  * What to print on a badge.
  *
  * A recognised group gets its canonical short form, so one MP does not read

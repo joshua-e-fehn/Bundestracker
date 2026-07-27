@@ -55,11 +55,11 @@ export const PUBLIC_PATHS = [
   // filesystem check that exists precisely to catch this caught it, and the
   // fix is the one line it was written to demand.
   "/votes",
-  // The keyword search. Added *with* its page rather than after a debugging
-  // session, because the test above failed the moment `app/search/page.tsx`
-  // existed — which is the fifth time this list has been the thing that
-  // caught it, and the first time it cost nothing.
-  "/search",
+  // The Fraktion comparison dashboard, and its `/parties/<key>` member lists —
+  // covered by the prefix, like `/mps/<internalId>`. Caught by the filesystem
+  // check on the commit that added the page rather than in a browser later,
+  // which is the fifth time that test has earned its keep.
+  "/parties",
 ]
 
 export function isPublicPath(pathname: string) {
