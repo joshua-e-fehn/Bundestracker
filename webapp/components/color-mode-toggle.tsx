@@ -39,7 +39,14 @@ export function ColorModeToggle({
   const { t } = useLocale()
 
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    // `min-w-0` is what makes the `overflow-x-auto` below actually work. A flex
+    // item's `min-width` is `auto`, so this wrapper refused to shrink past the
+    // five tab labels' combined width and the scroll container never got narrow
+    // enough to need scrolling — instead it pushed /seating to 686 px inside a
+    // 375 px viewport and the whole page scrolled sideways, seating map and all.
+    // The scroll affordance was written for this case (see the note on
+    // `TabsList` below) and was simply unreachable.
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <span id="seating-color-mode-label" className="font-medium text-muted-foreground text-xs">
         {t("seating.colorMode")}
       </span>

@@ -62,7 +62,14 @@ export function MPProfile({
         ← {t("mp.backToList")}
       </Link>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      {/* `minmax(0,1fr)` on the base single-column track, not only on the `lg:`
+          two-column one. A grid item's `min-width` defaults to `auto`, which
+          means "at least as wide as my content" — so below `lg` the one column
+          sized itself to the widest thing in either child and the page grew to
+          737 px inside a 375 px viewport, scrolling the whole profile sideways.
+          The `lg:` track already said `minmax(0,1fr)` for this reason; the
+          narrow case needed the same and did not have it. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="flex flex-col gap-6">
           <Card>
             <CardContent className="flex flex-col items-center gap-3 pt-2 text-center">

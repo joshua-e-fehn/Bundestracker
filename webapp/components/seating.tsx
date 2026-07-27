@@ -78,7 +78,10 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <ColorModeToggle value={mode} onChange={setMode} />
+        {/* `min-w-0` here as well as inside the toggle: the wrap container is
+            itself a flex item, and one `auto` minimum anywhere in the chain is
+            enough to keep the tab strip from shrinking. */}
+        <ColorModeToggle value={mode} onChange={setMode} className="min-w-0 flex-1" />
         <p className="text-muted-foreground text-sm tabular-nums">
           {t("seating.seatCount", { count: formatCount(rows.length, locale) })}
         </p>

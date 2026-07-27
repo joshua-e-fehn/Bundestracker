@@ -45,10 +45,15 @@ export default function Home() {
       {wahlperiode === null ? (
         <NothingIngestedYet />
       ) : (
-        <div className="mt-12 grid gap-12">
+        // `minmax(0,1fr)` rather than a bare implicit column: a grid item's
+        // `min-width` is `auto`, so a single-column track sizes itself to its
+        // widest content instead of to the viewport. The stats row's four cards
+        // are `grid-cols-2` at this width and their intrinsic width won, which
+        // pushed the whole home page to 534 px inside a 375 px viewport.
+        <div className="mt-12 grid grid-cols-[minmax(0,1fr)] gap-12">
           <SummaryStats wahlperiode={wahlperiode} />
           <TopMPs wahlperiode={wahlperiode} />
-          <div className="grid gap-12 lg:grid-cols-2 lg:gap-8">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-2 lg:gap-8">
             <LatestVotes wahlperiode={wahlperiode} />
             <ActivityFeedPreview wahlperiode={wahlperiode} />
           </div>
