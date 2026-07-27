@@ -250,7 +250,7 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
                   {formatDateShort(sheet.date, locale)}
                 </div>
               </div>
-              <VoteOutcomeBadge result={sheet.result} />
+              <VoteOutcomeBadge result={sheet.result} locale={locale} />
             </Link>
           ))}
         </Card>

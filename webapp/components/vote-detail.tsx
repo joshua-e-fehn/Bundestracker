@@ -121,7 +121,7 @@ export function VoteDetail({
                 abstimmnr: sheet.abstimmnr,
               })}
             </span>
-            <VoteOutcomeBadge result={sheet.result} />
+            <VoteOutcomeBadge result={sheet.result} locale={locale} />
           </div>
         </div>
       </div>

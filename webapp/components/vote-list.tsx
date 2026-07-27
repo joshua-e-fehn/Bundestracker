@@ -52,6 +52,20 @@ import { formatDateShort } from "@/lib/format"
 /** Sentinel for "no filter" — Radix reserves the empty string on `SelectItem`. */
 const ANY = "__any__"
 
+/**
+ * Sentinel for "outcome not published yet".
+ *
+ * A ballot awaiting its outcome stores `result: ""` — and the empty string is
+ * exactly what Radix reserves, so passing the stored value straight through, as
+ * this list did, renders an option Radix rejects. It is not a rare row either:
+ * the outcome arrives from a later pipeline stage than the ballot, so every
+ * ballot is result-less for a while and most of WP21 was at once.
+ *
+ * Distinct from `ANY`: this *selects* the pending ballots rather than clearing
+ * the filter, so it maps back to `""` — not `undefined` — on the way out.
+ */
+const PENDING = "__pending__"
+
 const PAGE_SIZE = 25
 
 export function VoteList({ wahlperiode }: { wahlperiode: number }) {
@@ -67,7 +81,9 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
   const data = useQuery(api.votes.getVoteSheetsPage, {
     wahlperiode,
     search: deferredSearch.trim() === "" ? undefined : deferredSearch.trim(),
-    result: result === ANY ? undefined : result,
+    // `undefined` clears the filter; `""` selects the ballots whose outcome is
+    // not published — a real value the server matches exactly, not an absence.
+    result: result === ANY ? undefined : result === PENDING ? "" : result,
     year: year === ANY ? undefined : year,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -126,8 +142,11 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
             <SelectContent>
               <SelectItem value={ANY}>{t("votes.allResults")}</SelectItem>
               {data?.results.map((entry) => (
-                <SelectItem key={entry.value} value={entry.value}>
-                  {entry.value} ({entry.count})
+                <SelectItem
+                  key={entry.value}
+                  value={entry.value === "" ? PENDING : entry.value}
+                >
+                  {entry.value === "" ? t("votes.outcome.pending") : entry.value} ({entry.count})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -226,12 +245,12 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
                           phone, so the outcome comes back under the title —
                           it is the one thing a list of votes must show. */}
                       <div className="mt-1 md:hidden">
-                        <VoteOutcomeBadge result={sheet.result} />
+                        <VoteOutcomeBadge result={sheet.result} locale={locale} />
                       </div>
                     </TableCell>
 
                     <TableCell className="hidden md:table-cell">
-                      <VoteOutcomeBadge result={sheet.result} />
+                      <VoteOutcomeBadge result={sheet.result} locale={locale} />
                     </TableCell>
 
                     <TableCell className="hidden sm:table-cell">
