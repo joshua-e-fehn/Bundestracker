@@ -63,7 +63,11 @@ async function findSegment(
     .unique()
 }
 
-async function upsertOne(ctx: MutationCtx, input: ObjectType<typeof speechInput>, now: number): Promise<{ created: boolean; skipped: boolean }> {
+async function upsertOne(
+  ctx: MutationCtx,
+  input: ObjectType<typeof speechInput>,
+  now: number,
+): Promise<{ created: boolean; skipped: boolean }> {
   // Skip records for MPs not on the roster rather than aborting the entire
   // batch. A single missing MP (e.g. a late addition to Stammdaten that the
   // roster dump hasn't picked up) should not block 200+ other speeches.
@@ -75,7 +79,11 @@ async function upsertOne(ctx: MutationCtx, input: ObjectType<typeof speechInput>
 
 export const upsertSpeech = internalMutation({
   args: speechInput,
-  returns: v.object({ id: v.optional(v.id("speeches")), created: v.boolean(), skipped: v.boolean() }),
+  returns: v.object({
+    id: v.optional(v.id("speeches")),
+    created: v.boolean(),
+    skipped: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const r = await upsertOne(ctx, args, Date.now())
     if (r.skipped) return { id: undefined, created: false, skipped: true }
