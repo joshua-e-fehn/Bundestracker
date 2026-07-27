@@ -70,9 +70,11 @@ BASE_URL = "https://www.bundestag.de"
 #: means "look at that attribute again", not "the MPs are gone".
 AJAX_LIST_URL = f"{BASE_URL}/ajax/filterlist/de/abgeordnete/biografien/1040594-1040594"
 
-#: MPs per listing request. The teasers are compact (~750 B each), so a larger
-#: page is fewer requests for the same bytes — which is the trade the WAF cares
-#: about (§2.6). 24 keeps a page around 20 KB.
+#: MPs per listing request — *requested*. The server does not honour it: it
+#: serves 12 and prints `data-limit="12"` whatever is asked for (24, 50 and 100
+#: were all tried live on 2026-07-27). Kept as a parameter because it costs
+#: nothing and the cap is the CMS's choice rather than a documented contract,
+#: but `iter_profiles` strides by what actually came back — see the ⚠ there.
 LIST_PAGE_SIZE = 24
 
 #: Stop after this many MPs even if the listing keeps answering. The real
@@ -392,6 +394,16 @@ class MPProfileClient(BundestagClient):
         (api/votes.py), and this endpoint is the same machinery — but it also
         publishes the total, so the arithmetic runs first and the empty page is
         the safety net.
+
+        ⚠ **The offset advances by what came back, not by what was asked for.**
+        The server caps the page at 12 and ignores `limit` entirely — it
+        answers `data-limit="12"` to a request for 24, 50 or 100 alike. Striding
+        by the requested `limit` therefore skips every page the server did not
+        fill: measured live on 2026-07-27, `limit=24` walked offsets 0, 24,
+        48 … and returned **324 of 639** MPs, silently, because each response
+        was a valid non-empty page and `data-hits` never disagreed. Advancing by
+        `len(parser.entries)` makes the stride the server's, whatever it decides
+        that is.
         """
         offset = 0
         seen = 0
@@ -407,7 +419,7 @@ class MPProfileClient(BundestagClient):
             for entry in parser.entries:
                 yield entry
                 seen += 1
-            offset += limit
+            offset += len(parser.entries)
             if total is not None and seen >= total:
                 return
 
