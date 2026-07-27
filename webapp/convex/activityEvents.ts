@@ -1,4 +1,5 @@
 import { type ObjectType, v } from "convex/values"
+import { indexableText } from "../lib/search"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
@@ -25,6 +26,16 @@ import { activityEventInput, eventType } from "./schema"
  * an upsert rather than a second copy. An event with a null `referenceId` has
  * nothing to match on and is always inserted — a real hazard for a repeated
  * sync, which `addOne` flags at the point it happens.
+ *
+ * ## `searchText` is computed here, not posted
+ *
+ * The keyword search's index lives on this table (convex/schema.ts), over a
+ * folded copy of `title` and `description`. That copy is derived on every write
+ * by `withSearchText` below rather than accepted from the caller, for the
+ * reason the schema states: a payload carrying its own search text could store
+ * text that finds records not matching what they say. It also means the Python
+ * pipeline needed no change to populate it — the field appears the moment a row
+ * is next written, and `convex/search.ts` backfills the rows that never are.
  */
 
 // --- read models ----------------------------------------------------------
@@ -39,6 +50,20 @@ const toEventDoc = withId<"activityEvents">
 
 // --- ingestion ------------------------------------------------------------
 
+/**
+ * The stored row for an ingestion payload: the payload, plus its folded search
+ * text.
+ *
+ * One function so insert and upsert cannot disagree about how the field is
+ * derived — the way they would if each spelled out the `indexableText` call.
+ * `title` and `description` are the two fields a reader's keyword could
+ * plausibly be in; `date`, ids and the event type are not text anyone searches
+ * in words, and `eventType` is a filter on the index rather than a term in it.
+ */
+export function withSearchText(input: ObjectType<typeof activityEventInput>) {
+  return { ...input, searchText: indexableText(input.title, input.description) }
+}
+
 async function addOne(
   ctx: MutationCtx,
   input: ObjectType<typeof activityEventInput>,
@@ -48,11 +73,13 @@ async function addOne(
   const mp = await findMandate(ctx, input.mpInternalId, input.wahlperiode)
   if (!mp) return { created: false, skipped: true }
 
+  const fields = withSearchText(input)
+
   // Null `referenceId` means no natural key, so no de-duplication is possible
   // and a re-run appends. Callers deriving events from a source row should
   // always set it; the null arm exists for events that genuinely have no source.
   if (input.referenceId === null) {
-    await ctx.db.insert("activityEvents", { ...input, createdAt: now })
+    await ctx.db.insert("activityEvents", { ...fields, createdAt: now })
     return { created: true, skipped: false }
   }
 
@@ -67,7 +94,7 @@ async function addOne(
         .eq("mpInternalId", input.mpInternalId),
     )
     .unique()
-  const row = await upsertRow(ctx, "activityEvents", existing, input, now)
+  const row = await upsertRow(ctx, "activityEvents", existing, fields, now)
   return { created: row.created, skipped: false }
 }
 

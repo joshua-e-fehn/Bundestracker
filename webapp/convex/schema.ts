@@ -441,6 +441,32 @@ export const activityEventInput = {
 }
 
 /**
+ * `title` and `description`, folded for the keyword search.
+ *
+ * Derived, never posted: `addOne` in convex/activityEvents.ts computes it with
+ * `indexableText` from lib/search.ts on every write, so it cannot disagree with
+ * the fields it is derived from and the pipeline needs no change to populate
+ * it. It is deliberately **not** part of `activityEventInput` for that reason —
+ * an ingestion payload carrying it would let a caller store text that finds
+ * records not matching what they say.
+ *
+ * `v.optional` rather than required, and this is the one place in the schema
+ * where that is not about a row predating a field in the ordinary sense: rows
+ * written before this branch have no value, and the backfill in
+ * convex/search.ts fills them in slices. Until it has run they are absent from
+ * search results while remaining correct everywhere else, which is the failure
+ * mode to want — the alternative, a required field, would reject every existing
+ * row on its next upsert.
+ *
+ * Why the folding is needed at all, rather than indexing `title` directly:
+ * Convex's search index folds case and nothing else — measured, not assumed —
+ * so `fur` does not match `für` and `Strauss` does not match `Strauß`. On a
+ * German corpus that is most of the misses. lib/search.ts carries the
+ * measurement and the reasoning.
+ */
+const searchText = v.optional(v.string())
+
+/**
  * Computed scores, one row per (MP, Wahlperiode, month).
  *
  * `month` is `YYYY-MM`, or **null for the whole Wahlperiode**: the monthly rows
@@ -585,7 +611,7 @@ const schema = defineSchema({
     .index("by_mpInternalId_and_wahlperiode_and_date", ["mpInternalId", "wahlperiode", "date"])
     .index("by_wahlperiode_and_date", ["wahlperiode", "date"]),
 
-  activityEvents: defineTable({ ...activityEventInput, createdAt: v.number() })
+  activityEvents: defineTable({ ...activityEventInput, searchText, createdAt: v.number() })
     // The profile feed, and its type-filtered form. Two indexes rather than one
     // filtered in memory: `.take(n)` then filtering drops matching rows past
     // the cutoff instead of erroring, so a busy MP's "speeches only" tab would
@@ -613,7 +639,36 @@ const schema = defineSchema({
     // Kleine Anfragen dominate the feed (§3.5), so filtering to a rarer kind
     // would empty the first page and read as "no committee work happened".
     // convex/feed.ts is the consumer.
-    .index("by_wahlperiode_and_eventType_and_date", ["wahlperiode", "eventType", "date"]),
+    .index("by_wahlperiode_and_eventType_and_date", ["wahlperiode", "eventType", "date"])
+    /**
+     * The keyword search — motion titles, speech topics, question subjects and
+     * committee names, all of which are already denormalised onto this table.
+     *
+     * On `activityEvents` rather than on the five source tables, and that is
+     * the central decision of convex/search.ts: the product's answer is an
+     * **MP**, not a document, so a search over `motions` would still have to
+     * join `motionSponsors` to say who — while this table already carries
+     * `mpInternalId` on every row. One index instead of five, one relevance
+     * ordering instead of five merged, and the row that matched is the row that
+     * says why.
+     *
+     * `filterFields` are the two the /search page filters on that the index can
+     * apply *before* its document cap. That cap is the reason they are here:
+     * a search index errors at 1024 scanned documents rather than truncating
+     * (measured — see lib/search.ts), so a common word against a period's whole
+     * feed has to be narrowed by the index, not afterwards. `wahlperiode`
+     * carries the period filter; `eventType` carries "motions only".
+     *
+     * ⚠ Fraktion and committee are **not** filter fields and cannot be: neither
+     * belongs to an event. The group belongs to the MP and changes mid-period
+     * (§6.4), and a committee seat is a row in another table entirely. Both are
+     * applied after the fact, in convex/search.ts, which is the same split
+     * convex/feed.ts documents for the same reason.
+     */
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["wahlperiode", "eventType"],
+    }),
 
   activityScores: defineTable({
     ...activityScoreInput,

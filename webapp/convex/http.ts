@@ -215,4 +215,15 @@ ingestionRoute("seating/generate", internal.seating.generateSeating)
  * convex/scoreSweep.ts for why it is sliced. */
 ingestionRoute("scores/recompute", internal.activityScores.recomputeScores)
 
+/**
+ * Fills `searchText` on feed events written before the field existed; loop on
+ * the returned `cursor` until `done`.
+ *
+ * A migration rather than routine work — every new event derives the field on
+ * write — so it is a route to be called deliberately, not a cron. Run it once
+ * per deployment, and again after any change to the folding rule in
+ * lib/search.ts. See convex/search.ts.
+ */
+ingestionRoute("search/backfill", internal.search.backfillSearchText)
+
 export default http

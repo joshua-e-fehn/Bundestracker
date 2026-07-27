@@ -627,6 +627,67 @@ const de = {
   "seating.mapLabel": "Sitzverteilung des Bundestages",
   "seating.seatOf": "Sitz von {name}",
   "seating.openProfile": "Profil ansehen",
+
+  // --- keyword search -----------------------------------------------------
+  //
+  // The search returns *people*, not documents, and several strings below exist
+  // only to keep that clear: `search.subtitle` says so outright, and
+  // `search.matchedBecause` labels the evidence under each name. A reader who
+  // takes the result list for a document list will misread every count on it.
+  "search.title": "Suche",
+  "search.subtitle":
+    "Stichwortsuche über Anträge, Reden, Anfragen und Ausschüsse. Das Ergebnis sind Abgeordnete — mit dem Nachweis, warum sie gefunden wurden.",
+  "search.placeholder": "Thema, Stichwort oder Beruf suchen …",
+  "search.navPlaceholder": "Suchen …",
+  "search.open": "Suche öffnen",
+  "search.submit": "Suchen",
+  "search.clear": "Suche leeren",
+  "search.prompt": "Geben Sie ein Stichwort ein, um Abgeordnete zu finden.",
+  // Distinct from `search.prompt`: nothing was found, as opposed to nothing was
+  // asked. The hint carries the one thing the reader can act on, which is also
+  // the honest limit of the feature — see `search.noFuzzyNotice`.
+  "search.empty": "Keine Abgeordneten gefunden.",
+  "search.emptyHint":
+    "Prüfen Sie die Schreibweise oder versuchen Sie ein kürzeres Stichwort — „Klima“ findet auch „Klimaschutzgesetz“.",
+  "search.resultCount": "{count} Abgeordnete gefunden",
+  "search.resultCountOne": "1 Abgeordnete:r gefunden",
+  "search.matchedBecause": "Gefunden wegen",
+  "search.matchCount": "{count} Treffer",
+  "search.matchCountOne": "1 Treffer",
+  "search.moreMatches": "und {count} weitere Treffer",
+  "search.breakdown": "Nach Fraktion",
+  // Shown when a synonym or translation was searched alongside the reader's own
+  // words. Named rather than silent: a result matching "Rechtsanwalt" for a
+  // query of "lawyer" is otherwise inexplicable on the page.
+  "search.alsoSearched": "Auch gesucht nach: {terms}",
+  // The structural limit of the search, stated where it is felt. Convex's
+  // search index has no typo tolerance whatever — "Klimq" finds nothing — and a
+  // reader who assumes otherwise concludes the Bundestag never discussed the
+  // subject. Prefix matching *is* offered, so the sentence says what does work.
+  "search.noFuzzyNotice":
+    "Die Suche gleicht Wortanfänge ab: „Klima“ findet „Klimaschutzgesetz“. Tippfehler werden nicht korrigiert.",
+  // Cross-language matching comes from a hand-gepflegte Wortliste, not a
+  // translation service — so its coverage is finite and saying so is fairer
+  // than letting an unfound English term read as an empty Bundestag.
+  "search.bilingualNotice":
+    "Deutsche und englische Stichwörter werden über eine gepflegte Wortliste verknüpft — „lawyer“ findet „Rechtsanwalt“. Die Liste deckt gängige Themen und Berufe ab, nicht den gesamten Wortschatz.",
+  // The read ceiling reached. A capped count that reads as exact understates an
+  // MP's work, so the number is marked rather than quietly wrong.
+  "search.truncatedNotice":
+    "Sehr viele Treffer — die Trefferzahlen sind Mindestwerte. Grenzen Sie die Suche weiter ein.",
+  "search.filterFraktion": "Fraktion",
+  "search.filterCommittee": "Ausschuss",
+  "search.filterPeriod": "Wahlperiode",
+  "search.filterType": "Art des Nachweises",
+  "search.allFraktionen": "Alle Fraktionen",
+  "search.allCommittees": "Alle Ausschüsse",
+  "search.allTypes": "Alle Arten",
+  "search.period": "{wahlperiode}. Wahlperiode",
+  // Committee seats are searchable but only exist for the current period
+  // (§6.4). Said here because an empty committee filter on a historical period
+  // is "nicht veröffentlicht", not "keine Ausschüsse".
+  "search.committeeScopeNotice":
+    "Ausschussmitgliedschaften sind nur für die laufende Wahlperiode veröffentlicht.",
 } as const
 
 /**
@@ -1121,6 +1182,44 @@ const en: Dictionary = {
   "seating.mapLabel": "Seating map of the Bundestag",
   "seating.seatOf": "Seat of {name}",
   "seating.openProfile": "View profile",
+
+  // --- keyword search -----------------------------------------------------
+  "search.title": "Search",
+  "search.subtitle":
+    "Keyword search across motions, speeches, questions and committees. The results are members — with the record that matched.",
+  "search.placeholder": "Search a topic, keyword or profession …",
+  "search.navPlaceholder": "Search …",
+  "search.open": "Open search",
+  "search.submit": "Search",
+  "search.clear": "Clear search",
+  "search.prompt": "Enter a keyword to find members.",
+  "search.empty": "No members found.",
+  "search.emptyHint":
+    "Check the spelling, or try a shorter keyword — “Klima” also finds “Klimaschutzgesetz”.",
+  "search.resultCount": "{count} members found",
+  "search.resultCountOne": "1 member found",
+  "search.matchedBecause": "Matched on",
+  "search.matchCount": "{count} matches",
+  "search.matchCountOne": "1 match",
+  "search.moreMatches": "and {count} more matches",
+  "search.breakdown": "By parliamentary group",
+  "search.alsoSearched": "Also searched: {terms}",
+  "search.noFuzzyNotice":
+    "The search matches the start of words: “Klima” finds “Klimaschutzgesetz”. Typos are not corrected.",
+  "search.bilingualNotice":
+    "German and English keywords are linked through a maintained word list — “lawyer” finds “Rechtsanwalt”. It covers common topics and professions, not the whole vocabulary.",
+  "search.truncatedNotice":
+    "Very many matches — the match counts are minimums. Narrow the search further.",
+  "search.filterFraktion": "Parliamentary group",
+  "search.filterCommittee": "Committee",
+  "search.filterPeriod": "Electoral period",
+  "search.filterType": "Kind of record",
+  "search.allFraktionen": "All groups",
+  "search.allCommittees": "All committees",
+  "search.allTypes": "All kinds",
+  "search.period": "Electoral period {wahlperiode}",
+  "search.committeeScopeNotice":
+    "Committee memberships are published for the current electoral period only.",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }
