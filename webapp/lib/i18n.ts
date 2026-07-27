@@ -1297,39 +1297,6 @@ const de = {
   "about.questions.body":
     "Fehler in den Daten und Einwände gegen die Methodik gehören ins öffentliche Repository. Beides ist willkommen: Eine Kennzahl, die niemand prüfen kann, ist keine.",
   "about.questions.cta": "Zum Quellcode",
-
-  "homeC.claimIntro":
-    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
-  // Chapter 2 — the four summary figures. Names the honest limit of two of them
-  // in the sentence itself: `getChamberStats` reports a floor where it cannot
-  // count exactly, and the `+` on the card is meaningless unless the reader has
-  // been told what it means.
-  "homeC.claimStats":
-    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
-  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
-  // that is what the two boards together put on trial.
-  "homeC.claimActivity":
-    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
-  // Chapter 4 — parties and votes. Two sections under one claim because they
-  // make the same move: both aggregate individuals into a group, and both are
-  // read as statements about the group.
-  "homeC.claimParties":
-    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
-  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
-  // no measurement: it reports what was published, and says so.
-  "homeC.claimFeed":
-    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
-
-  // The skip link, and §7's first defence: a returning reader who wants today's
-  // votes should not have to scroll through a story they have read. Named for
-  // where it goes rather than for what it skips.
-  "homeC.skipToData": "Direkt zu den Daten",
-  // The pledge under the hero. Short enough to be read, specific enough to be
-  // checked — it names the two things the site will not do rather than
-  // promising that it is trustworthy.
-  "homeC.heroPledge":
-    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
-
   // --- Untersuchungsausschuss: das Quorum ---------------------------------
   //
   // Die eine Seite dieser Website, auf der eine gezählte Zahl und eine
@@ -2433,20 +2400,6 @@ const en: Dictionary = {
   "about.questions.body":
     "Errors in the data and objections to the methodology belong in the public repository. Both are welcome: a measure nobody can check is not one.",
   "about.questions.cta": "View the source code",
-
-  "homeC.claimIntro":
-    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
-  "homeC.claimStats":
-    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
-  "homeC.claimActivity":
-    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
-  "homeC.claimParties":
-    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
-  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
-
-  "homeC.skipToData": "Straight to the data",
-  "homeC.heroPledge":
-    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
 
   // --- committee of inquiry: the quorum ------------------------------------
   //
