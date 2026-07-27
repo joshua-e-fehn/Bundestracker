@@ -87,6 +87,23 @@ const de = {
   // "to see the data" — all of it is public without an account.
   "auth.optionalNotice":
     "Anmelden ist optional. Alle Daten sind ohne Konto einsehbar; ein Konto speichert eigene Gewichtungen und gefolgte Abgeordnete.",
+  "auth.signInTitle": "Bei Bundestracker anmelden",
+  "auth.chooseProvider": "Wählen Sie einen Anbieter.",
+  // Says what an account buys, in the two concrete things it buys. Vaguer
+  // wording ("personalisierte Funktionen") would be a reason to sign in that
+  // names nothing the reader can weigh.
+  "auth.benefits":
+    "Mit einem Konto speichern Sie eigene Gewichtungen des Aktivitätswerts und folgen einzelnen Abgeordneten.",
+  "auth.continueWithoutAccount": "Ohne Konto weiterlesen",
+  "auth.signingIn": "Weiterleitung …",
+  // The GitHub button is disabled rather than hidden: the provider is
+  // configured in convex/betterAuth/auth.ts and is coming, so hiding it would
+  // make its arrival look like a new feature rather than one being finished.
+  // `common.comingSoon` already carries "Demnächst verfügbar" — reused rather
+  // than restated, so the two badges cannot drift apart.
+  "auth.githubUnavailable": "Die Anmeldung mit GitHub ist noch nicht freigeschaltet.",
+  "auth.signInFailed": "Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
+  "auth.alreadySignedIn": "Sie sind bereits angemeldet.",
 
   "common.loading": "Wird geladen …",
   "common.error": "Etwas ist schiefgelaufen.",
@@ -212,6 +229,16 @@ const de = {
   "feed.allTypes": "Alle Arten",
   "feed.reference": "Zum Nachweis",
   "feed.end": "Keine weiteren Einträge.",
+  // A joint act, collapsed into one row. `{count}` is how many further actors
+  // the row did not have space to name — never "co-sponsors": DIP publishes no
+  // signing order, so every name in a group is equal and calling the ones past
+  // the third "co-" would invent a rank the source does not record. See
+  // lib/feed-grouping.ts.
+  "feed.andOthers": "und {count} weitere",
+  "feed.jointCount": "{count} Abgeordnete",
+  "feed.showAllActors": "Alle {count} anzeigen",
+  "feed.jointNote":
+    "Gemeinsam eingebracht. Die Reihenfolge ist die der Datenquelle — eine Erst- oder Mitzeichnung wird vom DIP nicht veröffentlicht.",
 
   "event.motion": "Antrag",
   "event.speech": "Rede",
@@ -510,6 +537,16 @@ const de = {
 
   "home.topMPsTitle": "Aktivste Abgeordnete",
   "home.topMPsSubtitle": "Nach Aktivitätswert in der laufenden Wahlperiode",
+  "home.bottomMPsTitle": "Wenigste erfasste Aktivität",
+  "home.bottomMPsSubtitle": "Niedrigster Aktivitätswert der laufenden Wahlperiode",
+  // The caveat this section cannot be shown without. The top of a leaderboard
+  // needs no defence; the bottom is an accusation unless it says what the
+  // number does and does not measure. Three things are true at once: much
+  // parliamentary work leaves no machine-readable trace, an office (Präsidium,
+  // a ministry) changes what a member does rather than how much, and an MP the
+  // nightly sweep has not reached scores 0 without having been idle.
+  "home.bottomMPsCaveat":
+    "Ein niedriger Wert heißt „wenig erfasst“, nicht „wenig gearbeitet“: Ausschussberatungen, Wahlkreisarbeit und Regierungsämter hinterlassen in den offenen Daten kaum Spuren. Nur bewertete Mandate erscheinen hier.",
   "home.latestVotesTitle": "Neueste namentliche Abstimmungen",
   "home.feedTitle": "Zuletzt geschehen",
   "home.showAll": "Alle ansehen",
@@ -603,6 +640,15 @@ const en: Dictionary = {
   "auth.signInWithGitHub": "Sign in with GitHub",
   "auth.optionalNotice":
     "Signing in is optional. All data is viewable without an account; an account saves your own score weightings and followed members.",
+  "auth.signInTitle": "Sign in to Bundestracker",
+  "auth.chooseProvider": "Choose a provider.",
+  "auth.benefits":
+    "An account saves your own activity-score weightings and lets you follow individual members.",
+  "auth.continueWithoutAccount": "Continue without an account",
+  "auth.signingIn": "Redirecting …",
+  "auth.githubUnavailable": "Signing in with GitHub is not enabled yet.",
+  "auth.signInFailed": "Sign-in failed. Please try again.",
+  "auth.alreadySignedIn": "You are already signed in.",
 
   "common.loading": "Loading …",
   "common.error": "Something went wrong.",
@@ -720,6 +766,11 @@ const en: Dictionary = {
   "feed.allTypes": "All types",
   "feed.reference": "Source record",
   "feed.end": "No further entries.",
+  "feed.andOthers": "and {count} more",
+  "feed.jointCount": "{count} members",
+  "feed.showAllActors": "Show all {count}",
+  "feed.jointNote":
+    "Tabled jointly. The order is the data source's — DIP publishes no distinction between first and co-signatory.",
 
   "event.motion": "Motion",
   "event.speech": "Speech",
@@ -977,6 +1028,10 @@ const en: Dictionary = {
 
   "home.topMPsTitle": "Most active members",
   "home.topMPsSubtitle": "By activity score in the current electoral period",
+  "home.bottomMPsTitle": "Least recorded activity",
+  "home.bottomMPsSubtitle": "Lowest activity score in the current electoral period",
+  "home.bottomMPsCaveat":
+    "A low figure means “little recorded”, not “little done”: committee deliberation, constituency work and government office leave next to no trace in the open data. Only scored mandates appear here.",
   "home.latestVotesTitle": "Latest named votes",
   "home.feedTitle": "Latest activity",
   "home.showAll": "Show all",
@@ -1100,4 +1155,37 @@ export function localeFromAcceptLanguage(header: string | null | undefined): Loc
     .sort((a, b) => b.quality - a.quality)
 
   return (ranked.find((entry) => isLocale(entry.base))?.base as Locale) ?? DEFAULT_LOCALE
+}
+
+/**
+ * Picks the best supported locale from the browser's own language list.
+ *
+ * The client-side counterpart to `localeFromAcceptLanguage`, and the reason
+ * both exist: the two sources do not always agree. `Accept-Language` is what
+ * the browser was *configured* to send and can be stripped by a proxy, absent
+ * on a prefetch, or normalised to a single tag by a CDN; `navigator.languages`
+ * is what the browser actually knows about its reader. Where the header is
+ * missing or unsupported and the browser says German — or English — the
+ * browser is the better witness, so `LocaleProvider` consults this after
+ * hydration.
+ *
+ * Takes the tag list rather than reading `navigator` itself, so it is pure and
+ * testable and does not have to guess whether it is running in a browser.
+ * `navigator.languages` is ordered most-preferred first and carries no quality
+ * values, which is the whole difference from the header form above — order *is*
+ * the preference, so the first supported tag wins.
+ *
+ * German is the fallback for the reason `DEFAULT_LOCALE` is German: the
+ * audience is German and the subject is the Bundestag. A browser set to
+ * French gets German, not English.
+ */
+export function localeFromNavigator(tags: readonly string[] | undefined | null): Locale {
+  if (!tags) return DEFAULT_LOCALE
+  for (const tag of tags) {
+    // "de-DE", "de-AT" and "de" all select German — same normalisation the
+    // header form does, because they are the same tag space (BCP 47).
+    const base = tag.trim().toLowerCase().split("-")[0]
+    if (isLocale(base)) return base
+  }
+  return DEFAULT_LOCALE
 }

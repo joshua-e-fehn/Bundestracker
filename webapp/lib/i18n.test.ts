@@ -6,6 +6,7 @@ import {
   isLocale,
   LOCALES,
   localeFromAcceptLanguage,
+  localeFromNavigator,
   t,
 } from "./i18n"
 
@@ -86,5 +87,47 @@ describe("localeFromAcceptLanguage", () => {
 
   test("falls back to German when nothing is supported", () => {
     expect(localeFromAcceptLanguage("fr-FR,es;q=0.8")).toBe("de")
+  })
+})
+
+describe("localeFromNavigator", () => {
+  // The client-side half of the same negotiation. It exists because the header
+  // and `navigator.languages` disagree in practice — a proxy can strip the
+  // header, a CDN can flatten it — and the browser is the better witness when
+  // the server had nothing to negotiate against.
+
+  test("falls back to German when the browser offers nothing", () => {
+    expect(localeFromNavigator(undefined)).toBe("de")
+    expect(localeFromNavigator(null)).toBe("de")
+    expect(localeFromNavigator([])).toBe("de")
+  })
+
+  test("a German browser gets German", () => {
+    expect(localeFromNavigator(["de-DE", "de", "en-US"])).toBe("de")
+    expect(localeFromNavigator(["de-AT"])).toBe("de")
+  })
+
+  test("an English browser gets English", () => {
+    expect(localeFromNavigator(["en-GB", "en"])).toBe("en")
+  })
+
+  test("order is the preference — there are no quality values here", () => {
+    // `navigator.languages` is ordered most-preferred first and carries no
+    // `q=`, which is the whole difference from the header form. The first
+    // supported tag wins even when a later one is also supported.
+    expect(localeFromNavigator(["en", "de"])).toBe("en")
+    expect(localeFromNavigator(["de", "en"])).toBe("de")
+  })
+
+  test("skips unsupported languages to reach a supported one", () => {
+    expect(localeFromNavigator(["fr-FR", "es", "en-US"])).toBe("en")
+  })
+
+  test("an unsupported browser gets German, not English", () => {
+    // The fallback is the default locale for the reason DEFAULT_LOCALE is
+    // German: the audience is German and the subject is the Bundestag. English
+    // is the opt-in, so it must never be reached by falling through.
+    expect(localeFromNavigator(["fr-FR", "es-ES"])).toBe("de")
+    expect(localeFromNavigator(["ja"])).toBe("de")
   })
 })
