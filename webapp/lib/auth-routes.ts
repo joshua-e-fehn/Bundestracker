@@ -85,6 +85,13 @@ export const PUBLIC_PATHS = [
   // does — either deleted, or promoted to `/`, in which case the existing '/'
   // entry already covers it."
   "/dashboard",
+  // The Untersuchungsausschuss quorum calculator, and the eighth time the
+  // filesystem check has caught this before a browser did — it failed on the
+  // commit that added `app/inquiry-quorum/page.tsx` with no line here, and
+  // again when this merge dropped that line. Public like everything else: the
+  // page is arithmetic over the public roster, and the one figure on it that is
+  // not official is marked as ours rather than hidden behind an account.
+  "/inquiry-quorum",
 ]
 
 export function isPublicPath(pathname: string) {

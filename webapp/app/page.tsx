@@ -15,11 +15,7 @@ import { ProtokollSplash } from "@/components/home-protokoll/protokoll-splash"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
-<<<<<<< HEAD
-import { formatCount } from "@/lib/format"
-=======
 import { CHAPTERS, DATA_ANCHOR } from "@/lib/protokoll"
->>>>>>> refine-homepage
 
 /**
  * `/` — the home page: what Bundestracker is for, told in five chapters.
@@ -133,26 +129,9 @@ export default function Home() {
 
             <Outro />
           </div>
-<<<<<<< HEAD
-          {/* The Fraktionen beside the latest ballots — the same two-column
-              shape as the rows above, and the pairing is deliberate: both are
-              chamber-level views, where the two boards above are about
-              individuals. The party card is first in source order, so a phone
-              and a screen reader reach the summary before the ballot list. */}
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-2 lg:gap-8">
-            <PartyComparisonPreview wahlperiode={wahlperiode} />
-            <LatestVotes wahlperiode={wahlperiode} />
-          </div>
-          <ActivityFeedPreview wahlperiode={wahlperiode} />
-          <InquiryQuorumTeaser wahlperiode={wahlperiode} />
-        </div>
-      )}
-    </main>
-=======
         )}
       </main>
     </>
->>>>>>> refine-homepage
   )
 }
 
@@ -252,66 +231,8 @@ function Outro() {
 }
 
 /**
-<<<<<<< HEAD
- * The one card on this page that asks a question rather than ranking something.
- *
- * Every other section here is a view of the score — who is most active, which
- * Fraktion averages what. This is the same data answering a constitutional
- * question instead: whether a quarter of this Bundestag can compel a committee
- * of inquiry. It sits last because it is the page's one editorial destination
- * (the exclusion table on `/inquiry-quorum` is maintained, not sourced), and a
- * dashboard should lead with what it counted.
- *
- * Reads the quorum query rather than restating the numbers, so the headline here
- * and the page it links to cannot disagree about the threshold — the failure
- * `foldFractionSizes` and `coalitionRole` both exist to prevent. Renders nothing
- * until the figures resolve: a teaser with a blank number in mid-sentence is
- * worse than one that arrives a moment later.
- */
-function InquiryQuorumTeaser({ wahlperiode }: { wahlperiode: number | undefined }) {
-  const { t, locale } = useLocale()
-  // `"skip"` until the period resolves, the convention every section in
-  // components/home-sections.tsx follows: the page renders this branch while
-  // `wahlperiode` is still in flight, and a query fired with `undefined` would
-  // be a request for a Bundestag with no number.
-  const quorum = useQuery(
-    api.inquiry.getQuorum,
-    wahlperiode === undefined ? "skip" : { wahlperiode },
-  )
-
-  if (quorum === undefined || quorum.totalSeats === 0) return null
-
-  return (
-    <section
-      aria-labelledby="inquiry-teaser-heading"
-      className="rounded-xl border border-gold/30 bg-gold/5 p-5 sm:p-6"
-    >
-      <h2 id="inquiry-teaser-heading" className="font-semibold text-lg tracking-tight sm:text-xl">
-        {t("inquiry.home.title")}
-      </h2>
-      <p className="mt-2 max-w-prose text-muted-foreground text-sm leading-relaxed">
-        {t("inquiry.home.body", {
-          threshold: formatCount(quorum.threshold, locale),
-          total: formatCount(quorum.totalSeats, locale),
-        })}
-      </p>
-      <Button asChild variant="outline" size="sm" className="mt-4">
-        <Link href="/inquiry-quorum">
-          {t("inquiry.home.cta")}
-          <ArrowRightIcon />
-        </Link>
-      </Button>
-    </section>
-  )
-}
-
-/**
- * Shown when the roster is empty — currently every deployment, since the Python
- * pipeline's load stage is not implemented yet (`pipeline/.../cli.py`).
-=======
  * Shown when the roster is empty — the current state of a fresh deployment,
  * before the pipeline's first run.
->>>>>>> refine-homepage
  *
  * The same decision app/page.tsx makes, and for the same reason: `null` (as
  * opposed to `undefined`) means the query resolved and there is nothing there,
