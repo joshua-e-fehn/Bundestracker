@@ -29,20 +29,22 @@ import { cn } from "@/lib/utils"
  * claim `seatingLevel` returns null to avoid making. The legend is where that
  * distinction becomes visible rather than merely encoded.
  *
- * ## `measured` is the second consumer's one addition
+ * ## `measured` says whether the colours on screen mean what the ramp says
  *
- * /home-b's chamber draws from bloc counts while its per-seat query is in
- * flight, and bloc counts cannot answer a continuous mode (see
- * `isDerivableFromBlocs`). Its ramp is therefore showing a scale nothing on
- * screen is currently using, so it is dimmed — the scale stays visible, which is
- * what makes "not shown here" read as a gap rather than as the absence of any
- * scale at all.
+ * A chamber drawn from bloc counts while its per-seat query is still in flight
+ * cannot answer a continuous mode (see `isDerivableFromBlocs`), so its ramp is
+ * showing a scale nothing on screen is currently using. Dimming it keeps the
+ * scale visible, which is what makes "not shown here" read as a gap rather than
+ * as the absence of any scale at all.
  *
- * That component first carried its own copy of this legend, complete with a
- * second `Swatch` and a second set of mode branches — and the copy branched on
- * `mode ===` where this one branches on the declared `scale`, which is exactly
- * the drift the note above warns about. One flag was the whole difference, so
- * the flag is here and the copy is gone.
+ * The flag was added for Concept B's chamber (`/home-b`), which is deleted, so
+ * every current caller has the real per-seat values and leaves it at its `true`
+ * default. It stays because it is the reason this component has one
+ * implementation: that chamber first carried its own copy of this legend, with
+ * a second `Swatch` and a second set of mode branches that branched on
+ * `mode ===` where this one branches on the declared `scale` — exactly the
+ * drift the note above warns about. One flag was the whole difference between
+ * needing a copy and not.
  */
 export function SeatingLegend({
   mode,

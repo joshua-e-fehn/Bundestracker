@@ -1,3 +1,3 @@
-# Task — fix-merge-conflict
+# Task — refine-homepage
 
-Fix merge conflict in home-sections.tsx. Read /tmp/task-fix-conflict.md. Push to main.
+Refine home-a into the new homepage, move current homepage to /dashboard, fix count-up bug, fix hemicycle animation, rewrite narrative text. Read /tmp/task-refine-homepage.md for full instructions. Push to main.

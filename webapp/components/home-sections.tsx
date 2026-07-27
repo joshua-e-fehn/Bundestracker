@@ -46,10 +46,10 @@ import { rankPartiesBy } from "@/lib/party-comparison"
  *
  * ## Two pages, two nesting depths
  *
- * These sections are rendered by app/page.tsx directly under its `h1`, and by
- * app/home-a/page.tsx *inside* a chapter that has an `h2` of its own. So each
- * takes a `level`, defaulted to 2 — the dashboard's shape, unchanged — and the
- * narrative page passes 3. Without it the outline flattens: "Wer ist aktiv?"
+ * These sections are rendered by app/dashboard/page.tsx directly under its
+ * `h1`, and by app/page.tsx *inside* a chapter that has an `h2` of its own. So
+ * each takes a `level`, defaulted to 2 — the dashboard's shape, unchanged — and
+ * the narrative home page passes 3. Without it the outline flattens: "Wer ist aktiv?"
  * and "Aktivste Abgeordnete" come out as siblings, which tells a screen reader
  * the board is a peer of the chapter rather than a part of it.
  *
@@ -97,29 +97,23 @@ function RowSkeletons({ count, height = "h-16" }: { count: number; height?: stri
 }
 
 /**
- * Suppresses a section's own caveat, because the page around it already states
- * that caveat itself.
+ * ## The caveat-suppression prop, and why it is gone
  *
- * The narrative home page (app/home-c/page.tsx) makes each chapter's caveat part
- * of the story rather than a footnote under one card — that promotion is the
- * whole concept there. Without this the reader gets the sentence twice, a few
- * lines apart: measured in that page's rendered HTML before this existed,
- * `home.bottomMPsCaveat` and `parties.smallGroupCaveat` each appeared twice.
+ * These sections used to take `caveatShownByPage`, which let a page that stated
+ * a caveat itself turn off the section's own copy of it. Its only caller was
+ * Concept C (`/home-c`), whose whole idea was to promote each caveat from a
+ * footnote into the chapter's argument, and that page is deleted.
  *
- * A prop rather than removing the caveat from these sections, because on `/` it
- * belongs exactly where it is — beside the number, which is the editorial rule
- * components/caveat-note.tsx sets out at length. So the default is "render it",
- * and only a caller that has demonstrably said the same thing may turn it off.
+ * It is removed rather than kept for a future caller, because the prop was the
+ * one piece of this file that could be used *wrongly*: setting it was a promise
+ * to state the caveat somewhere else, and a section that suppressed its caveat
+ * without replacing it would publish an unqualified number — a worse failure
+ * than the duplication it existed to fix. An option with no callers and one
+ * dangerous setting is not surface worth carrying.
  *
- * ⚠ Setting this is a *promise* to state the caveat elsewhere. A section that
- * suppresses its caveat without replacing it publishes an unqualified number,
- * which is a worse failure than the duplication this fixes — and it is the one
- * way this prop can be used wrongly.
+ * The narrative home page keeps every caveat where components/caveat-note.tsx
+ * says it belongs: beside the number.
  */
-type CaveatSuppressible = {
-  /** See `CaveatSuppressible`. Defaults to false: the caveat renders. */
-  caveatShownByPage?: boolean
-}
 
 // --- summary stats --------------------------------------------------------
 
@@ -200,9 +194,6 @@ const TOP_MP_COUNT = 5
  * score measures *recorded* activity — so the bottom passes a caveat and the
  * top does not. Optional rather than defaulted to empty, so the section that
  * needs one and lacks it is visibly missing something.
- *
- * `caveatShownByPage` is how a page that states the same caveat itself turns
- * this one off — see `CaveatSuppressible`.
  */
 function ActivityBoard({
   wahlperiode,
@@ -211,9 +202,12 @@ function ActivityBoard({
   titleKey,
   subtitleKey,
   caveatKey,
+<<<<<<< HEAD
   level,
   caveatShownByPage = false,
   caveatShownByPage = false,
+=======
+>>>>>>> refine-homepage
   level,
 }: {
   wahlperiode: number | null | undefined
@@ -223,7 +217,7 @@ function ActivityBoard({
   subtitleKey: TranslationKey
   caveatKey?: TranslationKey
   level?: SectionLevel
-} & CaveatSuppressible) {
+}) {
   const { t } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const rankings = useQuery(
@@ -273,7 +267,7 @@ function ActivityBoard({
           ))}
         </div>
       )}
-      {caveatKey !== undefined && !caveatShownByPage && (
+      {caveatKey !== undefined && (
         // Beside the number rather than behind a link, matching how every
         // leaderboard on /rankings carries its own. `mt-auto` so the caveat
         // sits at the bottom of the column, keeping the two boards' card rows
@@ -313,18 +307,17 @@ export function TopMPs({
  * Shown because a tracker that only publishes the top of its own ranking is
  * publishing a highlight reel: the premise here is that the measure is
  * objective and inspectable (AGENTS.md), and a measure whose unflattering end
- * is hidden cannot be inspected. It comes with the caveat that end requires —
- * unless the page has already stated it, for which see `CaveatSuppressible`.
+ * is hidden cannot be inspected. It comes with the caveat that end requires,
+ * always — see the note on the removed suppression prop above.
  */
 export function BottomMPs({
   wahlperiode,
-  caveatShownByPage,
   level,
   caveatShownByPage,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
-} & CaveatSuppressible) {
+}) {
   return (
     <ActivityBoard
       wahlperiode={wahlperiode}
@@ -333,9 +326,12 @@ export function BottomMPs({
       titleKey="home.bottomMPsTitle"
       subtitleKey="home.bottomMPsSubtitle"
       caveatKey="home.bottomMPsCaveat"
+<<<<<<< HEAD
       level={level}
       caveatShownByPage={caveatShownByPage}
       caveatShownByPage={caveatShownByPage}
+=======
+>>>>>>> refine-homepage
       level={level}
     />
   )
@@ -360,14 +356,17 @@ export function BottomMPs({
  */
 export function PartyComparisonPreview({
   wahlperiode,
+<<<<<<< HEAD
   level,
   caveatShownByPage = false,
   caveatShownByPage = false,
+=======
+>>>>>>> refine-homepage
   level,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
-} & CaveatSuppressible) {
+}) {
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const comparison = useQuery(api.parties.getPartyComparison, skip ? "skip" : { wahlperiode })
@@ -431,14 +430,11 @@ export function PartyComparisonPreview({
         </Card>
       )}
       {/* The one thing this card cannot be read without: every figure is an
-          average over a group's scored members, not the group's output. Omitted
-          only where the page has already said it — see `CaveatSuppressible`. */}
-      {!caveatShownByPage && (
-        <p className="mt-3 flex gap-2 text-muted-foreground text-xs leading-relaxed">
-          <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-          {t("parties.smallGroupCaveat")}
-        </p>
-      )}
+          average over a group's scored members, not the group's output. */}
+      <p className="mt-3 flex gap-2 text-muted-foreground text-xs leading-relaxed">
+        <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+        {t("parties.smallGroupCaveat")}
+      </p>
     </section>
   )
 }
