@@ -46,6 +46,11 @@ const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
   { href: "/rankings", labelKey: "nav.rankings" },
   { href: "/seating", labelKey: "nav.seating" },
   { href: "/feed", labelKey: "nav.feed" },
+  // Last, and the only entry here that is not a view of the data. `nav.about`
+  // has been in both dictionaries since the shell was built and pointed at
+  // nothing until app/about/page.tsx landed — which is the rule above working
+  // as stated: the string was cheap to keep, the link waited for the page.
+  { href: "/about", labelKey: "nav.about" },
 ]
 
 /**
@@ -163,9 +168,7 @@ export function SiteHeader() {
               aria-current={isActive(href) ? "page" : undefined}
               className={cn(
                 "relative rounded-md px-2.5 py-1.5 font-medium text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                isActive(href)
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
+                isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(labelKey)}

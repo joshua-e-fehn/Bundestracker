@@ -1,0 +1,38 @@
+/**
+ * Addresses outside this app that the UI links to.
+ *
+ * Two of these began as private constants in components/site-footer.tsx, which
+ * was fine while the footer was the only thing that linked out. `/about` names
+ * the same sources again — the open-data portal in its source list, the
+ * repository in its "something wrong?" section — and a second copy of a URL is
+ * how the footer and the methodology page come to disagree about where the
+ * source code lives.
+ *
+ * Only *stable front doors* belong here: pages a reader can open. The machine
+ * endpoints the pipeline actually fetches from (`search.dip.bundestag.de/api/v1`,
+ * the Stammdaten ZIP) are deliberately absent — they answer 401 or download a
+ * 15 MB archive, so linking one from a methodology page would be citing a
+ * source by handing the reader a broken door. Those live in the pipeline, next
+ * to the code that calls them.
+ *
+ * Per-document URLs are not here either: a Drucksache and a protocol have a
+ * deterministic address, so they are computed rather than stored — see
+ * `drucksachePdfUrl` and `protocolPdfUrl` in lib/bundestag.ts.
+ */
+
+/** The Bundestag's open-data landing page. Linked rather than merely named: the
+ * claim that every figure is backed by a Bundestag record is only checkable if
+ * the reader can reach the records. */
+export const BUNDESTAG_OPEN_DATA_URL = "https://www.bundestag.de/services/opendata"
+
+/** DIP, the parliamentary documentation system — the browsable front end of the
+ * API the pipeline reads. */
+export const DIP_URL = "https://dip.bundestag.de"
+
+/** abgeordnetenwatch, the non-profit whose CC0 data supplements the official
+ * roster (§4.3, §10 of docs/api-research.md). */
+export const ABGEORDNETENWATCH_URL = "https://www.abgeordnetenwatch.de"
+
+/** This app's source. The scoring is an editorial weighting (lib/scoring.ts),
+ * so "read the code" is part of the offer rather than a courtesy. */
+export const REPO_URL = "https://github.com/joshua-e-fehn/Bundestracker"
