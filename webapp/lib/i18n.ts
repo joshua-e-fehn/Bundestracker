@@ -180,6 +180,7 @@ const de = {
   "rankings.column.participation": "Beteiligung",
   "rankings.column.ballots": "Abstimmungen",
   "rankings.column.dissent": "Abweichungen",
+  "rankings.column.dissentRate": "Abweichungsquote",
   "rankings.column.committees": "Ausschüsse",
   "rankings.column.bills": "Gesetzentwürfe",
   "rankings.column.change": "Veränderung",
@@ -211,7 +212,13 @@ const de = {
   "rankings.caveat.committeesCurrentOnly":
     "Ausschussdaten liegen nur für die laufende Wahlperiode vor — frühere Perioden sind nirgends maschinenlesbar veröffentlicht.",
   "rankings.caveat.crossParty":
-    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
+    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung, und eine exakt gespaltene Fraktion hat keine Linie, von der abgewichen werden könnte.",
+  // Replaces the old "die letzten N Abstimmungen" line. The figure is now
+  // period-wide, so what has to be stated is the denominator rather than a
+  // window — see `getCrossPartyRankings`.
+  "rankings.crossPartyPeriod":
+    "Gesamte Wahlperiode. Nenner sind die abgegebenen Stimmen in Abstimmungen mit erkennbarer Fraktionslinie.",
+  "rankings.crossPartyWindow": "Nur die letzten {count} namentlichen Abstimmungen.",
   "rankings.caveat.rising":
     "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
   "rankings.noPreviousMonth":
@@ -406,6 +413,27 @@ const de = {
   "mp.partyLineWith": "auf Fraktionslinie",
   "mp.partyLineAgainst": "gegen die Fraktionsmehrheit",
   "mp.partyLineUnknown": "Fraktionsmehrheit unbekannt",
+
+  // The period-wide dissent figure — see convex/votes.ts. Deliberately a
+  // sentence rather than a labelled number: "12" beside the word "Abweichungen"
+  // invites reading it as a score, and this is a count of occasions with a
+  // denominator that has to travel with it.
+  "mp.dissent": "Abweichung von der Fraktion",
+  "mp.dissentCount":
+    "{count}-mal anders als die Fraktionsmehrheit gestimmt — bei {cast} abgegebenen Stimmen in dieser Wahlperiode.",
+  "mp.dissentNone":
+    "In dieser Wahlperiode nie anders als die Fraktionsmehrheit gestimmt — bei {cast} abgegebenen Stimmen.",
+  // Distinct from `mp.dissentNone`, and the distinction is the point: a member
+  // who cast no vote is not a member who always voted with their group.
+  "mp.dissentNoBallots":
+    "Keine abgegebene Stimme in einer namentlichen Abstimmung mit erkennbarer Fraktionslinie.",
+  "mp.dissentNotComputed": "Für diese Wahlperiode ist noch keine Abweichungsbilanz berechnet.",
+  "mp.dissentRate": "{rate} der abgegebenen Stimmen",
+  "mp.dissentOfBallots": "{ballots} namentliche Abstimmungen in der Wahlperiode",
+  // The card badge. Two words, because it sits in a 10 px gap beside a name.
+  "mp.dissentBadge": "Abweichler:in",
+  "mp.dissentBadgeTooltip":
+    "Hat in mindestens 5 % der abgegebenen Stimmen anders als die eigene Fraktionsmehrheit gestimmt.",
   // --- trend charts ---
   //
   // `mp.trends` and `mp.trendsComingSoon` were here until the charts landed:
@@ -1354,120 +1382,6 @@ const de = {
   // **German is written first and translated second.** These are not label
   // strings where a literal rendering serves; "Was es tut, ist öffentlich" is a
   // sentence with a rhythm, and the English is a sibling rather than a gloss.
-  "protokoll.title": "Das Protokoll",
-  // The subtitle under the wordmark, before Chapter 1 opens. Says what the page
-  // is about to do, so a reader who wants none of it can take the skip link
-  // beside it knowing what they are skipping.
-  "protokoll.lead":
-    "Fünf Kapitel über ein Parlament, das seine Arbeit veröffentlicht — und darüber, was sich daraus messen lässt und was nicht.",
-  // §7's requirement #1, and the one this redesign is most likely to lose: a
-  // returning reader who wants today's Abstimmungen must not have to scroll
-  // through a story they have read. A quiet link, not a modal and not a stored
-  // preference.
-  "protokoll.skipToData": "Direkt zu den Daten",
-  "protokoll.readTheRecord": "Das Protokoll lesen",
-  // The rail down the left gutter. Decorative to the eye, but it is also the
-  // chapter navigation, so it is named for a screen reader.
-  "protokoll.progressLabel": "Fortschritt im Protokoll",
-  "protokoll.chapterLabel": "Kapitel {index}: {title}",
-
-  "protokoll.chapter1Number": "Kapitel eins",
-  "protokoll.chapter1Title": "Ein Parlament, 630 Sitze",
-  "protokoll.chapter1Standfirst":
-    "Der 21. Deutsche Bundestag hat 630 Sitze — jeder davon ein Mandat, jedes Mandat eine Person, die im Namen von rund 60 Millionen Wahlberechtigten abstimmt. Das ist der Gegenstand dieser Seite.",
-  // Scrolls into view as the arc completes. The one sentence that says what the
-  // picture is *not*, because a picture of a parliament is read as a picture of
-  // *that* parliament — the same warning components/seating-notice.tsx carries.
-  "protokoll.chapter1Note":
-    "Die Fraktionsgrößen sind amtlich belegt; die Position eines einzelnen Sitzes im Bogen ist es nicht — eine maschinenlesbare Sitzordnung veröffentlicht der Bundestag nicht.",
-  // Why the arc can say more than 630 while the Kapitelüberschrift says 630.
-  // Both Zahlen sind richtig und meinen Verschiedenes: 630 sind die
-  // gleichzeitig besetzten Sitze, der Bogen zählt Mandate, und ein Sitz kann in
-  // einer Wahlperiode zwei davon tragen. Ohne diesen Satz stehen zwei Zahlen
-  // nebeneinander, von denen eine falsch aussieht — genau die Sorte plausibler
-  // Fehlzahl, die diese Codebasis sonst überall vermeidet.
-  "protokoll.chapter1MandateNote":
-    "Der Bogen zählt Mandate, nicht gleichzeitig besetzte Sitze: Scheidet jemand aus und rückt jemand nach, trägt ein Sitz in einer Wahlperiode zwei Mandate. Deshalb liegt die Summe der Fraktionen über den 630 Sitzen des Bundestages.",
-
-  "protokoll.chapter2Number": "Kapitel zwei",
-  "protokoll.chapter2Title": "Was es tut, ist öffentlich",
-  "protokoll.chapter2Standfirst":
-    "Jeder Antrag, jede Rede, jede namentliche Abstimmung und jede Anfrage wird protokolliert und als offene Daten veröffentlicht. Diese Seite rechnet nichts hinzu — sie zählt, was ohnehin im Protokoll steht.",
-
-  "protokoll.chapter3Number": "Kapitel drei",
-  "protokoll.chapter3Title": "Wie wir messen",
-  "protokoll.chapter3Standfirst":
-    "Sieben Größen, jede mit einem Gewicht, aufsummiert zu einer Zahl. Die Gewichtung ist eine Setzung — deshalb steht sie hier offen, statt hinter dem Ergebnis zu verschwinden.",
-  // The thesis of the whole page, and currently invisible on the home page: the
-  // seven components collapse into one number, and the number can be taken back
-  // apart. That is what makes the measure inspectable rather than a verdict.
-  "protokoll.chapter3Collapse":
-    "Sieben Komponenten, eine Zahl — und jederzeit wieder in ihre Bestandteile zerlegbar.",
-  "protokoll.chapter3Example": "Beispielrechnung mit den Standardgewichtungen",
-  // The three structural limits from lib/scoring.ts, stated as part of the
-  // argument rather than as a footnote under it. No weighting fixes any of
-  // them, which is exactly why they belong in the chapter that explains the
-  // weighting.
-  "protokoll.chapter3Limits":
-    "Drei Grenzen bleiben, unabhängig von jeder Gewichtung: Abstimmungsteilnahme umfasst nur namentliche Abstimmungen, Ausschussdaten liegen nur für die laufende Wahlperiode vor, und Redebeiträge werden nach Wörtern gezählt, nicht nach Wortmeldungen. Ein niedriger Wert heißt „wenig erfasst“, nie „wenig gearbeitet“.",
-
-  "protokoll.chapter4Number": "Kapitel vier",
-  "protokoll.chapter4Title": "Wer ist aktiv?",
-  "protokoll.chapter4Standfirst":
-    "Beide Enden derselben Rangliste, nebeneinander. Ein Tracker, der nur die Spitze veröffentlicht, veröffentlicht eine Bestenliste — und keine überprüfbare Messung.",
-
-  "protokoll.chapter5Number": "Kapitel fünf",
-  "protokoll.chapter5Title": "Was heute geschah",
-  "protokoll.chapter5Standfirst":
-    "Der laufende Betrieb: die zuletzt namentlich abgestimmten Vorlagen und die jüngsten Einträge im Protokoll. Diese Seite aktualisiert sich, sobald die nächtliche Auswertung neue Daten geladen hat.",
-
-  // The closing line, after the last chapter. Ends on what the reader can do
-  // rather than on a summary of what they just read.
-  "protokoll.outroTitle": "Das ganze Protokoll",
-  "protokoll.outroLead":
-    "Jede Zahl auf dieser Seite lässt sich bis zum Dokument zurückverfolgen, aus dem sie stammt.",
-
-  // --- the opening animation ("630 Sitze") ----------------------------------
-  //
-  // Everything visible in the splash is decorative and `aria-hidden`; these are
-  // the strings that are not. §6: it runs once per session, never blocks the
-  // data fetch underneath it, is skipped entirely under reduced motion or
-  // Datensparmodus, and can be dismissed by any key, click or scroll.
-  "protokoll.splashLabel": "Eröffnungssequenz",
-  "protokoll.splashSkip": "Überspringen",
-  "protokoll.splashCounting": "630 Sitze",
-
-  "homeC.claimIntro":
-    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
-  // Chapter 2 — the four summary figures. Names the honest limit of two of them
-  // in the sentence itself: `getChamberStats` reports a floor where it cannot
-  // count exactly, and the `+` on the card is meaningless unless the reader has
-  // been told what it means.
-  "homeC.claimStats":
-    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
-  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
-  // that is what the two boards together put on trial.
-  "homeC.claimActivity":
-    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
-  // Chapter 4 — parties and votes. Two sections under one claim because they
-  // make the same move: both aggregate individuals into a group, and both are
-  // read as statements about the group.
-  "homeC.claimParties":
-    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
-  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
-  // no measurement: it reports what was published, and says so.
-  "homeC.claimFeed":
-    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
-
-  // The skip link, and §7's first defence: a returning reader who wants today's
-  // votes should not have to scroll through a story they have read. Named for
-  // where it goes rather than for what it skips.
-  "homeC.skipToData": "Direkt zu den Daten",
-  // The pledge under the hero. Short enough to be read, specific enough to be
-  // checked — it names the two things the site will not do rather than
-  // promising that it is trustworthy.
-  "homeC.heroPledge":
-    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
 
   // --- Untersuchungsausschuss: das Quorum ---------------------------------
   //
@@ -1739,6 +1653,7 @@ const en: Dictionary = {
   "rankings.column.participation": "Participation",
   "rankings.column.ballots": "Ballots",
   "rankings.column.dissent": "Dissents",
+  "rankings.column.dissentRate": "Dissent rate",
   "rankings.column.committees": "Committees",
   "rankings.column.bills": "Bills",
   "rankings.column.change": "Change",
@@ -1767,7 +1682,10 @@ const en: Dictionary = {
   "rankings.caveat.committeesCurrentOnly":
     "Committee data exists for the current electoral period only — earlier periods are published nowhere in machine-readable form.",
   "rankings.caveat.crossParty":
-    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
+    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent, and a group split exactly in half has no line to break.",
+  "rankings.crossPartyPeriod":
+    "Whole electoral period. The denominator is votes cast in ballots where the group had a discernible line.",
+  "rankings.crossPartyWindow": "The {count} most recent named ballots only.",
   "rankings.caveat.rising":
     "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
   "rankings.noPreviousMonth":
@@ -1918,6 +1836,19 @@ const en: Dictionary = {
   "mp.partyLineWith": "with the group majority",
   "mp.partyLineAgainst": "against the group majority",
   "mp.partyLineUnknown": "group majority unknown",
+
+  "mp.dissent": "Dissent from the group",
+  "mp.dissentCount":
+    "Voted against their group's majority {count} times — out of {cast} votes cast this electoral period.",
+  "mp.dissentNone":
+    "Never voted against their group's majority this electoral period, across {cast} votes cast.",
+  "mp.dissentNoBallots": "No vote cast in a named ballot where their group had a discernible line.",
+  "mp.dissentNotComputed": "No dissent tally has been computed for this electoral period yet.",
+  "mp.dissentRate": "{rate} of votes cast",
+  "mp.dissentOfBallots": "{ballots} named ballots this electoral period",
+  "mp.dissentBadge": "Dissenter",
+  "mp.dissentBadgeTooltip":
+    "Voted against their own group's majority in at least 5% of the votes they cast.",
   // --- trend charts ---
   "trends.title": "Trends",
   "trends.subtitle": "Monthly activity across the current electoral period.",
@@ -2610,70 +2541,6 @@ const en: Dictionary = {
   // on the German block. "The Record" is left untranslated in the title,
   // because the page is *about* the Bundestag's own Protokoll and the German
   // word is the thing being named — the subtitle carries the meaning instead.
-  "protokoll.title": "Das Protokoll",
-  "protokoll.lead":
-    "Five chapters about a parliament that publishes its own work — and about what can be measured from it, and what cannot.",
-  "protokoll.skipToData": "Straight to the data",
-  "protokoll.readTheRecord": "Read the record",
-  "protokoll.progressLabel": "Progress through the record",
-  "protokoll.chapterLabel": "Chapter {index}: {title}",
-
-  "protokoll.chapter1Number": "Chapter one",
-  "protokoll.chapter1Title": "One parliament, 630 seats",
-  "protokoll.chapter1Standfirst":
-    "The 21st German Bundestag holds 630 seats — each one a mandate, each mandate a person voting on behalf of some 60 million eligible voters. That is what this site is about.",
-  "protokoll.chapter1Note":
-    "The size of each parliamentary group is backed by official records; the position of any single seat on the arc is not — the Bundestag publishes no machine-readable seating plan.",
-  "protokoll.chapter1MandateNote":
-    "The arc counts mandates, not seats occupied at one time: when a member leaves and a replacement arrives, one seat carries two mandates within an electoral period. That is why the groups sum to more than the Bundestag's 630 seats.",
-
-  "protokoll.chapter2Number": "Chapter two",
-  "protokoll.chapter2Title": "What it does is public",
-  "protokoll.chapter2Standfirst":
-    "Every motion, every speech, every named vote and every written question is recorded and published as open data. This site adds nothing — it counts what the record already says.",
-
-  "protokoll.chapter3Number": "Chapter three",
-  "protokoll.chapter3Title": "How we measure",
-  "protokoll.chapter3Standfirst":
-    "Seven quantities, each with a weight, summed into one number. The weighting is a choice — so it is stated here rather than disappearing behind the result.",
-  "protokoll.chapter3Collapse":
-    "Seven components, one number — and it can be taken apart again at any time.",
-  "protokoll.chapter3Example": "Worked example, using the default weightings",
-  "protokoll.chapter3Limits":
-    "Three limits remain whatever the weighting: voting participation covers named ballots only, committee data exists for the current electoral period only, and speeches are counted by words rather than by turns. A low figure means “little recorded”, never “little done”.",
-
-  "protokoll.chapter4Number": "Chapter four",
-  "protokoll.chapter4Title": "Who is active?",
-  "protokoll.chapter4Standfirst":
-    "Both ends of the same ranking, side by side. A tracker that publishes only the top is publishing a highlight reel — not a measurement anyone can check.",
-
-  "protokoll.chapter5Number": "Chapter five",
-  "protokoll.chapter5Title": "What happened today",
-  "protokoll.chapter5Standfirst":
-    "The chamber in motion: the most recent named ballots and the latest entries in the record. This page updates itself as the nightly sweep loads new data.",
-
-  "protokoll.outroTitle": "The whole record",
-  "protokoll.outroLead":
-    "Every figure on this page can be traced back to the document it came from.",
-
-  // --- the opening animation ("630 Sitze") ----------------------------------
-  "protokoll.splashLabel": "Opening sequence",
-  "protokoll.splashSkip": "Skip",
-  "protokoll.splashCounting": "630 seats",
-
-  "homeC.claimIntro":
-    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
-  "homeC.claimStats":
-    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
-  "homeC.claimActivity":
-    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
-  "homeC.claimParties":
-    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
-  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
-
-  "homeC.skipToData": "Straight to the data",
-  "homeC.heroPledge":
-    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
 
   // --- committee of inquiry: the quorum ------------------------------------
   //

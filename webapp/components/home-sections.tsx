@@ -213,8 +213,6 @@ function ActivityBoard({
   caveatKey,
   level,
   caveatShownByPage = false,
-  caveatShownByPage = false,
-  level,
 }: {
   wahlperiode: number | null | undefined
   direction: "asc" | "desc"
@@ -258,6 +256,9 @@ function ActivityBoard({
               photoUrl={entry.photoUrl}
               photoCredit={entry.photoCredit}
               totalScore={entry.totalScore}
+              // Joined onto the ranking row rather than fetched per card — see
+              // the note on `MPCard`'s `dissent` prop.
+              dissent={entry.dissent}
               // No rank number on the ascending board. `getRankings` numbers
               // its slice from 1 in both directions, so a "1" here would read
               // as "the least active member in the Bundestag" — a claim about
@@ -320,7 +321,6 @@ export function BottomMPs({
   wahlperiode,
   caveatShownByPage,
   level,
-  caveatShownByPage,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
@@ -335,8 +335,6 @@ export function BottomMPs({
       caveatKey="home.bottomMPsCaveat"
       level={level}
       caveatShownByPage={caveatShownByPage}
-      caveatShownByPage={caveatShownByPage}
-      level={level}
     />
   )
 }
@@ -362,8 +360,6 @@ export function PartyComparisonPreview({
   wahlperiode,
   level,
   caveatShownByPage = false,
-  caveatShownByPage = false,
-  level,
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
