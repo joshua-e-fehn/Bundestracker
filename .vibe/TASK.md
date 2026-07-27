@@ -1,3 +1,3 @@
-# Task — refine-homepage
+# Task — fix-build-merge
 
-Refine home-a into the new homepage, move current homepage to /dashboard, fix count-up bug, fix hemicycle animation, rewrite narrative text. Read /tmp/task-refine-homepage.md for full instructions. Push to main.
+Fix build errors from merge conflicts. Read /tmp/task-fix-build2.md. Push to main.
