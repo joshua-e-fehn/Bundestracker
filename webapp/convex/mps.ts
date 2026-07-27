@@ -58,12 +58,25 @@ export async function findMandate(
   internalId: string,
   wahlperiode: number,
 ): Promise<Doc<"mps"> | null> {
-  return await ctx.db
+  // Try internalId first (the primary lookup path)
+  const byInternal = await ctx.db
     .query("mps")
     .withIndex("by_internalId_and_wahlperiode", (q) =>
       q.eq("internalId", internalId).eq("wahlperiode", wahlperiode),
     )
     .unique()
+  if (byInternal) return byInternal
+
+  // Fallback: try dipPersonId — speeches and votes reference MPs by their
+  // DIP person ID (e.g. "bt-11005032"), which may not match the internalId
+  // minted from Stammdaten. This resolves the 3-source ID mismatch (§4.1).
+  const byDip = await ctx.db
+    .query("mps")
+    .withIndex("by_dipPersonId_and_wahlperiode", (q) =>
+      q.eq("dipPersonId", internalId).eq("wahlperiode", wahlperiode),
+    )
+    .unique()
+  return byDip
 }
 
 /**
