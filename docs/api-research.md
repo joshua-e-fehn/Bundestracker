@@ -1305,6 +1305,11 @@ short form (`CDU/CSU`), DIP uses `CDU/CSU`. You need an explicit mapping table.
 
 ### 6.5 MP portraits
 
+> ⚠ **Superseded on 2026-07-27.** An official bulk source *does* exist, it
+> covers 100 % of WP21, and the section below is kept only because its
+> licensing warning still stands. See §6.5a; the implementation is
+> `pipeline/src/bundestrack/api/mp_profiles.py`.
+
 **No official Bundestag portrait API or bulk image source was found.** The
 `bundestag.de/abgeordnete` profile pages could not be inspected (WAF 303), so
 the URL pattern is **unverified** — and bundestag.de portraits are typically
@@ -1336,6 +1341,72 @@ Measured coverage:
 
 This P528/P972 property is also the **cleanest available broker** between
 Wikidata and Stammdaten IDs, if you want external enrichment.
+
+### 6.5a MP portraits — the official source (supersedes §6.5)
+
+Re-tested live on **2026-07-27**. Two of §6.5's three conclusions no longer
+hold; the licensing one does.
+
+**The listing is reachable and complete.**
+
+```
+GET https://www.bundestag.de/ajax/filterlist/de/abgeordnete/biografien/1040594-1040594?limit=12&offset=0
+```
+
+It is the same `/ajax/filterlist/` machinery the named-vote listing uses (§4.1),
+which is likely why a pass looking at `/abgeordnete/biografien` itself did not
+find it. `robots.txt` allows both `/ajax/` and `/resource/image/`. The trailing
+`1040594-1040594` is the CMS module id, read off the `data-dataloader-url`
+attribute on the page — a 404 there means re-read that attribute, not that the
+listing is gone.
+
+| | Count | of 639 WP21 teasers |
+|---|---|---|
+| Teasers carrying a portrait | 639 | **100 %** |
+| Portraits carrying a photographer credit | 639 | **100 %** |
+| Joined to the Stammdaten roster by printed name | 635 | **99.4 %** (0 ambiguous) |
+
+The four that do not join are middle initials (`Hoffmann, Philip M. A.`) and the
+§7.3 snapshot-lag MPs. Name normalisation is
+`models/enrichment.normalise_printed_name` feeding the existing
+`MPResolver.resolve_printed_name`.
+
+Three traps, each of which fails *silently*:
+
+- ⚠ **`limit` is ignored — the endpoint always serves 12.** Verified against
+  `limit=12`, `24` and `60`. Advance the offset by rows *received*; advancing by
+  the requested size reads every other page and enriches half the chamber with
+  no error, because each page it does read parses perfectly.
+- ⚠ **The portrait is in `data-img-md-retina`, not `src`.** `src` holds a grey
+  placeholder PNG, so a parser reading it gets 639 identical boxes and no error.
+- ⚠ **The credit is required, not optional.** §6.5's licensing warning is the
+  one part that survives: these are photographer-credited works, not
+  open-licensed ones. Store the credit beside the URL, display it, hotlink the
+  image (verified: no referer check, `ETag`, `max-age=3600`) and never rehost.
+
+**Contact data, from the per-MP biography page.** There is **no email address
+and no telephone number** anywhere: the Stammdaten DTD declares no contact
+elements at all and 13 sampled pages carry zero `mailto:` and zero `tel:` links.
+The `<aside>` publishes a contact *form*
+(`/services/formular/contactform?mdbId=…`), the Berlin office (constant for all
+630), the constituency office (~50 % of MPs) and the MP's own social profiles.
+
+⚠ The page **footer** lists the Bundestag's own Instagram and Mastodon accounts
+in markup identical to the MP's. Scope link collection to the `<aside>` *and*
+filter the four known URLs, or all 630 MPs inherit them — a field that is wrong
+for everybody reads as a design decision rather than a bug.
+
+⚠ The `mdbId` in that form URL is a **fourth** MP id space — bundestag.de's own
+7-digit CMS id, unrelated to the three in §7. It is not a join key.
+
+**Occupation and education: abgeordnetenwatch, joined by id.** Its
+`politicians` records carry `ext_id_bundestagsverwaltung`, which *is* the 8-digit
+Stammdaten id — so this is the one external source needing no name matching.
+Filter `?ext_id_bundestagsverwaltung[ne]=` returns all 1 890 politicians holding
+one, i.e. the whole set in ~19 requests. Of the 630 WP21 mandates, 628 match
+(99.7 %), carrying `occupation` for 88.1 % and `education` for 83.4 %.
+(`id[in][]=…` answers 500; the bracketed syntax is scalar-only. The host
+rate-limits with **429** and sends no `Retry-After`.)
 
 ---
 
