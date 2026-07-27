@@ -15,6 +15,7 @@ import {
 import { formatCount, formatScore } from "@/lib/format"
 import { partyByKey, partyColor } from "@/lib/parties"
 import { type PartyAggregate, rankPartiesBy } from "@/lib/party-comparison"
+import { competitionRanks } from "@/lib/ranking"
 
 /**
  * The single number Wave 9 asks for: average activity index per Fraktion,
@@ -59,6 +60,7 @@ export function PartyScoreTable({ parties }: { parties: readonly PartyAggregate[
    * `getPartyMembers` makes for an unscored mandate.
    */
   const unranked = parties.filter((row) => row.scored === 0)
+  const ranks = competitionRanks(ranked.map((row) => row.means.totalScore))
 
   if (parties.length === 0) {
     return (
@@ -95,15 +97,13 @@ export function PartyScoreTable({ parties }: { parties: readonly PartyAggregate[
               <PartyRow
                 key={row.partyKey}
                 row={row}
-                // Competition ranking: two groups on the same mean share a
-                // rank, matching `ranked` in convex/rankings.ts. Computed here
-                // rather than in `rankPartiesBy` because only this table
-                // numbers its rows — the charts' ordering is their ranking.
-                rank={
-                  index > 0 && ranked[index - 1].means.totalScore === row.means.totalScore
-                    ? sharedRank(ranked, index)
-                    : index + 1
-                }
+                // `competitionRanks` in lib/ranking.ts — the same numbering the
+                // leaderboards and the per-Fraktion member list use, so two
+                // groups on the same mean share a rank here exactly as two MPs
+                // on the same score do there. Numbered in this component rather
+                // than in `rankPartiesBy` because only this table numbers its
+                // rows; the charts' ordering is their ranking.
+                rank={ranks[index]}
                 locale={locale}
               />
             ))}
@@ -117,13 +117,6 @@ export function PartyScoreTable({ parties }: { parties: readonly PartyAggregate[
       <p className="text-muted-foreground text-xs leading-relaxed">{t("parties.medianNote")}</p>
     </div>
   )
-}
-
-/** The first index holding this row's score — the rank a tied block shares. */
-function sharedRank(rows: readonly PartyAggregate[], index: number): number {
-  let first = index
-  while (first > 0 && rows[first - 1].means.totalScore === rows[index].means.totalScore) first--
-  return first + 1
 }
 
 function PartyRow({

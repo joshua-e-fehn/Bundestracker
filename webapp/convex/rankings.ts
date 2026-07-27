@@ -1,6 +1,7 @@
 import { type Validator, v } from "convex/values"
 // Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
 import { occupationOf, stateOf } from "../lib/bundestag"
+import { competitionRanks } from "../lib/ranking"
 import {
   AGE_GROUP_KEYS,
   type AgeGroup,
@@ -240,17 +241,12 @@ function ranked<T>(rows: T[], value: (row: T) => number, name: (row: T) => strin
   const sorted = [...rows].sort(
     (a, b) => value(b) - value(a) || name(a).localeCompare(name(b), "de"),
   )
-  const out: Array<T & { rank: number }> = []
-  let previousValue: number | null = null
-  let previousRank = 0
-  for (const [index, row] of sorted.entries()) {
-    const current = value(row)
-    const rank = previousValue !== null && current === previousValue ? previousRank : index + 1
-    out.push({ ...row, rank })
-    previousValue = current
-    previousRank = rank
-  }
-  return out
+  // The numbering itself is `competitionRanks` in lib/ranking.ts — three copies
+  // of the tie rule existed before it, and the part that drifts is the skip
+  // after a tied block. The sort stays here because the tie-break is this
+  // module's (by name, in German collation) and the numbering is not.
+  const ranks = competitionRanks(sorted.map(value))
+  return sorted.map((row, index) => ({ ...row, rank: ranks[index] }))
 }
 
 // --- the metric boards ----------------------------------------------------

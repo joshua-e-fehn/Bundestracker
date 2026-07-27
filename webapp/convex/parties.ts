@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 // Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
 import { type PartyKey, PARTY_KEYS, partyFor } from "../lib/parties"
+import { competitionRanks } from "../lib/ranking"
 import { RANKING_METRICS } from "../lib/taxonomy"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
@@ -314,27 +315,13 @@ export const getPartyMembers = query({
       return b.totalScore - a.totalScore || a.name.localeCompare(b.name, "de")
     })
 
-    /**
-     * Competition ranking over the scored members, as convex/rankings.ts'
-     * `ranked` does: two MPs on the same score share a rank and the next one
-     * skips. Numbering by position would break the tie on whatever order the
-     * roster scan returned — ingestion order — and tell two members with
-     * identical records that one is ahead.
-     *
-     * Rank 0 marks an unscored member. Distinguishable from every real rank,
-     * which starts at 1, and the table renders it as a dash rather than as a
-     * position in the list.
-     */
-    let previousScore: number | null = null
-    let previousRank = 0
-    const ranked = rows.map((row, index) => {
-      if (row.totalScore === null) return { ...row, rank: 0 }
-      const rank =
-        previousScore !== null && row.totalScore === previousScore ? previousRank : index + 1
-      previousScore = row.totalScore
-      previousRank = rank
-      return { ...row, rank }
-    })
+    // Competition ranking over the scored members — `competitionRanks` in
+    // lib/ranking.ts, the same function convex/rankings.ts numbers its
+    // leaderboards with, so a Fraktion's own list and the chamber-wide board
+    // cannot disagree about what a tie means. Rank 0 is its marker for an
+    // unscored mandate; the table renders it as a dash.
+    const ranks = competitionRanks(rows.map((row) => row.totalScore))
+    const ranked = rows.map((row, index) => ({ ...row, rank: ranks[index] }))
 
     const limit = args.limit === undefined ? ranked.length : Math.max(1, Math.floor(args.limit))
     return {
