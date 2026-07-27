@@ -649,107 +649,56 @@ const de = {
   "home.feedTitle": "Zuletzt geschehen",
   "home.showAll": "Alle ansehen",
 
-  // --- "Das Protokoll" — the narrative home page (/home-a) ------------------
+  // --- the narrative home page (app/home-c) -------------------------------
   //
-  // The one place on this site where the copy makes an argument rather than
-  // labelling a figure, so it is written rather than assembled: five chapters,
-  // each a question a first-time reader actually has, answered in a sentence
-  // above the data that backs it.
+  // Five claim sentences, one per chapter, and each is the *heading* of the
+  // section it opens rather than a caption above it — the accessible name a
+  // screen reader announces for that region. So each has to stand alone as a
+  // description of what follows.
   //
-  // Two rules govern every string below and both are load-bearing.
+  // The register is deliberate and is the whole concept: every sentence states
+  // what the figures below it claim, and the caveat that follows the data
+  // states what they do not. The caveats are not new — `home.statNamedVotesNote`,
+  // `home.bottomMPsCaveat` and `parties.smallGroupCaveat` already exist and
+  // already say these things. What is new is that the page is *built* around
+  // them instead of printing them underneath.
   //
-  // **The narrative may not out-claim the data.** The page's premise is that
-  // every figure comes from a Bundestag record (AGENTS.md), so a sentence that
-  // says more than the record does costs more here than a dull one. Chapter 3
-  // therefore states the score's three structural limits as part of the story
-  // instead of leaving them to the caveat boxes — a story that omits the limits
-  // of its own measure would be both a worse dashboard and a worse story.
-  //
-  // **German is written first and translated second.** These are not label
-  // strings where a literal rendering serves; "Was es tut, ist öffentlich" is a
-  // sentence with a rhythm, and the English is a sibling rather than a gloss.
-  "protokoll.title": "Das Protokoll",
-  // The subtitle under the wordmark, before Chapter 1 opens. Says what the page
-  // is about to do, so a reader who wants none of it can take the skip link
-  // beside it knowing what they are skipping.
-  "protokoll.lead":
-    "Fünf Kapitel über ein Parlament, das seine Arbeit veröffentlicht — und darüber, was sich daraus messen lässt und was nicht.",
-  // §7's requirement #1, and the one this redesign is most likely to lose: a
-  // returning reader who wants today's Abstimmungen must not have to scroll
-  // through a story they have read. A quiet link, not a modal and not a stored
-  // preference.
-  "protokoll.skipToData": "Direkt zu den Daten",
-  "protokoll.readTheRecord": "Das Protokoll lesen",
-  // The rail down the left gutter. Decorative to the eye, but it is also the
-  // chapter navigation, so it is named for a screen reader.
-  "protokoll.progressLabel": "Fortschritt im Protokoll",
-  "protokoll.chapterLabel": "Kapitel {index}: {title}",
+  // Written German-first and translated, not the other way round. "Belegt" is
+  // the load-bearing word — it means evidenced, documented, backed by a record —
+  // and it is what the whole site claims. English has no single word for it, so
+  // the English sentences say it in more words rather than reaching for
+  // "proven", which claims more.
+  "homeC.claimIntro":
+    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
+  // Chapter 2 — the four summary figures. Names the honest limit of two of them
+  // in the sentence itself: `getChamberStats` reports a floor where it cannot
+  // count exactly, and the `+` on the card is meaningless unless the reader has
+  // been told what it means.
+  "homeC.claimStats":
+    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
+  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
+  // that is what the two boards together put on trial.
+  "homeC.claimActivity":
+    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
+  // Chapter 4 — parties and votes. Two sections under one claim because they
+  // make the same move: both aggregate individuals into a group, and both are
+  // read as statements about the group.
+  "homeC.claimParties":
+    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
+  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
+  // no measurement: it reports what was published, and says so.
+  "homeC.claimFeed":
+    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
 
-  "protokoll.chapter1Number": "Kapitel eins",
-  "protokoll.chapter1Title": "Ein Parlament, 630 Sitze",
-  "protokoll.chapter1Standfirst":
-    "Der 21. Deutsche Bundestag hat 630 Sitze — jeder davon ein Mandat, jedes Mandat eine Person, die im Namen von rund 60 Millionen Wahlberechtigten abstimmt. Das ist der Gegenstand dieser Seite.",
-  // Scrolls into view as the arc completes. The one sentence that says what the
-  // picture is *not*, because a picture of a parliament is read as a picture of
-  // *that* parliament — the same warning components/seating-notice.tsx carries.
-  "protokoll.chapter1Note":
-    "Die Fraktionsgrößen sind amtlich belegt; die Position eines einzelnen Sitzes im Bogen ist es nicht — eine maschinenlesbare Sitzordnung veröffentlicht der Bundestag nicht.",
-  // Why the arc can say more than 630 while the Kapitelüberschrift says 630.
-  // Both Zahlen sind richtig und meinen Verschiedenes: 630 sind die
-  // gleichzeitig besetzten Sitze, der Bogen zählt Mandate, und ein Sitz kann in
-  // einer Wahlperiode zwei davon tragen. Ohne diesen Satz stehen zwei Zahlen
-  // nebeneinander, von denen eine falsch aussieht — genau die Sorte plausibler
-  // Fehlzahl, die diese Codebasis sonst überall vermeidet.
-  "protokoll.chapter1MandateNote":
-    "Der Bogen zählt Mandate, nicht gleichzeitig besetzte Sitze: Scheidet jemand aus und rückt jemand nach, trägt ein Sitz in einer Wahlperiode zwei Mandate. Deshalb liegt die Summe der Fraktionen über den 630 Sitzen des Bundestages.",
-
-  "protokoll.chapter2Number": "Kapitel zwei",
-  "protokoll.chapter2Title": "Was es tut, ist öffentlich",
-  "protokoll.chapter2Standfirst":
-    "Jeder Antrag, jede Rede, jede namentliche Abstimmung und jede Anfrage wird protokolliert und als offene Daten veröffentlicht. Diese Seite rechnet nichts hinzu — sie zählt, was ohnehin im Protokoll steht.",
-
-  "protokoll.chapter3Number": "Kapitel drei",
-  "protokoll.chapter3Title": "Wie wir messen",
-  "protokoll.chapter3Standfirst":
-    "Sieben Größen, jede mit einem Gewicht, aufsummiert zu einer Zahl. Die Gewichtung ist eine Setzung — deshalb steht sie hier offen, statt hinter dem Ergebnis zu verschwinden.",
-  // The thesis of the whole page, and currently invisible on the home page: the
-  // seven components collapse into one number, and the number can be taken back
-  // apart. That is what makes the measure inspectable rather than a verdict.
-  "protokoll.chapter3Collapse":
-    "Sieben Komponenten, eine Zahl — und jederzeit wieder in ihre Bestandteile zerlegbar.",
-  "protokoll.chapter3Example": "Beispielrechnung mit den Standardgewichtungen",
-  // The three structural limits from lib/scoring.ts, stated as part of the
-  // argument rather than as a footnote under it. No weighting fixes any of
-  // them, which is exactly why they belong in the chapter that explains the
-  // weighting.
-  "protokoll.chapter3Limits":
-    "Drei Grenzen bleiben, unabhängig von jeder Gewichtung: Abstimmungsteilnahme umfasst nur namentliche Abstimmungen, Ausschussdaten liegen nur für die laufende Wahlperiode vor, und Redebeiträge werden nach Wörtern gezählt, nicht nach Wortmeldungen. Ein niedriger Wert heißt „wenig erfasst“, nie „wenig gearbeitet“.",
-
-  "protokoll.chapter4Number": "Kapitel vier",
-  "protokoll.chapter4Title": "Wer ist aktiv?",
-  "protokoll.chapter4Standfirst":
-    "Beide Enden derselben Rangliste, nebeneinander. Ein Tracker, der nur die Spitze veröffentlicht, veröffentlicht eine Bestenliste — und keine überprüfbare Messung.",
-
-  "protokoll.chapter5Number": "Kapitel fünf",
-  "protokoll.chapter5Title": "Was heute geschah",
-  "protokoll.chapter5Standfirst":
-    "Der laufende Betrieb: die zuletzt namentlich abgestimmten Vorlagen und die jüngsten Einträge im Protokoll. Diese Seite aktualisiert sich, sobald die nächtliche Auswertung neue Daten geladen hat.",
-
-  // The closing line, after the last chapter. Ends on what the reader can do
-  // rather than on a summary of what they just read.
-  "protokoll.outroTitle": "Das ganze Protokoll",
-  "protokoll.outroLead":
-    "Jede Zahl auf dieser Seite lässt sich bis zum Dokument zurückverfolgen, aus dem sie stammt.",
-
-  // --- the opening animation ("630 Sitze") ----------------------------------
-  //
-  // Everything visible in the splash is decorative and `aria-hidden`; these are
-  // the strings that are not. §6: it runs once per session, never blocks the
-  // data fetch underneath it, is skipped entirely under reduced motion or
-  // Datensparmodus, and can be dismissed by any key, click or scroll.
-  "protokoll.splashLabel": "Eröffnungssequenz",
-  "protokoll.splashSkip": "Überspringen",
-  "protokoll.splashCounting": "630 Sitze",
+  // The skip link, and §7's first defence: a returning reader who wants today's
+  // votes should not have to scroll through a story they have read. Named for
+  // where it goes rather than for what it skips.
+  "homeC.skipToData": "Direkt zu den Daten",
+  // The pledge under the hero. Short enough to be read, specific enough to be
+  // checked — it names the two things the site will not do rather than
+  // promising that it is trustworthy.
+  "homeC.heroPledge":
+    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
 
   "footer.dataSource": "Datenquelle",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",
@@ -1033,200 +982,6 @@ const de = {
   // done — so the cap is named. See `PER_TERM_LIMIT` in convex/search.ts.
   "search.truncatedNotice":
     "Sehr viele Treffer: Die Zahlen sind Untergrenzen, nicht Gesamtzahlen. Grenzen Sie die Suche ein, um vollständig zu zählen.",
-
-  // --- /about — was gemessen wird und was nicht ---------------------------
-  //
-  // Die Vorbehalte dieses Codes stehen bewusst *neben* der Zahl, die sie
-  // qualifizieren (components/caveat-note.tsx). Das bleibt so. Diese Seite ist
-  // die andere Hälfte davon: ein Ort, an dem sie zusammenhängend gelesen werden
-  // können, weil ein Vorbehalt neben einem Balken beantwortet, was diese Zahl
-  // nicht sagt — und nicht, was das Projekt insgesamt behauptet.
-  //
-  // Kein Schlüssel hier ersetzt einen bestehenden. Die Seite verweist auf die
-  // vorhandenen Strings (`score.caveat.*`, `parties.disciplineCaveat`,
-  // `home.bottomMPsCaveat`, `votes.namedOnlyNotice`, `seating.syntheticNotice`)
-  // und ergänzt nur, was nirgends sonst gesagt wird — sonst gäbe es zwei
-  // Formulierungen desselben Vorbehalts, die auseinanderlaufen.
-
-  "about.title": "Methodik",
-  "about.subtitle": "Was Bundestracker misst, was es nicht misst und woher jede Zahl stammt.",
-  // Der Einstieg, und die These der Seite in zwei Sätzen: die Zahlen sind
-  // belegt, und sie sind nicht die Arbeit. Beides gilt gleichzeitig.
-  "about.lead":
-    "Bundestracker zählt, was der Bundestag selbst veröffentlicht: Anträge, Reden, Anfragen, namentliche Abstimmungen, Ausschusssitze. Jede Zahl auf dieser Seite lässt sich auf ein Dokument zurückführen. Was sich nicht zählen lässt, wird auch nicht geschätzt — es fehlt, und diese Seite sagt, was fehlt.",
-
-  // Sprungmarken. Die Seite ist lang; ohne Inhaltsverzeichnis liest niemand
-  // den Abschnitt, den er eigentlich sucht.
-  "about.contents": "Auf dieser Seite",
-
-  // --- 1. Was gezählt wird ---
-  "about.tracks.title": "Was gezählt wird",
-  "about.tracks.body":
-    "Der Aktivitätswert ist eine gewichtete Summe aus sieben Komponenten. Die Gewichtung ist eine Setzung, keine Wertung: Die sieben Größen werden in verschiedenen Einheiten gemessen — Wörter, Dokumente, Sitze, eine Quote — und die Gewichte sind die Umrechnungsfaktoren, die sie auf eine Skala bringen. Sie sind einstellbar; angemeldete Leser:innen speichern eigene.",
-  "about.tracks.column.component": "Komponente",
-  "about.tracks.column.measures": "Gemessen wird",
-  "about.tracks.column.weight": "Standardgewicht",
-  "about.tracks.measures.motions":
-    "Anträge und Entschließungsanträge, aus den DIP-Aktivitäten der Abgeordneten.",
-  "about.tracks.measures.speeches":
-    "Im Plenum gesprochene Wörter, aus dem Protokoll-XML — nicht die Anzahl der Wortmeldungen.",
-  "about.tracks.measures.questions": "Kleine und Große Anfragen an die Bundesregierung.",
-  "about.tracks.measures.reports":
-    "Berichte, aus denselben DIP-Aktivitäten. Die dünnste der sieben Komponenten.",
-  "about.tracks.measures.voteParticipation":
-    "Anteil der namentlichen Abstimmungen, an denen abgestimmt wurde. Enthaltung zählt als Teilnahme.",
-  "about.tracks.measures.committees": "Ausschussmitgliedschaften der laufenden Wahlperiode.",
-  "about.tracks.measures.billSponsorships": "Mitgezeichnete Gesetzentwürfe.",
-  // Der Grund, warum die Gewichte überhaupt sichtbar sind.
-  "about.tracks.weightsNote":
-    "Die Gewichte sind der einzige nicht aus den Daten abgeleitete Teil der Berechnung. Sie stehen deshalb hier, auf jedem Profil neben ihrer Komponente, und lassen sich verändern. Ein Gesamtwert ohne seine Bestandteile wäre ein Urteil; mit ihnen ist er eine Rechnung.",
-  "about.tracks.viewRankings": "Zur Rangliste",
-
-  // --- 2. Was der Wert nicht erfasst ---
-  //
-  // Der wichtigste Abschnitt der Seite. Der Einwand stammt von amtierenden
-  // Abgeordneten und ist zutreffend: Ausschussberatungen sind nicht öffentlich
-  // protokolliert, also existieren sie in keiner offenen Datenquelle. Ein
-  // Tracker, der das nicht sagt, misst Sichtbarkeit und nennt sie Arbeit.
-  "about.limits.title": "Was der Wert nicht erfasst",
-  "about.limits.lead":
-    "Ein niedriger Wert heißt „wenig erfasst“, nicht „wenig gearbeitet“. Vier große Bereiche parlamentarischer Arbeit hinterlassen in den offenen Daten keine oder kaum Spuren — sie fehlen nicht versehentlich, sondern weil über sie nichts maschinenlesbar veröffentlicht wird.",
-  "about.limits.committees.title": "Ausschussberatungen",
-  "about.limits.committees.body":
-    "Die inhaltliche Arbeit an einem Gesetz findet in den Ausschüssen statt, und deren Sitzungen sind in der Regel nicht öffentlich. Veröffentlicht wird, wer in einem Ausschuss sitzt — nicht, was dort gesagt, verhandelt oder durchgesetzt wurde. Bundestracker zählt deshalb Sitze und kann über die Beratung selbst nichts sagen.",
-  "about.limits.constituency.title": "Wahlkreisarbeit",
-  "about.limits.constituency.body":
-    "Bürgersprechstunden, Termine im Wahlkreis, Briefe, Vermittlung gegenüber Behörden: Nichts davon wird zentral erfasst. Ein Mandat, das den Schwerpunkt hier setzt, erscheint in diesen Daten als still.",
-  "about.limits.office.title": "Regierungs- und Parlamentsämter",
-  "about.limits.office.body":
-    "Ein Ministeramt oder ein Sitz im Präsidium verändert, was jemand tut, nicht wie viel: Regierungsmitglieder antworten auf Anfragen, statt sie zu stellen, und eine Sitzungsleitung ist keine Rede. Der Wert misst das als weniger, obwohl es nur anderes ist.",
-  "about.limits.party.title": "Fraktions- und Parteiarbeit",
-  "about.limits.party.body":
-    "Arbeitsgruppen, Fraktionssitzungen, Verhandlungen zwischen den Fraktionen und die Abstimmung von Positionen finden vor dem statt, was am Ende als Dokument erscheint — und sind an keinem Dokument ablesbar.",
-  // Die Konsequenz, ausgesprochen. Ohne diesen Satz liest sich die Liste als
-  // Bescheidenheitsformel; mit ihm ist sie eine Einschränkung der Gültigkeit.
-  "about.limits.conclusion":
-    "Der Aktivitätswert misst deshalb die *dokumentierte* parlamentarische Tätigkeit eines Mandats. Er ist kein Maß für Fleiß, Einfluss oder Qualität, und die Rangfolge zweier Abgeordneter mit ähnlichen Werten sagt nichts über den Unterschied zwischen ihnen.",
-
-  // --- 3. Datenquellen ---
-  "about.sources.title": "Datenquellen",
-  "about.sources.body":
-    "Drei Quellen, alle öffentlich zugänglich. Die ersten beiden stammen vom Bundestag selbst, die dritte ist eine gemeinnützige Datenbank und steht unter CC0.",
-  "about.sources.column.source": "Quelle",
-  "about.sources.column.provides": "Liefert",
-  "about.sources.dip.name": "DIP — Dokumentations- und Informationssystem",
-  "about.sources.dip.provides":
-    "Anträge, Gesetzentwürfe, Anfragen, Berichte und die Zuordnung jedes Vorgangs zu den beteiligten Abgeordneten.",
-  "about.sources.protocols.name": "Plenarprotokolle (XML)",
-  "about.sources.protocols.provides":
-    "Jede Rede im Wortlaut, mit Redner:in und Wortzahl. Grundlage der Reden-Komponente.",
-  "about.sources.votes.name": "Namentliche Abstimmungen (XLSX)",
-  "about.sources.votes.provides":
-    "Das Stimmverhalten jedes einzelnen Mandats, einschließlich der nicht abgegebenen Stimmen.",
-  "about.sources.stammdaten.name": "MdB-Stammdaten",
-  "about.sources.stammdaten.provides":
-    "Das amtliche Abgeordnetenverzeichnis seit 1949: Mandate, Fraktionen, Wahlkreise — und die Ausschussmitgliedschaften der laufenden Wahlperiode.",
-  "about.sources.aw.name": "abgeordnetenwatch.de",
-  "about.sources.aw.provides":
-    "Ergänzende Angaben zu Person und Tätigkeit sowie eine zweite Fassung der Abstimmungsdaten zum Abgleich. CC0.",
-  "about.sources.openDataLink": "Open-Data-Portal des Bundestages",
-  "about.sources.dipLink": "DIP-Schnittstelle",
-  "about.sources.awLink": "abgeordnetenwatch-API",
-  // Die Lizenz- und Zurechnungsfrage, kurz. §10 der Recherche verlangt beides:
-  // Quelle nennen, keine Billigung suggerieren.
-  "about.sources.attribution":
-    "Quelle aller amtlichen Angaben ist der Deutsche Bundestag. Bundestracker ist kein Angebot des Bundestages und wird von ihm weder betrieben noch geprüft.",
-
-  // --- 4. Historische Abdeckung ---
-  //
-  // docs/historical-coverage.md, auf das Wesentliche gekürzt: eine Null kann
-  // „gemessen“ oder „nie veröffentlicht“ heißen, und die beiden sehen in einer
-  // Datenbank gleich aus.
-  "about.coverage.title": "Zeitliche Abdeckung",
-  "about.coverage.body":
-    "Die Quellen reichen unterschiedlich weit zurück. Das ist keine Lücke im Abruf, sondern eine Grenze der Veröffentlichung — und sie entscheidet darüber, ob eine Null „gemessen“ oder „nie veröffentlicht“ bedeutet.",
-  "about.coverage.column.data": "Daten",
-  "about.coverage.column.since": "Verfügbar ab",
-  "about.coverage.column.why": "Grund",
-  "about.coverage.records.name": "Anträge, Anfragen, Gesetzentwürfe, Berichte",
-  "about.coverage.records.since": "WP14 (1998)",
-  "about.coverage.records.why": "Das DIP erfasst alle hier dargestellten Wahlperioden vollständig.",
-  "about.coverage.speeches.name": "Reden und Wortzahlen",
-  "about.coverage.speeches.since": "WP18 (2013)",
-  "about.coverage.speeches.why":
-    "Frühere Sitzungen erscheinen nur als PDF; ohne Protokoll-XML gibt es keine maschinenlesbare Rede.",
-  "about.coverage.votes.name": "Namentliche Abstimmungen je Mandat",
-  "about.coverage.votes.since": "September 2019",
-  "about.coverage.votes.why":
-    "Vor diesem Datum veröffentlicht der Bundestag die Abstimmungslisten nur als PDF, ohne auswertbare Tabelle.",
-  "about.coverage.committees.name": "Ausschussmitgliedschaften",
-  "about.coverage.committees.since": "nur laufende Wahlperiode",
-  "about.coverage.committees.why":
-    "Die Stammdaten sind die einzige maschinenlesbare Quelle und führen Ausschüsse ausschließlich für die aktuelle Periode.",
-  "about.coverage.roster.name": "Abgeordnetenverzeichnis",
-  "about.coverage.roster.since": "1949",
-  "about.coverage.roster.why":
-    "Der Stammdaten-Datensatz enthält jedes Mandat seit dem 1. Bundestag.",
-  // Die Folge, die niemand aus der Tabelle allein zieht.
-  "about.coverage.conclusion":
-    "Werte verschiedener Wahlperioden sind deshalb nicht vergleichbar: Ein Mandat der 16. Wahlperiode hat null Reden und null Abstimmungen, weil dazu nichts veröffentlicht ist — nicht, weil es geschwiegen und gefehlt hätte.",
-
-  // --- 5. Abweichung von der Fraktionslinie ---
-  "about.dissent.title": "Abweichung von der Fraktionslinie",
-  "about.dissent.body":
-    "In den namentlichen Abstimmungen ist erkennbar, wer anders gestimmt hat als die Mehrheit der eigenen Fraktion. Das ist eine der wenigen Stellen, an denen die Daten etwas über das Verhalten einer Person sagen — und deshalb die Stelle, an der die Grenzen des Aussagbaren am engsten gezogen sind.",
-  "about.dissent.measuresLabel": "Erfasst wird",
-  "about.dissent.measures":
-    "Eine abgegebene Stimme, die von der Mehrheitsposition der eigenen Fraktion in derselben Abstimmung abweicht.",
-  "about.dissent.notLabel": "Nicht erfasst wird",
-  "about.dissent.not.whip":
-    "Fraktionszwang oder -disziplin: Ob es zu einer Abstimmung überhaupt eine Vorgabe gab, wird nirgends veröffentlicht. Eine Abweichung ist eine abweichende Stimme, kein Ungehorsam.",
-  "about.dissent.not.absence":
-    "Abwesenheit: Eine nicht abgegebene Stimme widerspricht nichts und zählt nicht als Abweichung.",
-  "about.dissent.not.tie":
-    "Eine exakt gespaltene Fraktion: Ohne Mehrheit gibt es keine Linie, von der abgewichen werden könnte — solche Abstimmungen bleiben außer Betracht.",
-  "about.dissent.not.unaffiliated":
-    "Fraktionslose Abgeordnete: Ohne Fraktion fehlt der Vergleichsmaßstab.",
-  "about.dissent.viewVotes": "Zu den Abstimmungen",
-
-  // --- 6. Grundsätze ---
-  "about.principles.title": "Grundsätze",
-  "about.principles.record.title": "Jede Zahl hat einen Beleg",
-  "about.principles.record.body":
-    "Zu jedem Eintrag führt ein Link auf die Drucksache, das Protokoll oder die Abstimmungsliste, aus der er stammt. Nichts auf dieser Seite ist geschätzt, interpoliert oder fortgeschrieben.",
-  "about.principles.approximate.title": "Ungenaue Zahlen sind als solche gekennzeichnet",
-  "about.principles.approximate.body":
-    "Zwei der Kennzahlen auf der Startseite lassen sich nicht exakt zählen, ohne das Leselimit einer Abfrage zu sprengen. Sie tragen deshalb ein „+“: „5.000+“ heißt „mindestens 5.000“. Eine Untergrenze, die als Gesamtzahl gelesen wird, wäre die unehrlichere Darstellung.",
-  "about.principles.noRank.title": "Das untere Ende der Rangliste trägt keine Platzziffern",
-  "about.principles.noRank.body":
-    "Die Startseite zeigt beide Enden der Rangliste — ein Tracker, der nur die Spitze veröffentlicht, veröffentlicht eine Auswahl. Das untere Ende erscheint aber ohne Rangnummern: „Platz 1“ läse sich dort als „inaktivstes Mandat des Bundestages“, und diese Behauptung stützt eine Auswahl von fünf Zeilen nicht.",
-  "about.principles.gaps.title": "Lücken werden ausgewiesen, nicht gefüllt",
-  "about.principles.gaps.body":
-    "Ein noch nicht berechnetes Mandat erscheint als „nicht bewertet“ und nicht als Null. Eine unbekannte Aktivitätsart wird gezählt und angezeigt, statt still mit null gewichtet zu werden. Eine synthetische Darstellung — etwa die Sitzverteilung — sagt auf der Seite selbst, welcher Teil erfunden ist.",
-  "about.principles.open.title": "Der Quellcode ist offen",
-  "about.principles.open.body":
-    "Berechnung, Datenpipeline und Oberfläche sind öffentlich einsehbar. Wer eine Zahl anzweifelt, kann nachlesen, wie sie entsteht.",
-
-  // --- 7. Datenschutz ---
-  "about.privacy.title": "Datenschutz",
-  "about.privacy.noTracking.title": "Keine Statistik, keine Werbung, keine Weitergabe",
-  "about.privacy.noTracking.body":
-    "Bundestracker bindet keine Analyse-, Werbe- oder Trackingdienste ein. Es gibt keine Zählpixel und keine Profilbildung, und es werden keine Daten an Dritte übermittelt.",
-  "about.privacy.cookies.title": "Nur ein Cookie, und nur nach Anmeldung",
-  "about.privacy.cookies.body":
-    "Ohne Konto setzt die Seite kein Cookie. Sprache und Design werden lokal im Browser gespeichert (localStorage) und verlassen das Gerät nicht. Wer sich anmeldet, erhält ein Sitzungscookie — mehr nicht.",
-  "about.privacy.account.title": "Ein Konto ist freiwillig",
-  "about.privacy.account.body":
-    "Alle Daten sind ohne Anmeldung vollständig einsehbar. Ein Konto speichert zwei Dinge: eigene Gewichtungen des Aktivitätswerts und die Liste der gefolgten Abgeordneten.",
-  "about.privacy.mpData.title": "Zu den Abgeordneten selbst",
-  "about.privacy.mpData.body":
-    "Über Abgeordnete werden ausschließlich Angaben angezeigt, die der Bundestag oder abgeordnetenwatch selbst veröffentlichen und die ihr Mandat betreffen. Private Kontaktdaten sind nicht enthalten — der Bundestag veröffentlicht keine.",
-
-  // --- Schluss ---
-  "about.questions.title": "Etwas fehlt oder ist falsch?",
-  "about.questions.body":
-    "Fehler in den Daten und Einwände gegen die Methodik gehören ins öffentliche Repository. Beides ist willkommen: Eine Kennzahl, die niemand prüfen kann, ist keine.",
-  "about.questions.cta": "Zum Quellcode",
 } as const
 
 /**
@@ -1717,62 +1472,25 @@ const en: Dictionary = {
   "home.feedTitle": "Latest activity",
   "home.showAll": "Show all",
 
-  // --- "Das Protokoll" — the narrative home page (/home-a) ------------------
+  // --- the narrative home page (app/home-c) -------------------------------
   //
-  // The German is the original here rather than the translation; see the note
-  // on the German block. "The Record" is left untranslated in the title,
-  // because the page is *about* the Bundestag's own Protokoll and the German
-  // word is the thing being named — the subtitle carries the meaning instead.
-  "protokoll.title": "Das Protokoll",
-  "protokoll.lead":
-    "Five chapters about a parliament that publishes its own work — and about what can be measured from it, and what cannot.",
-  "protokoll.skipToData": "Straight to the data",
-  "protokoll.readTheRecord": "Read the record",
-  "protokoll.progressLabel": "Progress through the record",
-  "protokoll.chapterLabel": "Chapter {index}: {title}",
+  // See the German block for what these are and why they read as they do. The
+  // one translation note worth keeping: German "belegt" — evidenced, documented,
+  // backed by a record — has no single English word, and "proven" claims more
+  // than the sources support. So the English says it in more words.
+  "homeC.claimIntro":
+    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
+  "homeC.claimStats":
+    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
+  "homeC.claimActivity":
+    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
+  "homeC.claimParties":
+    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
+  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
 
-  "protokoll.chapter1Number": "Chapter one",
-  "protokoll.chapter1Title": "One parliament, 630 seats",
-  "protokoll.chapter1Standfirst":
-    "The 21st German Bundestag holds 630 seats — each one a mandate, each mandate a person voting on behalf of some 60 million eligible voters. That is what this site is about.",
-  "protokoll.chapter1Note":
-    "The size of each parliamentary group is backed by official records; the position of any single seat on the arc is not — the Bundestag publishes no machine-readable seating plan.",
-  "protokoll.chapter1MandateNote":
-    "The arc counts mandates, not seats occupied at one time: when a member leaves and a replacement arrives, one seat carries two mandates within an electoral period. That is why the groups sum to more than the Bundestag's 630 seats.",
-
-  "protokoll.chapter2Number": "Chapter two",
-  "protokoll.chapter2Title": "What it does is public",
-  "protokoll.chapter2Standfirst":
-    "Every motion, every speech, every named vote and every written question is recorded and published as open data. This site adds nothing — it counts what the record already says.",
-
-  "protokoll.chapter3Number": "Chapter three",
-  "protokoll.chapter3Title": "How we measure",
-  "protokoll.chapter3Standfirst":
-    "Seven quantities, each with a weight, summed into one number. The weighting is a choice — so it is stated here rather than disappearing behind the result.",
-  "protokoll.chapter3Collapse":
-    "Seven components, one number — and it can be taken apart again at any time.",
-  "protokoll.chapter3Example": "Worked example, using the default weightings",
-  "protokoll.chapter3Limits":
-    "Three limits remain whatever the weighting: voting participation covers named ballots only, committee data exists for the current electoral period only, and speeches are counted by words rather than by turns. A low figure means “little recorded”, never “little done”.",
-
-  "protokoll.chapter4Number": "Chapter four",
-  "protokoll.chapter4Title": "Who is active?",
-  "protokoll.chapter4Standfirst":
-    "Both ends of the same ranking, side by side. A tracker that publishes only the top is publishing a highlight reel — not a measurement anyone can check.",
-
-  "protokoll.chapter5Number": "Chapter five",
-  "protokoll.chapter5Title": "What happened today",
-  "protokoll.chapter5Standfirst":
-    "The chamber in motion: the most recent named ballots and the latest entries in the record. This page updates itself as the nightly sweep loads new data.",
-
-  "protokoll.outroTitle": "The whole record",
-  "protokoll.outroLead":
-    "Every figure on this page can be traced back to the document it came from.",
-
-  // --- the opening animation ("630 Sitze") ----------------------------------
-  "protokoll.splashLabel": "Opening sequence",
-  "protokoll.splashSkip": "Skip",
-  "protokoll.splashCounting": "630 seats",
+  "homeC.skipToData": "Straight to the data",
+  "homeC.heroPledge":
+    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
 
   "footer.dataSource": "Data source",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",
@@ -1987,171 +1705,6 @@ const en: Dictionary = {
   "search.moreMatches": "and {count} more matches",
   "search.truncatedNotice":
     "Very many matches: the counts are floors, not totals. Narrow the search to count in full.",
-
-  // --- /about — what is measured and what is not --------------------------
-  //
-  // See the note on the German block: this page collects the caveats rather
-  // than replacing them. Each one still renders beside the figure it qualifies.
-
-  "about.title": "Methodology",
-  "about.subtitle":
-    "What Bundestracker measures, what it does not, and where every figure comes from.",
-  "about.lead":
-    "Bundestracker counts what the Bundestag itself publishes: motions, speeches, questions, named ballots, committee seats. Every figure on this site traces back to a document. What cannot be counted is not estimated either — it is missing, and this page says what is missing.",
-
-  "about.contents": "On this page",
-
-  // --- 1. What is counted ---
-  "about.tracks.title": "What is counted",
-  "about.tracks.body":
-    "The activity score is a weighted sum of seven components. The weighting is a choice, not a judgement: the seven are measured in different units — words, documents, seats, a rate — and the weights are the conversion factors that put them on one scale. They are adjustable, and a signed-in reader can save their own.",
-  "about.tracks.column.component": "Component",
-  "about.tracks.column.measures": "What is measured",
-  "about.tracks.column.weight": "Default weight",
-  "about.tracks.measures.motions":
-    "Motions and resolutions, from each member's DIP activity records.",
-  "about.tracks.measures.speeches":
-    "Words spoken in the chamber, from the protocol XML — not the number of times someone took the floor.",
-  "about.tracks.measures.questions": "Minor and major written questions to the federal government.",
-  "about.tracks.measures.reports":
-    "Reports, from the same DIP activity records. The thinnest of the seven.",
-  "about.tracks.measures.voteParticipation":
-    "Share of named ballots in which a vote was cast. An abstention counts as participation.",
-  "about.tracks.measures.committees": "Committee memberships in the current electoral period.",
-  "about.tracks.measures.billSponsorships": "Bills the member put their name to.",
-  "about.tracks.weightsNote":
-    "The weights are the one part of the calculation not derived from the sources. That is why they are shown here, shown beside their component on every profile, and open to change. A total without its parts would be a verdict; with them it is arithmetic.",
-  "about.tracks.viewRankings": "View the rankings",
-
-  // --- 2. What the score does not capture ---
-  "about.limits.title": "What the score does not capture",
-  "about.limits.lead":
-    "A low score means “little recorded”, not “little done”. Four large areas of parliamentary work leave no trace, or almost none, in the open data — not by oversight, but because nothing machine-readable is published about them.",
-  "about.limits.committees.title": "Committee deliberation",
-  "about.limits.committees.body":
-    "The substantive work on a bill happens in committee, and those sittings are generally not public. What is published is who sits on a committee — not what was said, negotiated or won there. Bundestracker therefore counts seats and can say nothing about the deliberation itself.",
-  "about.limits.constituency.title": "Constituency work",
-  "about.limits.constituency.body":
-    "Surgeries, appointments in the constituency, correspondence, intervening with authorities: none of it is centrally recorded. A member who puts their weight here reads as quiet in this data.",
-  "about.limits.office.title": "Government and parliamentary office",
-  "about.limits.office.body":
-    "A ministry or a seat on the presidium changes what someone does, not how much: ministers answer questions rather than asking them, and chairing a sitting is not a speech. The score reads that as less, when it is only different.",
-  "about.limits.party.title": "Group and party work",
-  "about.limits.party.body":
-    "Working groups, group meetings, negotiations between groups and the settling of a position all happen upstream of whatever finally appears as a document — and are legible in no document.",
-  "about.limits.conclusion":
-    "The activity score therefore measures a mandate's *documented* parliamentary activity. It is not a measure of diligence, influence or quality, and the ordering of two members with similar scores says nothing about the difference between them.",
-
-  // --- 3. Data sources ---
-  "about.sources.title": "Data sources",
-  "about.sources.body":
-    "Three sources, all publicly accessible. The first two are the Bundestag's own; the third is a non-profit database published under CC0.",
-  "about.sources.column.source": "Source",
-  "about.sources.column.provides": "Provides",
-  "about.sources.dip.name": "DIP — the parliamentary documentation system",
-  "about.sources.dip.provides":
-    "Motions, bills, questions, reports, and the attribution of each record to the members involved.",
-  "about.sources.protocols.name": "Plenary protocols (XML)",
-  "about.sources.protocols.provides":
-    "Every speech verbatim, with its speaker and word count. The basis of the speech component.",
-  "about.sources.votes.name": "Named ballots (XLSX)",
-  "about.sources.votes.provides": "How each individual mandate voted, including votes not cast.",
-  "about.sources.stammdaten.name": "MdB-Stammdaten",
-  "about.sources.stammdaten.provides":
-    "The official register of members since 1949: mandates, groups, constituencies — and committee memberships for the current electoral period.",
-  "about.sources.aw.name": "abgeordnetenwatch.de",
-  "about.sources.aw.provides":
-    "Supplementary biographical and occupational detail, plus a second copy of the voting data for cross-checking. CC0.",
-  "about.sources.openDataLink": "The Bundestag's open data portal",
-  "about.sources.dipLink": "The DIP API",
-  "about.sources.awLink": "The abgeordnetenwatch API",
-  "about.sources.attribution":
-    "The source of all official figures is the German Bundestag. Bundestracker is not a Bundestag service and is neither operated nor reviewed by it.",
-
-  // --- 4. Historical coverage ---
-  "about.coverage.title": "Coverage over time",
-  "about.coverage.body":
-    "The sources reach back to different dates. That is a limit of publication rather than a gap in the fetch — and it decides whether a zero means “measured” or “never published”.",
-  "about.coverage.column.data": "Data",
-  "about.coverage.column.since": "Available from",
-  "about.coverage.column.why": "Why",
-  "about.coverage.records.name": "Motions, questions, bills, reports",
-  "about.coverage.records.since": "EP 14 (1998)",
-  "about.coverage.records.why": "DIP covers every electoral period shown here in full.",
-  "about.coverage.speeches.name": "Speeches and word counts",
-  "about.coverage.speeches.since": "EP 18 (2013)",
-  "about.coverage.speeches.why":
-    "Earlier sittings are published as PDF only; without protocol XML there is no machine-readable speech.",
-  "about.coverage.votes.name": "Named ballots per mandate",
-  "about.coverage.votes.since": "September 2019",
-  "about.coverage.votes.why":
-    "Before that date the Bundestag published its ballot lists as PDF only, with no analysable table.",
-  "about.coverage.committees.name": "Committee memberships",
-  "about.coverage.committees.since": "current period only",
-  "about.coverage.committees.why":
-    "Stammdaten is the only machine-readable source, and it lists committees for the current period alone.",
-  "about.coverage.roster.name": "Register of members",
-  "about.coverage.roster.since": "1949",
-  "about.coverage.roster.why": "The Stammdaten dump holds every mandate since the first Bundestag.",
-  "about.coverage.conclusion":
-    "Scores from different electoral periods are therefore not comparable: a mandate from the 16th period has no speeches and no ballots because none were published — not because it stayed silent and stayed away.",
-
-  // --- 5. Dissent from the group line ---
-  "about.dissent.title": "Dissent from the group line",
-  "about.dissent.body":
-    "The named ballots show who voted differently from the majority of their own parliamentary group. It is one of the few places where the data says something about a person's conduct — and therefore the place where the limits of what may be claimed are drawn tightest.",
-  "about.dissent.measuresLabel": "What is recorded",
-  "about.dissent.measures":
-    "A vote cast that differs from the majority position of the member's own group in the same ballot.",
-  "about.dissent.notLabel": "What is not recorded",
-  "about.dissent.not.whip":
-    "Whipping or group discipline: whether there was any instruction on a ballot is published nowhere. A dissent is a differing vote, not disobedience.",
-  "about.dissent.not.absence":
-    "Absence: a vote not cast contradicts nothing and does not count as dissent.",
-  "about.dissent.not.tie":
-    "A group split exactly in half: with no majority there is no line to break, so those ballots are disregarded.",
-  "about.dissent.not.unaffiliated":
-    "Members with no group: there is nothing to measure them against.",
-  "about.dissent.viewVotes": "View the ballots",
-
-  // --- 6. Principles ---
-  "about.principles.title": "Principles",
-  "about.principles.record.title": "Every figure has a record behind it",
-  "about.principles.record.body":
-    "Each entry links to the paper, protocol or ballot list it came from. Nothing here is estimated, interpolated or projected forward.",
-  "about.principles.approximate.title": "Inexact counts are marked as inexact",
-  "about.principles.approximate.body":
-    "Two of the home page's figures cannot be counted exactly without exceeding a query's read budget. They carry a “+”: “5,000+” means “at least 5,000”. A floor read as a total would be the less honest rendering.",
-  "about.principles.noRank.title": "The bottom of the leaderboard carries no rank numbers",
-  "about.principles.noRank.body":
-    "The home page shows both ends of the ranking — a tracker that publishes only the top publishes a selection. The bottom end appears without rank numbers, though: a “1” there would read as “the least active member of the Bundestag”, and five rows do not support that claim.",
-  "about.principles.gaps.title": "Gaps are surfaced, not filled in",
-  "about.principles.gaps.body":
-    "A mandate the nightly sweep has not reached shows as “not scored”, not as a zero. An unrecognised activity kind is counted and surfaced rather than silently weighted at nothing. A synthetic rendering — the seating map, for instance — says on the page itself which half is invented.",
-  "about.principles.open.title": "The source code is open",
-  "about.principles.open.body":
-    "The scoring, the data pipeline and this interface are all public. Anyone who doubts a figure can read how it is produced.",
-
-  // --- 7. Privacy ---
-  "about.privacy.title": "Privacy",
-  "about.privacy.noTracking.title": "No analytics, no advertising, no sharing",
-  "about.privacy.noTracking.body":
-    "Bundestracker embeds no analytics, advertising or tracking services. There are no counting pixels and no profiling, and no data is passed to third parties.",
-  "about.privacy.cookies.title": "One cookie, and only once you sign in",
-  "about.privacy.cookies.body":
-    "Without an account the site sets no cookie. Language and theme are stored locally in the browser (localStorage) and never leave the device. Signing in adds a session cookie — and nothing else.",
-  "about.privacy.account.title": "An account is optional",
-  "about.privacy.account.body":
-    "All the data is fully viewable without signing in. An account stores two things: your own activity-score weightings and the list of members you follow.",
-  "about.privacy.mpData.title": "About the members themselves",
-  "about.privacy.mpData.body":
-    "Only information the Bundestag or abgeordnetenwatch publish themselves, and that concerns the mandate, is shown about a member. No private contact details are included — the Bundestag publishes none.",
-
-  // --- closing ---
-  "about.questions.title": "Something missing or wrong?",
-  "about.questions.body":
-    "Errors in the data and objections to the methodology belong in the public repository. Both are welcome: a measure nobody can check is not one.",
-  "about.questions.cta": "View the source code",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }

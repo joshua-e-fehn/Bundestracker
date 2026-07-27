@@ -66,13 +66,16 @@ export const PUBLIC_PATHS = [
   // have been redirected to a 404 that looks like a broken route rather than a
   // guard. The filesystem check caught it here; nothing else would have.
   "/search",
-  // The seventh. `/home-a` is the narrative home page ("Das Protokoll"), a
-  // parallel route to `/` so the two can be compared before either wins — see
-  // app/home-a/page.tsx. Nothing links to it from the site chrome, which is
-  // exactly what would have made this omission survive review: the only way to
-  // reach it is by typing the URL, and it would have 404'd for whoever did.
-  // Caught by the filesystem check on the commit that added the page.
-  "/home-a",
+  // The narrative home page (Concept C — see app/home-c/page.tsx), served
+  // beside `/` while the redesign is being looked at rather than over it. The
+  // seventh entry, and the first to be added *before* the failure rather than
+  // after: `bun test` demanded it on the commit that created the route, which
+  // is the whole point of the filesystem check above.
+  //
+  // It goes when the concept does — either deleted, or promoted to `/`, in
+  // which case the existing "/" entry already covers it and this line is
+  // removed with the route.
+  "/home-c",
 ]
 
 export function isPublicPath(pathname: string) {
