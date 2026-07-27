@@ -5,6 +5,7 @@ import { MenuIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
+import { BrandMark } from "@/components/brand-mark"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -91,23 +92,48 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-border/60 border-b bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
+      {/* The flag, as a hairline along the very top of the page. `federal-rule`
+          is defined in app/globals.css, which explains at length why the flag
+          is confined to 3 px rather than used as UI colour — in short, the page
+          already carries meaning-bearing colour in six party hues and a
+          red-gold interface underneath them would leave nothing readable as an
+          accent.
+
+          It goes on the *header* rather than on `<body>` so it scrolls with
+          nothing: the header is sticky, so the rule stays pinned to the top
+          edge of the viewport and reads as the site's own edge rather than as a
+          decoration that slides away. `aria-hidden` because it is a graphic
+          with no accessible content — the wordmark below already names the
+          site. */}
+      <div aria-hidden className="federal-rule h-[3px] w-full" />
+
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
         {/* Truncates rather than `shrink-0`. At 320 px the brand's 112 px plus
             the four controls' 187 px came to 307 px inside a 288 px content
             box, so the header — and with it every page, since the document
             scrolls as one — was 19 px wider than the viewport on every route.
-            A wordmark that clips is better than a site that scrolls sideways. */}
+            A wordmark that clips is better than a site that scrolls sideways.
+
+            The mark is `shrink-0` inside that truncating box so the eagle
+            survives at 320 px and only the word clips — a wordmark reduced to
+            "Bundestra…" beside its mark still reads as the brand; a mark
+            squeezed to 4 px reads as a rendering fault. */}
         <Link
           href="/"
-          className="mr-2 min-w-0 truncate rounded-md font-semibold text-base tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="mr-2 flex min-w-0 items-center gap-2 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {t("app.name")}
+          <BrandMark />
+          <span className="min-w-0 truncate font-semibold text-base tracking-tight">
+            {t("app.name")}
+          </span>
         </Link>
 
         {/* `lg`, not `md`. The five links measure 564 px; at exactly 768 px —
             where `md:flex` turned them on — the bar needed 913 px and pushed
             the document to 933 px. The sheet below already serves this width
             properly, so the inline nav now waits until there is room for it. */}
+        {/* `relative` so each link's underline can be positioned against its own
+            box — see the marker below. */}
         <nav aria-label={t("nav.menu")} className="hidden items-center gap-0.5 lg:flex">
           {NAV_LINKS.map(({ href, labelKey }) => (
             <Link
@@ -117,11 +143,33 @@ export function SiteHeader() {
               // be announceable, not merely visible.
               aria-current={isActive(href) ? "page" : undefined}
               className={cn(
-                "rounded-md px-2.5 py-1.5 font-medium text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                "relative rounded-md px-2.5 py-1.5 font-medium text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                isActive(href)
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(labelKey)}
+              {/* The active marker: a gold underline rather than a bolder
+                  weight or a filled pill.
+
+                  Three constraints meet here. It must not be *only* colour, so
+                  the mark is a shape — a rule under the word — that survives
+                  greyscale and colour-vision deficiency; `aria-current` above
+                  covers the non-visual case regardless. It must not shift the
+                  layout, so it is absolutely positioned and the link keeps its
+                  padding whether active or not — a `border-b` toggled on the
+                  active link would move every other link by a pixel as you
+                  navigate. And it uses `--gold-brand`, the fill tier, because
+                  this is a 2 px bar carrying no text: exactly the case
+                  app/globals.css reserves the identity colour for. The label
+                  itself stays `--foreground`, which is what keeps it readable. */}
+              {isActive(href) && (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-gold-brand"
+                />
+              )}
             </Link>
           ))}
         </nav>
@@ -163,7 +211,10 @@ export function SiteHeader() {
                   dialog with no accessible name, so omitting this produces one
                   silently. */}
               <SheetHeader>
-                <SheetTitle>{t("nav.menu")}</SheetTitle>
+                <SheetTitle className="flex items-center gap-2">
+                  <BrandMark />
+                  {t("nav.menu")}
+                </SheetTitle>
               </SheetHeader>
               <nav aria-label={t("nav.menu")} className="grid gap-0.5 px-2">
                 {NAV_LINKS.map(({ href, labelKey }) => (
@@ -172,11 +223,18 @@ export function SiteHeader() {
                     href={href}
                     onClick={() => setMenuOpen(false)}
                     aria-current={isActive(href) ? "page" : undefined}
+                    // The same gold marker as the inline nav, turned on its
+                    // side: a rule down the leading edge rather than under the
+                    // word, because these are stacked rows rather than a
+                    // horizontal strip. `border-l-2` with a transparent border
+                    // on the inactive rows rather than a border only on the
+                    // active one — otherwise the active row's text would shift
+                    // 2 px right of its neighbours.
                     className={cn(
-                      "rounded-md px-3 py-2 font-medium text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                      "rounded-md border-l-2 px-3 py-2 font-medium text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                       isActive(href)
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                        ? "border-gold-brand bg-accent text-foreground"
+                        : "border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                     )}
                   >
                     {t(labelKey)}
