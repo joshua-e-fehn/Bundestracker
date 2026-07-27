@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { PARTY_KEYS, partyByKey, partyColor, partyFor, partyKeyColor, partyLabel } from "./parties"
+import {
+  foldFractionSizes,
+  PARTY_KEYS,
+  partyByKey,
+  partyColor,
+  partyFor,
+  partyKeyColor,
+  partyLabel,
+} from "./parties"
 
 /**
  * The cases here are the spellings docs/api-research.md actually observed in the
@@ -131,5 +139,83 @@ describe("partyKeyColor", () => {
 
   test("every key still has a distinct colour", () => {
     expect(new Set(PARTY_KEYS.map(partyKeyColor)).size).toBe(PARTY_KEYS.length)
+  })
+})
+
+describe("foldFractionSizes", () => {
+  test("merges the casing split production actually holds", () => {
+    // The exact rows `getFractionSizes` returned for WP21 on 2026-07-27. The
+    // home page rendered the last two as separate legend entries — "Fraktionslos
+    // 1" and "Fraktionslos 3", same colour, seats split — while /seating and
+    // /parties showed the correct merged 4.
+    const folded = foldFractionSizes([
+      { fraktion: "CDU/CSU", count: 213 },
+      { fraktion: "AfD", count: 151 },
+      { fraktion: "SPD", count: 124 },
+      { fraktion: "BÜNDNIS 90/DIE GRÜNEN", count: 89 },
+      { fraktion: "Die Linke", count: 66 },
+      { fraktion: "Fraktionslos", count: 3 },
+      { fraktion: "fraktionslos", count: 1 },
+    ])
+
+    expect(folded).toHaveLength(6)
+    expect(folded.map((entry) => partyLabel(entry.fraktion))).toEqual([
+      "CDU/CSU",
+      "AfD",
+      "SPD",
+      "Grüne",
+      "Die Linke",
+      "Fraktionslos",
+    ])
+    expect(folded.at(-1)?.count).toBe(4)
+  })
+
+  test("conserves the total seat count", () => {
+    // The property that matters beyond the one known split: folding may merge
+    // entries but must never lose or invent a seat, or the hero's "635 Sitze"
+    // would disagree with the legend beside it.
+    const sizes = [
+      { fraktion: "Fraktion der Christlich Demokratischen Union/Christlich - Sozialen Union", count: 200 },
+      { fraktion: "CDU/CSU", count: 13 },
+      { fraktion: "BÜ90/GR", count: 40 },
+      { fraktion: "BÜNDNIS\u00a090/ DIE GRÜNEN", count: 49 },
+      { fraktion: "Fraktionslos", count: 3 },
+      { fraktion: "fraktionslos", count: 1 },
+    ]
+    const total = sizes.reduce((sum, entry) => sum + entry.count, 0)
+    const folded = foldFractionSizes(sizes)
+
+    expect(folded.reduce((sum, entry) => sum + entry.count, 0)).toBe(total)
+    // The long Stammdaten form, the short form and both Grüne spellings each
+    // collapse — three groups from six rows.
+    expect(folded).toHaveLength(3)
+  })
+
+  test("keeps an unrecognised group as its own entry", () => {
+    // A new Fraktion must render as itself rather than merging into `unknown`
+    // with some other unrecognised group — the header's rule that an unmatched
+    // value is displayed, not discarded. Two unknowns do merge, which is the
+    // honest limit of a fold keyed on the party: neither has an identity this
+    // module can tell apart.
+    const folded = foldFractionSizes([
+      { fraktion: "SPD", count: 10 },
+      { fraktion: "BSW", count: 5 },
+    ])
+    expect(folded).toHaveLength(2)
+    expect(partyLabel(folded[1].fraktion)).toBe("BSW")
+  })
+
+  test("leaves the caller's ordering alone", () => {
+    // Insertion order is preserved, so the query's largest-first sort survives
+    // and the biggest group still leads the legend.
+    const folded = foldFractionSizes([
+      { fraktion: "SPD", count: 124 },
+      { fraktion: "AfD", count: 151 },
+    ])
+    expect(folded.map((entry) => entry.fraktion)).toEqual(["SPD", "AfD"])
+  })
+
+  test("returns nothing for nothing", () => {
+    expect(foldFractionSizes([])).toEqual([])
   })
 })

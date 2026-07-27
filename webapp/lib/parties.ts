@@ -216,3 +216,42 @@ export function partyLabel(fraktion: string | null | undefined): string {
 export function partyColor(fraktion: string | null | undefined): string {
   return `var(${partyFor(fraktion).colorVar})`
 }
+
+/** One group's seat count, as `convex/mps.ts`'s `getFractionSizes` returns it. */
+export type FractionSize = { fraktion: string; count: number }
+
+/**
+ * Seat counts folded onto one entry per party.
+ *
+ * `getFractionSizes` groups by `mps.fraktion` **verbatim**, and the sources do
+ * not agree on spelling — production answers with both `Fraktionslos` (3) and
+ * `fraktionslos` (1) as separate rows. Anything that renders those rows as a key
+ * therefore shows one group twice, in the same colour, with its seats split
+ * between the halves. §6.4 and §5.2 catalogue the rest of the variants (the long
+ * Stammdaten legal form, `BÜ90/GR`, a non-breaking space in the protocol XML),
+ * so this is the rule and not the exception.
+ *
+ * Here rather than in either component because it was in *one* of them.
+ * `components/seating-legend.tsx` folded and `components/seating-preview.tsx`
+ * did not, so /seating showed a correctly merged "Fraktionslos 4" while the home
+ * page beside it showed "Fraktionslos 1" and "Fraktionslos 3" — the same
+ * question answered twice, differently, on two pages a reader moves between.
+ * That is the split this module's header exists to prevent, and the second copy
+ * is what this function replaces.
+ *
+ * Insertion order is preserved and the caller's sort is left alone: the query
+ * orders by size, so the largest group still leads. The first spelling seen
+ * represents the merged group, and which one that is does not matter —
+ * `partyLabel` maps every variant to the same canonical short form, while an
+ * unrecognised group keeps its own string, exactly as `UNKNOWN_PARTY` intends.
+ */
+export function foldFractionSizes(sizes: ReadonlyArray<FractionSize>): FractionSize[] {
+  const merged = new Map<PartyKey, FractionSize>()
+  for (const entry of sizes) {
+    const key = partyFor(entry.fraktion).key
+    const existing = merged.get(key)
+    if (existing) existing.count += entry.count
+    else merged.set(key, { fraktion: entry.fraktion, count: entry.count })
+  }
+  return [...merged.values()]
+}

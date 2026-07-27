@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
-import { partyColor, partyFor, partyLabel } from "@/lib/parties"
+import { foldFractionSizes, partyColor, partyLabel } from "@/lib/parties"
 import {
   coalitionColor,
   NO_DATA_COLOR,
@@ -47,28 +47,13 @@ export function SeatingLegend({
   /**
    * Counts folded onto one entry per *party*, not per stored string.
    *
-   * `getFractionSizes` groups by `mps.fraktion` verbatim, and the sources do not
-   * agree on spelling — a real deployment answered with both `Fraktionslos` and
-   * `fraktionslos` as separate rows, which rendered as two legend entries in the
-   * same colour with the seats split between them. §6.4 and §5.2 catalogue the
-   * rest (the long Stammdaten legal form, `BÜ90/GR`, a non-breaking space in the
-   * protocol XML), so this is the rule and not the exception.
-   *
-   * Folding through `partyFor` is what makes the legend agree with the map,
-   * which colours the same seats through `partyColor` and so had already merged
-   * them. Insertion order is preserved, and the query sorts by size, so the
-   * largest group still leads.
+   * The fold now lives in `foldFractionSizes` (lib/parties.ts) rather than here,
+   * because it was here *and nowhere else*: components/seating-preview.tsx built
+   * the home page's legend from the raw strings and so rendered "Fraktionslos 1"
+   * beside "Fraktionslos 3" while this one correctly showed 4. One rule, one
+   * home — see that function for why the spellings differ at all.
    */
-  const byParty = useMemo(() => {
-    const merged = new Map<string, { fraktion: string; count: number }>()
-    for (const entry of fractionSizes) {
-      const key = partyFor(entry.fraktion).key
-      const existing = merged.get(key)
-      if (existing) existing.count += entry.count
-      else merged.set(key, { fraktion: entry.fraktion, count: entry.count })
-    }
-    return [...merged.values()]
-  }, [fractionSizes])
+  const byParty = useMemo(() => foldFractionSizes(fractionSizes), [fractionSizes])
 
   if (definition?.scale === "categorical") {
     return (

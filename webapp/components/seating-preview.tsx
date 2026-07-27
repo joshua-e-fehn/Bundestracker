@@ -8,7 +8,7 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
-import { partyColor, partyLabel } from "@/lib/parties"
+import { type FractionSize, foldFractionSizes, partyColor, partyLabel } from "@/lib/parties"
 import { layoutHemicycle, seatingRank } from "@/lib/seating"
 import { cn } from "@/lib/utils"
 
@@ -47,8 +47,6 @@ import { cn } from "@/lib/utils"
  * thousand-node SVG. */
 const MAX_PREVIEW_SEATS = 700
 
-type FractionSize = { fraktion: string; count: number }
-
 /**
  * One dot per seat, in political order, coloured by group.
  *
@@ -57,11 +55,23 @@ type FractionSize = { fraktion: string; count: number }
  * left-to-right bloc order `generateSeating` uses, so the wedges land where a
  * reader who has seen /seating expects them.
  */
-function useArc(fractionSizes: readonly FractionSize[] | undefined) {
+function useArc(fractionSizes: ReadonlyArray<FractionSize> | undefined) {
   return useMemo(() => {
     if (fractionSizes === undefined) return null
 
-    const ordered = [...fractionSizes].sort(
+    // Folded onto one entry per *party* before anything is sorted or drawn.
+    //
+    // Without it this legend rendered "Fraktionslos 1" and "Fraktionslos 3" as
+    // two entries in the same grey, because `getFractionSizes` groups by the
+    // stored string and production holds both spellings. The dots were already
+    // right — `partyColor` folds — so it was only the key beside them that
+    // disagreed, with /seating and /parties showing the correct merged 4.
+    //
+    // `foldFractionSizes` rather than a fold written here: this component built
+    // its own legend from raw strings while components/seating-legend.tsx
+    // folded, which is how the two came to answer the same question
+    // differently. One home for the rule, in lib/parties.ts.
+    const ordered = foldFractionSizes(fractionSizes).sort(
       (a, b) =>
         seatingRank(a.fraktion) - seatingRank(b.fraktion) ||
         a.fraktion.localeCompare(b.fraktion, "de"),
