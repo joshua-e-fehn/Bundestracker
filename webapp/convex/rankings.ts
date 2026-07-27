@@ -1,4 +1,6 @@
 import { type Validator, v } from "convex/values"
+// Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
+import { stateOf } from "../lib/bundestag"
 import {
   AGE_GROUP_KEYS,
   type AgeGroup,
@@ -118,36 +120,6 @@ function paged<T>(rows: T[], offset: number, limit: number) {
 // --- roster join ----------------------------------------------------------
 
 /**
- * The federal state an MP represents.
- *
- * Not a stored field. §6.2 of docs/api-research.md records `WKR_LAND` in the
- * Stammdaten constituency block, but the roster schema keeps only the
- * constituency *name*, so the state is recoverable only where the pipeline
- * spelled it into that name. It does not today, which is why this returns null
- * far more often than it returns a state — and why the state filter's options
- * are built from the data (`getRankingFilterOptions`) rather than from a
- * hardcoded list of sixteen Länder that would offer fifteen empty filters.
- *
- * Reading the trailing parenthetical is the one thing that works without a
- * schema change: `Ludwigsburg (BW)` yields `BW`. A name with no parenthetical
- * yields null rather than a guess.
- *
- * ⚠ This is the honest ceiling on the "by federal state" filter until the
- * pipeline stores `WKR_LAND` as its own field. The filter is wired end to end
- * so that adding the field is a one-line change here, and until then it offers
- * exactly the states the data can actually support.
- */
-export function stateOf(mp: Doc<"mps">): string | null {
-  if (mp.constituency === null) return null
-  const match = /\(([^)]+)\)\s*$/.exec(mp.constituency)
-  if (!match) return null
-  const code = match[1].trim()
-  // Two-letter Land codes (`BW`, `NW`) and nothing else: the same parenthetical
-  // slot carries a disambiguator in `Brand (Fulda)`, and a town is not a state.
-  return /^[A-ZÄÖÜ]{2}$/.test(code) ? code : null
-}
-
-/**
  * The roster for one period, by `internalId`.
  *
  * Read once per query and shared by every row, rather than `mpLabel` per score.
@@ -176,7 +148,7 @@ type Filters = { fraktion?: string; state?: string; ageGroup?: AgeGroup }
  */
 function passes(mp: Doc<"mps">, filters: Filters, nowMs: number): boolean {
   if (filters.fraktion !== undefined && mp.fraktion !== filters.fraktion) return false
-  if (filters.state !== undefined && stateOf(mp) !== filters.state) return false
+  if (filters.state !== undefined && stateOf(mp.constituency) !== filters.state) return false
   if (filters.ageGroup !== undefined && !inAgeGroup(mp.birthDate, filters.ageGroup, nowMs)) {
     return false
   }
@@ -229,7 +201,7 @@ function toRow(score: Doc<"activityScores">, mp: Doc<"mps">) {
     fraktion: mp.fraktion,
     party: mp.party,
     photoUrl: mp.photoUrl,
-    state: stateOf(mp),
+    state: stateOf(mp.constituency),
     birthDate: mp.birthDate,
     totalScore: score.totalScore,
     motionCount: score.motionCount,
@@ -558,7 +530,7 @@ export const getCrossPartyRankings = query({
         name: mp.name,
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
-        state: stateOf(mp),
+        state: stateOf(mp.constituency),
         birthDate: mp.birthDate,
         dissents: count,
         ballotsCast,
@@ -621,7 +593,7 @@ export const getRankingFilterOptions = query({
 
     for (const mp of mps) {
       fraktionen.set(mp.fraktion, (fraktionen.get(mp.fraktion) ?? 0) + 1)
-      const state = stateOf(mp)
+      const state = stateOf(mp.constituency)
       if (state !== null) states.set(state, (states.get(state) ?? 0) + 1)
       for (const group of AGE_GROUP_KEYS) {
         if (inAgeGroup(mp.birthDate, group, nowMs)) {

@@ -23,12 +23,26 @@ import { cn } from "@/lib/utils"
  * 630-row roster. See `showHeatmap`.
  */
 
-/** How many days of history the mini heatmap shows. Twelve weeks: enough to see
- * a rhythm, few enough that the strip stays legible inside a card and the
- * underlying query stays a small indexed range. */
+/**
+ * The mini heatmap's shape.
+ *
+ * Wide and short, like GitHub's contribution graph read at a glance: 4 rows of
+ * 21 days rather than the calendar-accurate 7×12. A card strip is not a
+ * calendar — it has no weekday axis, no month labels and no tooltips (the
+ * profile page's `ActivityHeatmap` is the one that is all three), so the 7-row
+ * grid was paying a calendar's aspect ratio for none of a calendar's meaning.
+ * At 7 rows the strip came out 94 px wide and 54 px tall, a near-square block
+ * that read as a texture; at 4 it is a band, which is the shape the eye already
+ * knows how to scan left-to-right as time.
+ *
+ * `HEATMAP_DAYS` stays 84 — twelve weeks is still the window, and it divides
+ * evenly by 4 — so the same indexed range is read and only the wrapping changes.
+ */
 const HEATMAP_DAYS = 84
 
-const HEATMAP_COLUMNS = HEATMAP_DAYS / 7
+const HEATMAP_ROWS = 4
+
+const HEATMAP_COLUMNS = HEATMAP_DAYS / HEATMAP_ROWS
 
 function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10)
@@ -86,9 +100,14 @@ function ActivityHeatmap({ mpInternalId }: { mpInternalId: string }) {
 
   return (
     <div
-      className="grid grid-flow-col gap-0.5"
+      // `grid-flow-row`, not `-col`: with four rows the columns are no longer
+      // weeks, so filling downward would scatter consecutive days across the
+      // strip. Filling across makes each row a run of 21 consecutive days and
+      // time read left to right, which is the only ordering a stripped-down
+      // band can claim.
+      className="grid grid-flow-row gap-[3px]"
       style={{
-        gridTemplateRows: "repeat(7, minmax(0, 1fr))",
+        gridTemplateRows: `repeat(${HEATMAP_ROWS}, minmax(0, 1fr))`,
         gridTemplateColumns: `repeat(${HEATMAP_COLUMNS}, minmax(0, 1fr))`,
       }}
       // One label for the strip rather than 84 individually announced cells:
@@ -100,7 +119,7 @@ function ActivityHeatmap({ mpInternalId }: { mpInternalId: string }) {
           key={cell.iso}
           title={`${cell.iso}: ${cell.count}`}
           className={cn(
-            "size-1.5 rounded-[2px] transition-colors",
+            "size-2 rounded-[2px] transition-colors",
             // Undefined means the query has not resolved. Rendering every cell
             // at zero would claim a quiet quarter before knowing.
             days === undefined ? "bg-muted/50" : intensityClass(cell.count),
@@ -143,6 +162,14 @@ export function MPCard({
         className,
       )}
     >
+      {/* One row, four aligned slots: rank, identity, activity, score.
+          The heatmap used to sit on a second line, centred — which left the
+          name hard left, the score hard right and the strip floating between
+          them under both, so nothing lined up with anything. Inline and
+          right-aligned next to the score, the three read as columns down a
+          list of cards. Below `sm` it is hidden rather than wrapped: a 21-cell
+          row does not survive a phone's width, and the name and score are what
+          a narrow card is for. */}
       <div className="flex items-center gap-3">
         {rank === undefined ? null : (
           <span className="w-5 shrink-0 text-center font-medium text-muted-foreground text-sm tabular-nums">
@@ -162,7 +189,7 @@ export function MPCard({
               rather than wrapping it, so the card keeps its grid and the
               heatmap's own titles stay reachable. */}
           <Link
-            href={`/abgeordnete/${encodeURIComponent(mpInternalId)}`}
+            href={`/mps/${encodeURIComponent(mpInternalId)}`}
             className="truncate font-medium text-sm outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-3 focus-visible:after:ring-ring/50"
           >
             {name}
@@ -170,8 +197,16 @@ export function MPCard({
           <PartyBadge fraktion={fraktion} className="w-fit" />
         </div>
 
+        {showHeatmap ? (
+          <div className="hidden shrink-0 sm:block">
+            <ActivityHeatmap mpInternalId={mpInternalId} />
+          </div>
+        ) : null}
+
         {totalScore === undefined ? null : (
-          <div className="shrink-0 text-right">
+          // A fixed width, so the scores form a column down the list instead of
+          // each card's number sitting wherever its own digit count puts it.
+          <div className="w-20 shrink-0 text-right">
             <div className="font-semibold text-base tabular-nums">
               {formatScore(totalScore, locale)}
             </div>
@@ -179,12 +214,6 @@ export function MPCard({
           </div>
         )}
       </div>
-
-      {showHeatmap ? (
-        <div className="mt-3 flex justify-center">
-          <ActivityHeatmap mpInternalId={mpInternalId} />
-        </div>
-      ) : null}
     </Card>
   )
 }

@@ -36,6 +36,42 @@ import type { Locale } from "./i18n"
  */
 export const CURRENT_WAHLPERIODE = 21
 
+/**
+ * The federal state a constituency name implies, or null.
+ *
+ * Not a stored field. §6.2 records `WKR_LAND` in the Stammdaten constituency
+ * block, but the roster schema keeps only the constituency *name*, so the state
+ * is recoverable only where the pipeline spelled it into that name. It does not
+ * today, which is why this returns null far more often than a state — and why
+ * every state filter on the site builds its options from the data rather than
+ * from a hardcoded list of sixteen Länder that would offer fifteen empty ones.
+ *
+ * Reading the trailing parenthetical is the one thing that works without a
+ * schema change: `Ludwigsburg (BW)` yields `BW`. A name with no parenthetical
+ * yields null rather than a guess.
+ *
+ * Here rather than in convex/rankings.ts, where it began, because two surfaces
+ * now need it: the rankings' state filter runs server-side over `Doc<"mps">`,
+ * and the roster table's runs in the browser over rows already loaded. Two
+ * copies would be two answers to "which state is this MP from", and they would
+ * disagree the day either one's regex was tightened. It takes the constituency
+ * string rather than a document so both can call it — convex/ may import from
+ * lib/, but not the other way around.
+ *
+ * ⚠ This is the honest ceiling on every "by federal state" filter until the
+ * pipeline stores `WKR_LAND` as its own field. Each is wired end to end so that
+ * adding the field is a one-line change here.
+ */
+export function stateOf(constituency: string | null | undefined): string | null {
+  if (!constituency) return null
+  const match = /\(([^)]+)\)\s*$/.exec(constituency)
+  if (!match) return null
+  const code = match[1].trim()
+  // Two-letter Land codes (`BW`, `NW`) and nothing else: the same parenthetical
+  // slot carries a disambiguator in `Brand (Fulda)`, and a town is not a state.
+  return /^[A-ZÄÖÜ]{2}$/.test(code) ? code : null
+}
+
 // --- document URLs --------------------------------------------------------
 
 const DOCUMENT_SERVER = "https://dserver.bundestag.de"

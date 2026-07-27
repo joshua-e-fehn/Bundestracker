@@ -1,5 +1,6 @@
 "use client"
 
+import { useQuery } from "convex/react"
 import { MenuIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -10,6 +11,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { UserMenu } from "@/components/user-menu"
+import { api } from "@/convex/_generated/api"
 import type { TranslationKey } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -51,6 +53,35 @@ function useIsActive() {
   return (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 }
 
+/**
+ * Which Bundestag the site is showing, as a chip in the header.
+ *
+ * Renders nothing at all while the query is in flight, and nothing when the
+ * roster is empty — the two states a fresh deployment passes through. A
+ * skeleton here would be a shimmer in the chrome on every page load for a fact
+ * that is decoration; and `null` for an unloaded roster keeps the header from
+ * asserting a period that has no data behind it, which is the same distinction
+ * `getCurrentWahlperiode` draws for the pages below.
+ *
+ * Hidden below `sm`, where the three controls and the menu button already fill
+ * the bar.
+ */
+function CurrentPeriodBadge() {
+  const { t } = useLocale()
+  const wahlperiode = useQuery(api.mps.getCurrentWahlperiode)
+
+  if (wahlperiode === undefined || wahlperiode === null) return null
+
+  return (
+    <span
+      title={t("nav.periodLabel", { wahlperiode })}
+      className="mr-1 hidden rounded-full border border-border/60 px-2.5 py-1 font-medium text-muted-foreground text-xs tabular-nums sm:inline-block"
+    >
+      {t("nav.period", { wahlperiode })}
+    </span>
+  )
+}
+
 export function SiteHeader() {
   const { t } = useLocale()
   const isActive = useIsActive()
@@ -61,14 +92,23 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 w-full border-border/60 border-b bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
+        {/* Truncates rather than `shrink-0`. At 320 px the brand's 112 px plus
+            the four controls' 187 px came to 307 px inside a 288 px content
+            box, so the header — and with it every page, since the document
+            scrolls as one — was 19 px wider than the viewport on every route.
+            A wordmark that clips is better than a site that scrolls sideways. */}
         <Link
           href="/"
-          className="mr-2 shrink-0 rounded-md font-semibold text-base tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="mr-2 min-w-0 truncate rounded-md font-semibold text-base tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {t("app.name")}
         </Link>
 
-        <nav aria-label={t("nav.menu")} className="hidden items-center gap-0.5 md:flex">
+        {/* `lg`, not `md`. The five links measure 564 px; at exactly 768 px —
+            where `md:flex` turned them on — the bar needed 913 px and pushed
+            the document to 933 px. The sheet below already serves this width
+            properly, so the inline nav now waits until there is room for it. */}
+        <nav aria-label={t("nav.menu")} className="hidden items-center gap-0.5 lg:flex">
           {NAV_LINKS.map(({ href, labelKey }) => (
             <Link
               key={href}
@@ -90,17 +130,29 @@ export function SiteHeader() {
             left-aligned next to the brand at every width. */}
         <div className="flex-1" />
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
+          {/* The slack between the nav and the controls used to be dead space
+              roughly 245 px wide at desktop widths. It now carries the one fact
+              every page on this site is implicitly scoped to and none of them
+              states in the chrome: which Bundestag you are looking at. Read
+              from the data rather than from `CURRENT_WAHLPERIODE`, for the
+              reason `newestWahlperiode` gives — a constant keeps naming the
+              previous Bundestag for months after the next is sworn in. */}
+          <CurrentPeriodBadge />
+
           <LocaleToggle />
           <ThemeToggle />
           <UserMenu className="ml-1" />
 
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger asChild>
+              {/* Paired with the inline nav's `lg:flex` above — the two must
+                  flip at the same width or the site has no navigation at all
+                  between 768 and 1024 px. */}
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="ml-1 md:hidden"
+                className="ml-1 lg:hidden"
                 aria-label={t("nav.openMenu")}
               >
                 <MenuIcon />

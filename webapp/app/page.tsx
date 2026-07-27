@@ -5,6 +5,7 @@ import { ArrowRightIcon } from "lucide-react"
 import Link from "next/link"
 import { ActivityFeedPreview, LatestVotes, SummaryStats, TopMPs } from "@/components/home-sections"
 import { useLocale } from "@/components/providers/locale-provider"
+import { SeatingPreview } from "@/components/seating-preview"
 import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
 
@@ -35,7 +36,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-      <Hero />
+      <Hero wahlperiode={wahlperiode} />
 
       {/* Null — as opposed to undefined — means the query resolved and the
           roster is empty: nothing has been ingested yet. That is one decision,
@@ -63,41 +64,68 @@ export default function Home() {
   )
 }
 
-function Hero() {
+/**
+ * The hero: the pitch on the left, the chamber on the right.
+ *
+ * Two columns from `lg` up and stacked below it, with the arc *second* in source
+ * order so a narrow screen and a screen reader both get the headline and the
+ * calls to action before the picture. The text column is capped at `max-w-2xl`
+ * rather than left to fill its track: a 1 100 px line of body copy is hard to
+ * read, and that cap is what created the empty top-right corner this card now
+ * occupies.
+ *
+ * `minmax(0,1fr)` on the text track for the reason app/page.tsx's own grid uses
+ * it — a grid item's `min-width` is `auto`, so an intrinsically wide child
+ * (here the button row) otherwise pushes the track past the viewport.
+ */
+function Hero({ wahlperiode }: { wahlperiode: number | null | undefined }) {
   const { t } = useLocale()
 
   return (
     <section className="relative isolate">
       {/* A soft radial wash behind the title — the one decorative element on
           the page. `aria-hidden` and pointer-events-none so it is invisible to
-          assistive tech and cannot swallow a click. */}
+          assistive tech and cannot swallow a click.
+
+          `max-w-full` rather than `max-w-[110vw]`: the wash is centred on the
+          section and 110 vw is by definition wider than the viewport, so its
+          right edge sat 16–21 px past it and the *whole document* scrolled
+          sideways — decoration cannot be allowed to do that. `overflow-hidden`
+          on the section would clip it instead, but it would also clip the
+          Select popovers the filters open. Sizing it to fit is the fix that
+          costs nothing: at 320 px the gradient is a touch narrower and, being
+          a `closest-side` radial behind a blur, indistinguishable. */}
       <div
         aria-hidden
-        className="-z-10 -translate-x-1/2 pointer-events-none absolute top-[-8rem] left-1/2 h-[24rem] w-[48rem] max-w-[110vw] rounded-full opacity-60 blur-3xl"
+        className="-z-10 -translate-x-1/2 pointer-events-none absolute top-[-8rem] left-1/2 h-[24rem] w-[48rem] max-w-full rounded-full opacity-60 blur-3xl"
         style={{
           background:
             "radial-gradient(closest-side, color-mix(in oklch, var(--chart-3) 28%, transparent), transparent)",
         }}
       />
 
-      <div className="grid max-w-3xl gap-5">
-        <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">{t("app.name")}</h1>
-        <p className="text-balance text-lg text-muted-foreground sm:text-xl">{t("app.tagline")}</p>
-        <p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
-          {t("home.heroLead")}
-        </p>
+      <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-10">
+        <div className="grid max-w-2xl gap-5">
+          <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">{t("app.name")}</h1>
+          <p className="text-balance text-lg text-muted-foreground sm:text-xl">
+            {t("app.tagline")}
+          </p>
+          <p className="text-muted-foreground text-sm leading-relaxed">{t("home.heroLead")}</p>
 
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Button asChild size="lg">
-            <Link href="/abgeordnete">
-              {t("home.browseAllMPs")}
-              <ArrowRightIcon />
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="lg">
-            <Link href="/rangliste">{t("home.viewRankings")}</Link>
-          </Button>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button asChild size="lg">
+              <Link href="/mps">
+                {t("home.browseAllMPs")}
+                <ArrowRightIcon />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link href="/rankings">{t("home.viewRankings")}</Link>
+            </Button>
+          </div>
         </div>
+
+        <SeatingPreview wahlperiode={wahlperiode} />
       </div>
     </section>
   )

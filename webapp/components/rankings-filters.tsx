@@ -114,15 +114,21 @@ function FilterSelect({
 }) {
   const labelId = `${id}-label`
   return (
-    <div className="flex flex-col gap-1.5">
+    // `min-w-0` and a `max-w-full` trigger: the widths below are preferences,
+    // not commitments. A `w-[14rem]` trigger inside a flex row cannot shrink —
+    // a flex item's `min-width` is `auto` — so at 320 px the Fraktion filter
+    // alone was wider than the viewport and pushed the page sideways. Capping
+    // it at the wrapper's width lets the row wrap and each control fit,
+    // truncating its own label rather than the page.
+    <div className="flex min-w-0 flex-col gap-1.5">
       <span id={labelId} className="text-muted-foreground text-xs">
         {label}
       </span>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger id={id} aria-labelledby={labelId} className={width}>
+        <SelectTrigger id={id} aria-labelledby={labelId} className={`max-w-full ${width}`}>
           <SelectValue placeholder={anyLabel ?? label} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="max-w-[min(24rem,90vw)]">
           {anyLabel !== undefined && <SelectItem value={ANY}>{anyLabel}</SelectItem>}
           {items?.map((item) => (
             <SelectItem key={item.value} value={item.value}>

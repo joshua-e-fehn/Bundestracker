@@ -189,7 +189,7 @@ export function TopMPs({ wahlperiode }: { wahlperiode: number | null | undefined
         id="top-mps-heading"
         titleKey="home.topMPsTitle"
         subtitleKey="home.topMPsSubtitle"
-        href="/rangliste"
+        href="/rankings"
       />
       {rankings === undefined ? (
         <RowSkeletons count={TOP_MP_COUNT} height="h-[4.5rem]" />
@@ -286,7 +286,7 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
 
   return (
     <section aria-labelledby="feed-heading">
-      <SectionHeading id="feed-heading" titleKey="home.feedTitle" href="/aktivitaet" />
+      <SectionHeading id="feed-heading" titleKey="home.feedTitle" href="/feed" />
       {feed === undefined ? (
         <RowSkeletons count={FEED_COUNT} height="h-12" />
       ) : feed.length === 0 ? (
@@ -298,7 +298,7 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <Link
-                    href={`/abgeordnete/${encodeURIComponent(event.mpInternalId)}`}
+                    href={`/mps/${encodeURIComponent(event.mpInternalId)}`}
                     className="rounded-md font-medium text-sm outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     {name}

@@ -336,6 +336,19 @@ export const getMPs = query({
  * nothing are different claims, and a 0 in a sortable column asserts the second.
  * Sorting is the caller's job for the same reason — the UI decides where
  * "unscored" belongs, and it is not "least active".
+ *
+ * ## `committees` rides along, for the roster's committee filter
+ *
+ * The names, not a count. `/mps` filters by *which* committee, so a count could
+ * not answer it, and the per-MP list is small — the busiest WP21 member sits on
+ * seven (§6.3) — so this is one indexed range scan per row rather than a second
+ * page-wide query the client would have to join. `getCommitteesByMP` reads the
+ * same index for one MP; this is that read, done once per roster row.
+ *
+ * ⚠ An empty array is ambiguous and the UI must treat it so: §6.4 records that
+ * committee membership is published for the **current period only**, so on a
+ * historical Wahlperiode every MP here has none, which is "not published" and
+ * not "sat on nothing". convex/committees.ts carries the same warning.
  */
 export const getMPsWithScores = query({
   args: {
@@ -354,6 +367,9 @@ export const getMPsWithScores = query({
           scoreBreakdown,
         }),
       ),
+      /** Committee names this MP sits on in this period. See the note above on
+       * why an empty array is not the same as "no committees". */
+      committees: v.array(v.string()),
     }),
   ),
   handler: async (ctx, args) => {
@@ -376,6 +392,12 @@ export const getMPsWithScores = query({
             .eq("month", null),
         )
         .unique()
+      const memberships = await ctx.db
+        .query("committeeMemberships")
+        .withIndex("by_mpInternalId_and_wahlperiode_and_committeeName", (q) =>
+          q.eq("mpInternalId", row.internalId).eq("wahlperiode", args.wahlperiode),
+        )
+        .collect()
       joined.push({
         mp: toMpDoc(row),
         score: score
@@ -385,6 +407,11 @@ export const getMPsWithScores = query({
               scoreBreakdown: score.scoreBreakdown,
             }
           : null,
+        // Deduplicated: §6.3 records a chair listed twice in Stammdaten, which
+        // is the same reason the table is keyed per (MP, period, committee).
+        committees: [...new Set(memberships.map((row) => row.committeeName))].sort((a, b) =>
+          a.localeCompare(b, "de"),
+        ),
       })
     }
     // Alphabetical, matching `getMPs` — the same list, so the same default
