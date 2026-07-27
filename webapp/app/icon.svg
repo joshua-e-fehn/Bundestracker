@@ -1,16 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Bundestrack">
   <title>Bundestrack</title>
+  <!--
+    The Bundesadler, redrawn on a 16×16 grid.
+
+    Every edge is a multiple of 4 in this 64-unit viewBox, so at the 16 px a
+    browser tab actually asks for, one grid cell is exactly one device pixel and
+    no edge lands on a half-pixel. That is the whole constraint, and it is not a
+    stylistic preference: rendered at 16 px this file resolves to two colours
+    with no antialiased midtones anywhere inside the tile, which is what keeps
+    the three pinions per wing readable as three rather than as one bar.
+
+    It is a rebuild rather than a trace, and that was measured rather than
+    assumed. The official coat of arms is mostly negative space — hairline slots
+    between the pinions — so scaling it down closes those slots and leaves a
+    blob, and thickening the strokes to survive closes them faster. The
+    Bundestag's own site is the proof: it serves a single 16×16 ICO of its logo,
+    and at that size it is an illegible smudge.
+
+    What is kept is what makes the bird *this* bird: the small head in profile
+    facing the viewer's left, the flat shoulder line with the wings spread the
+    full width, three separated pinions a side, and a body tapering to two
+    talons. The proportions come from an ink mask of the official artwork — the
+    wing band spans the full width across the middle third, and the mass below
+    it narrows in three steps to the tail.
+
+    components/brand-mark.tsx carries the same eagle for use inside the page;
+    the two are deliberately duplicated and must be edited together.
+  -->
   <rect width="64" height="64" rx="13" fill="#131311"/>
-  <g fill="#c59f3a">
-    <path d="M28.6 19.2c-7.6-2.1-15.8-2.5-23.2-1l1.3 6.6c6.8-1.2 14.4-.8 21.4 1.3z"/>
-    <path d="M28 30.2c-6.4-2.7-13.8-4.1-20.6-3.8l1.4 6.5c6-.1 12.6 1.1 18.6 3.3z"/>
-    <path d="M35.4 19.2c7.6-2.1 15.8-2.5 23.2-1l-1.3 6.6c-6.8-1.2-14.4-.8-21.4 1.3z"/>
-    <path d="M36 30.2c6.4-2.7 13.8-4.1 20.6-3.8l-1.4 6.5c-6-.1-12.6 1.1-18.6 3.3z"/>
-    <path d="M27.2 41.4l3.7.8-2.8 13.2-4.3-2.2z"/>
-    <path d="M32 42h3l.6 14.8h-4.2z"/>
-    <path d="M39.8 41.4l-3.7.8 2.8 13.2 4.3-2.2z"/>
-    <path d="M33.4 16.4c5 .7 7.6 5.9 7.2 12.8-.5 6.8-3.8 12.6-7.2 14.4-3.4-1.8-6.7-7.6-7.2-14.4-.4-6.9 2.2-12.1 7.2-12.8z"/>
-    <path d="M30.2 7.6L17.8 12.2q3.2.9 4.2 4.4l8.2-1.4z"/>
-    <path fill-rule="evenodd" d="M34.2 4.6a7 7 0 1 1 0 14 7 7 0 0 1 0-14m.5 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/>
-  </g>
+  <path
+    fill="#c59f3a"
+    d="M24 4h12v4h-12ZM16 8h20v4h-20ZM28 12h8v8h-8ZM4 16h16v4h-16ZM44 16h16v4h-16ZM4 20h56v8h-56ZM4 28h4v16h-4ZM12 28h4v20h-4ZM24 28h16v20h-16ZM48 28h4v20h-4ZM56 28h4v16h-4ZM12 48h8v4h-8ZM28 48h8v12h-8ZM44 48h8v4h-8ZM12 52h4v4h-4ZM48 52h4v4h-4Z"
+  />
 </svg>

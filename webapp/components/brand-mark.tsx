@@ -46,19 +46,13 @@ export function BrandMark({ className }: { className?: string }) {
       className={cn("size-5 shrink-0 text-gold", className)}
       fill="currentColor"
     >
-      <path d="M28.6 19.2c-7.6-2.1-15.8-2.5-23.2-1l1.3 6.6c6.8-1.2 14.4-.8 21.4 1.3z" />
-      <path d="M28 30.2c-6.4-2.7-13.8-4.1-20.6-3.8l1.4 6.5c6-.1 12.6 1.1 18.6 3.3z" />
-      <path d="M35.4 19.2c7.6-2.1 15.8-2.5 23.2-1l-1.3 6.6c-6.8-1.2-14.4-.8-21.4 1.3z" />
-      <path d="M36 30.2c6.4-2.7 13.8-4.1 20.6-3.8l-1.4 6.5c-6-.1-12.6 1.1-18.6 3.3z" />
-      <path d="M27.2 41.4l3.7.8-2.8 13.2-4.3-2.2z" />
-      <path d="M32 42h3l.6 14.8h-4.2z" />
-      <path d="M39.8 41.4l-3.7.8 2.8 13.2 4.3-2.2z" />
-      <path d="M33.4 16.4c5 .7 7.6 5.9 7.2 12.8-.5 6.8-3.8 12.6-7.2 14.4-3.4-1.8-6.7-7.6-7.2-14.4-.4-6.9 2.2-12.1 7.2-12.8z" />
-      <path d="M30.2 7.6L17.8 12.2q3.2.9 4.2 4.4l8.2-1.4z" />
-      <path
-        fillRule="evenodd"
-        d="M34.2 4.6a7 7 0 1 1 0 14 7 7 0 0 1 0-14m.5 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4"
-      />
+      {/* One path, drawn on a 16×16 grid — every edge a multiple of 4 in this
+          64-unit viewBox. app/icon.svg explains why the eagle is built that way
+          rather than traced from the coat of arms; the short version is that
+          the official artwork is mostly hairline negative space and closes into
+          a blob when reduced. It matters here too: the header renders this at
+          20 px and the footer at 16 px, the same regime as the favicon. */}
+      <path d="M24 4h12v4h-12ZM16 8h20v4h-20ZM28 12h8v8h-8ZM4 16h16v4h-16ZM44 16h16v4h-16ZM4 20h56v8h-56ZM4 28h4v16h-4ZM12 28h4v20h-4ZM24 28h16v20h-16ZM48 28h4v20h-4ZM56 28h4v16h-4ZM12 48h8v4h-8ZM28 48h8v12h-8ZM44 48h8v4h-8ZM12 52h4v4h-4ZM48 52h4v4h-4Z" />
     </svg>
   )
 }
