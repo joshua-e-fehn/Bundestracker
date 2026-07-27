@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // `scripts/render-icons.ts` is an operator script, not app code: it imports
+  // `@resvg/resvg-js`, which is deliberately not a dependency (see the file's
+  // header) and is installed on demand with `bun add --no-save`. Without this
+  // exclusion `tsc` — and so `next build`, which runs it — fails on the
+  // unresolvable import for a file the app never loads.
+  "exclude": ["node_modules", "scripts/render-icons.ts"]
 }

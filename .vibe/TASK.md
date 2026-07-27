@@ -1,3 +1,3 @@
-# Task — historical-backfill
+# Task — fix-build-ts
 
-Historical backfill WP14-WP20. Read /tmp/task-historical-backfill.md for full instructions.
+Fix TypeScript build error in favicon render script. Read /tmp/task-fix-build.md for instructions. Push directly to main.
