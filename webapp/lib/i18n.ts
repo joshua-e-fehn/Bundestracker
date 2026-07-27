@@ -784,6 +784,77 @@ const de = {
   "home.partiesTitle": "Fraktionen im Vergleich",
   "home.partiesSubtitle": "Durchschnittlicher Aktivitätswert je Mandat",
   "home.partiesCta": "Fraktionsvergleich ansehen",
+
+  // --- keyword search -----------------------------------------------------
+  //
+  // The search answers with **people**, not documents (convex/search.ts), and
+  // the strings say so from the first line: `search.title` is the label of the
+  // nav entry as well as the page's own heading (components/site-header.tsx),
+  // so it has to name the feature rather than describe the box.
+  //
+  // Two of these carry the limits of the index, and they are stated *above* the
+  // results rather than under them. lib/search.ts measured them: the final query
+  // term is prefix-matched, and nothing else is — no typo tolerance at all. A
+  // reader who does not know that reads an empty result as a fact about the
+  // Bundestag rather than as a spelling they got wrong, which is the one way
+  // this feature can mislead about the source data.
+
+  "search.title": "Suche",
+  "search.subtitle":
+    "Stichwortsuche über Anträge, Reden, Anfragen und Ausschüsse — die Antwort sind Abgeordnete, jeweils mit den Vorgängen, die den Treffer ausgelöst haben.",
+
+  // The box. Two placeholders because the header's is a third of the width of
+  // the page's and has to say the same thing in a quarter of the words.
+  "search.placeholder": "Nach Thema, Beruf oder Ausschuss suchen …",
+  "search.navPlaceholder": "Suchen …",
+  "search.submit": "Suchen",
+  "search.clear": "Eingabe löschen",
+
+  // The two limits of the index — see the note above. Both name what *does*
+  // work alongside what does not, so neither reads as an apology.
+  "search.noFuzzyNotice":
+    "Die Suche findet Wortanfänge: „Klima“ trifft „Klimaschutzgesetz“. Tippfehler werden nicht korrigiert — „Klimq“ findet nichts.",
+  "search.bilingualNotice":
+    "Deutsch und Englisch: „lawyer“ findet „Rechtsanwalt“. Umlaute sind gleichwertig — „fur“, „für“ und „fuer“ finden dasselbe.",
+
+  "search.filterFraktion": "Fraktion",
+  "search.allFraktionen": "Alle Fraktionen",
+  "search.filterCommittee": "Ausschuss",
+  "search.allCommittees": "Alle Ausschüsse",
+  "search.filterType": "Art des Vorgangs",
+  "search.allTypes": "Alle Arten",
+  "search.filterPeriod": "Wahlperiode",
+  // Both the option and the "all" label of the period control, so the two
+  // cannot drift apart — see components/search-page.tsx.
+  "search.period": "{wahlperiode}. Wahlperiode",
+  // §6.4: committee membership is published for the current period only, so a
+  // filtered search is scoped to what that table can answer.
+  "search.committeeScopeNotice":
+    "Ausschussmitgliedschaften sind nur für die laufende Wahlperiode veröffentlicht. Mit gesetztem Ausschussfilter werden deshalb nur Mandate dieser Periode gefunden.",
+
+  // Before the first keystroke. Not "keine Treffer": nothing was searched.
+  "search.prompt": "Geben Sie ein Stichwort ein, um Abgeordnete zu finden.",
+  "search.empty": "Keine Abgeordneten zu dieser Suche gefunden.",
+  "search.emptyHint":
+    "Versuchen Sie einen kürzeren Wortanfang — „miet“ statt „Mietpreisbremse“ — oder eine andere Schreibweise. Tippfehler werden nicht korrigiert.",
+
+  // Singular and plural by key, following lib/relative-time.ts: each language
+  // splits where it actually splits, and neither ends up printing "1 Treffer
+  // gefunden" with a plural verb.
+  "search.resultCountOne": "1 Abgeordnete:r gefunden",
+  "search.resultCount": "{count} Abgeordnete gefunden",
+  "search.matchCountOne": "1 Treffer",
+  "search.matchCount": "{count} Treffer",
+  // Named rather than silent: a card matching „Rechtsanwalt“ for a query of
+  // „lawyer“ is otherwise inexplicable on the page.
+  "search.alsoSearched": "Ebenfalls gesucht: {terms}",
+  "search.breakdown": "Fraktionen",
+  "search.matchedBecause": "Gefunden wegen",
+  "search.moreMatches": "und {count} weitere Treffer",
+  // A capped count that reads as exact understates how much work an MP has
+  // done — so the cap is named. See `PER_TERM_LIMIT` in convex/search.ts.
+  "search.truncatedNotice":
+    "Sehr viele Treffer: Die Zahlen sind Untergrenzen, nicht Gesamtzahlen. Grenzen Sie die Suche ein, um vollständig zu zählen.",
 } as const
 
 /**
@@ -1400,6 +1471,52 @@ const en: Dictionary = {
   "home.partiesTitle": "Groups compared",
   "home.partiesSubtitle": "Mean activity score per mandate",
   "home.partiesCta": "View the group comparison",
+
+  // --- keyword search -----------------------------------------------------
+
+  "search.title": "Search",
+  "search.subtitle":
+    "Keyword search across motions, speeches, questions and committees — the answer is members, each with the records that matched.",
+
+  "search.placeholder": "Search by topic, profession or committee …",
+  "search.navPlaceholder": "Search …",
+  "search.submit": "Search",
+  "search.clear": "Clear the query",
+
+  // The examples are deliberately the German ones: the corpus is German, so
+  // "Klima" finding "Klimaschutzgesetz" is what an English reader actually
+  // needs to understand about a box they will type English into.
+  "search.noFuzzyNotice":
+    "The search matches word beginnings: “Klima” finds “Klimaschutzgesetz”. Typos are not corrected — “Klimq” finds nothing.",
+  "search.bilingualNotice":
+    "German and English: “lawyer” finds “Rechtsanwalt”. Umlauts are equivalent — “fur”, “für” and “fuer” all find the same records.",
+
+  "search.filterFraktion": "Parliamentary group",
+  "search.allFraktionen": "All groups",
+  "search.filterCommittee": "Committee",
+  "search.allCommittees": "All committees",
+  "search.filterType": "Type of record",
+  "search.allTypes": "All types",
+  "search.filterPeriod": "Electoral period",
+  "search.period": "Electoral period {wahlperiode}",
+  "search.committeeScopeNotice":
+    "Committee memberships are published for the current electoral period only. With a committee filter set, the search therefore reaches mandates of that period alone.",
+
+  "search.prompt": "Enter a keyword to find members.",
+  "search.empty": "No members found for this search.",
+  "search.emptyHint":
+    "Try a shorter word beginning — “miet” rather than “Mietpreisbremse” — or a different spelling. Typos are not corrected.",
+
+  "search.resultCountOne": "1 member found",
+  "search.resultCount": "{count} members found",
+  "search.matchCountOne": "1 match",
+  "search.matchCount": "{count} matches",
+  "search.alsoSearched": "Also searched: {terms}",
+  "search.breakdown": "Groups",
+  "search.matchedBecause": "Matched because of",
+  "search.moreMatches": "and {count} more matches",
+  "search.truncatedNotice":
+    "Very many matches: the counts are floors, not totals. Narrow the search to count in full.",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }

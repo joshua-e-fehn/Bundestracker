@@ -365,7 +365,14 @@ export const searchMPs = query({
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
         constituency: mp.constituency,
-        occupation: mp.occupation,
+        // `?? null`, because `mps.occupation` is `v.optional` (convex/schema.ts:216)
+        // — Wave 8 added it to a populated table, where a required field fails
+        // deploy-time row validation. So an unenriched MP has no key at all, and
+        // `undefined` does not satisfy this query's own returns validator: the
+        // search would throw at runtime for exactly the members the pipeline has
+        // not reached yet. The same collapse `getSeats` makes in convex/seating.ts:299,
+        // and the distinction 2bcfd4d turned on — absent is not null.
+        occupation: mp.occupation ?? null,
         matchCount: rows.length + seats.length,
         reasons,
       })
