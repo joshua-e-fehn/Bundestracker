@@ -182,21 +182,27 @@ export function HeroAnimationSlot({ className }: { className?: string }) {
  * than resized: one ring, owned by the mark, is what makes the crest and the
  * header agree, which is the reason `DEFAULT_HERO_VARIANT` is the eagle.
  *
- * ## What that cost, stated rather than quietly dropped
+ * ## What that cost, and where it came back
  *
  * The ring drew itself on — `stroke-dashoffset` from a normalised `pathLength`,
  * with the eagle trailing 0.35 s behind so the seal read as being struck, border
- * first and then the device. That is gone, and the crest now arrives as one
- * piece.
+ * first and then the device. That is gone *here*, and this crest still arrives
+ * as one piece.
  *
- * It was not recoverable at an acceptable price. Dashing needs `pathLength` and
- * a class on the circle *element*, which now lives inside `BrandMark`, so
- * reaching it would mean either a CSS descendant selector into another
- * component's internals or a third copy of the artwork here. components/
- * brand-mark.tsx calls that third copy "exactly the drift that note forbids",
- * and a selector that silently stops matching when a component's internals
- * change is the same bargain with a longer fuse. A 0.35 s stagger is not worth
- * either.
+ * The reason given at the time was that dashing needs `pathLength` and a class
+ * on the circle *element*, which lives inside `BrandMark`, so reaching it would
+ * mean either a CSS descendant selector into another component's internals or a
+ * third copy of the artwork. Both of those are still true and still refused.
+ * What that reasoning missed is the third option: `BrandMark` can hand out the
+ * hook itself. It now takes `ringClassName` and `markClassName` and carries
+ * `pathLength={1}` on the ring, so the draw-on is expressible without a
+ * descendant selector and without a copy — see components/brand-mark.tsx.
+ *
+ * It is deliberately not reinstated on this crest. The splash on /home-b is
+ * where a seal being struck has a job to do (it is the loading state, and the
+ * drawing *is* the wait); in the hero it would be a 0.35 s stagger on an element
+ * the reader has already arrived at, which is what "not worth it" meant then and
+ * still means. The capability is shared; the choice to use it is per call site.
  *
  * `text-gold-brand`, against `BrandMark`'s own `text-gold` default and for the
  * reason that default exists: the ink tier is for hairlines at 20 px, where the
