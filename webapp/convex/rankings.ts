@@ -1,6 +1,6 @@
 import { type Validator, v } from "convex/values"
 // Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
-import { occupationOf, stateOf } from "../lib/bundestag"
+import { stateOf } from "../lib/bundestag"
 import {
   AGE_GROUP_KEYS,
   type AgeGroup,
@@ -67,11 +67,6 @@ const rankingRow = v.object({
   fraktion: v.string(),
   party: v.string(),
   photoUrl: v.union(v.null(), v.string()),
-  /** What the MP does now (abgeordnetenwatch, 88.1 % of WP21), falling back to
-   * what they did before (Stammdaten `BERUF`, 94.3 %). Resolved server-side so
-   * the member table's occupation column is one field rather than two the
-   * client has to choose between. */
-  occupation: v.union(v.null(), v.string()),
   /** Federal state, from the constituency (`WKR_LAND`) — null for a list MP
    * whose record carries no state. See `stateOf`. */
   state: v.union(v.null(), v.string()),
@@ -206,7 +201,6 @@ function toRow(score: Doc<"activityScores">, mp: Doc<"mps">) {
     fraktion: mp.fraktion,
     party: mp.party,
     photoUrl: mp.photoUrl,
-    occupation: occupationOf(mp),
     state: stateOf(mp.constituency),
     birthDate: mp.birthDate,
     totalScore: score.totalScore,
