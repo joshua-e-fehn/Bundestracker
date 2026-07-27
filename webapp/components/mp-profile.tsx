@@ -127,6 +127,9 @@ export function MPProfile({
                 name={mp.name}
                 photoUrl={mp.photoUrl}
                 credit={mp.photoCredit}
+                // The credit is printed below, so the avatar's hidden copy
+                // would announce it twice.
+                creditShownSeparately
                 className="size-28"
               />
               <div className="flex flex-col items-center gap-2">

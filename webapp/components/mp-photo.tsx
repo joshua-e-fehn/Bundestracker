@@ -56,11 +56,22 @@ export function MPPhoto({
    * initials. Null is the honest answer for the four rows that have no credit,
    * and it suppresses the photo rather than the attribution. */
   credit,
+  /**
+   * Set when the caller also renders `MPPhotoCredit` for this same portrait.
+   *
+   * Suppresses the visually-hidden line, which would otherwise be the *second*
+   * time a screen reader hears the credit — once from here and once from the
+   * caption it is already rendering. Verified in a browser on the profile page,
+   * where both fired. The `title` stays either way: it is a hover affordance,
+   * not an announcement.
+   */
+  creditShownSeparately = false,
   className,
 }: {
   name: string
   photoUrl: string | null | undefined
   credit: string | null | undefined
+  creditShownSeparately?: boolean
   className?: string
 }) {
   const { t } = useLocale()
@@ -74,7 +85,9 @@ export function MPPhoto({
         <AvatarImage src={photoUrl} alt={name} title={attribution ?? undefined} />
       ) : null}
       <AvatarFallback className="font-medium text-xs">{initials(name)}</AvatarFallback>
-      {showPhoto && attribution ? <span className="sr-only">{attribution}</span> : null}
+      {showPhoto && attribution && !creditShownSeparately ? (
+        <span className="sr-only">{attribution}</span>
+      ) : null}
     </Avatar>
   )
 }

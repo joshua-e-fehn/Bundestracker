@@ -4,6 +4,7 @@ import { headers } from "next/headers"
 import { AuthGuard } from "@/components/providers/auth-guard"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
+import { ThemeColorSync } from "@/components/providers/theme-color"
 import { ThemeProvider } from "@/components/providers/theme-provider"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
@@ -84,18 +85,32 @@ export const metadata: Metadata = {
  *
  * `themeColor` and `colorScheme` still typecheck inside `Metadata` in Next 16
  * but are deprecated there — the build warns and the tags do not render as
- * expected. Two `themeColor` entries so the browser chrome follows the active
- * theme; `colorScheme: "light dark"` names light first, matching the app's
+ * expected. `colorScheme: "light dark"` names light first, matching the app's
  * default (components/providers/theme-provider.tsx) and the `color-scheme`
  * declaration in app/globals.css, which is also what native form controls and
  * scrollbars read. All three must name light first or a first-time visitor
  * gets a dark scrollbar beside a light page.
  *
+ * ## The two `themeColor` entries are the pre-hydration answer only
+ *
+ * They are keyed on `prefers-color-scheme` — the *OS* preference — while the
+ * theme actually rendered comes from next-themes and localStorage. Those are
+ * independent, so on their own they disagreed with the page in two of the four
+ * combinations: an OS-dark visitor with no stored theme got dark chrome above a
+ * light page, which is the default state for everyone whose machine is dark.
+ *
+ * `ThemeColorSync` (components/providers/theme-color.tsx) replaces them on
+ * mount with a single unqualified tag written from `resolvedTheme`. These stay
+ * because they are the best available answer for the first paint, before any
+ * JavaScript has run, and they are correct for the two combinations that
+ * already agreed.
+ *
  * The two colours are the sRGB renderings of `--background` in each theme —
  * `oklch(0.985 0.002 95)` and `oklch(0.155 0.004 95)`. They are literals
  * because a `<meta>` tag cannot hold a `var()`, which makes them the one place
- * in the app where the palette is duplicated: changing either background in
- * globals.css means changing it here too, or the phone's status bar will be a
+ * in the app where the palette is duplicated — now in three files, since
+ * `ThemeColorSync` needs the same pair. Changing either background in
+ * globals.css means changing it in both, or the phone's status bar will be a
  * different colour from the page under it.
  */
 export const viewport: Viewport = {
@@ -131,6 +146,11 @@ export default async function RootLayout({
         <AuthProvider initialToken={token}>
           <QueryProvider>
             <ThemeProvider>
+              {/* Inside ThemeProvider — it reads `resolvedTheme` — and above
+                  everything else, since it renders nothing and only writes a
+                  tag into <head>. See components/providers/theme-color.tsx for
+                  why the media-query entries in `viewport` cannot do this. */}
+              <ThemeColorSync />
               <LocaleProvider initialLocale={locale}>
                 {/* Radix requires a `Tooltip` to have a provider above it, and
                     throws at *render* if it does not — which the typecheck
