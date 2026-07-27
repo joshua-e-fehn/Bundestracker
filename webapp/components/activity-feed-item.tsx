@@ -5,6 +5,7 @@ import { EVENT_TYPE_STYLES, EventTypeIcon } from "@/components/event-type-icon"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { initials } from "@/lib/format"
 import { absoluteDate, relativeDay } from "@/lib/relative-time"
 import type { EventType } from "@/lib/taxonomy"
 import { cn } from "@/lib/utils"
@@ -92,16 +93,6 @@ export function referenceHref(event: FeedEvent): string | null {
     default:
       return null
   }
-}
-
-/** Initials for the avatar fallback. §6.5: Commons covers 36.5 % of WP21, so
- * most rows have no photo and the fallback is the common case, not the edge. */
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return "?"
-  const first = parts[0][0] ?? ""
-  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : ""
-  return (first + last).toUpperCase()
 }
 
 export function ActivityFeedItem({

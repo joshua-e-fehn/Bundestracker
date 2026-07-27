@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatBy } from "@/lib/format"
+import { formatBy, initials } from "@/lib/format"
 import type { BoardColumn } from "@/lib/leaderboards"
 import type { SortDirection } from "@/lib/taxonomy"
 import { cn } from "@/lib/utils"
@@ -43,14 +43,6 @@ export type RankingTableRow = {
   photoUrl: string | null
   totalScore: number
 } & Record<string, unknown>
-
-/** Initials for the avatar fallback — §6.5 puts portrait coverage at 36.5 % of
- * WP21, so this is the common case. */
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return "?"
-  return ((parts[0][0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase()
-}
 
 function SortIcon({ state }: { state: SortDirection | null }) {
   if (state === "desc") return <ArrowDown className="size-3.5" aria-hidden="true" />

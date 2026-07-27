@@ -87,6 +87,10 @@ const de = {
   "common.error": "Etwas ist schiefgelaufen.",
   "common.retry": "Erneut versuchen",
   "common.notFound": "Nicht gefunden",
+  // The app-wide 404. Says what happened and offers the one thing that always
+  // helps — the way back — rather than listing routes the reader may not want.
+  "common.notFoundPage": "Diese Seite gibt es nicht.",
+  "common.backHome": "Zur Startseite",
   "common.search": "Suchen",
   "common.all": "Alle",
   "common.none": "Keine",
@@ -582,6 +586,8 @@ const en: Dictionary = {
   "common.error": "Something went wrong.",
   "common.retry": "Try again",
   "common.notFound": "Not found",
+  "common.notFoundPage": "This page does not exist.",
+  "common.backHome": "Back to the home page",
   "common.search": "Search",
   "common.all": "All",
   "common.none": "None",

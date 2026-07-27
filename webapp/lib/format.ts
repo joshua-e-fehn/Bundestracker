@@ -218,41 +218,16 @@ export function formatDateShort(iso: string, locale: Locale): string {
 /**
  * Someone's initials, for an avatar with no portrait.
  *
- * Needed rather than optional: §6.5 found no official bulk portrait source, and
- * Wikimedia Commons covers 36.5 % of WP21 — so most MPs have `photoUrl === null`
- * and the fallback is the common case, not the edge case.
+ * Re-exported from lib/bundestag.ts rather than implemented twice. A near-copy
+ * lived here and handled name particles but not academic titles, while the
+ * original handled titles but not particles — so `Dr. Hülya Düber` and
+ * `Alexander von der Leyen` each rendered correctly on some pages and wrongly on
+ * others depending on which module the component happened to import. One
+ * implementation, both rules; see the note there.
  *
- * Takes the first letter of the first and last name parts, skipping the
- * particles the vote sheets file under a column headed `Titel` (§4.1: `von`,
- * `van`, `de` — not academic titles). Without that, half the aristocracy would
- * share the initials "V".
+ * The re-export stays so the existing call sites (components/mp-card.tsx,
+ * components/user-menu.tsx) keep working: this module is where a component
+ * reaches for display formatting, and sending half of them to a different module
+ * for one function would be the same split in a new place.
  */
-const NAME_PARTICLES = new Set([
-  "von",
-  "van",
-  "de",
-  "der",
-  "den",
-  "dem",
-  "du",
-  "di",
-  "da",
-  "zu",
-  "zur",
-  "la",
-  "le",
-])
-
-export function initials(name: string): string {
-  const parts = name
-    .split(/[\s-]+/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0 && !NAME_PARTICLES.has(part.toLowerCase()))
-    // Drop a trailing parenthesised disambiguator: Stammdaten spells the
-    // ortsZusatz inline, as in `Brand (Fulda)` (§6.2).
-    .filter((part) => !part.startsWith("("))
-
-  if (parts.length === 0) return "?"
-  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase()
-  return (parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)).toUpperCase()
-}
+export { initials } from "@/lib/bundestag"

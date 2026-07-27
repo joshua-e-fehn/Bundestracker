@@ -73,6 +73,20 @@ describe("initials", () => {
     expect(initials("Cansel")).toBe("C")
   })
 
+  test("drops a leading particle so the first letter is the given name's", () => {
+    // §4.1 files `von`/`van`/`de` under a column headed `Titel`. The rule came
+    // from lib/format.ts when the two implementations were merged; without it
+    // half the aristocracy shares the initials "V".
+    expect(initials("Alexander von der Leyen")).toBe("AL")
+    expect(initials("Christian de Vries")).toBe("CV")
+  })
+
+  test("splits a hyphenated surname on the hyphen", () => {
+    // `Strack-Zimmermann` is one surname of two parts; a reader expects the
+    // last of them.
+    expect(initials("Marie-Agnes Strack-Zimmermann")).toBe("MZ")
+  })
+
   test("never returns an empty label", () => {
     // `mpLabel` in convex/mps.ts falls back to the internal id for a missing
     // mandate (§7.3's Stammdaten lag), so a blank can reach here. An empty
