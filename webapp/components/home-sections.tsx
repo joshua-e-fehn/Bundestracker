@@ -203,12 +203,9 @@ function ActivityBoard({
   subtitleKey,
   caveatKey,
   level,
-<<<<<<< HEAD
   caveatShownByPage = false,
   caveatShownByPage = false,
 level,
-=======
->>>>>>> fix-build-merge
 }: {
   wahlperiode: number | null | undefined
   direction: "asc" | "desc"
@@ -329,12 +326,9 @@ export function BottomMPs({
       subtitleKey="home.bottomMPsSubtitle"
       caveatKey="home.bottomMPsCaveat"
       level={level}
-<<<<<<< HEAD
       caveatShownByPage={caveatShownByPage}
       caveatShownByPage={caveatShownByPage}
 level={level}
-=======
->>>>>>> fix-build-merge
     />
   )
 }
@@ -359,12 +353,9 @@ level={level}
 export function PartyComparisonPreview({
   wahlperiode,
   level,
-<<<<<<< HEAD
   caveatShownByPage = false,
   caveatShownByPage = false,
 level,
-=======
->>>>>>> fix-build-merge
 }: {
   wahlperiode: number | null | undefined
   level?: SectionLevel
