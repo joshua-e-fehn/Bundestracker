@@ -386,6 +386,26 @@ def test_the_contact_block_reaches_the_roster_row() -> None:
     assert contact["socials"] == [{"platform": "X", "url": "https://x.com/example"}]
 
 
+def test_an_unmatched_name_is_not_counted_as_a_fresh_contact_block() -> None:
+    """"Fresh" means "fetched recently". A name the roster has never heard of
+    has no contact block at all, so counting it as up to date would report a
+    §7.3 staleness gap as work already done."""
+    profiles = StubProfiles(
+        [
+            profile("Bilger, Steffen"),
+            profile("Nichtexistent, Erika", "https://www.bundestag.de/x"),
+        ]
+    )
+    pipeline, _ = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    (contact_note,) = [n for n in report.stages[-1].notes if n.startswith("contact:")]
+    assert "still fresh" not in contact_note
+
+
 def test_a_listed_name_matching_no_roster_mp_is_reported_not_fatal() -> None:
     """The listing is the Bundestag's own roster, so a name that resolves to
     nobody means the Stammdaten snapshot is behind (§7.3) — which the

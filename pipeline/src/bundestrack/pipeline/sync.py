@@ -388,15 +388,22 @@ class Pipeline:
         the same rule `load_speeches` applies to an unreadable protocol.
         """
         due: list[tuple[str, str]] = []
+        fresh = 0
         for profile in profiles:
             name = normalise_printed_name(profile.printed_name)
             if name is None:
                 continue
             internal = resolver.resolve_printed_name(name.nachname, name.vorname, name.particle)
             if internal is None:
+                # Counted by the caller's "match no roster MP" note, not here:
+                # an unmatched name has no contact block to be fresh or stale,
+                # and folding it into the skipped count would report a name the
+                # roster has never heard of as an MP whose page was up to date.
                 continue
             if full or self.state.contact_is_stale(internal):
                 due.append((internal, profile.profile_url))
+            else:
+                fresh += 1
 
         fetched = 0
         published = 0
@@ -417,11 +424,10 @@ class Pipeline:
             if not contact.is_empty:
                 published += 1
 
-        skipped = len(profiles) - len(due)
         note = f"contact: {fetched} biography pages fetched, {published} with published details" + (
             f", {failed} failed and retry next sync" if failed else ""
         )
-        return note + (f", {skipped} still fresh (≤{CONTACT_TTL.days} days)" if skipped > 0 else "")
+        return note + (f", {fresh} still fresh (<{CONTACT_TTL.days} days)" if fresh else "")
 
     # -- stage 4: committees ----------------------------------------------
 
