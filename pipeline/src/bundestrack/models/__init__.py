@@ -29,6 +29,15 @@ from bundestrack.models.dip import (
     Vorgang,
     Vorgangsposition,
 )
+from bundestrack.models.enrichment import (
+    MPContact,
+    MPEnrichment,
+    MPPortrait,
+    MPProfileLink,
+    PrintedName,
+    SocialProfile,
+    normalise_printed_name,
+)
 from bundestrack.models.speeches import (
     BallotBlock,
     BallotName,
@@ -60,7 +69,11 @@ __all__ = [
     "DrucksacheText",
     "Fundstelle",
     "ListResponse",
+    "MPContact",
+    "MPEnrichment",
     "MPName",
+    "MPPortrait",
+    "MPProfileLink",
     "Mandate",
     "NameIndex",
     "NameMatch",
@@ -68,7 +81,9 @@ __all__ = [
     "PersonRole",
     "Plenarprotokoll",
     "PlenarprotokollText",
+    "PrintedName",
     "Protocol",
+    "SocialProfile",
     "Speaker",
     "Speech",
     "StammdatenDump",
@@ -80,5 +95,6 @@ __all__ = [
     "VoteSheet",
     "VoteSheetLink",
     "fold_name",
+    "normalise_printed_name",
     "parse_german_date",
 ]

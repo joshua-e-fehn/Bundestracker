@@ -72,6 +72,30 @@ export function stateOf(constituency: string | null | undefined): string | null 
   return /^[A-ZÄÖÜ]{2}$/.test(code) ? code : null
 }
 
+/**
+ * What an MP does, from the two sources that answer it differently.
+ *
+ * `occupation` is abgeordnetenwatch's answer — what they do *now*, which for a
+ * sitting member is often `MdB` — and covers 88.1 % of WP21. `profession` is
+ * Stammdaten's `BERUF`, the trade practised *before* the mandate, and covers
+ * 94.3 %. Neither is a superset of the other, so this prefers the current
+ * answer and falls back to the former one.
+ *
+ * One function rather than the same `??` chain in the table, the tooltip and
+ * the profile: they must agree on what "occupation" shows, or the same MP reads
+ * as a lawyer in one place and an MdB in another.
+ *
+ * Takes the two fields rather than a document so that `convex/` and the browser
+ * can both call it — convex/ may import from lib/, but not the other way
+ * around, exactly as `stateOf` above.
+ */
+export function occupationOf(mp: {
+  occupation?: string | null
+  profession?: string | null
+}): string | null {
+  return mp.occupation?.trim() || mp.profession?.trim() || null
+}
+
 // --- document URLs --------------------------------------------------------
 
 const DOCUMENT_SERVER = "https://dserver.bundestag.de"

@@ -11,8 +11,12 @@ answer is assembled from:
   yes/no/abstain/**absent**, the only source with absences.
 - `StammdatenClient` — the MdB-Stammdaten ZIP: the MP roster, mandates and
   committees.
-- `AbgeordnetenwatchClient` — `abgeordnetenwatch.de/api/v2`: validation, and
-  mid-period successions.
+- `MPProfileClient` — `bundestag.de/ajax/filterlist/…`: official portraits with
+  their photographer credits, and what contact data is published. Supersedes
+  §6.5, which predates the listing being reachable.
+- `AbgeordnetenwatchClient` — `abgeordnetenwatch.de/api/v2`: validation,
+  mid-period successions, and the occupation/education enrichment that joins to
+  the roster by Stammdaten id.
 
 All extend `BundestagClient`, which fetches **strictly sequentially** and never
 follows redirects — `base` explains why that is load-bearing rather than merely
@@ -26,7 +30,7 @@ Convex is written to over its HTTP API and is not a client here — it is the
 destination, not a source.
 """
 
-from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient
+from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient, parse_politicians
 from bundestrack.api.base import (
     AuthenticationError,
     BundestagAPIError,
@@ -37,6 +41,11 @@ from bundestrack.api.base import (
     paginate_cursor,
 )
 from bundestrack.api.dip import DIPClient
+from bundestrack.api.mp_profiles import (
+    MPProfileClient,
+    parse_biography,
+    parse_listing,
+)
 from bundestrack.api.protocols import ProtocolClient, protocol_xml_url
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import VoteClient, parse_sheet
@@ -48,12 +57,16 @@ __all__ = [
     "BundestagClient",
     "ConcurrentFetchError",
     "DIPClient",
+    "MPProfileClient",
     "NotFound",
     "ProtocolClient",
     "RateLimited",
     "StammdatenClient",
     "VoteClient",
     "paginate_cursor",
+    "parse_biography",
+    "parse_listing",
+    "parse_politicians",
     "parse_sheet",
     "protocol_xml_url",
 ]

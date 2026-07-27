@@ -62,6 +62,7 @@ from collections.abc import Iterable
 from pydantic import BaseModel, Field
 
 from bundestrack.models.dip import Person
+from bundestrack.models.enrichment import MPEnrichment
 from bundestrack.models.stammdaten import (
     MP,
     NameIndex,
@@ -194,6 +195,12 @@ class MPResolver:
         self._dip_to_internal: dict[str, str] = {}
         #: internal id → DIP person id, the direction the roster upsert writes.
         self._internal_to_dip: dict[str, str] = {}
+        #: internal id → portraits, occupation and contact details. Populated by
+        #: `attach_enrichment`, read by `transform.mp_payload`. Held here, beside
+        #: the DIP crosswalk, for the same reason: the roster upsert is the one
+        #: write that carries these fields, so they have to be available at the
+        #: moment it builds its payload.
+        self._enrichment: dict[str, MPEnrichment] = {}
         # Folded `(nachname, vorname)` → Stammdaten id, for the DIP direction.
         # A second index rather than a reuse of `NameIndex`: DIP supplies a
         # plain name pair with no particle column and no parenthesised
@@ -253,6 +260,54 @@ class MPResolver:
     def dip_person_id_for(self, internal: str) -> str | None:
         """The DIP person id resolved onto an internal id, if one was."""
         return self._internal_to_dip.get(internal)
+
+    # -- enrichment --------------------------------------------------------
+
+    def attach_enrichment(self, enrichment: Iterable[MPEnrichment]) -> int:
+        """Record portraits, occupation and contact details against the roster.
+
+        Held on the resolver rather than posted directly, because the roster
+        upsert is what writes these columns and it builds its payload from here
+        (`transform.mp_payload`). Posting them separately would work exactly
+        once: `link_dip_persons` re-posts the whole roster to patch in the DIP
+        crosswalk, and every later sync posts it again, so a separately-written
+        `photoUrl` would be nulled by the next roster write.
+
+        Merged rather than replaced, one field at a time. The two sources
+        arrive at different rates — portraits every sync from the listing,
+        contact details only when stale (`api.mp_profiles`) — so a run that
+        refreshed only the portraits must not blank the contact block it did
+        not fetch.
+
+        Returns how many MPs are now enriched, which is the number the stage
+        reports against the roster size.
+        """
+        for entry in enrichment:
+            existing = self._enrichment.get(entry.internal_id)
+            if existing is None:
+                self._enrichment[entry.internal_id] = entry
+                continue
+            self._enrichment[entry.internal_id] = MPEnrichment(
+                internal_id=entry.internal_id,
+                portrait=entry.portrait or existing.portrait,
+                occupation=entry.occupation or existing.occupation,
+                education=entry.education or existing.education,
+                contact=entry.contact or existing.contact,
+            )
+        return len(self._enrichment)
+
+    def enrichment_for(self, internal: str) -> MPEnrichment | None:
+        """What is known about an MP beyond the roster, if anything is."""
+        return self._enrichment.get(internal)
+
+    def unenriched_internal_ids(self) -> set[str]:
+        """Roster MPs with no enrichment at all.
+
+        The counterpart of `unlinked_internal_ids`: a visible gap rather than a
+        silent one. Non-empty means the name join failed for those MPs, which
+        §7.3 says to retry on a later sync rather than treat as settled.
+        """
+        return self.internal_ids() - set(self._enrichment)
 
     # -- name joins --------------------------------------------------------
 
