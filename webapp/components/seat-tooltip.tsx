@@ -15,6 +15,11 @@ import type { SeatingColorMode } from "@/lib/seating"
  * and therefore not comparable between chambers, so the real figure has to be
  * reachable somewhere, and this is where.
  *
+ * The surface and the positioning belong to `components/seating-map.tsx`, which
+ * owns the hover — this is the contents and nothing else. That split is why the
+ * map could replace a per-seat Radix `Tooltip` with one pointer-tracked card
+ * without touching this file.
+ *
  * ## The active mode's figure leads
  *
  * All four figures are shown, but the one the map is currently coloured by is
@@ -34,6 +39,20 @@ export type SeatTooltipData = {
   name: string
   fraktion: string
   constituency: string | null
+  /**
+   * `BERUF` from Stammdaten. Free text and frequently absent, so the line is
+   * omitted rather than rendered empty — see the row below.
+   *
+   * `| undefined` as well as `| null`, and that is not tidiness. This field is
+   * newer than the deployed `getSeatingWithMPs`, so a browser running this
+   * build against a backend that has not been redeployed yet receives rows
+   * without the key at all. During a deploy that window is every reader. The
+   * first version of this narrowed on `!== null`, which `undefined` passes —
+   * and the `.trim()` after it threw, taking the whole seating page to its
+   * error boundary the moment a seat was hovered. Absent and null mean the
+   * same thing here ("no profession recorded"), so both are handled the same.
+   */
+  profession: string | null | undefined
   photoUrl: string | null
   seatLabel: string
   totalScore: number | null
@@ -57,6 +76,16 @@ export function SeatTooltip({ seat, mode }: { seat: SeatTooltipData; mode: Seati
       </div>
 
       <PartyBadge fraktion={seat.fraktion} className="w-fit" />
+
+      {/* Omitted entirely when absent, not rendered as an empty row: Stammdaten
+          carries no `BERUF` for a large share of the roster, and a blank line
+          beside a label reads as a value that failed to load.
+
+          `?.trim()` rather than a null check — the field can also be *missing*
+          against a backend that predates it. See the type above. */}
+      {seat.profession?.trim() ? (
+        <p className="line-clamp-2 text-muted-foreground text-xs leading-snug">{seat.profession}</p>
+      ) : null}
 
       <dl className="flex flex-col gap-0.5 text-xs">
         <Figure

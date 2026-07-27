@@ -64,6 +64,11 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
     name: entry.name,
     fraktion: entry.fraktion,
     constituency: entry.constituency,
+    // `?? null` so a backend that predates this field — the deploy window, and
+    // any preview pointed at an older deployment — yields the same "not
+    // recorded" the schema means by null, rather than an `undefined` that the
+    // tooltip's narrowing would have to guard separately. See `SeatTooltipData`.
+    profession: entry.profession ?? null,
     photoUrl: entry.photoUrl,
     seatLabel: entry.seat.seatLabel,
     row: entry.seat.row,
