@@ -60,6 +60,12 @@ export const PUBLIC_PATHS = [
   // check on the commit that added the page rather than in a browser later,
   // which is the fifth time that test has earned its keep.
   "/parties",
+  // The sixth, and the one the ⚠ above describes most exactly: the keyword
+  // search (PR #24) shipped `app/search/page.tsx` with no line here, so every
+  // reader following the header's search box — which is on *every* page — would
+  // have been redirected to a 404 that looks like a broken route rather than a
+  // guard. The filesystem check caught it here; nothing else would have.
+  "/search",
 ]
 
 export function isPublicPath(pathname: string) {
