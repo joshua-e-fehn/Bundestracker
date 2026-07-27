@@ -54,6 +54,9 @@ export type SeatTooltipData = {
    */
   profession: string | null | undefined
   photoUrl: string | null
+  /** `| undefined` for the same deploy-window reason as `profession` above:
+   * this field is newer than the deployed `getSeatingWithMPs`. */
+  photoCredit: string | null | undefined
   seatLabel: string
   totalScore: number | null
   voteParticipationRate: number | null
@@ -66,7 +69,12 @@ export function SeatTooltip({ seat, mode }: { seat: SeatTooltipData; mode: Seati
   return (
     <div className="flex min-w-56 max-w-72 flex-col gap-2">
       <div className="flex items-center gap-2">
-        <MPPhoto name={seat.name} photoUrl={seat.photoUrl} className="size-8 shrink-0" />
+        <MPPhoto
+          name={seat.name}
+          photoUrl={seat.photoUrl}
+          credit={seat.photoCredit}
+          className="size-8 shrink-0"
+        />
         <div className="flex min-w-0 flex-col">
           <span className="truncate font-medium text-sm">{seat.name}</span>
           {seat.constituency !== null && (

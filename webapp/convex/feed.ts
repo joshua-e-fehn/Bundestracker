@@ -4,6 +4,7 @@ import { EVENT_TYPES } from "../lib/taxonomy"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { withId } from "./lib/ingest"
+import { photoFields } from "./mps"
 import { activityEventInput, eventType } from "./schema"
 
 /**
@@ -74,7 +75,7 @@ const feedItem = v.object({
   createdAt: v.number(),
   name: v.string(),
   fraktion: v.string(),
-  photoUrl: v.union(v.null(), v.string()),
+  ...photoFields,
 })
 
 const toEventDoc = withId<"activityEvents">
@@ -101,6 +102,8 @@ function join(rows: Doc<"activityEvents">[], mps: Map<string, Doc<"mps">>) {
       name: mp?.name ?? row.mpInternalId,
       fraktion: mp?.fraktion ?? "",
       photoUrl: mp?.photoUrl ?? null,
+      // Never without its credit — see `mpLabel` in convex/mps.ts.
+      photoCredit: mp?.photoCredit ?? null,
     }
   })
 }

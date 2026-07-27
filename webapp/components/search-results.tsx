@@ -178,6 +178,7 @@ function ResultCard({
     name: string
     fraktion: string
     photoUrl: string | null
+    photoCredit: string | null | undefined
     constituency: string | null
     occupation: string | null
     matchCount: number
@@ -193,7 +194,12 @@ function ResultCard({
   return (
     <Card className="group relative gap-3 p-4 transition-colors hover:border-border hover:bg-accent/30">
       <div className="flex items-start gap-3">
-        <MPPhoto name={mp.name} photoUrl={mp.photoUrl} className="size-11 shrink-0" />
+        <MPPhoto
+          name={mp.name}
+          photoUrl={mp.photoUrl}
+          credit={mp.photoCredit}
+          className="size-11 shrink-0"
+        />
 
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

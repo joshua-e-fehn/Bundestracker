@@ -354,10 +354,40 @@ const de = {
   "mp.birthDate": "Geboren",
   "mp.education": "Ausbildung",
   "mp.profession": "Beruf",
+  // abgeordnetenwatch's `occupation` — what the MP does *now*, as against
+  // `mp.profession`, which is Stammdaten's `BERUF` and is what they did before
+  // the mandate. Two labels because the sources answer two questions; see
+  // `occupationOf` in lib/bundestag.ts for which one wins where both exist.
+  "mp.occupation": "Tätigkeit",
   "mp.electionMethod": "Mandatsart",
   "mp.datesInOffice": "Mandatszeit",
   "mp.stillServing": "im Amt",
   "mp.noBiography": "Für diese Wahlperiode liegen keine biografischen Angaben vor.",
+  // The licence condition on every portrait, not a courtesy — see the header of
+  // components/mp-photo.tsx and convex/schema.ts:207. "Foto:" rather than
+  // "Bildnachweis:" because it sits under a picture where the shorter form is
+  // the German convention and the longer one is a form label.
+  "mp.photoCredit": "Foto: {credit}",
+
+  // --- contact ---
+  //
+  // ⚠ There is deliberately no email and no phone key. Neither is published
+  // anywhere — `MDB_STAMMDATEN.DTD` declares no contact elements and the
+  // biography pages carry no `mailto:` or `tel:` links — so `mp.contactForm` is
+  // the Bundestag's own substitute. A label for an address the app never has
+  // would read as a value the pipeline failed to fetch.
+  "mp.contact": "Kontakt",
+  "mp.contactForm": "Kontaktformular",
+  "mp.contactFormHint": "Der Bundestag veröffentlicht keine E-Mail-Adressen.",
+  "mp.constituencyOffice": "Wahlkreisbüro",
+  "mp.homepage": "Webseite",
+  "mp.socials": "Soziale Netzwerke",
+  // The Berlin office is the same for all 630 members, so it belongs in the UI
+  // as a constant rather than in 630 rows — see the note on `contact` in
+  // convex/schema.ts.
+  "mp.berlinOffice": "Bundestagsbüro",
+  "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
+  "mp.noContact": "Für diese Abgeordnete oder diesen Abgeordneten sind keine Kontaktdaten erfasst.",
   "mp.committeeRole": "Funktion",
   "mp.committeePeriod": "Zeitraum",
   "mp.noCommittees": "Keine Ausschussmitgliedschaften erfasst.",
@@ -1155,10 +1185,28 @@ const en: Dictionary = {
   "mp.birthDate": "Born",
   "mp.education": "Education",
   "mp.profession": "Profession",
+  /** What the member does now, as against `mp.profession` — the trade practised
+   * before the mandate. See the German entry. */
+  "mp.occupation": "Current occupation",
   "mp.electionMethod": "Elected via",
   "mp.datesInOffice": "Time in office",
   "mp.stillServing": "in office",
   "mp.noBiography": "No biographical details are recorded for this electoral period.",
+  "mp.photoCredit": "Photo: {credit}",
+
+  // --- contact ---
+  //
+  // ⚠ No email or phone key, deliberately — neither is published anywhere. See
+  // the German entries.
+  "mp.contact": "Contact",
+  "mp.contactForm": "Contact form",
+  "mp.contactFormHint": "The Bundestag publishes no email addresses.",
+  "mp.constituencyOffice": "Constituency office",
+  "mp.homepage": "Website",
+  "mp.socials": "Social media",
+  "mp.berlinOffice": "Bundestag office",
+  "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
+  "mp.noContact": "No contact details are recorded for this member.",
   "mp.committeeRole": "Role",
   "mp.committeePeriod": "Period",
   "mp.noCommittees": "No committee memberships recorded.",

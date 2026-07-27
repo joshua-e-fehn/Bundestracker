@@ -204,6 +204,7 @@ function ActivityBoard({
               name={entry.name}
               fraktion={entry.fraktion}
               photoUrl={entry.photoUrl}
+              photoCredit={entry.photoCredit}
               totalScore={entry.totalScore}
               // No rank number on the ascending board. `getRankings` numbers
               // its slice from 1 in both directions, so a "1" here would read
@@ -451,8 +452,10 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
           fraktion,
           // `getChamberFeed` joins the name and group but not the portrait.
           // Null rather than fetching it: this card renders no avatars, so the
-          // extra field would be read and discarded.
+          // extra field would be read and discarded. The credit follows the
+          // URL — neither is shown here, and `MPPhoto` needs both or neither.
           photoUrl: null,
+          photoCredit: null,
         })),
       ).slice(0, FEED_COUNT),
     [feed],

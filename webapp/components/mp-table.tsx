@@ -76,6 +76,9 @@ type Row = {
      * list MP, so the filter must not fold the two together. */
     electionMethod: string | null
     photoUrl: string | null
+    /** Rendered with the portrait or not at all — the licence condition. See
+     * components/mp-photo.tsx. */
+    photoCredit?: string | null
   }
   score: { totalScore: number; voteParticipationRate: number } | null
   committees: string[]
@@ -560,7 +563,12 @@ function MPRow({ row }: { row: Row }) {
     <TableRow className="cursor-pointer hover:bg-muted/50" onClick={handleRowClick}>
       <TableCell>
         <div className="flex items-center gap-3">
-          <MPPhoto name={row.mp.name} photoUrl={row.mp.photoUrl} className="size-8" />
+          <MPPhoto
+            name={row.mp.name}
+            photoUrl={row.mp.photoUrl}
+            credit={row.mp.photoCredit}
+            className="size-8"
+          />
           <Link
             href={href}
             className="font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"

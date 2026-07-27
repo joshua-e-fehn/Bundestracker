@@ -13,7 +13,7 @@ import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_gen
 import { activityTallies } from "./activities"
 import { committeeCount } from "./committees"
 import { pageLimit, upsertRow, withId } from "./lib/ingest"
-import { mpLabel, requireMandate } from "./mps"
+import { mpLabel, photoFields, requireMandate } from "./mps"
 import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
 import { speechVolume } from "./speeches"
 import { voteParticipation, voteTallyByMonth } from "./votes"
@@ -383,7 +383,7 @@ export const getRankings = query({
       mpInternalId: v.string(),
       name: v.string(),
       fraktion: v.string(),
-      photoUrl: v.union(v.null(), v.string()),
+      ...photoFields,
       totalScore: v.number(),
       scoreBreakdown,
     }),
@@ -411,6 +411,7 @@ export const getRankings = query({
         name: mp.name,
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
+        photoCredit: mp.photoCredit,
         totalScore: row.totalScore,
         scoreBreakdown: row.scoreBreakdown,
       })

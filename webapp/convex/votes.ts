@@ -9,7 +9,7 @@ import {
   upsertRow,
   withId,
 } from "./lib/ingest"
-import { findMandate, mpLabel, requireMandate } from "./mps"
+import { findMandate, mpLabel, photoFields, requireMandate } from "./mps"
 import { vote, voteSheetInput } from "./schema"
 
 /**
@@ -69,7 +69,7 @@ const groupVoteDoc = v.union(v.null(), v.object({ vote, share: v.number() }))
  */
 const voteRecordRow = v.object({
   ...voteRecordDoc.fields,
-  photoUrl: v.union(v.null(), v.string()),
+  ...photoFields,
   groupVote: groupVoteDoc,
   rebel: v.boolean(),
 })
@@ -705,7 +705,7 @@ export const getVoteSheetById = query({
     // One `mpLabel` per record, resolved once and reused by the tally, the
     // rows and the breakdown — the join `voteRecordDoc` exists to avoid doing
     // 630 times in the client.
-    const labels = new Map<string, { name: string; fraktion: string; photoUrl: string | null }>()
+    const labels = new Map<string, Awaited<ReturnType<typeof mpLabel>>>()
     for (const record of records) {
       if (labels.has(record.mpInternalId)) continue
       labels.set(record.mpInternalId, await mpLabel(ctx, record.mpInternalId, sheet.wahlperiode))
@@ -730,6 +730,7 @@ export const getVoteSheetById = query({
         name: label?.name ?? record.mpInternalId,
         fraktion: label?.fraktion ?? "",
         photoUrl: label?.photoUrl ?? null,
+        photoCredit: label?.photoCredit ?? null,
         vote: record.vote,
         partyAtVote: record.partyAtVote,
         remark: record.remark,

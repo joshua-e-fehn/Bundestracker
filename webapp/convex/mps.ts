@@ -95,13 +95,32 @@ export async function mpLabel(
   ctx: QueryCtx,
   mpInternalId: string,
   wahlperiode: number,
-): Promise<{ name: string; fraktion: string; photoUrl: string | null }> {
+): Promise<{
+  name: string
+  fraktion: string
+  photoUrl: string | null
+  photoCredit: string | null
+}> {
   const mp = await findMandate(ctx, mpInternalId, wahlperiode)
   return {
     name: mp?.name ?? mpInternalId,
     fraktion: mp?.fraktion ?? "",
     photoUrl: mp?.photoUrl ?? null,
+    // Travels with `photoUrl`, never separately. Displaying the credit is the
+    // licence condition on these portraits (convex/schema.ts:207), so a label
+    // that carried the image without it would let any of the seven surfaces
+    // built on this render an uncredited photograph — which is exactly what
+    // they all did until components/mp-photo.tsx started requiring it.
+    photoCredit: mp?.photoCredit ?? null,
   }
+}
+
+/** The pair every portrait is rendered from. Declared once so a query returning
+ * a photo cannot omit the credit by leaving a field out of its validator — the
+ * type error is the point. */
+export const photoFields = {
+  photoUrl: v.union(v.null(), v.string()),
+  photoCredit: v.union(v.null(), v.string()),
 }
 
 /**

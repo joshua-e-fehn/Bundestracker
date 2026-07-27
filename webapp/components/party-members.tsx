@@ -5,7 +5,7 @@ import Link from "next/link"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { RankMedal } from "@/components/rank-medal"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MPPhoto } from "@/components/mp-photo"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -114,10 +114,12 @@ export function PartyMembers({ party, wahlperiode }: { party: PartyKey; wahlperi
                     href={`/mps/${encodeURIComponent(row.mpInternalId)}`}
                     className="flex items-center gap-2.5 font-medium hover:underline"
                   >
-                    <Avatar className="size-7">
-                      {row.photoUrl !== null && <AvatarImage src={row.photoUrl} alt="" />}
-                      <AvatarFallback className="text-[10px]">{initials(row.name)}</AvatarFallback>
-                    </Avatar>
+                    <MPPhoto
+                      name={row.name}
+                      photoUrl={row.photoUrl}
+                      credit={row.photoCredit}
+                      className="size-7"
+                    />
                     <span className="truncate">{row.name}</span>
                   </Link>
                   {/* The group repeats under the name only where a member sits

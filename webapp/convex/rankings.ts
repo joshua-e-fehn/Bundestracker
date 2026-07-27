@@ -13,6 +13,7 @@ import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { monthWindow } from "./activityScores"
 import { pageLimit } from "./lib/ingest"
+import { photoFields } from "./mps"
 import { literalUnion } from "./lib/validators"
 import { scoreBreakdown } from "./schema"
 
@@ -67,7 +68,7 @@ const rankingRow = v.object({
   name: v.string(),
   fraktion: v.string(),
   party: v.string(),
-  photoUrl: v.union(v.null(), v.string()),
+  ...photoFields,
   /** What the MP does now (abgeordnetenwatch, 88.1 % of WP21), falling back to
    * what they did before (Stammdaten `BERUF`, 94.3 %). Resolved server-side so
    * the member table's occupation column is one field rather than two the
@@ -207,6 +208,9 @@ function toRow(score: Doc<"activityScores">, mp: Doc<"mps">) {
     fraktion: mp.fraktion,
     party: mp.party,
     photoUrl: mp.photoUrl,
+    // Paired with the URL, always: the credit is the licence condition on
+    // these portraits (convex/schema.ts:207).
+    photoCredit: mp.photoCredit ?? null,
     occupation: occupationOf(mp),
     state: stateOf(mp.constituency),
     birthDate: mp.birthDate,
@@ -432,7 +436,7 @@ export const getCrossPartyRankings = query({
         mpInternalId: v.string(),
         name: v.string(),
         fraktion: v.string(),
-        photoUrl: v.union(v.null(), v.string()),
+        ...photoFields,
         state: v.union(v.null(), v.string()),
         birthDate: v.union(v.null(), v.string()),
         /** Ballots voted against the own group's line. */
@@ -532,6 +536,7 @@ export const getCrossPartyRankings = query({
         name: mp.name,
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
+        photoCredit: mp.photoCredit ?? null,
         state: stateOf(mp.constituency),
         birthDate: mp.birthDate,
         dissents: count,

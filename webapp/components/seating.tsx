@@ -70,6 +70,10 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
     // tooltip's narrowing would have to guard separately. See `SeatTooltipData`.
     profession: entry.profession ?? null,
     photoUrl: entry.photoUrl,
+    // `?? null` for the same deploy-window reason as `profession` above — this
+    // field is newer than the deployed `getSeatingWithMPs`, and `MPPhoto` shows
+    // initials rather than an uncredited portrait when it is missing.
+    photoCredit: entry.photoCredit ?? null,
     seatLabel: entry.seat.seatLabel,
     row: entry.seat.row,
     column: entry.seat.column,

@@ -3,7 +3,7 @@ import { type ObjectType, v } from "convex/values"
 import { layoutHemicycle, seatingRank } from "../lib/seating"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
 import { assertBatchSize, emptyBatchResult, recordBatch, upsertRow, withId } from "./lib/ingest"
-import { findMandate, mpLabel, requireMandate } from "./mps"
+import { findMandate, mpLabel, photoFields, requireMandate } from "./mps"
 import { scoreBreakdown, seatingAssignmentInput } from "./schema"
 
 /**
@@ -164,7 +164,7 @@ export const getSeatingAssignments = query({
     v.object({
       seat: seatingAssignmentDoc,
       name: v.string(),
-      photoUrl: v.union(v.null(), v.string()),
+      ...photoFields,
     }),
   ),
   handler: async (ctx, args) => {
@@ -183,6 +183,7 @@ export const getSeatingAssignments = query({
         seat: toSeatDoc(row),
         name: mp.name,
         photoUrl: mp.photoUrl,
+        photoCredit: mp.photoCredit,
       })
     }
     // Drawing order: row by row, left to right.
@@ -248,7 +249,7 @@ export const getSeatingWithMPs = query({
        * `profession` is what they did before. Shown in preference to it on the
        * hover card, which has room for one line. */
       occupation: v.union(v.null(), v.string()),
-      photoUrl: v.union(v.null(), v.string()),
+      ...photoFields,
       score: v.union(
         v.null(),
         v.object({
@@ -298,6 +299,7 @@ export const getSeatingWithMPs = query({
         profession: mp?.profession ?? null,
         occupation: mp?.occupation ?? null,
         photoUrl: mp?.photoUrl ?? null,
+        photoCredit: mp?.photoCredit ?? null,
         score: score
           ? {
               totalScore: score.totalScore,

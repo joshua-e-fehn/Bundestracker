@@ -3,6 +3,7 @@ import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type QueryCtx, query } from "./_generated/server"
 import { withSearchText } from "./activityEvents"
 import { pageLimit } from "./lib/ingest"
+import { photoFields } from "./mps"
 import { eventType } from "./schema"
 
 /**
@@ -119,7 +120,7 @@ const searchResult = v.object({
   mpInternalId: v.string(),
   name: v.string(),
   fraktion: v.string(),
-  photoUrl: v.union(v.null(), v.string()),
+  ...photoFields,
   constituency: v.union(v.null(), v.string()),
   /** What the MP does now, if known — the field Wave 8 added. Shown on the card
    * because a search for `Rechtsanwalt` should display the word it matched. */
@@ -364,6 +365,7 @@ export const searchMPs = query({
         name: mp.name,
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
+        photoCredit: mp.photoCredit ?? null,
         constituency: mp.constituency,
         // `?? null`, because `mps.occupation` is `v.optional` (convex/schema.ts:216)
         // — Wave 8 added it to a populated table, where a required field fails

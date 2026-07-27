@@ -5,7 +5,7 @@ import Link from "next/link"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { RankMedal } from "@/components/rank-medal"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MPPhoto } from "@/components/mp-photo"
 import {
   Table,
   TableBody,
@@ -41,6 +41,9 @@ export type RankingTableRow = {
   name: string
   fraktion: string
   photoUrl: string | null
+  /** Rendered with the portrait or not at all — the licence condition these
+   * images carry. See components/mp-photo.tsx. */
+  photoCredit?: string | null
   totalScore: number
 } & Record<string, unknown>
 
@@ -137,10 +140,12 @@ export function RankingsTable({
                 href={`/mps/${encodeURIComponent(row.mpInternalId)}`}
                 className="flex items-center gap-2.5 font-medium hover:underline"
               >
-                <Avatar className="size-7">
-                  {row.photoUrl !== null && <AvatarImage src={row.photoUrl} alt="" />}
-                  <AvatarFallback className="text-[10px]">{initials(row.name)}</AvatarFallback>
-                </Avatar>
+                <MPPhoto
+                  name={row.name}
+                  photoUrl={row.photoUrl}
+                  credit={row.photoCredit}
+                  className="size-7"
+                />
                 <span className="truncate">{row.name}</span>
               </Link>
               {/* The group repeats here below the name on narrow screens, where

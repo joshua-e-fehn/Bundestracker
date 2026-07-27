@@ -2,7 +2,7 @@ import { v } from "convex/values"
 import type { Doc } from "./_generated/dataModel"
 import { type MutationCtx, mutation, query } from "./_generated/server"
 import { getUserId, requireUserId } from "./lib/auth"
-import { findMandate } from "./mps"
+import { findMandate, photoFields } from "./mps"
 import { preferredLocale, scoreWeights } from "./schema"
 
 /**
@@ -212,7 +212,7 @@ export const getFollowedMPs = query({
       internalId: v.string(),
       name: v.string(),
       fraktion: v.string(),
-      photoUrl: v.union(v.null(), v.string()),
+      ...photoFields,
     }),
   ),
   handler: async (ctx, args) => {
@@ -237,6 +237,7 @@ export const getFollowedMPs = query({
         name: mp.name,
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
+        photoCredit: mp.photoCredit ?? null,
       })
     }
     return followed.sort((a, b) => a.name.localeCompare(b.name, "de"))

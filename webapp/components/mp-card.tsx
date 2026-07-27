@@ -4,7 +4,7 @@ import { useQuery } from "convex/react"
 import Link from "next/link"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MPPhoto } from "@/components/mp-photo"
 import { Card } from "@/components/ui/card"
 import { api } from "@/convex/_generated/api"
 import { formatScore, initials } from "@/lib/format"
@@ -154,6 +154,7 @@ export function MPCard({
   name,
   fraktion,
   photoUrl,
+  photoCredit,
   totalScore,
   rank,
   showHeatmap = false,
@@ -163,6 +164,9 @@ export function MPCard({
   name: string
   fraktion: string | null | undefined
   photoUrl: string | null | undefined
+  /** Whose photograph it is. Shown with the portrait or the portrait is not
+   * shown — the licence condition, enforced in components/mp-photo.tsx. */
+  photoCredit?: string | null
   totalScore?: number
   /** Position in a ranked list, if this card is in one. */
   rank?: number
@@ -196,12 +200,11 @@ export function MPCard({
           </span>
         )}
 
-        <Avatar size="lg" className="shrink-0">
-          {/* Most MPs have no portrait: §6.5 found no official bulk source and
-              Commons covers 36.5 % of WP21, so the fallback is the norm. */}
-          {photoUrl ? <AvatarImage src={photoUrl} alt="" /> : null}
-          <AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
-        </Avatar>
+        {/* Through `MPPhoto` rather than a bare Avatar, so this card cannot
+            render a portrait without its credit — the licence condition, and a
+            rule worth having in one place rather than in each of the five
+            surfaces that show a face. */}
+        <MPPhoto name={name} photoUrl={photoUrl} credit={photoCredit} className="size-10" />
 
         <div className="grid min-w-0 flex-1 gap-1">
           {/* The whole card is the hit target — the link is stretched over it

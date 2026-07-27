@@ -6,6 +6,7 @@ import { RANKING_METRICS } from "../lib/taxonomy"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { literalUnion } from "./lib/validators"
+import { photoFields } from "./mps"
 import { majorityOf } from "./votes"
 
 /**
@@ -86,7 +87,7 @@ const partyMemberRow = v.object({
   mpInternalId: v.string(),
   name: v.string(),
   fraktion: v.string(),
-  photoUrl: v.union(v.null(), v.string()),
+  ...photoFields,
   constituency: v.union(v.null(), v.string()),
   /** Null, never 0, for a mandate the nightly sweep has not reached. The
    * distinction `getMPsWithScores` draws for the same reason: an unscored MP
@@ -298,6 +299,7 @@ export const getPartyMembers = query({
         name: mp.name,
         fraktion: mp.fraktion,
         photoUrl: mp.photoUrl,
+        photoCredit: mp.photoCredit ?? null,
         constituency: mp.constituency,
         totalScore: score?.totalScore ?? null,
         voteParticipationRate: score?.voteParticipationRate ?? null,

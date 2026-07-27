@@ -1,10 +1,11 @@
 "use client"
 
+import { ExternalLinkIcon } from "lucide-react"
 import Link from "next/link"
 import { ActivityHeatmap } from "@/components/activity-heatmap"
 import { FraktionBadge } from "@/components/fraktion-badge"
 import { MPCommittees } from "@/components/mp-committees"
-import { MPPhoto } from "@/components/mp-photo"
+import { MPPhoto, MPPhotoCredit } from "@/components/mp-photo"
 import { MPRecentRecords } from "@/components/mp-recent-records"
 import { MPScorePanel } from "@/components/mp-score-panel"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -58,6 +59,37 @@ export type MPDoc = {
   bio?: string | null
   education?: string | null
   profession?: string | null
+  /**
+   * What the MP does *now* — abgeordnetenwatch's answer, where `profession` is
+   * Stammdaten's `BERUF` and is what they did before the mandate.
+   *
+   * Absent from this type until now, and the omission was visible on the page:
+   * `occupationOf` in lib/bundestag.ts exists precisely so the search card and
+   * the profile agree on what "occupation" shows, and its comment says as much
+   * — but `components/search-results.tsx` called it while this type had no
+   * field for it, so the profile could only ever read `profession`. For the 28
+   * WP21 members who have an `occupation` and no `profession` that meant the
+   * Biografie card showed no job at all, verified on Alexander Arpaschi
+   * (bt-11005404, "selbstständiger Immobilienunternehmer").
+   */
+  occupation?: string | null
+  /** Whose photograph `photoUrl` is. Displaying it is the licence condition,
+   * not a courtesy — see the header of components/mp-photo.tsx. */
+  photoCredit?: string | null
+  /**
+   * How to reach the MP, as the Bundestag actually publishes it.
+   *
+   * ⚠ No email and no phone, and that is a fact about the sources rather than a
+   * gap here: `MDB_STAMMDATEN.DTD` declares no contact elements and the
+   * biography pages carry no `mailto:` or `tel:` links. `formUrl` is the
+   * Bundestag's own substitute. See the note on `contact` in convex/schema.ts.
+   */
+  contact?: {
+    formUrl: string | null
+    constituencyOffice: string | null
+    homepage: string | null
+    socials: ReadonlyArray<{ platform: string; url: string }>
+  } | null
 }
 
 export function MPProfile({
@@ -91,7 +123,12 @@ export function MPProfile({
         <aside className="flex flex-col gap-6">
           <Card>
             <CardContent className="flex flex-col items-center gap-3 pt-2 text-center">
-              <MPPhoto name={mp.name} photoUrl={mp.photoUrl} className="size-28" />
+              <MPPhoto
+                name={mp.name}
+                photoUrl={mp.photoUrl}
+                credit={mp.photoCredit}
+                className="size-28"
+              />
               <div className="flex flex-col items-center gap-2">
                 <h1 className="font-semibold text-2xl tracking-tight">{mp.name}</h1>
                 <FraktionBadge fraktion={mp.fraktion} />
@@ -106,10 +143,16 @@ export function MPProfile({
                   {mp.constituency ?? t("mps.listMandate")}
                 </span>
               </div>
+              {/* Printed rather than left to the portrait's `title`, because
+                  here the photograph is the subject of the page rather than a
+                  label on a row — and displaying the credit is the condition on
+                  which it may be shown at all (convex/schema.ts:207). */}
+              <MPPhotoCredit photoUrl={mp.photoUrl} credit={mp.photoCredit} />
             </CardContent>
           </Card>
 
           <Biography mp={mp} locale={locale} />
+          <Contact mp={mp} />
           <MPCommittees mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
         </aside>
 
@@ -152,6 +195,19 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
   const rows: Array<{ label: string; value: string }> = []
   if (mp.birthDate) rows.push({ label: t("mp.birthDate"), value: formatDate(mp.birthDate, locale) })
   if (mp.profession) rows.push({ label: t("mp.profession"), value: mp.profession })
+  // Both, where the sources answer differently — they are two questions ("what
+  // do they do now" vs "what did they do before"), and §6 records them
+  // disagreeing usefully. Shown only when it adds something: for the many
+  // members whose `occupation` is literally "MdB", or simply repeats the
+  // profession, a second row would say nothing twice.
+  //
+  // The comparison is what makes this more than cosmetic. `occupationOf` picks
+  // `occupation` first, so the search card already showed it while this card
+  // showed only `profession` — and the 28 members who have one and not the
+  // other had no job line here at all.
+  if (mp.occupation && mp.occupation.trim() !== mp.profession?.trim()) {
+    rows.push({ label: t("mp.occupation"), value: mp.occupation })
+  }
   if (mp.education) rows.push({ label: t("mp.education"), value: mp.education })
   if (mp.electionMethod) rows.push({ label: t("mp.electionMethod"), value: mp.electionMethod })
   if (mp.datesInOffice) {
@@ -188,5 +244,142 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * How to reach this member.
+ *
+ * ## There is no email address, and saying so is part of the card
+ *
+ * ⚠ The Bundestag publishes none — `MDB_STAMMDATEN.DTD` declares no contact
+ * elements at all, and the biography pages carry no `mailto:` or `tel:` link.
+ * The contact *form* is its own substitute, so the form link carries a line
+ * saying why it is a form. Without it the card reads as though an address had
+ * been left out; the note is what makes the absence a fact about the source
+ * rather than a gap in the pipeline. See the note on `contact` in
+ * convex/schema.ts, which this card is the reader-facing half of.
+ *
+ * ## The Berlin office is a constant, not a row
+ *
+ * `Platz der Republik 1` is the same for all 630 members, so the schema
+ * deliberately does not store it 630 times and this prints it from the
+ * dictionary. It is shown for every sitting member, which is what makes the
+ * card useful for the roughly half of the roster that lists no constituency
+ * office: those members would otherwise get a card with a form link and nothing
+ * else.
+ *
+ * Renders only what exists, like `Biography` above and for the same reason —
+ * `contact` is absent for 13 of 635 WP21 rows, and printing four labelled blanks
+ * looks like a broken page rather than a sparse record.
+ */
+function Contact({ mp }: { mp: MPDoc }) {
+  const { t } = useLocale()
+  const contact = mp.contact
+
+  // The Berlin address alone is not worth a card: it is the same sentence on
+  // every profile, so on a row with no contact data at all it would be four
+  // words of chrome pretending to be a record.
+  if (!contact) return null
+  const hasAny =
+    Boolean(contact.formUrl) ||
+    Boolean(contact.constituencyOffice) ||
+    Boolean(contact.homepage) ||
+    contact.socials.length > 0
+  if (!hasAny) return null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("mp.contact")}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {contact.formUrl ? (
+          <div className="flex flex-col gap-1">
+            <ExternalLink href={contact.formUrl}>{t("mp.contactForm")}</ExternalLink>
+            {/* The reason the link is a form and not an address. */}
+            <p className="text-muted-foreground text-xs">{t("mp.contactFormHint")}</p>
+          </div>
+        ) : null}
+
+        {contact.homepage ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-muted-foreground text-xs">{t("mp.homepage")}</span>
+            <ExternalLink href={contact.homepage}>
+              {/* The bare host, not the URL: `https://www.sanaeabdi.de/` is
+                  wider than the card on a phone and says nothing the host does
+                  not. Falls back to the raw value if it does not parse, rather
+                  than rendering an empty link. */}
+              {hostOf(contact.homepage) ?? contact.homepage}
+            </ExternalLink>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-1">
+          <span className="text-muted-foreground text-xs">{t("mp.berlinOffice")}</span>
+          {/* `whitespace-pre-line`, because the address is two lines and the
+              dictionary holds it with the newline in it — the same treatment
+              the constituency office below needs, and for the same reason. */}
+          <p className="whitespace-pre-line text-sm leading-snug">{t("mp.berlinAddress")}</p>
+        </div>
+
+        {contact.constituencyOffice ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-muted-foreground text-xs">{t("mp.constituencyOffice")}</span>
+            {/* Newline-separated as printed, and an MP may list two — Sanae
+                Abdi has offices in Köln-Innenstadt and Kalk in one string. So
+                the whitespace is content, not formatting. */}
+            <p className="whitespace-pre-line text-sm leading-snug">
+              {contact.constituencyOffice}
+            </p>
+          </div>
+        ) : null}
+
+        {contact.socials.length > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground text-xs">{t("mp.socials")}</span>
+            <ul className="flex list-none flex-wrap gap-x-3 gap-y-1.5 p-0">
+              {contact.socials.map((social) => (
+                <li key={social.url}>
+                  {/* `platform` is free text and the list is the Bundestag's —
+                      it grows — so it is printed rather than matched against an
+                      enum of known networks with an icon each. An unrecognised
+                      platform must render as itself, not disappear. */}
+                  <ExternalLink href={social.url}>{social.platform}</ExternalLink>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The host of a URL, or null if it does not parse. Used for display only. */
+function hostOf(url: string): string | null {
+  if (!URL.canParse(url)) return null
+  return new URL(url).host.replace(/^www\./, "")
+}
+
+/**
+ * A link off the site.
+ *
+ * `rel="noreferrer noopener"` and `target="_blank"`, matching
+ * components/site-footer.tsx — every outbound link on the site behaves the same
+ * way, and these ones go to personal sites and social networks, where passing a
+ * referrer says which MP's page the reader was on.
+ */
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="inline-flex w-fit items-center gap-1.5 rounded-md text-sm underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      {children}
+      <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden="true" />
+    </a>
   )
 }

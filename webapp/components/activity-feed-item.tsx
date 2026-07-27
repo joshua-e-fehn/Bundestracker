@@ -6,7 +6,7 @@ import { useState } from "react"
 import { EVENT_TYPE_STYLES, EventTypeIcon } from "@/components/event-type-icon"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MPPhoto } from "@/components/mp-photo"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { FeedActor, FeedGroup } from "@/lib/feed-grouping"
@@ -41,6 +41,8 @@ export type FeedEvent = {
   name: string
   fraktion: string
   photoUrl: string | null
+  /** Paired with the URL — see components/mp-photo.tsx. */
+  photoCredit?: string | null
 }
 
 /** How many members a joint row names before it starts counting. Three fits one
@@ -494,10 +496,12 @@ function ActorLink({
         href={`/mps/${encodeURIComponent(actor.mpInternalId)}`}
         className="flex items-center gap-2 font-medium text-sm hover:underline"
       >
-        <Avatar className="size-6">
-          {actor.photoUrl !== null && <AvatarImage src={actor.photoUrl} alt="" />}
-          <AvatarFallback className="text-[10px]">{initials(actor.name)}</AvatarFallback>
-        </Avatar>
+        <MPPhoto
+          name={actor.name}
+          photoUrl={actor.photoUrl}
+          credit={actor.photoCredit}
+          className="size-6"
+        />
         {actor.name}
       </Link>
       {compact ? null : <PartyBadge fraktion={actor.fraktion} />}
