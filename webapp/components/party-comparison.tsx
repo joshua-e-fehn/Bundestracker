@@ -1,12 +1,12 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Info } from "lucide-react"
 import { PartyCoalitionCard } from "@/components/party-coalition-card"
 import { PartyComparisonRadar } from "@/components/party-comparison-radar"
 import { PartyDisciplineCard } from "@/components/party-discipline-card"
 import { PartyMetricChart } from "@/components/party-metric-chart"
 import { PartyScoreTable } from "@/components/party-score-table"
+import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -73,10 +73,7 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
           bars for a Fraktion total has been misled by us, so this is said before
           they start rather than footnoted after. */}
       <div className="flex flex-col gap-2">
-        <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-          <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-          {t("parties.meansNotice")}
-        </p>
+        <CaveatNote>{t("parties.meansNotice")}</CaveatNote>
         <p className="text-muted-foreground text-xs">
           {t("parties.coverage", {
             scored: formatCount(comparison.totalScored, locale),
@@ -123,10 +120,7 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
           {/* Not optional: a normalised axis says "relative to the leader",
               which is a different claim from the number it was built from, and
               the polygon is unreadable as anything else without this. */}
-          <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-            <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-            {t("parties.radarCaveat")}
-          </p>
+          <CaveatNote>{t("parties.radarCaveat")}</CaveatNote>
         </CardContent>
       </Card>
 

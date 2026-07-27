@@ -1,7 +1,7 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Info } from "lucide-react"
+import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -115,10 +115,7 @@ export function PartyDisciplineCard({ wahlperiode }: { wahlperiode: number }) {
           </>
         )}
 
-        <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-          <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-          {t("parties.disciplineCaveat")}
-        </p>
+        <CaveatNote>{t("parties.disciplineCaveat")}</CaveatNote>
       </CardContent>
     </Card>
   )

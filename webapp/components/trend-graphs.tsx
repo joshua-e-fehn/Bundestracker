@@ -1,7 +1,6 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Info } from "lucide-react"
 import { useMemo, useState } from "react"
 import {
   Area,
@@ -17,6 +16,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -156,30 +156,18 @@ export function TrendGraphs({
               </p>
             )}
 
-            {chart.caveatKey !== undefined && <Note>{t(chart.caveatKey)}</Note>}
+            {chart.caveatKey !== undefined && <CaveatNote>{t(chart.caveatKey)}</CaveatNote>}
 
             {/* Only where the gap could be misread — a chart drawn entirely
                 from ballots is complete whether or not the sweep has scored the
                 month. */}
             {unscored > 0 && chart.id !== "votes" && (
-              <Note>{t("trends.unscoredNotice", { count: unscored })}</Note>
+              <CaveatNote>{t("trends.unscoredNotice", { count: unscored })}</CaveatNote>
             )}
           </>
         )}
       </CardContent>
     </Card>
-  )
-}
-
-/** A caveat, in the boxed style components/rankings.tsx uses for the same job —
- * a structural limit of the sources shown beside the figure rather than under an
- * "about" link. */
-function Note({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-      <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-      {children}
-    </p>
   )
 }
 

@@ -1,6 +1,5 @@
 "use client"
 
-import { Info } from "lucide-react"
 import { useMemo, useState } from "react"
 import {
   Bar,
@@ -12,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatBy, formatCount } from "@/lib/format"
@@ -179,12 +179,7 @@ export function PartyMetricChart({ parties }: { parties: readonly PartyAggregate
         </figure>
       )}
 
-      {metric.caveatKey !== undefined && (
-        <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-          <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-          {t(metric.caveatKey)}
-        </p>
-      )}
+      {metric.caveatKey !== undefined && <CaveatNote>{t(metric.caveatKey)}</CaveatNote>}
     </div>
   )
 }

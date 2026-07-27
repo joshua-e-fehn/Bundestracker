@@ -1,8 +1,8 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Info } from "lucide-react"
 import { useMemo, useState } from "react"
+import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import {
   ANY,
@@ -246,12 +246,7 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
         allowWholePeriod={board.kind !== "rising"}
       />
 
-      {board.caveatKey !== undefined && (
-        <p className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-xs leading-relaxed">
-          <Info className="mt-px size-4 shrink-0" aria-hidden="true" />
-          {t(board.caveatKey)}
-        </p>
-      )}
+      {board.caveatKey !== undefined && <CaveatNote>{t(board.caveatKey)}</CaveatNote>}
 
       {board.kind === "crossParty" && crossPartyResult !== undefined && (
         // The window this board was computed over. Stated because a dissent
