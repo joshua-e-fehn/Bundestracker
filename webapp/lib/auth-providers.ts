@@ -29,5 +29,9 @@
  */
 export const GITHUB_ENABLED = false
 
-/** Google is configured and working — the one provider the picker offers. */
-export const GOOGLE_ENABLED = true
+// No `GOOGLE_ENABLED` counterpart, deliberately. Google is the provider that
+// *works*, so a flag for it would be a constant `true` that nothing branches
+// on — and this file's own reasoning about GitHub is the argument against it:
+// a symbol that reads like a switch invites a reader to look for something it
+// switches. When a second working provider arrives, that is the moment the
+// question becomes real and the shape here becomes a list.

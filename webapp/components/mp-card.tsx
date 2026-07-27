@@ -228,20 +228,23 @@ export function MPCard({
           // characters ("441,5"), so that is all the column needs once the
           // label below it is gone — see the next comment.
           //
-          // The label *was* here and is now the `title`. In a half-width card
-          // "Aktivitätswert" is wider than the number it labels, so the column
+          // The label *was* a line under the number. In a half-width card
+          // "Aktivitätswert" is wider than the figure it labels, so the column
           // either grew to fit a word or clipped it — it clipped, and every
           // card on the home page read "Aktivitätswer". Naming the metric is
           // the *section heading's* job ("Nach Aktivitätswert in der laufenden
           // Wahlperiode"), so repeating it under all ten numbers was buying a
-          // layout problem with a word nobody needed twice. The `title` keeps
-          // it reachable on hover; `aria-label` keeps it announced.
-          <div
-            className="w-14 shrink-0 text-right"
-            title={t("mp.activityScore")}
-            aria-label={t("mp.activityScore")}
-          >
+          // layout problem with a word nobody needed twice.
+          //
+          // It survives for both readers who lose it: `title` on hover, and
+          // `sr-only` text in the announced order "Aktivitätswert 441,5". Not
+          // `aria-label` on the wrapper — a bare `<div>` has no role for one to
+          // attach to, so assistive tech is free to ignore it, and Biome's
+          // `useAriaPropsSupportedByRole` rejects it for exactly that reason.
+          // Real text cannot be ignored.
+          <div className="w-14 shrink-0 text-right" title={t("mp.activityScore")}>
             <div className="font-semibold text-base tabular-nums">
+              <span className="sr-only">{t("mp.activityScore")} </span>
               {formatScore(totalScore, locale)}
             </div>
           </div>
