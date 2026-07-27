@@ -1,19 +1,11 @@
-# Task — feature-party-comparison
+# Task — fix-search-i18n
 
-Wave 9 Agent K: Party comparison dashboard for Bundestracker. Do NOT ask questions.
+URGENT FIX: Vercel build fails because the search page (webapp/app/search/page.tsx) references i18n keys like 'search.title' and 'search.subtitle' that don't exist in webapp/lib/i18n.ts.
 
-Read /opt/data/workspace/Bundestrack-Plan-V2.md (Wave 9 section).
+Fix: Add ALL missing search-related i18n keys to webapp/lib/i18n.ts in both German and English. Check webapp/app/search/page.tsx for all t() calls and ensure every key exists.
 
-Your tasks:
-1. Create a /parties page with:
-   - Average activity index per party (single number, ranked table)
-   - Multi-dimensional radar chart comparing all parties across all metrics (motions, speeches, questions, votes, committees, bills) using recharts
-   - Per-metric bar charts showing parties ranked
-2. Clicking a party shows its MPs ranked by activity
-3. Show coalition vs opposition comparison
-4. Show party discipline (how often MPs vote with their party majority)
-5. Add a summary card on the homepage linking to /parties
-6. Bilingual (DE/EN)
-7. Use the new brand colors (gold/red/black)
+Also run 'cd webapp && bun run typecheck' to find any other missing keys or type errors and fix them all.
+
+Then deploy: cd webapp && VERCEL_TOKEN=<redacted — see /opt/data/.env> vercel --prod
 
 Commit and push. Do NOT wait for input.
