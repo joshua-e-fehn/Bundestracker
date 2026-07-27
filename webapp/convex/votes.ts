@@ -9,7 +9,7 @@ import {
   upsertRow,
   withId,
 } from "./lib/ingest"
-import { mpLabel, requireMandate } from "./mps"
+import { findMandate, mpLabel, requireMandate } from "./mps"
 import { vote, voteSheetInput } from "./schema"
 
 /**
@@ -166,7 +166,9 @@ export const upsertVoteRecords = internalMutation({
     const now = Date.now()
     const result = emptyBatchResult()
     for (const record of args.records) {
-      await requireMandate(ctx, record.mpInternalId, args.wahlperiode)
+      // Skip records for MPs not on the roster rather than aborting the batch
+      const mp = await findMandate(ctx, record.mpInternalId, args.wahlperiode)
+      if (!mp) continue
       const existing = await ctx.db
         .query("voteRecords")
         .withIndex("by_voteSheetId_and_mpInternalId", (q) =>

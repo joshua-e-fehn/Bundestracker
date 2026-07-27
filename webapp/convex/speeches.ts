@@ -9,7 +9,7 @@ import {
   upsertRow,
   withId,
 } from "./lib/ingest"
-import { mpLabel, requireMandate } from "./mps"
+import { findMandate, mpLabel, requireMandate } from "./mps"
 import { speechInput } from "./schema"
 
 /**
@@ -63,15 +63,26 @@ async function findSegment(
     .unique()
 }
 
-async function upsertOne(ctx: MutationCtx, input: ObjectType<typeof speechInput>, now: number) {
-  await requireMandate(ctx, input.mpInternalId, input.wahlperiode)
-  return await upsertRow(ctx, "speeches", await findSegment(ctx, input), input, now)
+async function upsertOne(ctx: MutationCtx, input: ObjectType<typeof speechInput>, now: number): Promise<{ created: boolean; skipped: boolean }> {
+  // Skip records for MPs not on the roster rather than aborting the entire
+  // batch. A single missing MP (e.g. a late addition to Stammdaten that the
+  // roster dump hasn't picked up) should not block 200+ other speeches.
+  const mp = await findMandate(ctx, input.mpInternalId, input.wahlperiode)
+  if (!mp) return { created: false, skipped: true }
+  const row = await upsertRow(ctx, "speeches", await findSegment(ctx, input), input, now)
+  return { created: row.created, skipped: false }
 }
 
 export const upsertSpeech = internalMutation({
   args: speechInput,
-  returns: v.object({ id: v.id("speeches"), created: v.boolean() }),
-  handler: async (ctx, args) => await upsertOne(ctx, args, Date.now()),
+  returns: v.object({ id: v.optional(v.id("speeches")), created: v.boolean(), skipped: v.boolean() }),
+  handler: async (ctx, args) => {
+    const r = await upsertOne(ctx, args, Date.now())
+    if (r.skipped) return { id: undefined, created: false, skipped: true }
+    // Re-query to get the id since upsertRow doesn't return it directly
+    const existing = await findSegment(ctx, args)
+    return { id: existing?._id, created: r.created, skipped: false }
+  },
 })
 
 /**
@@ -93,8 +104,9 @@ export const upsertSpeeches = internalMutation({
     const now = Date.now()
     const result = emptyBatchResult()
     for (const speech of args.speeches) {
-      const { created } = await upsertOne(ctx, speech, now)
-      recordBatch(result, created)
+      const r = await upsertOne(ctx, speech, now)
+      if ("skipped" in r && r.skipped) continue
+      recordBatch(result, r.created)
     }
     return result
   },
