@@ -1,3 +1,3 @@
-# Task — homepage-animations
+# Task — enrichment-pipeline-run
 
-Three homepage hero variations with Eagle/Coin/Flag animations. Read /tmp/task-homepage-animations.md for full instructions.
+Run the enrichment pipeline to fetch actual MP photos and contact data. Read /tmp/task-enrichment-run.md for full instructions.
