@@ -34,10 +34,10 @@ export type MPDoc = {
   party: string
   constituency: string | null
   photoUrl: string | null
-  bio: string | null
+  bio: string | null | undefined
   birthDate: string | null
-  education: string | null
-  profession: string | null
+  education: string | null | undefined
+  profession: string | null | undefined
   electionMethod: string | null
   datesInOffice: { start: string; end: string | null } | null
 }
