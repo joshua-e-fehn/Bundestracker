@@ -205,7 +205,7 @@ export function ActivityFeedItem({
             at all — see lib/feed-grouping.ts and `motion_sponsor_payloads` in
             the pipeline, which refuses to store a rank for the same reason. */}
         {isJoint && (
-          <p className="text-[0.7rem] text-muted-foreground/80 leading-relaxed">
+          <p className="text-[0.7rem] text-muted-foreground leading-relaxed">
             {t("feed.jointCount", { count: group.actors.length })} — {t("feed.jointNote")}
           </p>
         )}

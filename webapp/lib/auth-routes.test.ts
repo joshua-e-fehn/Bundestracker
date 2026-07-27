@@ -75,5 +75,21 @@ describe("isPublicPath", () => {
     // The day a genuinely private route arrives it is added by omission — see
     // the note in auth-routes.ts. This asserts omission still means gated.
     expect(isPublicPath("/settings")).toBe(false)
+
+    // A URL matching no route at all is *also* false here, and that is correct
+    // for this function: it answers "is this path on the public list", and a
+    // nonexistent path is not.
+    //
+    // It is not, however, the whole answer to "may a signed-out reader see
+    // this", and treating it as such was a real bug: a mistyped URL returned a
+    // genuine 404, rendered app/not-found.tsx, and was then client-redirected
+    // to /sign-in a beat later — so the site asked for an account before
+    // admitting the page did not exist, and the app-wide 404 was unreachable.
+    //
+    // The fix is in components/providers/auth-guard.tsx, which treats Next's
+    // `/_not-found` segment as public before consulting this list, rather than
+    // a catch-all entry here that would defeat the omission rule above. Pinned
+    // as a test so the distinction is not "fixed" later by widening the list.
+    expect(isPublicPath("/this-route-does-not-exist")).toBe(false)
   })
 })

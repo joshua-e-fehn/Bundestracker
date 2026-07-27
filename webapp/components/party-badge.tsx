@@ -10,10 +10,16 @@ import { cn } from "@/lib/utils"
  * ("which party is this string?") is asked by the MP card, the vote list and the
  * activity feed, and the sources spell a group three different ways (§6.4).
  *
- * The colour is applied as a tinted background with a solid foreground rather
- * than as a solid fill: six of these can appear in one list, and six saturated
- * blocks compete with the figures they are meant to annotate. `color-mix` keeps
- * one palette doing both jobs.
+ * The colour is applied as text on a neutral surface rather than as a solid
+ * fill: six of these can appear in one list, and six saturated blocks compete
+ * with the figures they are meant to annotate.
+ *
+ * The surface is `--muted` and *not* a tint of the party colour, which is what
+ * it used to be (`color-mix(… 14%, transparent)`). Tinting a background with
+ * the foreground colour moves the two toward each other, so the badge lost
+ * ~12 % of its contrast in light and ~45 % in dark — every dark party badge
+ * measured under 4.5:1. lib/bundestag.ts carries the full reasoning; the two
+ * badge families must agree, so the fix is the same on both sides.
  *
  * A server component — no interactivity, so it stays out of the client bundle
  * and can be rendered directly by a server page.
@@ -31,13 +37,8 @@ export function PartyBadge({
   return (
     <Badge
       variant="outline"
-      className={cn("gap-1.5 border-transparent font-medium", className)}
-      style={{
-        // 14 % of the party colour over the card surface: enough to read as
-        // that party, light enough to sit under text.
-        backgroundColor: `color-mix(in oklch, ${color} 14%, transparent)`,
-        color,
-      }}
+      className={cn("gap-1.5 border-transparent bg-muted font-medium", className)}
+      style={{ color }}
     >
       {/* The dot carries the colour at full strength, so the party stays
           identifiable for a reader who finds the tinted text too subtle. */}

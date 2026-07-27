@@ -1,6 +1,7 @@
 "use client"
 
 import { ExternalLinkIcon } from "lucide-react"
+import { BrandMark } from "@/components/brand-mark"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
 
@@ -27,7 +28,10 @@ export function SiteFooter() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="grid gap-1.5">
-            <span className="font-semibold text-sm">{t("app.name")}</span>
+            <span className="flex items-center gap-2 font-semibold text-sm">
+              <BrandMark className="size-4" />
+              {t("app.name")}
+            </span>
             <span className="text-muted-foreground text-sm">{t("app.tagline")}</span>
           </div>
 
@@ -59,6 +63,13 @@ export function SiteFooter() {
           <p className="shrink-0">{t("footer.builtBy")}</p>
         </div>
       </div>
+
+      {/* The flag again, closing the page as the header opened it. Full-bleed
+          rather than inset to the `max-w-6xl` content column: it is the
+          document's bottom edge, and a rule that stopped short of the viewport
+          on a wide screen would read as an element on the page rather than as
+          its border. See `federal-rule` in app/globals.css. */}
+      <div aria-hidden className="federal-rule h-[3px] w-full" />
     </footer>
   )
 }

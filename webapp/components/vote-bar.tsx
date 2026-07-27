@@ -13,8 +13,11 @@ import { cn } from "@/lib/utils"
  * precisely so they are not collapsed, and a bar that shaded them alike would
  * undo that: it would show a chamber that stayed away as one that abstained.
  * So absence is rendered in the muted surface colour — visibly *not* one of the
- * cast votes — while the three cast positions carry the green/red/amber the
- * vote badges already use.
+ * cast votes — while the three cast positions carry the green/red/gold the
+ * vote badges already use. (Gold, not the amber this said before 6d9b255:
+ * `--vote-abstain` was retinted to the brand gold's ink tier by that commit,
+ * and components/vote-result-badge.tsx now reads the same tokens this does, so
+ * the claim that the bar and the badge match is true rather than aspirational.)
  *
  * Party colours are deliberately not used here. lib/parties.ts colours groups;
  * this colours positions, and one ballot's `yes` bar is the same green whoever

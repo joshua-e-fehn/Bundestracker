@@ -9,6 +9,7 @@ import type { HeatmapDay, HeatmapWeek } from "@/lib/heatmap"
 import {
   buildHeatmapWeeks,
   HEATMAP_LEVELS,
+  HEATMAP_RAMP,
   heatmapLevel,
   monthLabels,
   twelveMonthWindow,
@@ -30,19 +31,6 @@ import { cn } from "@/lib/utils"
  * absolute across the chamber — `heatmapLevel` explains why, and the tooltip
  * carries the real count, which is the number that compares.
  */
-
-/** The ramp, indexed by level. Index 0 is "nothing happened", and it is a
- * visible empty cell rather than transparent: the grid's shape is information
- * — a gap in the middle of a sitting period reads differently from the edge of
- * the window — and a transparent cell would make the shape depend on the page
- * background. */
-const LEVEL_CLASSES = [
-  "bg-muted",
-  "bg-primary/25",
-  "bg-primary/45",
-  "bg-primary/70",
-  "bg-primary",
-] as const
 
 export function ActivityHeatmap({
   mpInternalId,
@@ -168,7 +156,7 @@ function DayCell({ day, max, locale }: { day: HeatmapDay; max: number; locale: L
           // label states the cell's content without adding it to the tab order.
           role="img"
           aria-label={label}
-          className={cn("size-[10px] rounded-[2px]", LEVEL_CLASSES[level])}
+          className={cn("size-[10px] rounded-[2px]", HEATMAP_RAMP[level])}
         />
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -182,9 +170,9 @@ function Legend({ locale }: { locale: Locale }) {
       <span>{t("heatmap.legendLess", locale)}</span>
       {Array.from({ length: HEATMAP_LEVELS + 1 }, (_, level) => (
         <span
-          key={LEVEL_CLASSES[level]}
+          key={HEATMAP_RAMP[level]}
           aria-hidden="true"
-          className={cn("size-[10px] rounded-[2px]", LEVEL_CLASSES[level])}
+          className={cn("size-[10px] rounded-[2px]", HEATMAP_RAMP[level])}
         />
       ))}
       <span>{t("heatmap.legendMore", locale)}</span>
