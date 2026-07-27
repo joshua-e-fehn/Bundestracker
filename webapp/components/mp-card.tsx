@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { api } from "@/convex/_generated/api"
 import { formatScore, initials } from "@/lib/format"
+import { HEATMAP_RAMP } from "@/lib/heatmap"
 import { cn } from "@/lib/utils"
 
 /**
@@ -78,24 +79,25 @@ function heatmapWindow(): { from: string; to: string } {
 /**
  * A day's activity count as one of five intensities.
  *
- * Thresholds rather than a linear scale over the maximum: a single MP with an
- * exceptional day would otherwise flatten everyone else's cells to the lowest
- * step, and the point of the strip is comparing an MP with themselves over time.
- * The steps map onto `--chart-1…5`, a single-hue ramp in app/globals.css, so
- * intensity reads as "more" rather than as a different kind of thing.
+ * Absolute thresholds rather than `heatmapLevel`'s scale over the window's
+ * maximum, which is the one thing this strip does differently from the
+ * profile's graph: a single MP with an exceptional day would otherwise flatten
+ * everyone else's cells to the lowest step, and a *card* is read beside other
+ * cards, where the profile's graph is read alone.
  *
- * Zero is `--chart-1`, the ramp's own dimmest step, rather than `bg-muted` —
- * matching `LEVEL_CLASSES` in components/activity-heatmap.tsx. The two grids
- * show the same events for the same MP (this one in a card, that one on the
- * profile), so an empty day has to look the same in both or the card and the
- * page disagree about a quiet week.
+ * The colours are `HEATMAP_RAMP`, shared with that graph rather than restated
+ * here. Only the bucketing differs; the palette must not, because the two grids
+ * show the same events for the same MP and a reader moves between them by
+ * clicking the card. They did drift once — the graph was painting itself in
+ * `--primary` while this used the ramp — which is why the ramp now has one home
+ * in lib/heatmap.ts.
  */
 function intensityClass(count: number): string {
-  if (count <= 0) return "bg-chart-1"
-  if (count === 1) return "bg-chart-2"
-  if (count <= 3) return "bg-chart-3"
-  if (count <= 6) return "bg-chart-4"
-  return "bg-chart-5"
+  if (count <= 0) return HEATMAP_RAMP[0]
+  if (count === 1) return HEATMAP_RAMP[1]
+  if (count <= 3) return HEATMAP_RAMP[2]
+  if (count <= 6) return HEATMAP_RAMP[3]
+  return HEATMAP_RAMP[4]
 }
 
 function ActivityHeatmap({ mpInternalId }: { mpInternalId: string }) {

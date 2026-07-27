@@ -44,8 +44,13 @@ const VOTE_LABELS: Record<Vote, TranslationKey> = {
  * rather than translated: they existed to undo a light-mode choice that the
  * token system makes correctly on both sides.
  *
- * The background is the same 14 % tint `PartyBadge` and `VoteOutcomeBadge` use,
- * so a table row carrying a party badge and a vote badge reads at one weight.
+ * The background is a 15 % tint, within a point of the 14 % `PartyBadge` and
+ * `VoteOutcomeBadge` mix, so a table row carrying a party badge and a vote
+ * badge reads at one weight. The two are not literally the same value because
+ * they cannot be: those two compute a colour at runtime from a `var()` and need
+ * `color-mix`, while these five are known at build time and can be Tailwind's
+ * own `/15` opacity modifier. Matching to the point is not worth a `style` prop
+ * on a badge that does not need one.
  */
 const VOTE_STYLES: Record<Vote, string> = {
   yes: "border-transparent bg-vote-yes/15 text-vote-yes",

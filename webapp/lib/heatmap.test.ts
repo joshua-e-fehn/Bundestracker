@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   buildHeatmapWeeks,
   HEATMAP_LEVELS,
+  HEATMAP_RAMP,
   heatmapLevel,
   monthLabels,
   twelveMonthWindow,
@@ -38,6 +39,32 @@ describe("heatmapLevel", () => {
     // and renders unstyled rather than empty.
     expect(heatmapLevel(0, 0)).toBe(0)
     expect(heatmapLevel(3, 0)).toBe(0)
+  })
+})
+
+describe("HEATMAP_RAMP", () => {
+  test("has a colour for every level heatmapLevel can return", () => {
+    // The two constants are set independently — one is a count, the other a
+    // list — and nothing but this ties them together. A ramp one short indexes
+    // at `undefined` for the busiest day in the window, so the cell that
+    // matters most renders unstyled: the failure lands on the one day the
+    // reader is looking for, and only for MPs busy enough to reach the top
+    // level. Hence `+ 1`: level 0 is "nothing happened" and is a real step.
+    expect(HEATMAP_RAMP).toHaveLength(HEATMAP_LEVELS + 1)
+    for (let level = 0; level <= HEATMAP_LEVELS; level++) {
+      expect(HEATMAP_RAMP[level]).toBeString()
+    }
+  })
+
+  test("is a class list, not a var() list", () => {
+    // Both consumers pass these to `className`. A `var(--chart-1)` here would
+    // typecheck, render nothing, and look like a data problem rather than a
+    // palette one — and Tailwind only emits classes it finds as literal source
+    // text, which is why the ramp is spelled out rather than built from a
+    // template.
+    for (const cls of HEATMAP_RAMP) {
+      expect(cls).toMatch(/^bg-chart-[1-5]$/)
+    }
   })
 })
 

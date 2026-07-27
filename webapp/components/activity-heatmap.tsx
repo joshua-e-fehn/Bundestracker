@@ -9,6 +9,7 @@ import type { HeatmapDay, HeatmapWeek } from "@/lib/heatmap"
 import {
   buildHeatmapWeeks,
   HEATMAP_LEVELS,
+  HEATMAP_RAMP,
   heatmapLevel,
   monthLabels,
   twelveMonthWindow,
@@ -30,40 +31,6 @@ import { cn } from "@/lib/utils"
  * absolute across the chamber — `heatmapLevel` explains why, and the tooltip
  * carries the real count, which is the number that compares.
  */
-
-/**
- * The ramp, indexed by level.
- *
- * The five `--chart-*` steps, which app/globals.css defines as a single-hue
- * gold ramp *for this graph* — "for the contribution heatmap and the seating
- * map's continuous modes, dim to bright at one hue, so cell intensity reads as
- * *more* rather than as a different category". Using them here is what makes
- * that comment true; the ramp was defined by the brand commit and this grid was
- * still painting itself in `--primary`, which is near-black in light mode. A
- * contribution graph in the text colour is not a heatmap, it is a page of
- * redactions, and it also collided with the trend graph directly below it on
- * the same profile, which was already gold.
- *
- * The ramp reverses between themes (light runs dim-to-*dark*, dark runs
- * dim-to-*bright*), and that is handled entirely in the custom properties — so
- * there is no `dark:` variant here and no `useTheme`. The browser resolves
- * `var(--chart-3)` against whichever theme is on.
- *
- * Index 0 is "nothing happened", and it is a visible empty cell rather than
- * transparent: the grid's shape is information — a gap in the middle of a
- * sitting period reads differently from the edge of the window — and a
- * transparent cell would make the shape depend on the page background. It is
- * `--chart-1`, the ramp's own dimmest step, rather than `bg-muted`: the two are
- * close in both themes, but taking it from the ramp keeps the legend below a
- * continuous gradient rather than a neutral square followed by four golds.
- */
-const LEVEL_CLASSES = [
-  "bg-chart-1",
-  "bg-chart-2",
-  "bg-chart-3",
-  "bg-chart-4",
-  "bg-chart-5",
-] as const
 
 export function ActivityHeatmap({
   mpInternalId,
@@ -189,7 +156,7 @@ function DayCell({ day, max, locale }: { day: HeatmapDay; max: number; locale: L
           // label states the cell's content without adding it to the tab order.
           role="img"
           aria-label={label}
-          className={cn("size-[10px] rounded-[2px]", LEVEL_CLASSES[level])}
+          className={cn("size-[10px] rounded-[2px]", HEATMAP_RAMP[level])}
         />
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -203,9 +170,9 @@ function Legend({ locale }: { locale: Locale }) {
       <span>{t("heatmap.legendLess", locale)}</span>
       {Array.from({ length: HEATMAP_LEVELS + 1 }, (_, level) => (
         <span
-          key={LEVEL_CLASSES[level]}
+          key={HEATMAP_RAMP[level]}
           aria-hidden="true"
-          className={cn("size-[10px] rounded-[2px]", LEVEL_CLASSES[level])}
+          className={cn("size-[10px] rounded-[2px]", HEATMAP_RAMP[level])}
         />
       ))}
       <span>{t("heatmap.legendMore", locale)}</span>

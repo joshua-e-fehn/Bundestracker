@@ -29,6 +29,41 @@ export type HeatmapWeek = { days: HeatmapDay[] }
 export const HEATMAP_LEVELS = 4
 
 /**
+ * The ramp, indexed by level: `HEATMAP_RAMP[heatmapLevel(count, max)]`.
+ *
+ * Here rather than in either component because *both* grids use it — the
+ * profile's twelve-month graph (components/activity-heatmap.tsx) and the
+ * card's 84-day strip (components/mp-card.tsx) — and they show the same events
+ * for the same MP. Two copies is how the card and the page come to disagree
+ * about what a quiet week looks like, which had already happened once: the
+ * strip used this ramp while the graph was still painting itself in
+ * `--primary`, and their empty cells were different colours.
+ *
+ * The five `--chart-*` steps are what app/globals.css defines for this graph in
+ * as many words. The ramp reverses between themes (light runs dim-to-*dark*,
+ * dark dim-to-*bright*) entirely within the custom properties, so nothing here
+ * needs a `dark:` variant or `useTheme`.
+ *
+ * Index 0 is "nothing happened", and it is the ramp's own dimmest step rather
+ * than `bg-muted`: the grid's shape is information — a gap mid-sitting-period
+ * reads differently from the edge of the window — and taking the colour from
+ * the ramp keeps the legend a continuous gradient instead of a neutral square
+ * followed by four golds.
+ *
+ * Class names, not `var()` references, because both consumers set a Tailwind
+ * `className`. They are spelled out rather than built from a template because
+ * Tailwind v4 finds classes by scanning source text — an assembled name never
+ * reaches the stylesheet. Length is `HEATMAP_LEVELS + 1`, asserted by its test.
+ */
+export const HEATMAP_RAMP = [
+  "bg-chart-1",
+  "bg-chart-2",
+  "bg-chart-3",
+  "bg-chart-4",
+  "bg-chart-5",
+] as const
+
+/**
  * Buckets a day's count into `0…HEATMAP_LEVELS`.
  *
  * Relative to the busiest day in the window rather than to a fixed scale. An
