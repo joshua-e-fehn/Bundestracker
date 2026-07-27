@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils"
  *
  * Every animation below is declared inside `@media (prefers-reduced-motion:
  * no-preference)` in app/globals.css, and the base CSS is the *finished* state:
- * the ring fully drawn, the eagle at full opacity, the coin obverse forward. So
+ * the eagle at full opacity, the coin obverse forward. So
  * a reader who has asked their OS for less motion gets the same picture, still,
  * rather than the half-drawn first frame an animation-only definition would
  * freeze them on. That ordering is the whole reason the keyframes carry `from`
@@ -170,54 +170,48 @@ export function HeroAnimationSlot({ className }: { className?: string }) {
 // --- the three variants -----------------------------------------------------
 
 /**
- * The Bundesadler inside a ring that draws itself: a federal seal.
+ * The Bundesadler in a ring: a federal seal.
  *
- * ## The eagle is `BrandMark`, not a third copy of the artwork
+ * ## The whole seal is `BrandMark` now, ring included
  *
- * components/brand-mark.tsx says the paths are duplicated into app/icon.svg
- * "deliberately, and this is the one place that trade-off is made". A third copy
- * here — which a `stroke-dashoffset` draw-on of the eagle itself would require,
- * since dashing needs `pathLength` on paths this file would then own — is
- * exactly the drift that note forbids. So the draw-on is moved onto geometry
- * this component *does* own: the ring. `pathLength="1"` normalises the circle's
- * circumference, so the dash arithmetic is `1 → 0` rather than a magic number
- * that breaks the moment the radius changes.
+ * This used to draw its own `<circle>` at r 47 in a 100-unit box, around a
+ * `BrandMark` that was a bare eagle. The mark now carries a ring of its own —
+ * see components/brand-mark.tsx, which keeps it in step with app/icon.svg — so
+ * that circle became a second one concentric with it, two hairlines a few pixels
+ * apart reading as a printing error rather than as a seal. It is deleted rather
+ * than resized: one ring, owned by the mark, is what makes the crest and the
+ * header agree, which is the reason `DEFAULT_HERO_VARIANT` is the eagle.
+ *
+ * ## What that cost, stated rather than quietly dropped
+ *
+ * The ring drew itself on — `stroke-dashoffset` from a normalised `pathLength`,
+ * with the eagle trailing 0.35 s behind so the seal read as being struck, border
+ * first and then the device. That is gone, and the crest now arrives as one
+ * piece.
+ *
+ * It was not recoverable at an acceptable price. Dashing needs `pathLength` and
+ * a class on the circle *element*, which now lives inside `BrandMark`, so
+ * reaching it would mean either a CSS descendant selector into another
+ * component's internals or a third copy of the artwork here. components/
+ * brand-mark.tsx calls that third copy "exactly the drift that note forbids",
+ * and a selector that silently stops matching when a component's internals
+ * change is the same bargain with a longer fuse. A 0.35 s stagger is not worth
+ * either.
  *
  * `text-gold-brand`, against `BrandMark`'s own `text-gold` default and for the
  * reason that default exists: the ink tier is for hairlines at 20 px, where the
- * identity gold's 2.4:1 reads as a smudge. At 80 px this is a fill, judged as a
- * fill, and the brand colour belongs at full strength — the same call
+ * identity gold's 2.4:1 reads as a smudge. At this size it is a fill, judged as
+ * a fill, and the brand colour belongs at full strength — the same call
  * app/globals.css makes for the federal rule. Re-tinting through `className` is
  * what `BrandMark` documents as supported.
  *
- * The ring is rotated a quarter turn so the stroke starts at twelve o'clock;
- * unrotated, an SVG circle begins at three, and a seal that draws itself from
- * the right-hand edge looks like a loading spinner.
+ * `size-32` rather than the `size-20` the mark had inside the old ring: it is
+ * now the whole seal rather than the device inside one, so it takes the slot the
+ * ring used to. `HERO_SLOT` is `h-32`, so this fills it exactly and the crest
+ * keeps the footprint the other two variants were balanced against.
  */
 function EagleSeal() {
-  return (
-    <span className="relative grid size-32 shrink-0 place-items-center text-gold-brand">
-      <svg
-        viewBox="0 0 100 100"
-        aria-hidden="true"
-        focusable="false"
-        className="-rotate-90 absolute inset-0 size-full opacity-70"
-      >
-        <circle
-          className="hero-ring"
-          cx="50"
-          cy="50"
-          r="47"
-          pathLength="1"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.25"
-          strokeLinecap="round"
-        />
-      </svg>
-      <BrandMark className="hero-mark size-20 text-gold-brand" />
-    </span>
-  )
+  return <BrandMark className="hero-mark size-32 shrink-0 text-gold-brand" />
 }
 
 /**

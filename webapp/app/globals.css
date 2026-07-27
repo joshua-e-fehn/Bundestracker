@@ -543,25 +543,26 @@
  *
  * ## Every rule below is written twice, and the order is the point
  *
- * The declarations outside the media query are the *finished* state: the ring
- * fully drawn, the mark at full opacity, the coin obverse forward, the flag
- * unskewed with the sheen parked off-canvas. The `@media (prefers-reduced-motion:
- * no-preference)` block adds the animation that arrives there.
+ * The declarations outside the media query are the *finished* state: the mark
+ * at full opacity, the coin obverse forward, the flag unskewed with the sheen
+ * parked off-canvas. The `@media (prefers-reduced-motion: no-preference)` block
+ * adds the animation that arrives there.
  *
  * Written this way round rather than as `animation: …` plus a
  * `prefers-reduced-motion: reduce` override, because the two are not
  * equivalent. Disabling an animation leaves the element on whatever its static
- * CSS says — which, for a draw-on, is the *first* frame: a reader who asked
- * their OS for less motion would get a permanently half-drawn ring and an
- * invisible eagle. Declaring the destination first means the no-motion reader
- * sees the same finished picture as everyone else, just without the arriving.
+ * CSS says — which, for a fade-in, is the *first* frame: a reader who asked
+ * their OS for less motion would get a permanently invisible eagle. Declaring
+ * the destination first means the no-motion reader sees the same finished
+ * picture as everyone else, just without the arriving.
  *
- * ## Why these animate `transform` and `opacity` (and one dash offset)
+ * ## Why these animate only `transform` and `opacity`
  *
  * Both are compositable — the browser runs them off the main thread and they
  * cost no layout and no paint, which is what keeps a decoration on the critical
- * path of the home page from being felt. `stroke-dashoffset` is the one
- * exception; it repaints a single 47-unit circle, once, for 1.4 s.
+ * path of the home page from being felt. There was one exception, a
+ * `stroke-dashoffset` draw-on for the seal's ring; components/hero-animation.tsx
+ * records why it went when the ring moved into `BrandMark`.
  *
  * No animation here is infinite except the coin's turn and the flag's wave,
  * which are the two variants whose whole idea is continuous motion. The eagle
@@ -569,14 +570,6 @@
  * spinner, and a spinner says the page is still loading.
  */
 @layer components {
-  /* The seal's ring. `pathLength="1"` on the circle normalises its
-   * circumference, so these are fractions of the path rather than user units —
-   * change the radius in the component and this arithmetic still holds. */
-  .hero-ring {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 0;
-  }
-
   .hero-mark {
     opacity: 1;
   }
@@ -656,15 +649,10 @@
 
 @media (prefers-reduced-motion: no-preference) {
   @layer components {
-    /* Draws clockwise from twelve o'clock — the component rotates the `<svg>` a
-     * quarter turn, because an SVG circle starts at three and a seal that draws
-     * itself from the right-hand edge looks like a progress spinner. */
-    .hero-ring {
-      animation: hero-ring-draw 1.4s cubic-bezier(0.65, 0, 0.35, 1) both;
-    }
-
-    /* Trails the ring by 0.35 s, so the seal reads as being struck — the border
-     * first, then the device — rather than as two things fading in together. */
+    /* The seal, arriving as one piece. It kept its 0.35 s delay when the ring
+     * it used to trail was absorbed into the mark: nothing precedes it now, but
+     * a beat between the page painting and the crest appearing is what stops the
+     * fade reading as a slow image load. */
     .hero-mark {
       animation: hero-mark-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
     }
@@ -691,12 +679,6 @@
     .hero-flag-sheen {
       animation: hero-flag-sheen 7s ease-in-out infinite;
     }
-  }
-}
-
-@keyframes hero-ring-draw {
-  from {
-    stroke-dashoffset: 1;
   }
 }
 
