@@ -203,6 +203,32 @@
   --red-brand: oklch(0.545 0.205 28);
   --red-foreground: oklch(1 0 0);
 
+  /* --- the flag -----------------------------------------------------------
+   *
+   * Schwarz-Rot-Gold, and the one palette on this site with no `.dark` twin.
+   *
+   * Every other colour here is a *theme* colour and inverts or lifts with the
+   * page — that is what the two blocks below this one are for. These three are
+   * not: they are the national flag (Art. 22 GG), and a flag whose black band
+   * turns white when the reader's OS is in dark mode is not that flag. Themed
+   * against `--foreground` was the first version and rendered white-red-gold
+   * in the dark theme, which is where this note comes from.
+   *
+   * Red and gold are `--red-brand` and `--gold-brand` at their light-theme
+   * values, so in the default theme the flag matches the federal rule in the
+   * header exactly. Black is a true near-black rather than `--foreground`'s
+   * L 0.185: the band is a fill with nothing on it, so nothing about it needs
+   * to be legible — only correct. See `federal-flag` for how the dark theme
+   * keeps it visible without lightening it.
+   *
+   * Used by the hero crest's flag variant only. Not exposed as Tailwind tokens
+   * in `@theme` above: a `bg-flag-red` would be an invitation to paint UI in
+   * flag colours, which is precisely what the `federal-rule` note two hundred
+   * lines down forbids. */
+  --flag-black: oklch(0.16 0.003 95);
+  --flag-red: oklch(0.545 0.205 28);
+  --flag-gold: oklch(0.72 0.125 88);
+
   /* --- party colours (light) ---------------------------------------------
    *
    * Each Fraktion's own colour, darkened enough to hold a 4.5:1 contrast ratio
@@ -461,6 +487,279 @@
     var(--gold-brand) 66.666%,
     var(--gold-brand) 100%
   );
+}
+
+/* --- the federal flag -------------------------------------------------------
+ *
+ * The flag drawn as an *object*, at the one size on the site where it is one
+ * (the hero crest — see components/hero-animation.tsx). `federal-rule` above is
+ * the same three colours as site chrome; this is the flag itself.
+ *
+ * ## Why this does not reuse the rule's tokens
+ *
+ * It did, and it was wrong in the dark theme. `--foreground` is the page's ink,
+ * so it inverts — near-black on paper, near-white on a dark page — and the flag
+ * rendered white-red-gold. That is not the German flag; it is not any flag. The
+ * inversion is *correct* for the rule, which is a 3 px hairline that would
+ * otherwise vanish into the dark page, and correct for `--party-cdu-csu`, which
+ * inverts for the same reason ("a black badge on a dark background is not a
+ * badge"). It is wrong here, and the difference is the whole point: chrome
+ * adapts to the page, a national flag does not. Schwarz-Rot-Gold is fixed by
+ * Art. 22 GG, not by the reader's theme preference.
+ *
+ * So the three bands below are declared once in `:root` and deliberately *not*
+ * overridden in `.dark` — the one palette on this site that is the same in both
+ * themes. They are the light theme's brand values, so in the default theme the
+ * flag and the hairline above it are the same red and the same gold; in dark the
+ * two diverge by design.
+ *
+ * The black band then needs an edge rather than a lift, since a true black on a
+ * near-black page has no boundary of its own. components/hero-animation.tsx
+ * rings the flag for that, which keeps the colour honest and still shows where
+ * the cloth ends. Lightening the band instead was the alternative and is the
+ * thing this note exists to refuse.
+ *
+ * Hard stops and equal thirds, as the rule has them, for the reason given
+ * there. Three stripes as one background rather than three elements is also
+ * what makes the wave possible: a skew applied to three stacked boxes opens
+ * hairline gaps between them, where one painted box cannot come apart.
+ */
+@utility federal-flag {
+  background-image: linear-gradient(
+    to bottom,
+    var(--flag-black) 0%,
+    var(--flag-black) 33.333%,
+    var(--flag-red) 33.333%,
+    var(--flag-red) 66.666%,
+    var(--flag-gold) 66.666%,
+    var(--flag-gold) 100%
+  );
+}
+
+/* --- the hero crest ---------------------------------------------------------
+ *
+ * The three homepage hero variants — see components/hero-animation.tsx, which
+ * documents what each one is and why. This is only their motion.
+ *
+ * ## Every rule below is written twice, and the order is the point
+ *
+ * The declarations outside the media query are the *finished* state: the ring
+ * fully drawn, the mark at full opacity, the coin obverse forward, the flag
+ * unskewed with the sheen parked off-canvas. The `@media (prefers-reduced-motion:
+ * no-preference)` block adds the animation that arrives there.
+ *
+ * Written this way round rather than as `animation: …` plus a
+ * `prefers-reduced-motion: reduce` override, because the two are not
+ * equivalent. Disabling an animation leaves the element on whatever its static
+ * CSS says — which, for a draw-on, is the *first* frame: a reader who asked
+ * their OS for less motion would get a permanently half-drawn ring and an
+ * invisible eagle. Declaring the destination first means the no-motion reader
+ * sees the same finished picture as everyone else, just without the arriving.
+ *
+ * ## Why these animate `transform` and `opacity` (and one dash offset)
+ *
+ * Both are compositable — the browser runs them off the main thread and they
+ * cost no layout and no paint, which is what keeps a decoration on the critical
+ * path of the home page from being felt. `stroke-dashoffset` is the one
+ * exception; it repaints a single 47-unit circle, once, for 1.4 s.
+ *
+ * No animation here is infinite except the coin's turn and the flag's wave,
+ * which are the two variants whose whole idea is continuous motion. The eagle
+ * arrives and then stops, because a seal that keeps redrawing itself is a
+ * spinner, and a spinner says the page is still loading.
+ */
+@layer components {
+  /* The seal's ring. `pathLength="1"` on the circle normalises its
+   * circumference, so these are fractions of the path rather than user units —
+   * change the radius in the component and this arithmetic still holds. */
+  .hero-ring {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+
+  .hero-mark {
+    opacity: 1;
+  }
+
+  /* The turning coin. `preserve-3d` is what gives the two faces a shared 3D
+   * space; without it they flatten into the parent's plane and the back face is
+   * painted mirrored over the front instead of behind it. */
+  .hero-coin {
+    transform-style: preserve-3d;
+    transform: rotateY(0deg);
+  }
+
+  .hero-coin-face {
+    border-radius: 9999px;
+    /* The edge that makes it a struck object rather than a gold dot. A ring in
+     * the foreground token, at low alpha, so it reads in both themes. */
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--gold-foreground) 35%, transparent),
+      0 1px 3px color-mix(in oklch, var(--foreground) 22%, transparent);
+    /* Each face is drawn only when it is turned toward the reader. This is what
+     * makes the coin read as solid: at 90° neither face is facing out, so the
+     * coin genuinely vanishes for a frame the way an edge-on disc does. */
+    backface-visibility: hidden;
+  }
+
+  /* Obverse: the struck face, carrying the eagle. Lit from the upper left, so
+   * the two faces are distinguishable at a glance mid-turn. */
+  .hero-coin-obverse {
+    background-image: radial-gradient(
+      circle at 32% 26%,
+      color-mix(in oklch, var(--gold-brand) 55%, white),
+      var(--gold-brand) 62%,
+      color-mix(in oklch, var(--gold-brand) 78%, black)
+    );
+  }
+
+  /* Reverse: milled, no device. Concentric rings rather than a second eagle —
+   * a coin with the same face twice does not read as turning over. */
+  .hero-coin-reverse {
+    transform: rotateY(180deg);
+    background-image:
+      repeating-radial-gradient(
+        circle at 50% 50%,
+        color-mix(in oklch, var(--gold-brand) 82%, black) 0 2px,
+        color-mix(in oklch, var(--gold-brand) 60%, white) 2px 4px
+      ),
+      radial-gradient(
+        circle at 68% 74%,
+        color-mix(in oklch, var(--gold-brand) 60%, white),
+        var(--gold-brand)
+      );
+  }
+
+  /* The cloth. It pivots at the staff, which is where a flag pivots. */
+  .hero-flag {
+    transform-origin: left center;
+    transform: skewY(0deg);
+  }
+
+  /* The travelling highlight. Parked past the right edge at rest, so a
+   * no-motion reader gets a flat flag rather than a permanent white streak
+   * across the middle of it. `--foreground` inverted per theme would be the
+   * fussier choice; white at low alpha is what light on cloth actually is, and
+   * it works on all three stripes including the near-black one. */
+  .hero-flag-sheen {
+    background-image: linear-gradient(
+      105deg,
+      transparent 34%,
+      rgb(255 255 255 / 34%) 50%,
+      transparent 66%
+    );
+    background-size: 260% 100%;
+    background-repeat: no-repeat;
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @layer components {
+    /* Draws clockwise from twelve o'clock — the component rotates the `<svg>` a
+     * quarter turn, because an SVG circle starts at three and a seal that draws
+     * itself from the right-hand edge looks like a progress spinner. */
+    .hero-ring {
+      animation: hero-ring-draw 1.4s cubic-bezier(0.65, 0, 0.35, 1) both;
+    }
+
+    /* Trails the ring by 0.35 s, so the seal reads as being struck — the border
+     * first, then the device — rather than as two things fading in together. */
+    .hero-mark {
+      animation: hero-mark-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+    }
+
+    .hero-coin {
+      animation: hero-coin-spin 9s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    }
+
+    /* On its own element, and on its own timing. One element cannot run two
+     * `transform` animations — the second wins outright — and folding the bob
+     * into the spin's keyframes would lock the two into one period, so the coin
+     * would rise and fall exactly once per turn. Co-prime-ish durations (9 s and
+     * 5.5 s) keep them drifting against each other, which is what stops the
+     * loop from being visible as a loop. */
+    .hero-coin-float {
+      animation: hero-coin-float 5.5s ease-in-out infinite;
+    }
+
+    .hero-flag {
+      animation: hero-flag-wave 6s ease-in-out infinite;
+    }
+
+    /* Slower than the wave and out of phase with it, for the coin's reason. */
+    .hero-flag-sheen {
+      animation: hero-flag-sheen 7s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes hero-ring-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes hero-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+/* A quarter of the cycle turning and a quarter resting, twice over. A coin at
+ * constant angular speed spends most of its time near edge-on, where it is a
+ * flickering sliver; holding each face still is what makes it read as a coin
+ * being turned over rather than as something spinning. */
+@keyframes hero-coin-spin {
+  0%,
+  22% {
+    transform: rotateY(0deg);
+  }
+  47%,
+  69% {
+    transform: rotateY(180deg);
+  }
+  94%,
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+@keyframes hero-coin-float {
+  0%,
+  100% {
+    transform: translateY(-2px);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+/* ±1.1°, which is about 1.5 px of travel at the free edge of a 96 px flag. Small
+ * enough to be felt rather than watched — the brief is a civic dashboard, not a
+ * flag-waving animation. */
+@keyframes hero-flag-wave {
+  0%,
+  100% {
+    transform: skewY(-1.1deg);
+  }
+  50% {
+    transform: skewY(1.1deg);
+  }
+}
+
+/* Crosses once per cycle and then waits off-canvas, rather than sweeping
+ * continuously: light moves across cloth when the cloth moves, in passes. */
+@keyframes hero-flag-sheen {
+  0%,
+  8% {
+    background-position: 150% 0;
+  }
+  58%,
+  100% {
+    background-position: -50% 0;
+  }
 }
 
 /* --- scrollable strips ------------------------------------------------------

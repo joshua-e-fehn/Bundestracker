@@ -3,6 +3,8 @@
 import { useQuery } from "convex/react"
 import { ArrowRightIcon } from "lucide-react"
 import Link from "next/link"
+import { Suspense } from "react"
+import { HeroAnimationFallback, HeroAnimationSlot } from "@/components/hero-animation"
 import {
   ActivityFeedPreview,
   BottomMPs,
@@ -133,6 +135,21 @@ function Hero({ wahlperiode }: { wahlperiode: number | null | undefined }) {
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-10">
         <div className="grid max-w-2xl gap-5">
+          {/* The crest, above the headline rather than beside it: the text
+              column is capped at `max-w-2xl` and already shares its row with
+              the seating card, so a second column inside it would squeeze the
+              headline at exactly the widths where the card is widest.
+
+              `Suspense` is required, not decorative — `HeroAnimationSlot` reads
+              `useSearchParams`, which opts its subtree out of static
+              prerendering, and Next.js fails the *build* for a component that
+              reads it without a boundary. app/search/page.tsx carries the same
+              note. The fallback is the same fixed-height box the crest renders
+              into, so nothing below it moves when the parameter resolves. */}
+          <Suspense fallback={<HeroAnimationFallback />}>
+            <HeroAnimationSlot />
+          </Suspense>
+
           <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">{t("app.name")}</h1>
           <p className="text-balance text-lg text-muted-foreground sm:text-xl">
             {t("app.tagline")}
