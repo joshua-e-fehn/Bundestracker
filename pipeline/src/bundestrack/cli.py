@@ -29,6 +29,7 @@ import sys
 import click
 
 from bundestrack import __version__
+from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import ConfigError, get_settings
 from bundestrack.pipeline import sync as pipeline
 from bundestrack.pipeline.state import load_state
@@ -142,27 +143,68 @@ def backfill(ctx: click.Context, electoral_period: int) -> None:
     metavar="YYYY-MM",
     help="Also recompute this month. Omit to recompute period totals only.",
 )
+@click.option(
+    "--all-months",
+    is_flag=True,
+    help="Recompute every month of the period. What a backfill needs.",
+)
 @click.pass_context
-def scores(ctx: click.Context, electoral_period: int, month: str | None) -> None:
+def scores(
+    ctx: click.Context, electoral_period: int, month: str | None, all_months: bool
+) -> None:
     """Recompute activity scores now, rather than at the nightly cron.
 
     The scoring runs in Convex over rows already stored, so this triggers and
     paginates it rather than computing anything here. Worth running after a
     backfill: the cron recomputes the current month plus the period total, so a
     backfill's older months would otherwise stay at zero.
+
+    `--all-months` is the form a backfill wants. Every month of a historical
+    period is one the nightly sweep will never revisit, and the profile trend
+    graphs read those monthly rows — a period scored on its total alone renders
+    as a flat "not computed" line for its whole span.
     """
     settings = ctx.obj["settings"]
     dry_run = ctx.obj["dry_run"]
+    if month and all_months:
+        raise click.UsageError("--month and --all-months are mutually exclusive.")
     try:
         if not dry_run:
             settings.require_convex_http_url()
             settings.require_pipeline_api_key()
+        months = _period_months(electoral_period) if all_months else None
+        if all_months and not months:
+            # An open or unknown span. Refused rather than silently falling back
+            # to the period total, which would look like it had done the work.
+            raise click.ClickException(
+                f"WP{electoral_period} has no closed date range in the Stammdaten dump, so "
+                "its months cannot be enumerated. It is either the current period — whose "
+                "months the nightly cron reaches anyway — or one the dump does not cover. "
+                "Use --month to name one."
+            )
         scored = pipeline.recompute_scores(
-            electoral_period, month=month, settings=settings, dry_run=dry_run
+            electoral_period, month=month, months=months, settings=settings, dry_run=dry_run
         )
     except ConfigError as error:
         raise click.ClickException(str(error)) from error
-    click.echo(f"Recomputed {scored} scores for WP{electoral_period}.")
+    span = f" across {len(months)} months" if months else ""
+    click.echo(f"Recomputed {scored} scores for WP{electoral_period}{span}.")
+
+
+def _period_months(electoral_period: int) -> list[str]:
+    """Every `YYYY-MM` a period spans, from the roster's own mandate dates.
+
+    Costs one ~950 KB download of a dump the backfill just fetched anyway. The
+    alternative — a hardcoded table of election dates — is a second source of
+    truth for something this dump already states, and one that a period nobody
+    has met yet would not be in.
+    """
+    client = StammdatenClient()
+    try:
+        dump = client.fetch()
+    finally:
+        client.close()
+    return pipeline.months_in(*dump.wahlperiode_window(electoral_period))
 
 
 @cli.command()

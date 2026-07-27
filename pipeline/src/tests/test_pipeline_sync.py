@@ -13,6 +13,7 @@ two operational findings live:
 
 from __future__ import annotations
 
+import datetime as dt
 from datetime import datetime
 
 from bundestrack.api.base import BundestagAPIError
@@ -33,7 +34,14 @@ from bundestrack.pipeline.state import (
     load_state,
     save_state,
 )
-from bundestrack.pipeline.sync import Pipeline, RunReport, backfill, sync
+from bundestrack.pipeline.sync import (
+    Pipeline,
+    RunReport,
+    backfill,
+    months_in,
+    recompute_scores,
+    sync,
+)
 from tests.conftest import fixture_bytes, fixture_json
 
 
@@ -861,3 +869,71 @@ def test_an_open_period_does_not_exclude_a_recent_ballot(tmp_path) -> None:
     pipeline.load_votes(report, incremental=False)
 
     assert votes.fetched == ["tomorrow"]
+
+
+# --- scoring a backfilled period -------------------------------------------
+
+
+def test_every_month_of_a_closed_period_is_enumerated() -> None:
+    """A backfilled period's months are all historical, so the nightly sweep —
+    which recomputes the current month only — never reaches any of them."""
+    months = months_in(dt.date(2021, 10, 26), dt.date(2025, 3, 25))
+
+    assert months[0] == "2021-10"
+    assert months[-1] == "2025-03"
+    assert len(months) == 42
+    assert "2022-01" in months, "the year boundary is not a gap"
+
+
+def test_months_are_zero_padded() -> None:
+    """`activityScores.monthWindow` rejects anything else, and is right to:
+    `"2021-6"` builds bounds that sort above every real date in the year, so
+    the month scores zero and nothing anywhere errors."""
+    assert months_in(dt.date(2021, 6, 1), dt.date(2021, 6, 30)) == ["2021-06"]
+
+
+def test_an_open_period_enumerates_no_months() -> None:
+    # The current period's end is unknown, and guessing one would write score
+    # rows for months that have not happened.
+    assert months_in(dt.date(2025, 3, 25), None) == []
+    assert months_in(None, None) == []
+
+
+def test_scoring_a_period_walks_each_month_and_the_total() -> None:
+    """`recomputeScores` writes the period total on every call, so a per-month
+    pass keeps the total consistent with the months it just rewrote."""
+
+    class CountingLoader:
+        def __init__(self) -> None:
+            self.months: list[str | None] = []
+
+        def recompute_scores(self, wahlperiode, *, month=None, **kwargs):
+            self.months.append(month)
+            return 1
+
+        def close(self) -> None:
+            pass
+
+    loader = CountingLoader()
+    recompute_scores(20, months=["2021-10", "2021-11"], loader=loader)
+
+    assert loader.months == ["2021-10", "2021-11"]
+
+
+def test_scoring_with_no_months_still_recomputes_the_total() -> None:
+    # The existing behaviour, unchanged: `scores --wp N` with no month.
+    class CountingLoader:
+        def __init__(self) -> None:
+            self.months: list[str | None] = []
+
+        def recompute_scores(self, wahlperiode, *, month=None, **kwargs):
+            self.months.append(month)
+            return 1
+
+        def close(self) -> None:
+            pass
+
+    loader = CountingLoader()
+    recompute_scores(21, loader=loader)
+
+    assert loader.months == [None]
