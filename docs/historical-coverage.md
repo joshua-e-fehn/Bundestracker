@@ -16,7 +16,7 @@ nothing. Every table below separates *measured zero* from *never published*.
 | --- | --- | --- |
 | DIP `/aktivitaet`, `/vorgang`, `/drucksache`, `/person` | **WP14** and earlier | Full API coverage for every period Bundestrack tracks. |
 | Plenary protocol **XML** | **WP18** (22.10.2013) | Earlier sittings are published as PDF only. Verified live: the first page of `/plenarprotokoll` carries `xml_url` on 100/100 records for WP18 and WP19, and **0/100** for WP17 and WP16. This settles open question 6 in `api-research.md` §11.4 — the boundary is exactly WP18, as the spec's note claimed but no pass had confirmed. |
-| Named-vote **XLSX** sheets | ~**WP17** (2012/13) | The listing's older entries carry a PDF and no data sheet (§4.1). |
+| Named-vote **XLSX** sheets | **2019-09-26**, i.e. mid-WP19 | Measured by walking the listing to exhaustion: of 1 015 entries, 391 carry an XLSX and 624 are PDF-only, and the earliest sheet is 2019-09-26. This **corrects** §4.1's "roughly WP17 (2012/13)", which was inferred by bisection and is wrong by about seven years — it also settles open question 5, where two passes appeared to disagree because one was describing the listing (1 015 entries, reaching 2009) and the other the data sheets (none before 2019). |
 | MdB-Stammdaten **roster** | WP1 | The dump holds every MP since 1949. |
 | MdB-Stammdaten **committees** | **WP21 only** | Committee membership is published for the current period alone (§6.3, §6.4). WP1–20 carry `Fraktion/Gruppe` entries and nothing else. |
 
@@ -31,6 +31,18 @@ pending:
 - **No period before WP18 can have speech data.** Word counts, speech counts
   and the speaking-time proxy are all derived from protocol XML. WP14–17 have
   the sittings but not the machine-readable transcripts.
+- **No period before WP19 can have per-MP vote data**, and WP19 only from
+  2019-09. This is the boundary that moved: §4.1 had it at ~WP17 by inference,
+  and it is actually mid-WP19 by measurement. It bites harder than the other
+  two because vote participation is a *scored* component — an MP in WP14–18 has
+  a participation rate of 0 not because they missed every ballot but because no
+  machine-readable record of any ballot exists for them.
+
+A score is therefore not comparable across the boundary. WP20–21 are scored on
+all six components; WP19 lacks committees and most of its votes; WP18 lacks
+committees and votes; WP14–17 lack committees, votes and speeches, leaving
+motions, questions, reports and sponsorships. The UI must not rank an MP from
+WP15 against one from WP21 as though the same measurements stood behind both.
 
 ## What each period holds
 
@@ -39,14 +51,19 @@ roster is the Stammdaten mandate count for the period.
 
 | WP | Span | Roster | Activities | Vorgänge | Drucksachen | Protocols | Speeches | Votes | Committees |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 21 | 2025-03-25 – | 635 | 80 472 | 16 386 | 7 353 | 90 | ✅ | ✅ | ✅ 1 791 seats |
-| 20 | 2021-10-26 – 2025-03-25 | 772 | 127 965 | 37 666 | 15 153 | 214 | ✅ | ✅ | ❌ never published |
-| 19 | 2017-10-24 – 2021-10-26 | 750 | 400 862 | 51 758 | 32 716 | 239 | ✅ | ✅ | ❌ never published |
-| 18 | 2013-10-22 – 2017-10-24 | 658 | 121 294 | 28 156 | 13 705 | 245 | ✅ | ✅ | ❌ never published |
-| 17 | 2009-10-27 – 2013-10-22 | 652 | 159 836 | 33 681 | 14 838 | 253 | ❌ no XML | ◐ partial | ❌ never published |
-| 16 | 2005-10-18 – 2009-10-27 | 642 | 177 418 | 21 533 | 14 163 | 233 | ❌ no XML | ❌ PDF only | ❌ never published |
-| 15 | 2002-10-17 – 2005-10-18 | 628 | 90 102 | 14 520 | 6 019 | 187 | ❌ no XML | ❌ PDF only | ❌ never published |
-| 14 | 1998-10-26 – 2002-10-17 | 699 | 96 106 | 17 737 | 10 016 | 255 | ❌ no XML | ❌ PDF only | ❌ never published |
+| 21 | 2025-03-25 – | 635 | 80 472 | 16 386 | 7 353 | 90 | ✅ | ✅ 68 sheets | ✅ 1 791 seats |
+| 20 | 2021-10-26 – 2025-03-25 | 772 | 127 965 | 37 666 | 15 153 | 214 | ✅ | ✅ 186 sheets | ❌ never published |
+| 19 | 2017-10-24 – 2021-10-26 | 750 | 400 862 | 51 758 | 32 716 | 239 | ✅ | ◐ 137 sheets, from 2019-09 only | ❌ never published |
+| 18 | 2013-10-22 – 2017-10-24 | 658 | 121 294 | 28 156 | 13 705 | 245 | ✅ | ❌ PDF only | ❌ never published |
+| 17 | 2009-10-27 – 2013-10-22 | 652 | 159 836 | 33 681 | 14 838 | 253 | ❌ no XML | ❌ PDF only | ❌ never published |
+| 16 | 2005-10-18 – 2009-10-27 | 642 | 177 418 | 21 533 | 14 163 | 233 | ❌ no XML | ❌ not in the listing | ❌ never published |
+| 15 | 2002-10-17 – 2005-10-18 | 628 | 90 102 | 14 520 | 6 019 | 187 | ❌ no XML | ❌ not in the listing | ❌ never published |
+| 14 | 1998-10-26 – 2002-10-17 | 699 | 96 106 | 17 737 | 10 016 | 255 | ❌ no XML | ❌ not in the listing | ❌ never published |
+
+The sheet counts are what the period filter selects out of the listing, so they
+are also what each backfill will download. The listing itself reaches back only
+to 2009-12-03, which is why WP14–16 are marked *not in the listing* rather than
+*PDF only*: for those periods there is no entry at all, in either format.
 
 WP19 is the outlier at 400 862 activities — over three times WP20's — and is
 the longest single backfill by a wide margin.
