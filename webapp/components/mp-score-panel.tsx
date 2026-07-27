@@ -1,6 +1,7 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
+import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { ScoreBreakdown, totalFor } from "@/components/score-breakdown"
@@ -167,8 +168,14 @@ export function MPScorePanel({
               ) : null}
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5 rounded-md border border-dashed p-3">
-              <p className="font-medium text-sm">{t("weights.signInCta")}</p>
+            <div className="flex flex-col items-start gap-1.5 rounded-md border border-dashed p-3">
+              {/* The CTA is a link to the picker, not prose. It was static text
+                  while `/sign-in` did not exist; now that it does, an
+                  invitation to sign in that cannot be acted on is the odd one
+                  out — every other affordance on this site goes somewhere. */}
+              <Button asChild variant="link" size="sm" className="h-auto p-0 font-medium text-sm">
+                <Link href="/sign-in">{t("weights.signInCta")}</Link>
+              </Button>
               <p className="text-muted-foreground text-xs">{t("weights.signInHint")}</p>
             </div>
           )}
