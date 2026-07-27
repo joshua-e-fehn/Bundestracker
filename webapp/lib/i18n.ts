@@ -649,6 +649,57 @@ const de = {
   "home.feedTitle": "Zuletzt geschehen",
   "home.showAll": "Alle ansehen",
 
+  // --- the narrative home page (app/home-c) -------------------------------
+  //
+  // Five claim sentences, one per chapter, and each is the *heading* of the
+  // section it opens rather than a caption above it — the accessible name a
+  // screen reader announces for that region. So each has to stand alone as a
+  // description of what follows.
+  //
+  // The register is deliberate and is the whole concept: every sentence states
+  // what the figures below it claim, and the caveat that follows the data
+  // states what they do not. The caveats are not new — `home.statNamedVotesNote`,
+  // `home.bottomMPsCaveat` and `parties.smallGroupCaveat` already exist and
+  // already say these things. What is new is that the page is *built* around
+  // them instead of printing them underneath.
+  //
+  // Written German-first and translated, not the other way round. "Belegt" is
+  // the load-bearing word — it means evidenced, documented, backed by a record —
+  // and it is what the whole site claims. English has no single word for it, so
+  // the English sentences say it in more words rather than reaching for
+  // "proven", which claims more.
+  "homeC.claimIntro":
+    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
+  // Chapter 2 — the four summary figures. Names the honest limit of two of them
+  // in the sentence itself: `getChamberStats` reports a floor where it cannot
+  // count exactly, and the `+` on the card is meaningless unless the reader has
+  // been told what it means.
+  "homeC.claimStats":
+    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
+  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
+  // that is what the two boards together put on trial.
+  "homeC.claimActivity":
+    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
+  // Chapter 4 — parties and votes. Two sections under one claim because they
+  // make the same move: both aggregate individuals into a group, and both are
+  // read as statements about the group.
+  "homeC.claimParties":
+    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
+  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
+  // no measurement: it reports what was published, and says so.
+  "homeC.claimFeed":
+    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
+
+  // The skip link, and §7's first defence: a returning reader who wants today's
+  // votes should not have to scroll through a story they have read. Named for
+  // where it goes rather than for what it skips.
+  "homeC.skipToData": "Direkt zu den Daten",
+  // The pledge under the hero. Short enough to be read, specific enough to be
+  // checked — it names the two things the site will not do rather than
+  // promising that it is trustworthy.
+  "homeC.heroPledge":
+    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
+
   "footer.dataSource": "Datenquelle",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",
   "footer.sourceCode": "Quellcode",
@@ -1420,6 +1471,26 @@ const en: Dictionary = {
   "home.latestVotesTitle": "Latest named votes",
   "home.feedTitle": "Latest activity",
   "home.showAll": "Show all",
+
+  // --- the narrative home page (app/home-c) -------------------------------
+  //
+  // See the German block for what these are and why they read as they do. The
+  // one translation note worth keeping: German "belegt" — evidenced, documented,
+  // backed by a record — has no single English word, and "proven" claims more
+  // than the sources support. So the English says it in more words.
+  "homeC.claimIntro":
+    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
+  "homeC.claimStats":
+    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
+  "homeC.claimActivity":
+    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
+  "homeC.claimParties":
+    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
+  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
+
+  "homeC.skipToData": "Straight to the data",
+  "homeC.heroPledge":
+    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
 
   "footer.dataSource": "Data source",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",

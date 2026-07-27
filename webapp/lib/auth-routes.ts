@@ -66,6 +66,16 @@ export const PUBLIC_PATHS = [
   // have been redirected to a 404 that looks like a broken route rather than a
   // guard. The filesystem check caught it here; nothing else would have.
   "/search",
+  // The narrative home page (Concept C — see app/home-c/page.tsx), served
+  // beside `/` while the redesign is being looked at rather than over it. The
+  // seventh entry, and the first to be added *before* the failure rather than
+  // after: `bun test` demanded it on the commit that created the route, which
+  // is the whole point of the filesystem check above.
+  //
+  // It goes when the concept does — either deleted, or promoted to `/`, in
+  // which case the existing "/" entry already covers it and this line is
+  // removed with the route.
+  "/home-c",
 ]
 
 export function isPublicPath(pathname: string) {
