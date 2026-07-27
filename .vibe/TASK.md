@@ -1,61 +1,33 @@
-# Task — fix-ui-issues
+# Task — visual-brand-identity
 
-Fix multiple UI/UX issues on Bundestracker. Do NOT ask questions — fix everything autonomously.
+Wave 7 Agent C: Brand identity and design system for Bundestracker. Do NOT ask questions — proceed autonomously.
 
-## Issues to fix:
+Read /opt/data/workspace/Bundestrack-Plan-V2.md (Wave 7 section) and AGENTS.md.
 
-### 1. Homepage: Add seating map preview
-- Add a small/medium version of the parliament seating map (the hemicycle SVG from /seating) to the homepage hero area
-- Place it in the empty top-right whitespace next to the hero text
-- It should be visually appealing, clickable, and link to /seating
-- Use the existing seating-map.tsx component or create a compact variant
+Your task: Create a complete brand identity and design system inspired by German public service design guidelines.
 
-### 2. Homepage: Fix the activity heatmap in 'Most active members'
-- The dot-matrix activity heatmap in each member card is too tall/narrow
-- Make it wider and shorter (more like GitHub's contribution graph — wider rows, fewer rows)
-- Fix alignment — the heatmap, name, and score should be properly aligned in each card row
+1. RESEARCH: Search the web for German public service design guidelines (Bundesregierung, gov.de, Bundeswehr design systems). Extract color palettes, typography choices, spacing systems.
 
-### 3. Homepage: Fix top-right navbar whitespace
-- The area next to the search icon in the top right has unused whitespace
-- Either add useful elements or tighten the layout
+2. COLOR PALETTE:
+   - Light mode (DEFAULT): White/cream background (#FAFAFA or similar), black text (#1A1A1A), gold (#C5A03A or similar warm gold) for highlights and important elements, red (#E1000F or similar) for accents and alerts
+   - Dark mode: Deep black (#0A0A0A), white text, gold and red maintained
+   - The palette should feel professional, official, slightly luxurious but clean and modern
+   - NO yellow — use gold tones instead
 
-### 4. Members page: Add more filters
-- Add filters for: Federal state (Bundesland), Committee membership, Election method (direct/list)
-- Add a sort dropdown in addition to clickable column headers
+3. FAVICON: Create a clean, modern, minimalist Bundesadler (eagle) favicon as an SVG. It should work at 16x16, 32x32, and 180x180 (apple touch icon). Create webapp/app/icon.svg and webapp/app/apple-icon.png (or .svg if supported).
 
-### 5. Members page: Fix sorting on ALL columns
-- Every column should be sortable (ascending/descending): Name, Party, Constituency, Activity score, Voting participation
-- Clicking a column header should toggle asc/desc
-- Show sort indicator (↑/↓ arrows) on the active sort column
+4. TYPOGRAPHY: Choose a professional sans-serif font (Inter, or similar). Update the Tailwind font config.
 
-### 6. Members page: Fix CSS overflow bug
-- Currently clicking any MP row opens Lisa Badum's page (the last visible entry)
-- This is a CSS overlap/overflow issue where the link areas are misaligned
-- Fix the table row layout so each row's click target is correct
+5. TAILWIND CONFIG: Update webapp/tailwind.config.ts (or globals.css) with:
+   - New CSS variables for the color palette (--gold, --red, --background, --foreground)
+   - Light mode as default (data-theme='light' or prefers-color-scheme)
+   - Dark mode as optional toggle
+   - Updated shadcn/ui theme tokens to use the new palette
 
-### 7. Members page: Activity score and Voting participation show dashes
-- These columns show '—' for all MPs instead of values
-- The seed data includes activity scores — the query needs to join the score data properly
-- Fix the Convex query to include activity scores and voting participation in the MP list
+6. COMPONENT UPDATES: Update the theme tokens in webapp/app/globals.css and any component-level CSS. The shadcn/ui components should inherit the new palette automatically through CSS variables.
 
-### 8. Votes page: Only 2 votes shown
-- Check whether the seed data only has 2 votes or if it's a query/filter issue
-- If the seed data is limited, that's expected for now — but verify the query isn't filtering anything out
+7. NAVBAR + FOOTER: Update webapp/components/site-header.tsx and site-footer to use the new brand styling.
 
-### 9. Rankings page: Fix tab overflow
-- The 9 category tabs may overflow on smaller screens
-- Add horizontal scroll (overflow-x: auto) or make tabs wrap properly
-- Ensure the select dropdowns don't overflow either
+8. Deploy the Convex changes if needed (bunx convex deploy --yes with CONVEX_DEPLOYMENT=festive-monitor-280 in .env.local)
 
-### 10. Rankings page: Only 'Most active' tab has data
-- Other tabs (Most speeches, Most motions, etc.) may show empty tables
-- Ensure each tab queries the correct metric from the activity scores
-
-## Approach:
-1. Start the dev server (cd webapp && bun run dev)
-2. Take screenshots before and after each fix
-3. Fix all issues
-4. Verify each fix in the browser
-5. Commit and push all fixes
-
-Do NOT wait for input. Fix everything, screenshot your work, commit, and push.
+Commit and push. Do NOT wait for input.
