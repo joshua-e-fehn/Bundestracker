@@ -1,14 +1,14 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { ArrowRightIcon, Info } from "lucide-react"
+import { Info } from "lucide-react"
 import Link from "next/link"
 import { useMemo } from "react"
 import { MPCard } from "@/components/mp-card"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { SectionHeading } from "@/components/section-heading"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
@@ -46,41 +46,6 @@ import { rankPartiesBy } from "@/lib/party-comparison"
  */
 
 // --- shared pieces --------------------------------------------------------
-
-function SectionHeading({
-  id,
-  titleKey,
-  subtitleKey,
-  href,
-}: {
-  /** Goes on the `h2` itself, so the section's `aria-labelledby` resolves to
-   * the heading text rather than to a wrapper containing the "show all" link
-   * as well. */
-  id: string
-  titleKey: TranslationKey
-  subtitleKey?: TranslationKey
-  href?: string
-}) {
-  const { t } = useLocale()
-  return (
-    <div className="mb-4 flex items-end justify-between gap-4">
-      <div className="grid gap-1">
-        <h2 id={id} className="font-semibold text-lg tracking-tight">
-          {t(titleKey)}
-        </h2>
-        {subtitleKey ? <p className="text-muted-foreground text-sm">{t(subtitleKey)}</p> : null}
-      </div>
-      {href ? (
-        <Button asChild variant="ghost" size="sm" className="shrink-0">
-          <Link href={href}>
-            {t("home.showAll")}
-            <ArrowRightIcon />
-          </Link>
-        </Button>
-      ) : null}
-    </div>
-  )
-}
 
 /**
  * What a section shows once it knows there is nothing to show.
@@ -220,6 +185,7 @@ function ActivityBoard({
   return (
     <section aria-labelledby={headingId} className="flex flex-col">
       <SectionHeading
+        className="mb-4"
         id={headingId}
         titleKey={titleKey}
         subtitleKey={subtitleKey}
@@ -341,6 +307,7 @@ export function PartyComparisonPreview({
   return (
     <section aria-labelledby="parties-heading">
       <SectionHeading
+        className="mb-4"
         id="parties-heading"
         titleKey="home.partiesTitle"
         subtitleKey="home.partiesSubtitle"
@@ -408,7 +375,12 @@ export function LatestVotes({ wahlperiode }: { wahlperiode: number | null | unde
 
   return (
     <section aria-labelledby="latest-votes-heading">
-      <SectionHeading id="latest-votes-heading" titleKey="home.latestVotesTitle" href="/votes" />
+      <SectionHeading
+        className="mb-4"
+        id="latest-votes-heading"
+        titleKey="home.latestVotesTitle"
+        href="/votes"
+      />
       {sheets === undefined ? (
         <RowSkeletons count={LATEST_VOTE_COUNT} height="h-14" />
       ) : sheets.length === 0 ? (
@@ -488,7 +460,7 @@ export function ActivityFeedPreview({ wahlperiode }: { wahlperiode: number | nul
 
   return (
     <section aria-labelledby="feed-heading">
-      <SectionHeading id="feed-heading" titleKey="home.feedTitle" href="/feed" />
+      <SectionHeading className="mb-4" id="feed-heading" titleKey="home.feedTitle" href="/feed" />
       {feed === undefined ? (
         <RowSkeletons count={FEED_COUNT} height="h-12" />
       ) : groups.length === 0 ? (

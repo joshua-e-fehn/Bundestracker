@@ -6,6 +6,7 @@ import { PartyComparisonRadar } from "@/components/party-comparison-radar"
 import { PartyDisciplineCard } from "@/components/party-discipline-card"
 import { PartyMetricChart } from "@/components/party-metric-chart"
 import { PartyScoreTable } from "@/components/party-score-table"
+import { SectionHeading } from "@/components/section-heading"
 import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -98,8 +99,8 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
       <section aria-labelledby="party-table-heading" className="flex flex-col gap-4">
         <SectionHeading
           id="party-table-heading"
-          title={t("parties.table.title")}
-          subtitle={t("parties.table.subtitle")}
+          titleKey="parties.table.title"
+          subtitleKey="parties.table.subtitle"
         />
         <PartyScoreTable parties={comparison.parties} />
         {/* §9 puts fraktionslos at 3 seats against CDU/CSU's 209, so this sits
@@ -137,21 +138,6 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
       <PartyCoalitionCard parties={comparison.parties} wahlperiode={wahlperiode} />
 
       <PartyDisciplineCard wahlperiode={wahlperiode} />
-    </div>
-  )
-}
-
-/** A section title and standfirst. Local rather than shared with
- * components/home-sections.tsx' near-identical one: that takes translation
- * *keys* because it is called from a server page, and every string here is
- * already resolved. */
-function SectionHeading({ id, title, subtitle }: { id: string; title: string; subtitle: string }) {
-  return (
-    <div className="grid gap-1">
-      <h2 id={id} className="font-semibold text-lg tracking-tight">
-        {title}
-      </h2>
-      <p className="text-muted-foreground text-sm">{subtitle}</p>
     </div>
   )
 }

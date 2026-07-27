@@ -48,6 +48,12 @@ export function PartyDisciplineCard({ wahlperiode }: { wahlperiode: number }) {
   const { t, locale } = useLocale()
   const discipline = useQuery(api.parties.getPartyDiscipline, { wahlperiode })
 
+  // Once for the table, not once per row. It is a property of the whole set —
+  // every bar has to be drawn against the same floor or the column compares
+  // nothing — and computing it inside the map made that a coincidence rather
+  // than a guarantee, on top of being quadratic.
+  const floor = scaleFloor((discipline?.parties ?? []).map((entry) => entry.rate))
+
   return (
     <Card>
       <CardHeader>
@@ -95,9 +101,7 @@ export function PartyDisciplineCard({ wahlperiode }: { wahlperiode: number }) {
                       rate={row.rate}
                       against={row.against}
                       ballots={row.ballots}
-                      // The floor of the drawn scale, computed over the rows in
-                      // view — see `Bar`.
-                      floor={scaleFloor(discipline.parties.map((entry) => entry.rate))}
+                      floor={floor}
                       locale={locale}
                     />
                   ))}
