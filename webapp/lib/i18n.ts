@@ -186,6 +186,7 @@ const de = {
   "rankings.column.participation": "Beteiligung",
   "rankings.column.ballots": "Abstimmungen",
   "rankings.column.dissent": "Abweichungen",
+  "rankings.column.dissentRate": "Abweichungsquote",
   "rankings.column.committees": "Ausschüsse",
   "rankings.column.bills": "Gesetzentwürfe",
   "rankings.column.change": "Veränderung",
@@ -217,7 +218,13 @@ const de = {
   "rankings.caveat.committeesCurrentOnly":
     "Ausschussdaten liegen nur für die laufende Wahlperiode vor — frühere Perioden sind nirgends maschinenlesbar veröffentlicht.",
   "rankings.caveat.crossParty":
-    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
+    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung, und eine exakt gespaltene Fraktion hat keine Linie, von der abgewichen werden könnte.",
+  // Replaces the old "die letzten N Abstimmungen" line. The figure is now
+  // period-wide, so what has to be stated is the denominator rather than a
+  // window — see `getCrossPartyRankings`.
+  "rankings.crossPartyPeriod":
+    "Gesamte Wahlperiode. Nenner sind die abgegebenen Stimmen in Abstimmungen mit erkennbarer Fraktionslinie.",
+  "rankings.crossPartyWindow": "Nur die letzten {count} namentlichen Abstimmungen.",
   "rankings.caveat.rising":
     "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
   "rankings.noPreviousMonth":
@@ -412,6 +419,26 @@ const de = {
   "mp.partyLineWith": "auf Fraktionslinie",
   "mp.partyLineAgainst": "gegen die Fraktionsmehrheit",
   "mp.partyLineUnknown": "Fraktionsmehrheit unbekannt",
+  // The period-wide dissent figure — see convex/votes.ts. Deliberately a
+  // sentence rather than a labelled number: "12" beside the word "Abweichungen"
+  // invites reading it as a score, and this is a count of occasions with a
+  // denominator that has to travel with it.
+  "mp.dissent": "Abweichung von der Fraktion",
+  "mp.dissentCount":
+    "{count}-mal anders als die Fraktionsmehrheit gestimmt — bei {cast} abgegebenen Stimmen in dieser Wahlperiode.",
+  "mp.dissentNone":
+    "In dieser Wahlperiode nie anders als die Fraktionsmehrheit gestimmt — bei {cast} abgegebenen Stimmen.",
+  // Distinct from `mp.dissentNone`, and the distinction is the point: a member
+  // who cast no vote is not a member who always voted with their group.
+  "mp.dissentNoBallots":
+    "Keine abgegebene Stimme in einer namentlichen Abstimmung mit erkennbarer Fraktionslinie.",
+  "mp.dissentNotComputed": "Für diese Wahlperiode ist noch keine Abweichungsbilanz berechnet.",
+  "mp.dissentRate": "{rate} der abgegebenen Stimmen",
+  "mp.dissentOfBallots": "{ballots} namentliche Abstimmungen in der Wahlperiode",
+  // The card badge. Two words, because it sits in a 10 px gap beside a name.
+  "mp.dissentBadge": "Abweichler:in",
+  "mp.dissentBadgeTooltip":
+    "Hat in mindestens 5 % der abgegebenen Stimmen anders als die eigene Fraktionsmehrheit gestimmt.",
   // --- trend charts ---
   //
   // `mp.trends` and `mp.trendsComingSoon` were here until the charts landed:
@@ -1574,6 +1601,7 @@ const en: Dictionary = {
   "rankings.column.participation": "Participation",
   "rankings.column.ballots": "Ballots",
   "rankings.column.dissent": "Dissents",
+  "rankings.column.dissentRate": "Dissent rate",
   "rankings.column.committees": "Committees",
   "rankings.column.bills": "Bills",
   "rankings.column.change": "Change",
@@ -1602,7 +1630,10 @@ const en: Dictionary = {
   "rankings.caveat.committeesCurrentOnly":
     "Committee data exists for the current electoral period only — earlier periods are published nowhere in machine-readable form.",
   "rankings.caveat.crossParty":
-    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
+    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent, and a group split exactly in half has no line to break.",
+  "rankings.crossPartyPeriod":
+    "Whole electoral period. The denominator is votes cast in ballots where the group had a discernible line.",
+  "rankings.crossPartyWindow": "The {count} most recent named ballots only.",
   "rankings.caveat.rising":
     "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
   "rankings.noPreviousMonth":
@@ -1753,6 +1784,18 @@ const en: Dictionary = {
   "mp.partyLineWith": "with the group majority",
   "mp.partyLineAgainst": "against the group majority",
   "mp.partyLineUnknown": "group majority unknown",
+  "mp.dissent": "Dissent from the group",
+  "mp.dissentCount":
+    "Voted against their group's majority {count} times — out of {cast} votes cast this electoral period.",
+  "mp.dissentNone":
+    "Never voted against their group's majority this electoral period, across {cast} votes cast.",
+  "mp.dissentNoBallots": "No vote cast in a named ballot where their group had a discernible line.",
+  "mp.dissentNotComputed": "No dissent tally has been computed for this electoral period yet.",
+  "mp.dissentRate": "{rate} of votes cast",
+  "mp.dissentOfBallots": "{ballots} named ballots this electoral period",
+  "mp.dissentBadge": "Dissenter",
+  "mp.dissentBadgeTooltip":
+    "Voted against their own group's majority in at least 5% of the votes they cast.",
   // --- trend charts ---
   "trends.title": "Trends",
   "trends.subtitle": "Monthly activity across the current electoral period.",
