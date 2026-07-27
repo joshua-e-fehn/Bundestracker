@@ -3,6 +3,7 @@ import type { PartyKey } from "./parties"
 import {
   buildRadarSeries,
   coalitionSplit,
+  coverageGapKey,
   DEFAULT_PARTY_METRIC_ID,
   hasCoalitionSplit,
   PARTY_METRICS,
@@ -322,5 +323,28 @@ describe("coalitionSplit", () => {
     const split = coalitionSplit([party("gruene", 88, 88, { totalScore: 60 })], 20)
     // WP20's Ampel: SPD, Grüne, FDP.
     expect(split.government.parties).toEqual(["gruene"])
+  })
+})
+
+describe("coverageGapKey", () => {
+  test("says nothing when the sweep has reached everyone", () => {
+    // A second sentence reading "0 are missing" trains the reader to skip both.
+    expect(coverageGapKey(0)).toBeNull()
+  })
+
+  test("picks the singular key at exactly one", () => {
+    // The bug this replaced: a single `{missing}` placeholder rendered
+    // "1 Mandate" / "1 mandates". Caught on screen against seeded data.
+    expect(coverageGapKey(1)).toEqual({ key: "parties.coverageGapOne", missing: 1 })
+  })
+
+  test("picks the plural key above one", () => {
+    expect(coverageGapKey(7)).toEqual({ key: "parties.coverageGap", missing: 7 })
+  })
+
+  test("treats a negative gap as no gap", () => {
+    // Unreachable while `scored <= mandates`, which the query guarantees — but a
+    // negative here would otherwise print "−2 mandates are missing".
+    expect(coverageGapKey(-2)).toBeNull()
   })
 })

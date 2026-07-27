@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
+import { coverageGapKey } from "@/lib/party-comparison"
 
 /**
  * The `/parties` dashboard's client half.
@@ -64,7 +65,7 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
     )
   }
 
-  const missing = comparison.totalMandates - comparison.totalScored
+  const gap = coverageGapKey(comparison.totalMandates - comparison.totalScored)
 
   return (
     <div className="flex flex-col gap-10">
@@ -80,19 +81,10 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
             scored: formatCount(comparison.totalScored, locale),
             mandates: formatCount(comparison.totalMandates, locale),
           })}
-          {/* Only when the two diverge. On a fully-swept deployment the sentence
-              above already says everything, and a second one saying "0 are
-              missing" is noise that trains the reader to skip both.
-
-              The singular is its own key rather than a `{missing}` that reads
-              "1 Mandate" — the convention lib/relative-time.ts sets out, made
-              by key so each language splits where it actually splits. */}
-          {missing > 0 &&
-            ` ${
-              missing === 1
-                ? t("parties.coverageGapOne")
-                : t("parties.coverageGap", { missing: formatCount(missing, locale) })
-            }`}
+          {/* Only when the sweep has actually left a gap, and with the singular
+              as its own key — both decisions live in `coverageGapKey`, beside
+              the rest of this page's vocabulary rather than as a ternary here. */}
+          {gap !== null && ` ${t(gap.key, { missing: formatCount(gap.missing, locale) })}`}
         </p>
       </div>
 

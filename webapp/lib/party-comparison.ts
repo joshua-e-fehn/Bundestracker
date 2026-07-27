@@ -468,6 +468,29 @@ export function coalitionSplit(
 }
 
 /**
+ * Which key describes the mandates the nightly sweep has not scored.
+ *
+ * The same shape as `relativeParts` in lib/relative-time.ts, and for the reason
+ * given there: the singular/plural choice is made **by key** rather than by an
+ * `if` at the call site, so the dictionary is where a future locale that splits
+ * somewhere other than at one gets to say so. German and English happen to
+ * agree; that is not a property to build on.
+ *
+ * Null when nothing is missing. On a fully-swept deployment the coverage
+ * sentence already says everything, and a second one reading "0 are missing" is
+ * noise that trains the reader to skip both.
+ *
+ * Here rather than inline in the component because the alternative was a nested
+ * ternary inside a template literal inside JSX — correct, and the least readable
+ * thing on the page.
+ */
+export function coverageGapKey(missing: number): { key: TranslationKey; missing: number } | null {
+  if (missing <= 0) return null
+  if (missing === 1) return { key: "parties.coverageGapOne", missing: 1 }
+  return { key: "parties.coverageGap", missing }
+}
+
+/**
  * Whether the two blocs can be compared at all.
  *
  * False when either side has no scored member — an unrecorded coalition
