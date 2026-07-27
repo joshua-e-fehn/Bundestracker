@@ -35,6 +35,37 @@ const SITE_URL = process.env.CONVEX_SITE_URL ?? "http://127.0.0.1:3213"
 const API_KEY = process.env.PIPELINE_API_KEY ?? "dev-seed-key"
 const WP = 21
 
+/**
+ * Refuses to run against anything but a local deployment.
+ *
+ * This is not hypothetical caution. This script was run against **production**
+ * on 2026-07-27 and wrote twelve invented mandates into the live roster; nine
+ * carried the names of sitting members, so nine MPs appeared twice on a site
+ * whose entire premise is that every figure is a Bundestag record. Removing them
+ * took `convex/purgeSeed.ts` and a traversal of nine tables.
+ *
+ * The default `SITE_URL` is a loopback address, so the accident needs an
+ * explicit `CONVEX_SITE_URL=` pointing somewhere else — which is exactly the
+ * shape of a command someone runs while debugging a deployment. Hence a check on
+ * the value rather than trust in the default.
+ *
+ * `ALLOW_REMOTE_SEED=1` is the deliberate override, for a throwaway cloud
+ * deployment that genuinely wants fixtures. It has to be typed on the command
+ * line, which is the whole point: nobody types it by accident, and it is
+ * greppable in a shell history afterwards.
+ */
+function assertLocalDeployment(url: string): void {
+  if (process.env.ALLOW_REMOTE_SEED === "1") return
+  const host = URL.canParse(url) ? new URL(url).hostname : ""
+  const local = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1"
+  if (local) return
+  throw new Error(
+    `Refusing to seed ${url}: this writes invented MPs and only a local deployment may hold them.\n` +
+      "Production held twelve of these rows for a day because this check did not exist.\n" +
+      "If the target really is a throwaway deployment, re-run with ALLOW_REMOTE_SEED=1.",
+  )
+}
+
 async function post(path: string, body: unknown): Promise<unknown> {
   const response = await fetch(`${SITE_URL}/api/pipeline/${path}`, {
     method: "POST",
@@ -258,6 +289,8 @@ function makeRandom(seed: number): () => number {
 }
 
 async function main() {
+  // Before the first write, not after — see `assertLocalDeployment`.
+  assertLocalDeployment(SITE_URL)
   console.log(`Seeding ${SITE_URL} …`)
 
   await post("mps", {
