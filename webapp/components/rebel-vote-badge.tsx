@@ -21,9 +21,12 @@ import { cn } from "@/lib/utils"
  * no group has nothing to be measured against. This component only renders a
  * decision already made.
  *
- * The colouring is a neutral outline with an amber cast rather than the red of
+ * The colouring is a neutral outline with a gold cast rather than the red of
  * a `no` vote: dissent is notable, not bad, and red on a name reads as an
- * error state.
+ * error state. Gold rather than the amber this said before 6d9b255 — the token
+ * it reaches for, `--vote-abstain`, was retinted from amber to the brand gold's
+ * ink tier by that commit (app/globals.css:250), so the description was
+ * describing a colour that had already changed underneath it.
  *
  * A server component — the tooltip is the native `title`, so nothing here needs
  * to reach the client bundle. `components/ui/tooltip.tsx` would; the extra
@@ -52,7 +55,7 @@ export function RebelVoteBadge({
     >
       {/* The dot repeats the meaning without colour being the only carrier:
           the badge still reads as a badge in a greyscale print or for a reader
-          who cannot distinguish the amber from the surface. */}
+          who cannot distinguish the gold from the surface. */}
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-vote-abstain" />
       {compact ? (
         <span className="sr-only">{t("votes.rebel", locale)}</span>

@@ -201,8 +201,18 @@ function PartyLine({
   const withGroup = record.groupVote.vote === record.vote
   return (
     <span
+      // `--vote-abstain` — the brand gold's ink tier — for a vote against the
+      // group's line, matching components/rebel-vote-badge.tsx, which marks the
+      // same fact in a table cell. These were `text-amber-700` /
+      // `dark:text-amber-400`, a hue from outside the palette that also made
+      // this line and that badge two different colours for one concept.
+      //
+      // The token is redefined per theme and each side clears 4.5:1, so the
+      // `dark:` half is dropped rather than translated. Gold rather than red
+      // for the reason that badge gives at length: dissent is notable, not bad,
+      // and red on a name reads as an error state.
       className={
-        withGroup ? "text-muted-foreground text-xs" : "text-amber-700 text-xs dark:text-amber-400"
+        withGroup ? "text-muted-foreground text-xs" : "text-vote-abstain text-xs"
       }
     >
       {withGroup ? t("mp.partyLineWith") : t("mp.partyLineAgainst")}
