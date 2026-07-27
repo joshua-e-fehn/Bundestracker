@@ -47,10 +47,46 @@ import { cn } from "@/lib/utils"
  * full strength, so the identity colour is still on the page at its proper
  * saturation, as a fill, where it belongs.
  *
+ * ## Why the ring and the bird can be addressed separately
+ *
+ * `ringClassName` and `markClassName` exist for exactly one caller — the seal
+ * that draws itself on in components/home-sitzungswoche/seal-splash.tsx — and
+ * they are here rather than solved at that call site because the two obvious
+ * alternatives are both worse, and components/hero-animation.tsx already
+ * records why. Animating the ring needs a class on the `<circle>` *element*.
+ * Reaching it from outside would mean either a CSS descendant selector into
+ * this component's internals, which silently stops matching the day the markup
+ * changes, or a third copy of the artwork, which that file calls "exactly the
+ * drift that note forbids".
+ *
+ * A prop is the third option: the mark keeps ownership of its own geometry, and
+ * a caller that wants to animate one part of it says so in TypeScript rather
+ * than in a selector. Both default to nothing, so every existing call site is
+ * unchanged.
+ *
+ * `pathLength={1}` on the ring is what makes the draw-on writable in CSS at all:
+ * it renormalises the circle's length to 1, so `stroke-dasharray: 1` and
+ * `stroke-dashoffset: 1` describe a full ring and a hidden one without anyone
+ * computing 2πr — which is the arithmetic that would otherwise have to be kept
+ * in step with `r` by hand. Measured support (MDN browser-compat-data 8.0.8,
+ * `api.SVGGeometryElement.pathLength`): chrome 57, firefox 61, safari 12. It is
+ * inert for every caller that does not dash the stroke.
+ *
  * `aria-hidden` throughout: every call site renders the wordmark as text beside
  * it, so naming the mark too would have a screen reader announce the site twice.
  */
-export function BrandMark({ className }: { className?: string }) {
+export function BrandMark({
+  className,
+  ringClassName,
+  markClassName,
+}: {
+  className?: string
+  /** Class for the ring alone. See the note above — this is the seal splash's
+   * hook for the `stroke-dashoffset` draw-on. */
+  ringClassName?: string
+  /** Class for the eagle alone, so it can trail the ring it sits inside. */
+  markClassName?: string
+}) {
   return (
     <svg
       viewBox="-10 -10 84 84"
@@ -75,7 +111,16 @@ export function BrandMark({ className }: { className?: string }) {
           is still painted, at reduced alpha. That is the right failure: the ring
           fades before it breaks up, where a stroke rounded up to a hard pixel
           would read heavier than the hairlines of the eagle it surrounds. */}
-      <circle cx="32" cy="32" r="37" fill="none" stroke="currentColor" strokeWidth="4.5" />
+      <circle
+        cx="32"
+        cy="32"
+        r="37"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4.5"
+        pathLength={1}
+        className={ringClassName}
+      />
       {/* One path, drawn on a 16×16 grid — every edge a multiple of 4, in the
           0–64 range this viewBox insets by ten a side. app/icon.svg explains why
           the eagle is built that way rather than traced from the coat of arms;
@@ -90,7 +135,10 @@ export function BrandMark({ className }: { className?: string }) {
           rather than each bumped a step: the *mark* is still the size the layout
           allots it, and the emblem is now the ring plus the bird rather than the
           bird alone. */}
-      <path d="M24 4h12v4h-12ZM16 8h20v4h-20ZM28 12h8v8h-8ZM4 16h16v4h-16ZM44 16h16v4h-16ZM4 20h56v8h-56ZM4 28h4v16h-4ZM12 28h4v20h-4ZM24 28h16v20h-16ZM48 28h4v20h-4ZM56 28h4v16h-4ZM12 48h8v4h-8ZM28 48h8v12h-8ZM44 48h8v4h-8ZM12 52h4v4h-4ZM48 52h4v4h-4Z" />
+      <path
+        className={markClassName}
+        d="M24 4h12v4h-12ZM16 8h20v4h-20ZM28 12h8v8h-8ZM4 16h16v4h-16ZM44 16h16v4h-16ZM4 20h56v8h-56ZM4 28h4v16h-4ZM12 28h4v20h-4ZM24 28h16v20h-16ZM48 28h4v20h-4ZM56 28h4v16h-4ZM12 48h8v4h-8ZM28 48h8v12h-8ZM44 48h8v4h-8ZM12 52h4v4h-4ZM48 52h4v4h-4Z"
+      />
     </svg>
   )
 }

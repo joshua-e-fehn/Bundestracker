@@ -8,8 +8,8 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
-import { type FractionSize, foldFractionSizes, partyColor, partyLabel } from "@/lib/parties"
-import { layoutHemicycle, seatingRank } from "@/lib/seating"
+import { partyColor, partyLabel } from "@/lib/parties"
+import { buildFractionArc } from "@/lib/seating"
 import { cn } from "@/lib/utils"
 
 /**
@@ -47,72 +47,6 @@ import { cn } from "@/lib/utils"
  * thousand-node SVG. */
 const MAX_PREVIEW_SEATS = 700
 
-/**
- * One dot per seat, in political order, coloured by group.
- *
- * Expanding the counts into seats here rather than asking the server for rows is
- * what keeps this to a single cheap query — and the expansion is the same
- * left-to-right bloc order `generateSeating` uses, so the wedges land where a
- * reader who has seen /seating expects them.
- */
-function useArc(fractionSizes: ReadonlyArray<FractionSize> | undefined) {
-  return useMemo(() => {
-    if (fractionSizes === undefined) return null
-
-    // Folded onto one entry per *party* before anything is sorted or drawn.
-    //
-    // Without it this legend rendered "Fraktionslos 1" and "Fraktionslos 3" as
-    // two entries in the same grey, because `getFractionSizes` groups by the
-    // stored string and production holds both spellings. The dots were already
-    // right — `partyColor` folds — so it was only the key beside them that
-    // disagreed, with /seating and /parties showing the correct merged 4.
-    //
-    // `foldFractionSizes` rather than a fold written here: this component built
-    // its own legend from raw strings while components/seating-legend.tsx
-    // folded, which is how the two came to answer the same question
-    // differently. One home for the rule, in lib/parties.ts.
-    const ordered = foldFractionSizes(fractionSizes).sort(
-      (a, b) =>
-        seatingRank(a.fraktion) - seatingRank(b.fraktion) ||
-        a.fraktion.localeCompare(b.fraktion, "de"),
-    )
-
-    const fills: string[] = []
-    for (const { fraktion, count } of ordered) {
-      const seats = Math.max(0, Math.min(count, MAX_PREVIEW_SEATS - fills.length))
-      for (let seat = 0; seat < seats; seat++) fills.push(partyColor(fraktion))
-    }
-
-    const layout = layoutHemicycle(fills.length)
-    return {
-      layout,
-      // `seatRadius` is derived from the *tightest spacing in the arc*, which
-      // is right at 630 seats (0.019 of the unit radius) and far too generous
-      // at the low end: a 12-seat development fixture spreads so loosely that
-      // the same rule sizes each dot at 0.164 and the card renders a dozen
-      // balloons rather than a chamber.
-      //
-      // Capped rather than the row count forced. Overriding `rows` was the
-      // first attempt and is worse: short rows put their seats at the arc's
-      // extreme angles, so a 12-seat chamber scatters into corners instead of
-      // reading as a bank. Capping keeps the geometry `layoutHemicycle`
-      // computed — which is the geometry /seating draws — and only declines to
-      // draw a dot larger than a thumbnail can carry.
-      //
-      // 0.08 is four times the real chamber's radius, so every roster from
-      // ~90 seats up is unaffected and renders at its natural density; only a
-      // fixture small enough to look wrong either way is clamped.
-      seatRadius: Math.min(layout.seatRadius, 0.08),
-      // `positions` comes back sorted left to right, so index i of the arc is
-      // index i of the bloc-ordered fills — the property `layoutHemicycle`'s
-      // header documents and the reason the wedges read as wedges.
-      seats: layout.positions.map((position, index) => ({ position, fill: fills[index] })),
-      total: fills.length,
-      groups: ordered,
-    }
-  }, [fractionSizes])
-}
-
 export function SeatingPreview({
   wahlperiode,
   className,
@@ -123,7 +57,14 @@ export function SeatingPreview({
   const { t, locale } = useLocale()
   const skip = wahlperiode === null || wahlperiode === undefined
   const fractionSizes = useQuery(api.mps.getFractionSizes, skip ? "skip" : { wahlperiode })
-  const arc = useArc(skip ? undefined : fractionSizes)
+  // `buildFractionArc` rather than an expansion written here. This component
+  // used to fold, order, expand and cap inline — the same four steps the
+  // narrative chamber needs — and a second copy is how two pictures of one
+  // Bundestag come to seat their blocs in different places. See lib/seating.ts.
+  const arc = useMemo(
+    () => buildFractionArc(skip ? undefined : fractionSizes, MAX_PREVIEW_SEATS),
+    [skip, fractionSizes],
+  )
 
   // `undefined` is Convex still loading; an empty roster is a real answer and
   // gets no card at all rather than an empty arc — the hero should not carry a
@@ -133,16 +74,7 @@ export function SeatingPreview({
   }
   if (arc.total === 0) return null
 
-  // Recomputed from the capped radius rather than taken from the layout, which
-  // sized its box for the uncapped dots — using it would leave a band of empty
-  // space around a small-dotted arc and float the picture inside its card.
-  const extent = 1 + arc.seatRadius
-  const viewBox = {
-    x: -extent,
-    y: -extent,
-    width: 2 * extent,
-    height: extent + arc.seatRadius,
-  }
+  const viewBox = arc.viewBox
 
   return (
     <Link
