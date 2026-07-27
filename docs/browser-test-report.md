@@ -32,7 +32,9 @@ task list rather than about broken code.
 
 Four defects were found and **all four are fixed on this branch**. Three more
 are recorded as known limitations that were deliberate, verified against the
-code that explains them, and left alone.
+code that explains them, and left alone. The structure pass that follows found
+one duplication — three not-found boundaries sharing one body — and refactored
+it; see [F1](#f1).
 
 | # | Finding | Severity | Status |
 |---|---|---|---|
@@ -141,13 +143,19 @@ This is the highest-severity finding precisely because it is invisible to the
 test suite — `lib/auth-routes.test.ts` asserts every `page.tsx` directory is
 listed as public, and passes, because the missing file is not a page directory.
 
-**Fix:** added `app/not-found.tsx`, styled after the two segment boundaries that
-already existed (`app/mps/[id]/not-found.tsx`, `app/votes/[id]/not-found.tsx`),
-with two new dictionary keys `common.notFoundPage` and `common.backHome` in both
-languages. It renders inside the layout, so the header and footer around it
-still follow the reader's chosen language even though the boundary itself is
-German-only for the reason both existing boundaries document: it is a server
-component outside the client `LocaleProvider`.
+**Fix:** added `app/not-found.tsx`, with two new dictionary keys
+`common.notFoundPage` and `common.backHome` in both languages. It renders inside
+the layout, so the header and footer around it still follow the reader's chosen
+language even though the boundary itself is German-only for the reason both
+existing boundaries document: it is a server component outside the client
+`LocaleProvider`.
+
+The structure pass then found that the two existing boundaries
+(`app/mps/[id]/not-found.tsx`, `app/votes/[id]/not-found.tsx`) already had
+byte-identical bodies, so adding a third copy of that layout was itself the
+duplication the protocol forbids. The shared body now lives in
+`components/not-found-page.tsx` and each boundary supplies the two keys and the
+href that were the only differences.
 
 <a id="f2"></a>
 ### F2 — One MP had two different avatars depending on the page · Medium · **Fixed**
