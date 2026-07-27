@@ -15,16 +15,22 @@ describes: its `candidacies-mandates` records successions with a start date and
 a note naming who an MP replaced, which detects a new MP weeks before the
 Stammdaten snapshot catches up.
 
+It is also the **occupation and education source**. `politicians` carries
+`ext_id_bundestagsverwaltung` — the 8-digit MdB-Stammdaten id — which makes this
+the one external source that joins to the roster *by id* rather than by name
+(§7). See `iter_politicians`.
+
 This host is **not** behind the Enodia WAF — it is not a bundestag.de domain —
 but it goes through the same paced client anyway. Being polite to a volunteer
 project's servers is not a lesser obligation than being polite to the
-Bundestag's.
+Bundestag's, and it is enforced: sustained requests answer **HTTP 429**, with no
+`Retry-After` and no rate-limit headers to negotiate against.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from bundestrack.api.base import BundestagClient
@@ -126,6 +132,30 @@ class AbgeordnetenwatchClient(BundestagClient):
             params["updated_since"] = updated_since
         yield from self._paginate("candidacies-mandates", params)
 
+    def iter_politicians(self) -> Iterator[dict[str, Any]]:
+        """Every politician carrying a Stammdaten id — the enrichment set.
+
+        The one external source that joins to the roster **by id**: each record
+        carries `ext_id_bundestagsverwaltung`, which is the 8-digit MdB-
+        Stammdaten `<MDB><ID>` verbatim. No name matching, so none of §7.1's
+        failure modes apply here.
+
+        `ext_id_bundestagsverwaltung[ne]=` — "not equal to empty" — is the
+        filter that narrows 36 356 politicians to the 1 890 with one, i.e. the
+        whole set in ~19 requests. Measured against WP21 on 2026-07-27: 628 of
+        630 mandates match, carrying `occupation` for 88.1 % and `education` for
+        83.4 %.
+
+        ⚠ Fetched whole rather than per MP, and that is the point. The per-id
+        endpoint is one request each — 630 of them tripped the 429 in testing at
+        around thirty. Paging the filtered collection is two orders of magnitude
+        cheaper and cannot be rate-limited into a partial roster.
+
+        ⚠ `id[in][]=…` looks like the obvious alternative and answers **500**;
+        the bracketed-filter syntax works for scalar comparisons only.
+        """
+        yield from self._paginate("politicians", {"ext_id_bundestagsverwaltung[ne]": ""})
+
 
 def parse_votes(votes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Flatten the API's vote objects into comparable rows.
@@ -160,6 +190,38 @@ def parse_votes(votes: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def parse_politicians(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, str | None]]:
+    """Politician records → `{stammdaten_id: {occupation, education}}`.
+
+    Keyed by the Stammdaten id because that is what the roster is keyed by —
+    this is the whole reason the source is worth using over a name-matched one.
+
+    A record without one is skipped: the filter in `iter_politicians` should
+    prevent it, but a politician with no Bundestag mandate has nothing to
+    enrich and no key to enrich it under.
+
+    Empty strings become None. The API writes an unfilled field either way, and
+    the Convex schema's convention is that absent is null — an empty string
+    would render as a blank labelled row rather than as an omitted one.
+    """
+    enriched: dict[str, dict[str, str | None]] = {}
+    for row in rows:
+        stammdaten_id = (row.get("ext_id_bundestagsverwaltung") or "").strip()
+        if not stammdaten_id:
+            continue
+        enriched[stammdaten_id] = {
+            # Not folded into Stammdaten's `BERUF`, which the roster already
+            # stores as `profession`: the two answer related questions
+            # differently and both are worth having. Stammdaten records a
+            # former trade where this often records `MdB`.
+            "occupation": (row.get("occupation") or "").strip() or None,
+            # Stammdaten publishes no education field at all, so this one has
+            # no counterpart to disagree with.
+            "education": (row.get("education") or "").strip() or None,
+        }
+    return enriched
 
 
 def tally(rows: list[dict[str, Any]]) -> dict[Vote, int]:

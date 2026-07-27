@@ -186,13 +186,64 @@ export const mpInput = {
   constituency: v.union(v.null(), v.string()),
   wahlperiode: v.number(),
   bio: v.union(v.null(), v.string()),
-  /** Wikimedia Commons portrait, brokered through Wikidata's P528/P972 pair
-   * (§6.5). No official bulk portrait source exists and Commons covers only
-   * 36.5 % of WP21, so most rows are null and the UI needs a real fallback. */
+  /**
+   * The MP's official portrait on `bundestag.de`, hotlinked.
+   *
+   * §6.5 concluded no official bulk source existed and settled for Wikimedia
+   * Commons at 36.5 % of WP21; the Bundestag's own MP listing turned out to
+   * publish one for **all 639**, of which 635 join to this roster
+   * (pipeline `api/mp_profiles.py`). So the initials fallback is now the
+   * exception rather than the rule — but it still has to exist, because the
+   * four that do not join are real rows.
+   *
+   * ⚠ Never rehost these. §6.5's licensing warning is the one part of it that
+   * still holds: they are photographer-credited works, not open-licensed ones.
+   */
   photoUrl: v.union(v.null(), v.string()),
+  /** Whose photograph it is, e.g. `Sanae Abdi/SPD-Fraktion`. Written and read
+   * as a pair with `photoUrl`: displaying the credit is the licence condition,
+   * so a portrait that arrives without one is dropped by the pipeline rather
+   * than shown bare. */
+  photoCredit: v.union(v.null(), v.string()),
   birthDate: v.union(v.null(), v.string()),
+  /** From abgeordnetenwatch (83.4 % of WP21). Stammdaten publishes no
+   * education field at all, so this has no official counterpart. */
   education: v.union(v.null(), v.string()),
+  /** Stammdaten `BERUF` — the trade practised *before* the mandate (94.3 %). */
   profession: v.union(v.null(), v.string()),
+  /** abgeordnetenwatch's `occupation` — what the MP does *now*, which for a
+   * sitting member is often `MdB` (88.1 %). Deliberately not merged with
+   * `profession`: the two answer different questions and disagree usefully. */
+  occupation: v.union(v.null(), v.string()),
+  /**
+   * How to reach the MP, as the Bundestag actually publishes it.
+   *
+   * ⚠ **There is no email address and no phone number**, and that is a fact
+   * about the sources rather than a gap in the pipeline: `MDB_STAMMDATEN.DTD`
+   * declares no contact elements at all, and the biography pages carry no
+   * `mailto:` or `tel:` links. `formUrl` is the Bundestag's own substitute — a
+   * web form, not an address. An `email` field here would read as one the
+   * pipeline had failed to fill.
+   *
+   * The Berlin office is not stored: it is `Platz der Republik 1` for all 630,
+   * so it belongs in the UI as a constant, not in 630 rows.
+   */
+  contact: v.union(
+    v.null(),
+    v.object({
+      /** `bundestag.de/services/formular/contactform?mdbId=…`. The `mdbId` is a
+       * *fourth* MP id space — bundestag.de's own CMS id — so it stays inside
+       * the URL and is never used as a join key. */
+      formUrl: v.union(v.null(), v.string()),
+      /** Constituency office(s), newline-separated as printed. Roughly half of
+       * MPs list none. */
+      constituencyOffice: v.union(v.null(), v.string()),
+      homepage: v.union(v.null(), v.string()),
+      /** `platform` is free text (`Facebook`, `X`, `TikTok`, `Mastodon`…), not
+       * an enum: the list is the Bundestag's and it grows. */
+      socials: v.array(v.object({ platform: v.string(), url: v.string() })),
+    }),
+  ),
   /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`). */
   electionMethod: v.union(v.null(), v.string()),
   /** Mandate span within this Wahlperiode, from `MDBWP_VON`/`MDBWP_BIS`. An

@@ -244,6 +244,10 @@ export const getSeatingWithMPs = query({
        * null where the record has none, which the card renders as an omitted
        * line rather than as an empty one. */
       profession: v.union(v.null(), v.string()),
+      /** abgeordnetenwatch's `occupation` — what the MP does *now*, where
+       * `profession` is what they did before. Shown in preference to it on the
+       * hover card, which has room for one line. */
+      occupation: v.union(v.null(), v.string()),
       photoUrl: v.union(v.null(), v.string()),
       score: v.union(
         v.null(),
@@ -292,6 +296,7 @@ export const getSeatingWithMPs = query({
         party: mp?.party ?? "",
         constituency: mp?.constituency ?? null,
         profession: mp?.profession ?? null,
+        occupation: mp?.occupation ?? null,
         photoUrl: mp?.photoUrl ?? null,
         score: score
           ? {

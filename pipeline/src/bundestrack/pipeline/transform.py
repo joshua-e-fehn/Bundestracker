@@ -41,6 +41,12 @@ from datetime import date
 from typing import Any
 
 from bundestrack.models.dip import Aktivitaet, Drucksache, Vorgang
+from bundestrack.models.enrichment import (
+    MPContact,
+    MPEnrichment,
+    MPProfileLink,
+    normalise_printed_name,
+)
 from bundestrack.models.speeches import Protocol
 from bundestrack.models.stammdaten import MP, Mandate
 from bundestrack.models.votes import Vote, VoteSheet
@@ -164,12 +170,41 @@ def require_iso(value: date | None, what: str) -> str:
 # --- MPs ------------------------------------------------------------------
 
 
+def contact_payload(contact: MPContact | None) -> Payload | None:
+    """An MP's contact block → the nested object the schema stores.
+
+    Null for an MP whose page published nothing, which is distinct from an MP
+    whose page has not been fetched — both end up null here, and the enrich
+    stage's notes are what tell the two apart.
+
+    ⚠ No `email` and no `phone` key, because neither exists to fill: the
+    Stammdaten DTD declares no contact elements and the biography pages carry
+    no `mailto:` or `tel:` links (models/enrichment.py). `formUrl` is the
+    Bundestag's own substitute — a form a reader submits, not an address.
+
+    The Berlin office is omitted for a different reason: it is the same
+    building for all 630 MPs, so it belongs in the UI as a constant rather than
+    in 630 database rows.
+    """
+    if contact is None or contact.is_empty:
+        return None
+    return {
+        "formUrl": contact.form_url,
+        "constituencyOffice": contact.constituency_office,
+        "homepage": contact.homepage,
+        "socials": [
+            {"platform": profile.platform, "url": profile.url} for profile in contact.socials
+        ],
+    }
+
+
 def mp_payload(
     mp: MP,
     mandate: Mandate,
     internal_id: str,
     *,
     dip_person_id: str | None = None,
+    enrichment: MPEnrichment | None = None,
 ) -> Payload:
     """One `(MP, Wahlperiode)` mandate → the `mps` row.
 
@@ -178,16 +213,28 @@ def mp_payload(
     Fraktion mid-period (§6.4). `internalId` is what identifies the human
     across periods.
 
-    `photoUrl` is always null. §6.5: no official bulk portrait source exists,
-    Wikimedia Commons covers 36.5 % of WP21, and brokering it through Wikidata
-    is a separate stage — so this is a real gap the UI must have a fallback
-    for, not an oversight.
+    `enrichment` carries the portrait, occupation, education and contact block,
+    resolved by the enrich stage and held on the resolver. It is threaded
+    *through this payload* rather than written by a mutation of its own, and
+    that is deliberate: this upsert replaces the row's columns, and it runs
+    again on every sync and a second time within one (`link_dip_persons`
+    re-posts the roster to patch in the DIP crosswalk). A separately-written
+    `photoUrl` would therefore survive until the next roster write and no
+    longer.
+
+    None means the enrich stage did not reach this MP — the name join failed,
+    or the stage was skipped — and the columns go out as null, which is what
+    the UI's initials fallback is for. That fallback is no longer the common
+    case: §6.5 measured portrait coverage at 36.5 % via Wikimedia Commons, but
+    the Bundestag's own listing publishes one for all 639 WP21 MPs and 635 of
+    them join to the roster (`api.mp_profiles`).
     """
     name = mp.current_name
     if name is None:
         raise TransformError(f"Stammdaten MP {mp.id} has no <NAME> entry")
 
     start = iso(mandate.start_date)
+    portrait = enrichment.portrait if enrichment else None
     return {
         "internalId": internal_id,
         "stammdatenId": mp.id,
@@ -210,12 +257,23 @@ def mp_payload(
         "constituency": clean_text(mandate.wkr_name),
         "wahlperiode": mandate.wahlperiode,
         "bio": clean_text(mp.vita_kurz),
-        "photoUrl": None,
+        # Hotlinked, never rehosted, and never shown without `photoCredit`:
+        # these are photographer-credited works rather than open-licensed ones
+        # (§6.5), so the two fields are written and read as a pair.
+        "photoUrl": portrait.url if portrait else None,
+        "photoCredit": portrait.credit if portrait else None,
         "birthDate": iso(mp.geburtsdatum),
         # Stammdaten publishes no education field of its own — `BERUF` is the
-        # occupation and is mapped there. Null rather than a duplicate of it.
-        "education": None,
+        # occupation and is mapped to `profession` below. This comes from
+        # abgeordnetenwatch instead, which covers 83.4 % of WP21.
+        "education": clean_text(enrichment.education) if enrichment else None,
         "profession": clean_text(mp.beruf),
+        # Deliberately *not* a duplicate of `profession`. Stammdaten's `BERUF`
+        # is the trade an MP practised before the mandate; abgeordnetenwatch's
+        # `occupation` is what they do now, which for a sitting member is often
+        # `MdB`. The two disagree usefully and both are kept.
+        "occupation": clean_text(enrichment.occupation) if enrichment else None,
+        "contact": contact_payload(enrichment.contact) if enrichment else None,
         "electionMethod": mandate.mandatsart,
         # An open `end` means still serving, and must stay distinguishable from
         # a date: that is how §6.2 reconciles 635 mandate rows to 630 seats.
@@ -243,6 +301,10 @@ def roster_payloads(resolver: MPResolver) -> list[Payload]:
                 mandate,
                 internal,
                 dip_person_id=resolver.dip_person_id_for(internal),
+                # Null until the enrich stage has run, and re-read here on every
+                # roster post so a later stage's re-post carries the enrichment
+                # rather than blanking it.
+                enrichment=resolver.enrichment_for(internal),
             )
         )
     return payloads
@@ -268,6 +330,79 @@ def dip_link_payloads(resolver: MPResolver) -> list[Payload]:
             }
         )
     return payloads
+
+
+# --- enrichment -----------------------------------------------------------
+
+
+def portrait_enrichment(
+    profiles: Iterable[MPProfileLink], resolver: MPResolver
+) -> tuple[list[MPEnrichment], list[str]]:
+    """Listing entries → enrichment, joined to the roster by printed name.
+
+    Returns the matches and the printed names that did not match, because both
+    are worth reporting: the listing is the complete roster from the
+    Bundestag's own side, so a name here that resolves to nobody means the
+    Stammdaten snapshot is behind (§7.3), not that the MP is fictitious.
+
+    Measured live on 2026-07-27: 635 of 639 resolve, none ambiguously. The four
+    misses are middle initials and MPs missing from the dump entirely — see
+    `models.enrichment.normalise_printed_name`.
+
+    An MP whose portrait had no photographer credit arrives here with
+    `portrait=None` (the parser drops it, §6.5) and still yields an entry: the
+    profile URL is what a later contact fetch needs, and it is independent of
+    whether the picture was usable.
+    """
+    matched: list[MPEnrichment] = []
+    unmatched: list[str] = []
+    for profile in profiles:
+        name = normalise_printed_name(profile.printed_name)
+        if name is None:
+            unmatched.append(profile.printed_name)
+            continue
+        internal = resolver.resolve_printed_name(name.nachname, name.vorname, name.particle)
+        if internal is None:
+            unmatched.append(profile.printed_name)
+            continue
+        matched.append(MPEnrichment(internal_id=internal, portrait=profile.portrait))
+    return matched, unmatched
+
+
+def politician_enrichment(
+    politicians: dict[str, dict[str, str | None]], resolver: MPResolver
+) -> list[MPEnrichment]:
+    """abgeordnetenwatch records → enrichment, joined by **Stammdaten id**.
+
+    The only external join in the pipeline that needs no names at all:
+    `ext_id_bundestagsverwaltung` is the 8-digit Stammdaten id verbatim
+    (`api.abgeordnetenwatch.iter_politicians`), so §7.1's failure modes do not
+    apply. The dict is keyed by that id.
+
+    Politicians outside this period's roster are skipped silently — the source
+    covers 1 890 people across every Bundestag, and only this period's are
+    being enriched.
+    """
+    enriched: list[MPEnrichment] = []
+    for stammdaten_id, fields in politicians.items():
+        internal = resolver.from_stammdaten_id(stammdaten_id)
+        if internal is None:
+            continue
+        if not (fields.get("occupation") or fields.get("education")):
+            continue
+        enriched.append(
+            MPEnrichment(
+                internal_id=internal,
+                occupation=fields.get("occupation"),
+                education=fields.get("education"),
+            )
+        )
+    return enriched
+
+
+def contact_enrichment(internal_id: str, contact: MPContact) -> MPEnrichment:
+    """One MP's fetched contact block, as an enrichment record to merge."""
+    return MPEnrichment(internal_id=internal_id, contact=contact)
 
 
 # --- committees -----------------------------------------------------------

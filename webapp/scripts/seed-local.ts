@@ -11,8 +11,14 @@
  * Three properties of the real corpus are deliberately reproduced, because they
  * are what the UI has to survive:
  *
- *  - **Most MPs have no portrait.** §6.5 measured Commons coverage at 36.5 %,
- *    so most rows here have `photoUrl: null` and render as initials.
+ *  - **Most MPs have a portrait, but not all.** The Bundestag's own listing
+ *    publishes one for every WP21 MP and 635 of 639 join to the roster
+ *    (pipeline `api/mp_profiles.py`), so initials are now the exception — which
+ *    is exactly why a row here still has none, and why every portrait here
+ *    carries the `photoCredit` the licence requires.
+ *  - **Contact data is partial and has no email or phone in it.** Neither is
+ *    published anywhere; `formUrl` is the Bundestag's own substitute. Roughly
+ *    half of MPs list a constituency office, so some rows here do not.
  *  - **Some MPs have no score row.** The cron has not reached them; the table
  *    must show that as unknown rather than as zero.
  *  - **List MPs have no constituency**, and one MP sits with no Fraktion.
@@ -48,7 +54,18 @@ type Seed = {
   party: string
   constituency: string | null
   photoUrl?: string | null
+  /** Required alongside `photoUrl` — the images are credited, not
+   * open-licensed, so one without the other is not a shippable state. */
+  photoCredit?: string | null
   profession?: string | null
+  occupation?: string | null
+  education?: string | null
+  contact?: {
+    formUrl: string | null
+    constituencyOffice: string | null
+    homepage: string | null
+    socials: Array<{ platform: string; url: string }>
+  } | null
   /** Omitted means the cron has not scored this MP — a real state the table
    * must render as unknown rather than as zero. */
   score?: { motions: number; speechWords: number; questions: number; participation: number }
@@ -63,7 +80,19 @@ const MPS: Seed[] = [
     party: "CDU",
     constituency: "Hochsauerlandkreis",
     photoUrl: "https://upload.wikimedia.org/wikipedia/commons/2/2f/Friedrich_Merz_2019.jpg",
+    photoCredit: "Tobias Koch/CDU",
     profession: "Rechtsanwalt",
+    occupation: "MdB",
+    education: "Jurist",
+    contact: {
+      formUrl: "https://www.bundestag.de/services/formular/contactform?mdbId=1043330",
+      constituencyOffice: "Wahlkreisbüro Arnsberg\nZu den Werkstätten 2\n59759 Arnsberg",
+      homepage: "https://www.friedrich-merz.de",
+      socials: [
+        { platform: "Instagram", url: "https://www.instagram.com/friedrichmerz/" },
+        { platform: "X", url: "https://x.com/_FriedrichMerz" },
+      ],
+    },
     score: { motions: 14, speechWords: 48200, questions: 3, participation: 0.94 },
   },
   {
@@ -74,6 +103,15 @@ const MPS: Seed[] = [
     party: "SPD",
     constituency: "Calw",
     profession: "Informatikerin",
+    occupation: "MdB",
+    // No constituency office and no homepage — the shape roughly half the real
+    // roster has, so the Contact card must render a partial block.
+    contact: {
+      formUrl: "https://www.bundestag.de/services/formular/contactform?mdbId=1043342",
+      constituencyOffice: null,
+      homepage: null,
+      socials: [{ platform: "Mastodon", url: "https://social.bund.de/@eskensaskia" }],
+    },
     score: { motions: 9, speechWords: 31400, questions: 11, participation: 0.88 },
   },
   {
@@ -238,9 +276,12 @@ async function main() {
       wahlperiode: WP,
       bio: null,
       photoUrl: seed.photoUrl ?? null,
+      photoCredit: seed.photoCredit ?? null,
       birthDate: "1975-04-12",
-      education: null,
+      education: seed.education ?? null,
       profession: seed.profession ?? null,
+      occupation: seed.occupation ?? null,
+      contact: seed.contact ?? null,
       electionMethod: seed.constituency ? "Direktwahl" : "Landesliste",
       datesInOffice: { start: "2025-03-25", end: null },
     })),
