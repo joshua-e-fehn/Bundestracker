@@ -8,7 +8,7 @@ import {
   upsertRow,
   withId,
 } from "./lib/ingest"
-import { mpLabel, requireMandate } from "./mps"
+import { findMandate, mpLabel, requireMandate } from "./mps"
 import { activityEventInput, eventType } from "./schema"
 
 /**
@@ -39,17 +39,17 @@ const toEventDoc = withId<"activityEvents">
 
 // --- ingestion ------------------------------------------------------------
 
-async function addOne(ctx: MutationCtx, input: ObjectType<typeof activityEventInput>, now: number) {
-  await requireMandate(ctx, input.mpInternalId, input.wahlperiode)
+async function addOne(ctx: MutationCtx, input: ObjectType<typeof activityEventInput>, now: number): Promise<{ created: boolean; skipped: boolean }> {
+  // Skip records for MPs not on the roster rather than aborting the batch
+  const mp = await findMandate(ctx, input.mpInternalId, input.wahlperiode)
+  if (!mp) return { created: false, skipped: true }
 
   // Null `referenceId` means no natural key, so no de-duplication is possible
   // and a re-run appends. Callers deriving events from a source row should
   // always set it; the null arm exists for events that genuinely have no source.
   if (input.referenceId === null) {
-    return {
-      id: await ctx.db.insert("activityEvents", { ...input, createdAt: now }),
-      created: true,
-    }
+    await ctx.db.insert("activityEvents", { ...input, createdAt: now })
+    return { created: true, skipped: false }
   }
 
   // Matched on (eventType, referenceId) then narrowed to this MP. One source
@@ -63,13 +63,17 @@ async function addOne(ctx: MutationCtx, input: ObjectType<typeof activityEventIn
     )
     .collect()
   const existing = candidates.find((row) => row.mpInternalId === input.mpInternalId) ?? null
-  return await upsertRow(ctx, "activityEvents", existing, input, now)
+  const row = await upsertRow(ctx, "activityEvents", existing, input, now)
+  return { created: row.created, skipped: false }
 }
 
 export const addActivityEvent = internalMutation({
   args: activityEventInput,
-  returns: v.object({ id: v.id("activityEvents"), created: v.boolean() }),
-  handler: async (ctx, args) => await addOne(ctx, args, Date.now()),
+  returns: v.object({ id: v.optional(v.id("activityEvents")), created: v.boolean(), skipped: v.boolean() }),
+  handler: async (ctx, args) => {
+    const r = await addOne(ctx, args, Date.now())
+    return { id: undefined, created: r.created, skipped: r.skipped }
+  },
 })
 
 export const addActivityEvents = internalMutation({
@@ -80,8 +84,9 @@ export const addActivityEvents = internalMutation({
     const now = Date.now()
     const result = emptyBatchResult()
     for (const event of args.events) {
-      const { created } = await addOne(ctx, event, now)
-      recordBatch(result, created)
+      const r = await addOne(ctx, event, now)
+      if (r.skipped) continue
+      recordBatch(result, r.created)
     }
     return result
   },
