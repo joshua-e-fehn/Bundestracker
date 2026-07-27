@@ -31,7 +31,13 @@
  */
 
 import type { TranslationKey } from "./i18n"
-import { type PartyKey, partyColor, partyFor } from "./parties"
+import {
+  type FractionSize,
+  foldFractionSizes,
+  type PartyKey,
+  partyColor,
+  partyFor,
+} from "./parties"
 
 // --- political conventions ------------------------------------------------
 
@@ -334,6 +340,144 @@ function deriveSeatRadius(
     if (chord < tightest) tightest = chord
   }
   return tightest * SEAT_FILL
+}
+
+// --- an arc drawn from bloc sizes -----------------------------------------
+
+/**
+ * Group counts folded, then ordered left to right along the political axis.
+ *
+ * The fold and the sort travel together because doing one without the other is
+ * the bug: `foldFractionSizes` merges `Fraktionslos` with `fraktionslos`, and
+ * `seatingRank` then needs one entry per party or the two halves of a merged
+ * group land at different points on the arc. Both halves were already written
+ * inline in components/seating-preview.tsx; this is that code, moved, so the
+ * home page's preview and the narrative chamber cannot order their blocs
+ * differently.
+ *
+ * ## The sort needs no tie-break, and that is a property of the fold
+ *
+ * The version this replaces carried `|| a.fraktion.localeCompare(b.fraktion)`
+ * after the rank comparison, to keep two spellings of one group in a stable
+ * order. It was already unreachable, and stating why is worth more than keeping
+ * it: `foldFractionSizes` keys by `PartyKey`, `SEATING_ORDER` lists every one of
+ * those keys, and `seatingRank` maps key to index — so after the fold there is
+ * exactly one entry per rank and no two entries can compare equal. A tie-break
+ * that cannot fire is a claim that ties happen, which sends the next reader
+ * looking for the case that produces one.
+ */
+export function orderFractionSizes(sizes: ReadonlyArray<FractionSize>): FractionSize[] {
+  return foldFractionSizes(sizes).sort((a, b) => seatingRank(a.fraktion) - seatingRank(b.fraktion))
+}
+
+/**
+ * Bloc sizes expanded into one entry per seat, in arc order.
+ *
+ * The counts are the real information (§9: the distribution is derivable, the
+ * assignment is not), and this is how they become a picture: each group
+ * contributes `count` consecutive entries, so pairing the result index-for-index
+ * with `layoutHemicycle().positions` — which comes back sorted left to right —
+ * gives every Fraktion a contiguous wedge. That pairing is the property
+ * `layoutHemicycle`'s header documents, and this function is the other half of
+ * it.
+ *
+ * `maxSeats` bounds a pathological roster from turning a decorative arc into a
+ * thousand-node SVG. It truncates rather than rejects because the caller is
+ * drawing a picture, not counting: a chamber clipped at the cap is still a
+ * chamber, where a thrown error is a blank hero.
+ */
+export function expandFractionSeats(
+  ordered: ReadonlyArray<FractionSize>,
+  maxSeats: number,
+): string[] {
+  const fills: string[] = []
+  for (const { fraktion, count } of ordered) {
+    const seats = Math.max(0, Math.min(count, maxSeats - fills.length))
+    for (let seat = 0; seat < seats; seat++) fills.push(partyColor(fraktion))
+  }
+  return fills
+}
+
+/**
+ * The largest dot a decorative arc should draw.
+ *
+ * `deriveSeatRadius` sizes dots from the tightest spacing in the arc, which is
+ * right at 630 seats (0.019 of the unit radius) and far too generous at the low
+ * end: a 12-seat development fixture spreads so loosely that the same rule sizes
+ * each dot at 0.164 and the card renders a dozen balloons rather than a chamber.
+ *
+ * Capping rather than forcing the row count. Overriding `rows` was the first
+ * attempt and is worse: short rows put their seats at the arc's extreme angles,
+ * so a 12-seat chamber scatters into corners instead of reading as a bank.
+ * Capping keeps the geometry `layoutHemicycle` computed — which is the geometry
+ * /seating draws — and only declines to draw a dot larger than a thumbnail can
+ * carry.
+ *
+ * Four times the real chamber's radius, so every roster from ~90 seats up is
+ * unaffected and renders at its natural density; only a fixture small enough to
+ * look wrong either way is clamped.
+ */
+export const MAX_DECORATIVE_SEAT_RADIUS = 0.08
+
+/**
+ * The box that contains an arc drawn at `seatRadius`.
+ *
+ * Recomputed rather than taken from `layoutHemicycle`, because a capped radius
+ * makes the layout's own box wrong in the direction that shows: it sized itself
+ * for the *uncapped* dots, so using it would leave a band of empty space around
+ * a small-dotted arc and float the picture inside its card.
+ */
+export function hemicycleViewBox(seatRadius: number): HemicycleLayout["viewBox"] {
+  const extent = 1 + seatRadius
+  return { x: -extent, y: -extent, width: 2 * extent, height: extent + seatRadius }
+}
+
+/** An arc ready to draw: one dot per seat, with the box and radius to draw it
+ * at. Shared by the hero's preview card and the narrative chamber, so the two
+ * cannot disagree about the shape of the Bundestag. */
+export type FractionArc = {
+  seats: Array<{ position: SeatPosition; fill: string }>
+  seatRadius: number
+  viewBox: HemicycleLayout["viewBox"]
+  /** Seats actually drawn — the cap applied, so a caller printing a count
+   * prints what is on screen rather than what was asked for. */
+  total: number
+  /** The blocs behind the dots, folded and in arc order — what a legend keys
+   * on. Returned alongside so a caller gets one answer to "which groups, in
+   * what order" rather than folding a second time and drifting. */
+  groups: FractionSize[]
+}
+
+/**
+ * The whole arc for a set of bloc sizes.
+ *
+ * Pure and hook-free so both the preview card and the narrative chamber can
+ * memoise it themselves, and so the ordering has a test rather than only a
+ * rendering. Returns `null` for an unresolved query — `undefined` in, `null`
+ * out — which keeps "still loading" a single check at the call site rather than
+ * an empty arc that looks like an empty Bundestag.
+ */
+export function buildFractionArc(
+  fractionSizes: ReadonlyArray<FractionSize> | undefined,
+  maxSeats: number,
+): FractionArc | null {
+  if (fractionSizes === undefined) return null
+
+  const groups = orderFractionSizes(fractionSizes)
+  const fills = expandFractionSeats(groups, maxSeats)
+  const layout = layoutHemicycle(fills.length)
+  const seatRadius = Math.min(layout.seatRadius, MAX_DECORATIVE_SEAT_RADIUS)
+
+  return {
+    // `positions` comes back sorted left to right, so index i of the arc is
+    // index i of the bloc-ordered fills — the property `layoutHemicycle`'s
+    // header documents and the reason the wedges read as wedges.
+    seats: layout.positions.map((position, index) => ({ position, fill: fills[index] })),
+    seatRadius,
+    viewBox: hemicycleViewBox(seatRadius),
+    total: fills.length,
+    groups,
+  }
 }
 
 // --- colour modes ---------------------------------------------------------
