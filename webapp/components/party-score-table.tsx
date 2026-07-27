@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatCount, formatScore } from "@/lib/format"
-import { partyByKey, partyColor } from "@/lib/parties"
+import { partyByKey, partyKeyColor } from "@/lib/parties"
 import { type PartyAggregate, rankPartiesBy } from "@/lib/party-comparison"
 import { competitionRanks } from "@/lib/ranking"
 
@@ -131,7 +131,7 @@ function PartyRow({
 }) {
   const { t } = useLocale()
   const party = partyByKey(row.partyKey)
-  const color = partyColor(party.label)
+  const color = partyKeyColor(party.key)
   const href = `/parties/${row.partyKey}`
 
   return (

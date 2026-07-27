@@ -16,7 +16,7 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatBy, formatCount } from "@/lib/format"
 import type { Locale } from "@/lib/i18n"
-import { partyByKey, partyColor, type PartyKey } from "@/lib/parties"
+import { partyByKey, type PartyKey, partyKeyColor } from "@/lib/parties"
 import {
   DEFAULT_PARTY_METRIC_ID,
   PARTY_METRICS,
@@ -171,7 +171,7 @@ export function PartyMetricChart({ parties }: { parties: readonly PartyAggregate
                     seating arc. A single `fill` on the `Bar` would paint all six
                     the same and make the chart's rows anonymous. */}
                 {rows.map((row) => (
-                  <Cell key={row.partyKey} fill={partyColor(row.label)} />
+                  <Cell key={row.partyKey} fill={partyKeyColor(row.partyKey)} />
                 ))}
               </Bar>
             </BarChart>
@@ -209,7 +209,12 @@ function MetricTooltip({
   if (!active || !payload || payload.length === 0) return null
 
   const row = payload[0]?.payload
-  if (!row || row.label === undefined || row.value === undefined) return null
+  // `partyKey` joins the guard because the swatch below colours by it: the
+  // payload type is optional throughout (recharts injects it), and a row without
+  // one has nothing to be a tooltip *for*.
+  if (!row || row.partyKey === undefined || row.label === undefined || row.value === undefined) {
+    return null
+  }
 
   return (
     <div className="rounded-md border border-border bg-popover px-3 py-2 text-popover-foreground shadow-md">
@@ -217,7 +222,7 @@ function MetricTooltip({
         <span
           aria-hidden
           className="size-2 shrink-0 rounded-full"
-          style={{ backgroundColor: partyColor(row.label) }}
+          style={{ backgroundColor: partyKeyColor(row.partyKey) }}
         />
         {row.label}
       </p>

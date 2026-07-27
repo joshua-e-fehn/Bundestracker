@@ -5,7 +5,7 @@ import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatBy, formatCount } from "@/lib/format"
-import { partyByKey, partyColor } from "@/lib/parties"
+import { partyByKey, partyKeyColor } from "@/lib/parties"
 import {
   type CoalitionAggregate,
   coalitionSplit,
@@ -139,7 +139,7 @@ function BlocHeading({
       </div>
       <p className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
         {bloc.parties.map((key) => (
-          <span key={key} className="text-xs" style={{ color: partyColor(partyByKey(key).label) }}>
+          <span key={key} className="text-xs" style={{ color: partyKeyColor(key) }}>
             {partyByKey(key).label}
           </span>
         ))}

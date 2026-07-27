@@ -13,7 +13,7 @@ import {
 import { useLocale } from "@/components/providers/locale-provider"
 import { formatBy, formatPercent } from "@/lib/format"
 import type { Locale } from "@/lib/i18n"
-import { partyByKey, partyColor, type PartyKey } from "@/lib/parties"
+import { partyByKey, type PartyKey, partyKeyColor } from "@/lib/parties"
 import {
   buildRadarSeries,
   type PartyAggregate,
@@ -106,7 +106,7 @@ export function PartyComparisonRadar({ parties }: { parties: readonly PartyAggre
         <legend className="sr-only">{t("parties.radarLegend")}</legend>
         {drawable.map((row) => {
           const party = partyByKey(row.partyKey)
-          const color = partyColor(party.label)
+          const color = partyKeyColor(party.key)
           const isHidden = hidden.has(row.partyKey)
           return (
             <button
@@ -169,7 +169,7 @@ export function PartyComparisonRadar({ parties }: { parties: readonly PartyAggre
                 fill the hexagon. */}
             <PolarRadiusAxis domain={[0, RADAR_MAX]} tick={false} axisLine={false} />
             {visible.map((row) => {
-              const color = partyColor(partyByKey(row.partyKey).label)
+              const color = partyKeyColor(row.partyKey)
               return (
                 <Radar
                   key={row.partyKey}
@@ -239,7 +239,7 @@ function RadarTooltip({
             <span
               aria-hidden
               className="size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: partyColor(partyByKey(key as PartyKey).label) }}
+              style={{ backgroundColor: partyKeyColor(key as PartyKey) }}
             />
             <span className="text-muted-foreground">{partyByKey(key as PartyKey).label}</span>
             <span className="ml-auto font-medium tabular-nums">

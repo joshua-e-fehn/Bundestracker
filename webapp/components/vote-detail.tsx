@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, ExternalLink, Info } from "lucide-react"
+import { AlertTriangle, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { CaveatNote } from "@/components/caveat-note"
 import { type FraktionBreakdown, FraktionVoteSummary } from "@/components/fraktion-vote-summary"

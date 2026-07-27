@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table"
 import { api } from "@/convex/_generated/api"
 import { formatCount, formatRate } from "@/lib/format"
-import { partyByKey, partyColor, type PartyKey } from "@/lib/parties"
+import { partyByKey, type PartyKey, partyKeyColor } from "@/lib/parties"
 
 /**
  * How often each Fraktion's members vote with their own group's majority.
@@ -157,7 +157,7 @@ function DisciplineRow({
   locale: Parameters<typeof formatRate>[1]
 }) {
   const party = partyByKey(partyKey)
-  const color = partyColor(party.label)
+  const color = partyKeyColor(party.key)
   // Normalised into the truncated window. `span <= 0` is every group on the
   // same rate — a real answer, drawn as full bars rather than as a division by
   // zero that would render NaN widths and collapse the column.

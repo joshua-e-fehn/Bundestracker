@@ -16,7 +16,7 @@ import { api } from "@/convex/_generated/api"
 import { groupFeedEvents } from "@/lib/feed-grouping"
 import { formatApproximateCount, formatDateShort, formatScore } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
-import { partyByKey, partyColor } from "@/lib/parties"
+import { partyByKey, partyKeyColor } from "@/lib/parties"
 import { rankPartiesBy } from "@/lib/party-comparison"
 
 /**
@@ -354,7 +354,7 @@ export function PartyComparisonPreview({
         <Card size="sm" className="gap-0 divide-y divide-border/60 p-0">
           {ranked.map((row) => {
             const party = partyByKey(row.partyKey)
-            const color = partyColor(party.label)
+            const color = partyKeyColor(party.key)
             return (
               <Link
                 key={row.partyKey}
