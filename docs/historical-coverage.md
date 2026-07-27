@@ -19,6 +19,8 @@ nothing. Every table below separates *measured zero* from *never published*.
 | Named-vote **XLSX** sheets | **2019-09-26**, i.e. mid-WP19 | Measured by walking the listing to exhaustion: of 1 015 entries, 391 carry an XLSX and 624 are PDF-only, and the earliest sheet is 2019-09-26. This **corrects** §4.1's "roughly WP17 (2012/13)", which was inferred by bisection and is wrong by about seven years — it also settles open question 5, where two passes appeared to disagree because one was describing the listing (1 015 entries, reaching 2009) and the other the data sheets (none before 2019). |
 | MdB-Stammdaten **roster** | WP1 | The dump holds every MP since 1949. |
 | MdB-Stammdaten **committees** | **WP21 only** | Committee membership is published for the current period alone (§6.3, §6.4). WP1–20 carry `Fraktion/Gruppe` entries and nothing else. |
+| **Portraits and contact details** | **WP21 only** | `bundestag.de/abgeordnete/biografien` serves whoever is in office *now* and accepts no period parameter, so for a past chamber it describes the wrong people. The pipeline reads it for the current period only — see below. |
+| **Occupation and education** | **WP16** | abgeordnetenwatch, which *is* period-aware and joins by Stammdaten id rather than by name (§4.3), so it enriches historical periods safely. |
 
 Two consequences worth stating plainly, because they are permanent rather than
 pending:
@@ -37,6 +39,18 @@ pending:
   two because vote participation is a *scored* component — an MP in WP14–18 has
   a participation rate of 0 not because they missed every ballot but because no
   machine-readable record of any ballot exists for them.
+
+- **No period before WP21 gets a portrait or contact block.** The enrich stage
+  (added by the enrichment PR while this branch was in flight) reads the
+  bundestag.de MP listing, which has no period parameter and returns the
+  sitting Bundestag whoever asks. Running it against a historical roster would
+  match near-nobody — and where a name *did* collide across periods it would
+  attach a sitting MP's portrait and constituency office to their predecessor.
+  So it is gated on the current period, and a backfill says so in its report
+  rather than leaving an empty column that reads as un-fetched. Skipping it
+  also saves ~639 biography pages of ~280 KB — ~175 MB per period through a
+  WAF that counts bytes (§2.6). abgeordnetenwatch is *not* gated: it joins on
+  the Stammdaten id, so occupation and education reach back to WP16.
 
 A score is therefore not comparable across the boundary. WP20–21 are scored on
 all six components; WP19 lacks committees and most of its votes; WP18 lacks

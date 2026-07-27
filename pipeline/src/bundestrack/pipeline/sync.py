@@ -341,23 +341,45 @@ class Pipeline:
         resolver = self._require_resolver()
         roster_size = len(resolver.internal_ids())
 
-        profiles = list(self.profiles.iter_profiles())
-        matched, unmatched = transform.portrait_enrichment(profiles, resolver)
-        resolver.attach_enrichment(matched)
-        with_portrait = sum(1 for entry in matched if entry.portrait)
-        stage.notes.append(
-            f"{len(profiles)} listed MPs → {len(matched)} matched to the roster, "
-            f"{with_portrait} with a credited portrait"
-        )
-        if unmatched:
-            # Not an error, and specifically not a reason to fail the stage:
-            # the listing is the Bundestag's own roster, so a name here that
-            # resolves to nobody means the Stammdaten snapshot is behind
-            # (§7.3), which the quarantine already retries.
+        # ⚠ The bundestag.de listing serves the **sitting** Bundestag and takes
+        # no period parameter — `abgeordnete/biografien` is who is in office
+        # now. For a historical period every name in it belongs to a different
+        # chamber, so the join would match near-nobody, and `full` would then
+        # spend ~639 biography pages of ~280 KB — ~175 MB through a WAF that
+        # counts bytes (§2.6) — to enrich a roster it cannot describe. Worse
+        # than wasteful: a name that *does* collide across periods would attach
+        # a sitting MP's portrait and constituency office to their predecessor.
+        #
+        # abgeordnetenwatch below is kept for every period: it is filtered by
+        # Stammdaten id rather than by chamber and joins on that id (§4.3), so
+        # it carries occupation and education back to WP16 with none of §7.1's
+        # name-matching failure modes.
+        if self.wahlperiode == CURRENT_WAHLPERIODE:
+            profiles = list(self.profiles.iter_profiles())
+            matched, unmatched = transform.portrait_enrichment(profiles, resolver)
+            resolver.attach_enrichment(matched)
+            with_portrait = sum(1 for entry in matched if entry.portrait)
             stage.notes.append(
-                f"{len(unmatched)} listed names match no roster MP — the Stammdaten "
-                f"snapshot is behind (§7.3): {', '.join(sorted(unmatched)[:6])}"
-                + (" …" if len(unmatched) > 6 else "")
+                f"{len(profiles)} listed MPs → {len(matched)} matched to the roster, "
+                f"{with_portrait} with a credited portrait"
+            )
+            if unmatched:
+                # Not an error, and specifically not a reason to fail the stage:
+                # the listing is the Bundestag's own roster, so a name here that
+                # resolves to nobody means the Stammdaten snapshot is behind
+                # (§7.3), which the quarantine already retries.
+                stage.notes.append(
+                    f"{len(unmatched)} listed names match no roster MP — the Stammdaten "
+                    f"snapshot is behind (§7.3): {', '.join(sorted(unmatched)[:6])}"
+                    + (" …" if len(unmatched) > 6 else "")
+                )
+        else:
+            profiles = []
+            stage.notes.append(
+                f"No portraits or contact details for WP{self.wahlperiode}: the bundestag.de "
+                f"MP listing serves the sitting Bundestag only and takes no period parameter, "
+                f"so it describes WP{CURRENT_WAHLPERIODE}'s members whoever asks. Absent data "
+                "for a past chamber, not a fetch that has not run."
             )
 
         politicians = parse_politicians(self.abgeordnetenwatch.iter_politicians())

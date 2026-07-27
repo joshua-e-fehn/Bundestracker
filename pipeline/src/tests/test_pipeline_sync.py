@@ -121,8 +121,12 @@ class StubProfiles(StubClient):
         #: staleness gate is asserted on.
         self.fetched: list[str] = []
         self.contacts: dict[str, MPContact] = {}
+        #: How many times the listing itself was walked. The period gate is
+        #: asserted on this: for a past chamber it must not be walked at all.
+        self.listed = 0
 
     def iter_profiles(self, **kwargs):
+        self.listed += 1
         return iter(self.profiles)
 
     def fetch_contact(self, profile_url: str) -> MPContact:
@@ -296,6 +300,73 @@ def profile(
             else None
         ),
     )
+
+
+def test_a_past_chamber_does_not_read_the_sitting_bundestags_listing() -> None:
+    """`abgeordnete/biografien` serves whoever is in office *now* and takes no
+    period parameter, so for WP20 it describes the wrong chamber entirely.
+
+    Two costs, and the second is the serious one. Walking it wastes the listing
+    requests and then — because a backfill passes `full=True` — up to 639
+    biography pages of ~280 KB each, ~175 MB through a WAF that counts bytes
+    (§2.6). And a name that collides across periods would attach a sitting
+    MP's portrait and constituency office to their predecessor.
+    """
+    profiles = StubProfiles([profile("Bilger, Steffen")])
+    pipeline, _loader = build(profiles=profiles)
+    pipeline.wahlperiode = 20
+    report = RunReport(20, "backfill")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report, full=True)
+
+    assert profiles.listed == 0, "the listing must not be walked for a past chamber"
+    assert profiles.fetched == [], "and no biography page paid for"
+    (stage,) = [s for s in report.stages if s.name == "enrichment"]
+    assert any("sitting Bundestag only" in note for note in stage.notes), (
+        "absent data has to be stated, or a past chamber reads as un-fetched"
+    )
+
+
+def test_the_current_period_still_reads_the_listing() -> None:
+    # The gate is on the period, not on enrichment as a whole.
+    profiles = StubProfiles([profile("Bilger, Steffen")])
+    pipeline, _loader = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    assert profiles.listed == 1
+
+
+def test_occupation_is_still_fetched_for_a_past_chamber() -> None:
+    """abgeordnetenwatch is filtered by Stammdaten id rather than by chamber
+    and joins on that id (§4.3), so it is *not* gated with the listing — it
+    carries occupation and education back to WP16.
+
+    Asserted on the fetch rather than on the written row: the Stammdaten
+    excerpt holds WP21 mandates only, so a WP20 run has an empty roster and
+    posts nothing regardless of what it fetched. What this guards is that the
+    period gate was put around the two bundestag.de listing sources and not
+    around the stage.
+    """
+    watch = StubAbgeordnetenwatch(
+        [{"ext_id_bundestagsverwaltung": "11004011", "occupation": "Diplom-Betriebswirt"}]
+    )
+    profiles = StubProfiles([profile("Bilger, Steffen")])
+    pipeline, _loader = build(profiles=profiles, abgeordnetenwatch=watch)
+    pipeline.wahlperiode = 20
+    report = RunReport(20, "backfill")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report, full=True)
+
+    (stage,) = [s for s in report.stages if s.name == "enrichment"]
+    assert any("abgeordnetenwatch politicians" in note for note in stage.notes), (
+        "the id-joined source must still run for a past chamber"
+    )
+    assert profiles.listed == 0, "while the name-joined listing must not"
 
 
 def test_the_portrait_reaches_the_roster_upsert_rather_than_a_write_of_its_own() -> None:
