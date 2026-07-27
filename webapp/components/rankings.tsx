@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api } from "@/convex/_generated/api"
 import { boardById, DEFAULT_BOARD_ID, LEADERBOARDS } from "@/lib/leaderboards"
+import { useOverflowEdges } from "@/lib/use-overflow-edges"
 import {
   type AgeGroup,
   isAgeGroup,
@@ -56,6 +57,9 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
 
   const board = boardById(boardId) ?? LEADERBOARDS[0]
   const options = useQuery(api.rankings.getRankingFilterOptions, { wahlperiode })
+  // Which edges of the tab strip still have boards beyond them — see the note
+  // on the strip below, and the `scroll-strip` utility in app/globals.css.
+  const tabStrip = useOverflowEdges<HTMLDivElement>()
 
   /**
    * The month the boards read.
@@ -183,9 +187,9 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* `min-w-0` is what makes the `overflow-x-auto` below actually work —
-          the same fix `ColorModeToggle` documents for the seating page's five
-          tabs, applied to the nine here, which are far wider. `Tabs` is a flex
+      {/* `min-w-0` is what makes the scrolling below actually work — the same
+          fix `ColorModeToggle` documents for the seating page's five tabs,
+          applied to the nine here, which are far wider. `Tabs` is a flex
           container, so its child's `min-width` is `auto`: the list refused to
           shrink past the nine labels' combined 1 516 px and the scroll
           container therefore never became narrow enough to scroll. It pushed
@@ -195,11 +199,32 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
 
           `shrink-0` on the triggers for the other half of it: `TabsTrigger`
           carries `flex-1`, which lets a tab shrink below its label and puts
-          nine ellipsised stubs in a row instead of a scrollable strip. */}
+          nine ellipsised stubs in a row instead of a scrollable strip.
+
+          `scroll-strip` replaces the bare `overflow-x-auto` that was here. That
+          scrolled correctly and *looked* broken: a native horizontal scrollbar
+          under a row of tabs is the same control the page shows when a layout
+          has overflowed, and on Windows it is an opaque band that pushes the
+          tabs up and moves the active underline. The strip hides the bar,
+          snaps to whole tabs, and fades whichever edge still has boards beyond
+          it — so "there is more" is said by the fade rather than by a scrollbar.
+
+          Nothing is lost with the bar: the strip still scrolls by wheel,
+          trackpad and touch, and `Tabs` is a Radix roving-tabindex, so arrow
+          keys move between boards and the browser scrolls the focused one into
+          view. See the utility in app/globals.css. */}
       <Tabs value={boardId} onValueChange={handleBoardChange} className="min-w-0">
-        <TabsList className="w-full max-w-full justify-start overflow-x-auto">
+        <TabsList
+          ref={tabStrip.ref}
+          data-overflow={tabStrip.dataOverflow}
+          className="scroll-strip w-full max-w-full justify-start"
+        >
           {boardTabs.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id} className="shrink-0 whitespace-nowrap">
+            <TabsTrigger
+              key={tab.id}
+              value={tab.id}
+              className="scroll-strip-item shrink-0 whitespace-nowrap"
+            >
               {tab.label}
             </TabsTrigger>
           ))}

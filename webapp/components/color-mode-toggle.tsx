@@ -3,6 +3,7 @@
 import { useLocale } from "@/components/providers/locale-provider"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isSeatingColorMode, SEATING_MODES, type SeatingColorMode } from "@/lib/seating"
+import { useOverflowEdges } from "@/lib/use-overflow-edges"
 import { cn } from "@/lib/utils"
 
 /**
@@ -37,6 +38,10 @@ export function ColorModeToggle({
   className?: string
 }) {
   const { t } = useLocale()
+  // Same strip as the rankings' nine boards. These five fit from `sm` up, so
+  // the fade appears only on a phone — which is exactly why the hook measures
+  // rather than keying on a breakpoint. See lib/use-overflow-edges.ts.
+  const tabStrip = useOverflowEdges<HTMLDivElement>()
 
   return (
     // `min-w-0` is what makes the `overflow-x-auto` below actually work. A flex
@@ -59,13 +64,23 @@ export function ColorModeToggle({
         }}
       >
         {/* Scrolls rather than wraps, as the rankings' nine tabs do: five mode
-            names wrapped to two rows on a phone push the map below the fold. */}
+            names wrapped to two rows on a phone push the map below the fold.
+            `scroll-strip` is that same shared behaviour — no visible scrollbar,
+            snapping to whole tabs, and a fade on whichever edge still has modes
+            beyond it. Defined once in app/globals.css so this strip and the
+            rankings' cannot drift into scrolling differently. */}
         <TabsList
+          ref={tabStrip.ref}
+          data-overflow={tabStrip.dataOverflow}
           aria-labelledby="seating-color-mode-label"
-          className="w-full justify-start overflow-x-auto"
+          className="scroll-strip w-full justify-start"
         >
           {SEATING_MODES.map((mode) => (
-            <TabsTrigger key={mode.id} value={mode.id} className="whitespace-nowrap">
+            <TabsTrigger
+              key={mode.id}
+              value={mode.id}
+              className="scroll-strip-item shrink-0 whitespace-nowrap"
+            >
               {t(mode.labelKey)}
             </TabsTrigger>
           ))}
