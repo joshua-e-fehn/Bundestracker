@@ -77,12 +77,81 @@ MOBILE_VIEWPORT = {"width": 390, "height": 844}
 
 CONTRAST_JS = r"""
 () => {
+  /**
+   * Any CSS colour, as sRGB 0-255.
+   *
+   * The naive version of this matched `rgba?\(...\)` and returned null for
+   * anything else, on the assumption — stated in this file's own docstring —
+   * that `getComputedStyle` always resolves to `rgb()`. It does not. Chrome
+   * preserves the *colour space* of the computed value, so a palette authored
+   * in `oklch()` (which this one is, throughout app/globals.css) comes back as
+   * `lab(...)` or `oklab(...)`. Every text node on every page therefore parsed
+   * as null and was skipped, and the sweep reported zero contrast failures
+   * because it had measured nothing at all. A checker that cannot fail is
+   * worse than no checker: it is a green light nobody earned.
+   *
+   * So the conversion is delegated to the engine that already owns it. Painting
+   * the colour onto a canvas with `globalCompositeOperation = "copy"` forces a
+   * resolve to sRGB regardless of the source space, and `getImageData` reads it
+   * back as bytes. That also handles `color(display-p3 ...)`, `hwb()`, named
+   * colours and anything CSS adds later, none of which a regex per syntax
+   * would.
+   *
+   * Alpha is read separately and exactly: the canvas premultiplies, so
+   * recovering a low alpha from the byte is lossy. `color-mix` with an opaque
+   * backdrop is not usable either — this needs the raw channel. Serialising
+   * through `CSSStyleValue`/`color-mix` is overkill when the two cases that
+   * actually occur are a bare colour (alpha 1) and a `/ <alpha>` suffix.
+   */
+  const CANVAS = document.createElement("canvas");
+  CANVAS.width = CANVAS.height = 1;
+  const CTX = CANVAS.getContext("2d", { willReadFrequently: true });
+  const CACHE = new Map();
+
   const parseRGB = (s) => {
-    const m = s.match(/rgba?\(([^)]+)\)/);
-    if (!m) return null;
-    const p = m[1].split(/[,\s\/]+/).filter(Boolean).map(Number);
-    if (p.length < 3 || p.some(Number.isNaN)) return null;
-    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    if (typeof s !== "string" || s === "" || s === "transparent") return null;
+    if (CACHE.has(s)) return CACHE.get(s);
+
+    // The alpha, if the value carries one. Every modern colour function
+    // serialises it as `/ <number>` before the closing paren; legacy `rgba()`
+    // uses a fourth comma-separated argument.
+    let a = 1;
+    const slash = s.match(/\/\s*([0-9.]+%?)\s*\)/);
+    if (slash) {
+      a = slash[1].endsWith("%") ? parseFloat(slash[1]) / 100 : parseFloat(slash[1]);
+    } else {
+      const legacy = s.match(/^rgba\(([^)]+)\)$/);
+      if (legacy) {
+        const parts = legacy[1].split(",").map((p) => p.trim());
+        if (parts.length === 4) a = parseFloat(parts[3]);
+      }
+    }
+    if (!Number.isFinite(a)) a = 1;
+
+    // `copy` rather than the default `source-over`, so the previous pixel is
+    // discarded instead of being blended under a translucent fill — otherwise
+    // every colour would be measured over whatever was drawn last.
+    CTX.globalCompositeOperation = "copy";
+    CTX.fillStyle = "#000";
+    CTX.fillStyle = s;
+    // An unparseable value leaves fillStyle at the previous one; that is the
+    // only way to detect it, since the setter does not throw.
+    if (CTX.fillStyle === "#000" && !/^(#000000|#000|black|rgba?\(0,\s*0,\s*0)/i.test(s)) {
+      CACHE.set(s, null);
+      return null;
+    }
+    CTX.fillRect(0, 0, 1, 1);
+    const [r, g, b] = CTX.getImageData(0, 0, 1, 1).data;
+
+    // Undo the canvas premultiplication so the caller composites with the true
+    // channel values; at a === 0 the colour is invisible and the channels are
+    // meaningless, so they are left as read.
+    const out =
+      a > 0 && a < 1
+        ? { r: Math.min(255, r / a), g: Math.min(255, g / a), b: Math.min(255, b / a), a }
+        : { r, g, b, a };
+    CACHE.set(s, out);
+    return out;
   };
 
   const lum = ({ r, g, b }) => {
