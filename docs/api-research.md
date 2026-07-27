@@ -1614,13 +1614,14 @@ clean IP before the corresponding code is written.
    came back regardless. Re-run the full pagination from a clean IP, record the
    true terminal offset, and test the POST form the widget actually submits
    before assuming the WP16–17 tail is reachable programmatically. (§4.1)
-6. **WP17/18 XML boundary.** `xml_url` is documented in the spec as WP18+, but
-   that edge was never confirmed live. (A second pass reported the DTD stating
-   "gültig ab 19. Wahlperiode"; that string is **not present** in the retrieved
-   copy of `dbtplenarprotokoll.dtd` v1.0.2, so treat the discrepancy itself as
-   unresolved.) Count `xml_url` presence in
-   `/plenarprotokoll?f.wahlperiode=18` vs `=17`, and diff a WP18 protocol
-   against a WP20 one before backfilling. (§5.2)
+6. ~~**WP17/18 XML boundary.**~~ **Resolved 2026-07-27, measured.** Counting
+   `xml_url` presence on the first page of `/plenarprotokoll?f.zuordnung=BT`
+   gives **100/100 for WP18 and WP19, and 0/100 for WP17 and WP16**. The
+   boundary is exactly WP18, as the spec's note on `xml_url` claimed — so the
+   second pass's "gültig ab 19. Wahlperiode" reading was wrong, consistent with
+   that string being absent from the retrieved DTD. `FIRST_XML_WAHLPERIODE = 18`
+   in both `api/protocols.py` and `pipeline/sync.py` is correct, and WP14–17
+   have no speech data by construction (docs/historical-coverage.md). (§5.2)
 7. **A vote containing abstentions and/or invalid ballots**, to exercise the
    `Enthaltung` and `ungültig` columns — both were zero across all 630 rows of
    the sampled sheet, so those code paths are untested. (§4.1)
