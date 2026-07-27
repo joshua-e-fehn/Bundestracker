@@ -291,7 +291,8 @@ class Pipeline:
         the note says so rather than leaving a zero to be misread.
         """
         stage = report.stage("committees")
-        payloads = transform.committee_payloads(self._require_resolver())
+        resolver = self._require_resolver()
+        payloads = transform.committee_payloads(resolver)
         if not payloads:
             stage.notes.append(
                 f"No committee data for WP{self.wahlperiode}. Stammdaten publishes committees "
@@ -299,6 +300,20 @@ class Pipeline:
             )
             return
         stage.result = self.loader.upsert_committees(payloads)
+
+        # The seats first, then the feed entries derived from them — the order
+        # every other stage uses, for the same reason. Committee work is the one
+        # kind of parliamentary record with no DIP source (§6.3), so without this
+        # the feed's `committee` filter matches nothing and reads as a chamber
+        # whose committees never met.
+        events, undated = transform.committee_event_payloads(resolver)
+        if events:
+            stage.notes.append(str(self.loader.add_activity_events(events)))
+        if undated:
+            stage.notes.append(
+                f"{undated} committee seats carry neither a seat nor a mandate start date, "
+                "so they have no feed entry — an event needs a day to sit on (§6.3)"
+            )
 
     # -- stage 4: activities ----------------------------------------------
 

@@ -42,7 +42,7 @@ from typing import Any
 
 from bundestrack.models.dip import Aktivitaet, Drucksache, Vorgang
 from bundestrack.models.speeches import Protocol
-from bundestrack.models.stammdaten import MP, Mandate
+from bundestrack.models.stammdaten import MP, CommitteeMembership, Mandate
 from bundestrack.models.votes import Vote, VoteSheet
 from bundestrack.pipeline.join import MPResolver
 
@@ -273,6 +273,28 @@ def dip_link_payloads(resolver: MPResolver) -> list[Payload]:
 # --- committees -----------------------------------------------------------
 
 
+def _committee_seats(
+    resolver: MPResolver,
+) -> Iterator[tuple[str, Mandate, CommitteeMembership]]:
+    """Every seat on the roster, as `(internal id, mandate, membership)`.
+
+    Shared by `committee_payloads` and `committee_event_payloads` so the stored
+    row and the feed entry derived from it cannot disagree about which seats
+    exist — the two are written in the same stage, and a second copy of this
+    walk is how one of them ends up counting a chair twice.
+
+    `Mandate.committees()` deduplicates, so a chair listed twice — once as
+    `Vorsitzender`, once as `Ordentliches Mitglied` (§6.3) — is one seat.
+    """
+    for mp in resolver.roster():
+        mandate = mp.mandate_for(resolver.wahlperiode)
+        internal = resolver.from_stammdaten_id(mp.id)
+        if mandate is None or internal is None:  # pragma: no cover
+            continue
+        for membership in mandate.committees():
+            yield internal, mandate, membership
+
+
 def committee_payloads(resolver: MPResolver) -> list[Payload]:
     """Committee seats for the whole roster.
 
@@ -281,31 +303,19 @@ def committee_payloads(resolver: MPResolver) -> list[Payload]:
     entries belong to WP21 (§6.3, §6.4). For an earlier period this returns
     nothing because nothing was published — not because nobody sat on a
     committee, which is a distinction the UI has to make.
-
-    `Mandate.committees()` deduplicates, so a chair listed twice — once as
-    `Vorsitzender`, once as `Ordentliches Mitglied` (§6.3) — is one seat.
     """
-    payloads: list[Payload] = []
-    for mp in resolver.roster():
-        mandate = mp.mandate_for(resolver.wahlperiode)
-        internal = resolver.from_stammdaten_id(mp.id)
-        if mandate is None or internal is None:  # pragma: no cover
-            continue
-        for membership in mandate.committees():
-            payloads.append(
-                {
-                    "mpInternalId": internal,
-                    "committeeName": require_text(
-                        membership.name, f"Committee seat for {internal}"
-                    ),
-                    "role": membership.role,
-                    "wahlperiode": mandate.wahlperiode,
-                    # Day-level, which is finer than anything DIP offers (§6.3).
-                    "startDate": iso(membership.start_date),
-                    "endDate": iso(membership.end_date),
-                }
-            )
-    return payloads
+    return [
+        {
+            "mpInternalId": internal,
+            "committeeName": require_text(membership.name, f"Committee seat for {internal}"),
+            "role": membership.role,
+            "wahlperiode": mandate.wahlperiode,
+            # Day-level, which is finer than anything DIP offers (§6.3).
+            "startDate": iso(membership.start_date),
+            "endDate": iso(membership.end_date),
+        }
+        for internal, mandate, membership in _committee_seats(resolver)
+    ]
 
 
 # --- votes ----------------------------------------------------------------
@@ -792,6 +802,70 @@ def vote_event_payloads(sheet: VoteSheet, resolver: MPResolver, *, title: str) -
             }
         )
     return events
+
+
+def committee_event_payloads(resolver: MPResolver) -> tuple[list[Payload], int]:
+    """Feed entries for committee seats — one per (MP, committee).
+
+    The feed's `committee` bucket has existed since the schema was written and
+    nothing has ever written to it: `activity_event_payloads` derives events
+    from DIP `/aktivitaet`, and DIP publishes no committee membership at all
+    (§6.3 — `/person` has no committee field and `person_roles` none either).
+    Seats come from Stammdaten, so their feed entries have to come from here.
+
+    Returns the events and the number of seats skipped for want of a date, so
+    the stage can report the second rather than let it vanish into a shorter
+    list than the roster implies.
+
+    ## The reference is the seat's own natural key
+
+    `referenceId` is `"<wahlperiode>/<committee>"`, which with `eventType` and
+    `mpInternalId` is exactly the triple `addOne` de-duplicates on
+    (webapp/convex/activityEvents.ts) and exactly the natural key of the
+    `committeeMemberships` row this is derived from. That is not a detail: a
+    null `referenceId` takes the unconditional-insert arm there, so 1 791 seats
+    would become 1 791 new rows *every night*.
+
+    `role` is deliberately not part of it — a member who becomes chair mid-period
+    should patch their event's description, not acquire a second one — and
+    neither is the start date, since a re-dated seat is still the same seat.
+
+    ## Dates
+
+    `startDate` is nullable and the schema's `date` is not, so the mandate's own
+    start is the fallback: "no earlier than they took their seat" is a bound the
+    source supports. A seat with neither is skipped rather than backdated to the
+    period or forward-dated to today — `getActivityCalendar` renders these as
+    contribution-graph cells, and an invented date is a cell claiming work on a
+    day nobody worked.
+    """
+    events: list[Payload] = []
+    undated = 0
+    for internal, mandate, membership in _committee_seats(resolver):
+        date = iso(membership.start_date) or iso(mandate.start_date)
+        if date is None:
+            undated += 1
+            continue
+        name = require_text(membership.name, f"Committee seat for {internal}")
+        events.append(
+            {
+                "mpInternalId": internal,
+                "eventType": "committee",
+                "date": date,
+                # The committee is the headline and the role the detail, the
+                # same division `vote_event_payloads` uses for a ballot and the
+                # position taken on it. A null role is 109 of the WP21 entries
+                # (§6.3), and the feed hides a blank description.
+                "title": name,
+                "description": clean_text(membership.role),
+                "referenceId": f"{mandate.wahlperiode}/{name}",
+                # No public URL exists for a seat, so this id space is unknown to
+                # `referenceHref` and the row renders without a dead link.
+                "referenceType": "committeeSeat",
+                "wahlperiode": mandate.wahlperiode,
+            }
+        )
+    return events, undated
 
 
 def speech_event_payloads(speeches: Iterable[Payload], *, sitting_title: str) -> list[Payload]:

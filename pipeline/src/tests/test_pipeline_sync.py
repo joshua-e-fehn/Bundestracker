@@ -86,10 +86,21 @@ class RecordingLoader(ConvexLoader):
     def __init__(self) -> None:
         super().__init__("https://example.convex.site", "test-key", dry_run=True)
         self.paths: list[str] = []
+        #: The same calls with their payloads, for assertions that need to see
+        #: *what* was written rather than only where. Kept alongside `paths`
+        #: rather than replacing it: the ordering tests read that list, and
+        #: changing its element type underneath them would be a wide edit for
+        #: no gain.
+        self.posts: list[tuple[str, dict]] = []
 
     def post(self, path: str, payload: dict) -> dict:
         self.paths.append(path)
+        self.posts.append((path, payload))
         return super().post(path, payload)
+
+    def payloads(self, path: str) -> list[dict]:
+        """Every payload posted to one route, in order."""
+        return [payload for posted, payload in self.posts if posted == path]
 
 
 def build(
@@ -142,6 +153,26 @@ def test_the_roster_is_written_before_anything_that_references_it(tmp_path) -> N
     for path in ("committee-memberships", "activities", "speeches", "vote-records"):
         if path in loader.paths:
             assert loader.paths.index("mps") < loader.paths.index(path), path
+
+
+def test_committee_seats_are_written_before_the_events_derived_from_them(tmp_path) -> None:
+    """The same ordering rule one stage down, and for the same reason: the feed
+    entry is derived from the seat, so the seat is what has to exist first."""
+    pipeline, loader = build(tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+    pipeline.load_committees(report)
+
+    events = [
+        event for payload in loader.payloads("activity-events") for event in payload["events"]
+    ]
+
+    assert loader.paths.index("committee-memberships") < loader.paths.index("activity-events")
+    assert events, "committee seats should reach the feed — before this they never did"
+    assert all(event["eventType"] == "committee" for event in events)
+    # A null reference is the 1 791-rows-a-night failure; see
+    # `transform.committee_event_payloads` and webapp/convex/activityEvents.ts.
+    assert all(event["referenceId"] is not None for event in events)
 
 
 def test_a_run_with_no_roster_skips_every_dependent_stage() -> None:

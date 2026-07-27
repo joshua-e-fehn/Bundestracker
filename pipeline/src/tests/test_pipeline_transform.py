@@ -637,3 +637,120 @@ def test_a_vote_event_is_emitted_for_an_absence_too(resolver) -> None:
     assert {event["description"] for event in events} >= {"yes", "absent"}
     assert all(event["referenceId"] == "21/90/8" for event in events)
     assert all(event["eventType"] == "vote" for event in events)
+
+
+def test_every_committee_seat_reaches_the_feed(resolver) -> None:
+    """The `committee` bucket has a producer at last.
+
+    DIP publishes no committee membership at all (§6.3), so nothing derived
+    from `/aktivitaet` can ever fill this bucket — the seats are Stammdaten's,
+    and so are their feed entries. Before this transform existed the filter
+    chip matched nothing and read as a chamber whose committees never met.
+    """
+    seats = transform.committee_payloads(resolver)
+    events, undated = transform.committee_event_payloads(resolver)
+
+    assert len(events) + undated == len(seats)
+    assert all(event["eventType"] == "committee" for event in events)
+    assert {event["title"] for event in events} == {seat["committeeName"] for seat in seats}
+
+
+def test_a_committee_event_carries_the_seats_own_natural_key(resolver) -> None:
+    """`(eventType, referenceId, mpInternalId)` is what `addOne` de-duplicates on.
+
+    A null `referenceId` takes the unconditional-insert arm there
+    (webapp/convex/activityEvents.ts), so a nightly sync would append all 1 791
+    seats again every night — the failure is silent and compounding, which is
+    why this asserts the key rather than merely that events exist.
+    """
+    events, _ = transform.committee_event_payloads(resolver)
+    keys = [(e["eventType"], e["referenceId"], e["mpInternalId"]) for e in events]
+
+    assert all(event["referenceId"] is not None for event in events)
+    assert all(event["referenceType"] == "committeeSeat" for event in events)
+    assert len(keys) == len(set(keys))
+
+
+def test_a_chair_gets_one_committee_event_not_two(resolver) -> None:
+    """§6.3, the other side of `test_a_chair_listed_twice_counts_as_one_seat`.
+
+    The reference deliberately excludes the role: a member who becomes chair
+    mid-period should patch their event's description, not acquire a second
+    event for the same seat.
+    """
+    events, _ = transform.committee_event_payloads(resolver)
+    laschet = [e for e in events if e["mpInternalId"] == "bt-11002718"]
+
+    assert laschet, "the fixture roster should include Laschet's seat"
+    assert len(laschet) == len({e["referenceId"] for e in laschet})
+    assert all(e["referenceId"] == f"21/{e['title']}" for e in laschet)
+
+
+def test_a_committee_event_is_dated_and_describes_the_role(resolver) -> None:
+    # The committee is the headline, the role the detail — the same division
+    # `vote_event_payloads` uses for a ballot and the position taken on it.
+    events, _ = transform.committee_event_payloads(resolver)
+    laschet = next(e for e in events if e["mpInternalId"] == "bt-11002718")
+
+    assert laschet["date"] == "2025-05-21"
+    assert laschet["description"] == "Ordentliches Mitglied"
+
+
+def test_a_seat_with_no_start_date_falls_back_to_the_mandate(resolver) -> None:
+    """`startDate` is nullable and the schema's `date` is not.
+
+    "No earlier than they took their seat" is a bound the source supports,
+    where backdating to the period start would not be. The fixture's mandate
+    begins 2025-03-25 against the seat's 2025-05-21, so the fallback is
+    observable rather than coincidentally equal.
+    """
+    isolated = _resolver_with_undated_seats("11002718", drop_mandate_start=False)
+
+    events, undated = transform.committee_event_payloads(isolated)
+    laschet = [e for e in events if e["mpInternalId"] == "bt-11002718"]
+
+    assert undated == 0
+    assert laschet and all(e["date"] == "2025-03-25" for e in laschet)
+
+
+def test_a_seat_with_no_date_anywhere_is_skipped_and_counted(resolver) -> None:
+    """Skipped rather than backdated, and counted rather than dropped silently.
+
+    `getActivityCalendar` renders these as contribution-graph cells, so an
+    invented date is a cell claiming work on a day nobody worked — and a
+    shorter list than the roster implies is worth a line in the run's report.
+    """
+    seats = len(
+        next(mp for mp in resolver.roster() if mp.id == "11002718").mandate_for(21).committees()
+    )
+    isolated = _resolver_with_undated_seats("11002718", drop_mandate_start=True)
+
+    events, undated = transform.committee_event_payloads(isolated)
+
+    assert seats > 0
+    assert undated == seats
+    assert not [e for e in events if e["mpInternalId"] == "bt-11002718"]
+
+
+def _resolver_with_undated_seats(stammdaten_id: str, *, drop_mandate_start: bool) -> MPResolver:
+    """A resolver over a **fresh** dump with one MP's seat dates cleared.
+
+    Re-parsed rather than mutating the `resolver` fixture, because `dump` is
+    module-scoped: an in-place edit would leak into every test that ran after
+    this one, and the ones it would break — the seat-count and date assertions
+    above — fail in a way that looks like a transform bug rather than a fixture
+    one.
+    """
+    dump = StammdatenClient.parse_zip(fixture_bytes("stammdaten", "MdB-Stammdaten-excerpt.zip"))
+    resolver = MPResolver(dump, 21)
+    mp = next(mp for mp in resolver.roster() if mp.id == stammdaten_id)
+    mandate = mp.mandate_for(21)
+    update: dict[str, object] = {
+        "institutions": [
+            seat.model_copy(update={"start_date": None}) for seat in mandate.institutions
+        ]
+    }
+    if drop_mandate_start:
+        update["start_date"] = None
+    mp.mandates[mp.mandates.index(mandate)] = mandate.model_copy(update=update)
+    return resolver
