@@ -196,6 +196,19 @@ ingestionRoute("mps/link-dip", internal.mps.linkDipPersonId)
 
 ingestionRoute("vote-sheets", internal.votes.upsertVoteSheet)
 ingestionRoute("vote-records", internal.votes.upsertVoteRecords)
+
+/**
+ * Computes the per-record dissent flags and the period tally for ballots
+ * ingested before those fields existed; loop on the returned `cursor` until
+ * `done`.
+ *
+ * A migration rather than routine work — `upsertVoteRecords` maintains the tally
+ * for every ballot from now on — so it is a route to be called deliberately,
+ * like `search/backfill` above and for the same reason. Run it once per
+ * deployment after this deploy; it is idempotent, so re-running repairs a tally
+ * that has drifted rather than doubling it. See convex/votes.ts.
+ */
+ingestionRoute("votes/backfill-dissent", internal.votes.backfillDissent)
 ingestionRoute("motions", internal.motions.upsertMotions)
 ingestionRoute("motion-sponsors", internal.motions.upsertMotionSponsors)
 ingestionRoute("speeches", internal.speeches.upsertSpeeches)

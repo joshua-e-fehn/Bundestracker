@@ -386,6 +386,20 @@ export const getRankings = query({
       ...photoFields,
       totalScore: v.number(),
       scoreBreakdown,
+      /**
+       * This MP's period-wide dissent, or null where none has been computed.
+       *
+       * Joined here so `MPCard` can carry its badge without a query per card —
+       * the cost that keeps the heatmap opt-in. One indexed lookup per row,
+       * beside the `mpLabel` this loop already does, and the slice is a
+       * `.take()` rather than the roster.
+       *
+       * Null is not zero: a member the backfill has not reached has no tally,
+       * and the badge renders nothing for both — see `isNotableDissenter` in
+       * lib/dissent.ts, which is where that collapse is decided rather than
+       * here.
+       */
+      dissent: v.union(v.null(), v.object({ dissents: v.number(), ballotsCast: v.number() })),
     }),
   ),
   handler: async (ctx, args) => {
@@ -400,6 +414,12 @@ export const getRankings = query({
     const ranked = []
     for (const [index, row] of rows.entries()) {
       const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
+      const tally = await ctx.db
+        .query("dissentTallies")
+        .withIndex("by_mpInternalId_and_wahlperiode", (q) =>
+          q.eq("mpInternalId", row.mpInternalId).eq("wahlperiode", args.wahlperiode),
+        )
+        .unique()
       ranked.push({
         // Position within what was asked for, in both directions: read
         // ascending, rank 1 is the lowest score. Numbering the bottom five
@@ -414,6 +434,8 @@ export const getRankings = query({
         photoCredit: mp.photoCredit,
         totalScore: row.totalScore,
         scoreBreakdown: row.scoreBreakdown,
+        dissent:
+          tally === null ? null : { dissents: tally.dissents, ballotsCast: tally.ballotsCast },
       })
     }
     return ranked

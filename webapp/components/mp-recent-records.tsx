@@ -137,9 +137,27 @@ function RecentMotions({
 function RecentVotes({ mpInternalId, wahlperiode }: { mpInternalId: string; wahlperiode: number }) {
   const { t, locale } = useLocale()
   const votes = useQuery(api.votes.getVotesByMP, { mpInternalId, wahlperiode, limit: LIMIT })
+  const tally = useQuery(api.votes.getDissentTally, { mpInternalId, wahlperiode })
 
   return (
     <Panel title={t("mp.latestVotes")} loading={votes === undefined}>
+      {/* Five rows of "auf Fraktionslinie" say nothing about whether this member
+          usually is. The period figure is what turns the list into a sample of
+          something — and it is the one number here that the five rows *cannot*
+          imply, since `getVotesByMP` caps at 25 for read-cost reasons and the
+          most recent five are not a random draw. Above the list rather than
+          below it: it is the summary the rows are instances of. */}
+      {tally !== undefined && tally !== null && tally.ballotsCast > 0 ? (
+        <p className="mb-3 text-muted-foreground text-xs leading-relaxed">
+          {tally.dissents === 0
+            ? t("mp.dissentNone", { cast: formatNumber(tally.ballotsCast, locale) })
+            : t("mp.dissentCount", {
+                count: formatNumber(tally.dissents, locale),
+                cast: formatNumber(tally.ballotsCast, locale),
+              })}
+        </p>
+      ) : null}
+
       {votes?.length === 0 ? (
         <div className="flex flex-col gap-2">
           <Empty>{t("mp.noVotes")}</Empty>
@@ -211,9 +229,7 @@ function PartyLine({
       // `dark:` half is dropped rather than translated. Gold rather than red
       // for the reason that badge gives at length: dissent is notable, not bad,
       // and red on a name reads as an error state.
-      className={
-        withGroup ? "text-muted-foreground text-xs" : "text-vote-abstain text-xs"
-      }
+      className={withGroup ? "text-muted-foreground text-xs" : "text-vote-abstain text-xs"}
     >
       {withGroup ? t("mp.partyLineWith") : t("mp.partyLineAgainst")}
     </span>

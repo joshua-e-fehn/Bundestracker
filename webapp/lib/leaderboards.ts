@@ -157,6 +157,21 @@ export const LEADERBOARDS: Leaderboard[] = [
         format: "integer",
         sortable: false,
       },
+      // The rate, now that there is a period-wide denominator worth dividing by.
+      // It was omitted while the board covered 20 ballots, where every member's
+      // denominator was nearly the same number and the rate said nothing the
+      // count did not. Over a whole period they diverge — a member who joined
+      // mid-period has half the ballots — and the count alone would rank a
+      // four-year backbencher above a more frequent dissenter who arrived late.
+      //
+      // Still not the ranked column: the board is "most dissent", and ranking by
+      // rate would put a member with 1 of 20 above one with 30 of 700.
+      {
+        field: "dissentRate",
+        labelKey: "rankings.column.dissentRate",
+        format: "rate",
+        sortable: false,
+      },
     ],
     caveatKey: "rankings.caveat.crossParty",
   },

@@ -761,6 +761,33 @@ class Pipeline:
             )
         )
 
+    # -- stage 8b: the dissent tally ---------------------------------------
+
+    def backfill_dissent(self, report: RunReport) -> None:
+        """Fill in the dissent flags for ballots that predate them.
+
+        Whether a vote broke with the voter's own group depends on how the rest
+        of their group voted in the same division, so Convex decides it when the
+        ballot lands and stores it (webapp/convex/votes.ts). Ballots ingested
+        before that existed carry no flag, and an unflagged ballot is *missing*
+        from the tally rather than counted as a loyal vote — so a period-wide
+        figure is wrong until this has run once.
+
+        Runs after `load_votes` because that is what produces the ballots it
+        reads, and every ballot this run just posted has already been flagged by
+        the ingest itself. So on a steady-state sync this walks the period and
+        changes nothing, which is cheap and is the point: it is also the repair
+        for a tally that has drifted, and there is no way to know it has without
+        recomputing it.
+        """
+        stage = report.stage("dissent")
+        records = self.loader.backfill_dissent(self.wahlperiode)
+        stage.notes.append(
+            f"{records} vote records re-flagged against their group's line"
+            if records
+            else "dissent tally already current — no record changed"
+        )
+
     # -- stage 9: seating --------------------------------------------------
 
     def generate_seating(self, report: RunReport) -> None:
@@ -1037,6 +1064,10 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     _guard(report, "motions", lambda: run.load_motions(report, since=since))
     _guard(report, "speeches", lambda: run.load_speeches(report, since=since))
     _guard(report, "votes", lambda: run.load_votes(report, incremental=incremental))
+    # After the votes, because it reads the ballots that stage writes. Guarded
+    # like the rest: a failed tally leaves the dissent figure stale, which the
+    # UI can state, where an aborted run would leave every later stage undone.
+    _guard(report, "dissent", lambda: run.backfill_dissent(report))
     _guard(report, "seating", lambda: run.generate_seating(report))
 
 

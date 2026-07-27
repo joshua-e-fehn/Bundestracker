@@ -13,9 +13,11 @@ import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { monthWindow } from "./activityScores"
 import { pageLimit } from "./lib/ingest"
-import { photoFields } from "./mps"
 import { literalUnion } from "./lib/validators"
+import { photoFields } from "./mps"
 import { scoreBreakdown } from "./schema"
+// The group-line rule, imported rather than restated — see `windowDissent`.
+import { dissentFlagsFor, tallyByGroup } from "./votes"
 
 /**
  * The leaderboards.
@@ -48,8 +50,10 @@ import { scoreBreakdown } from "./schema"
  * produce numbered rows that are not ranks. The page boundary therefore belongs
  * after the sort, which is where `limit`/`offset` apply it.
  *
- * The one query here that is not bounded by the roster is `crossPartyVotes`,
- * and it says so at length.
+ * Every query here is now bounded by the roster, including the cross-party
+ * board: its period scope reads a maintained `dissentTallies` row per member
+ * rather than re-tallying ballots. Its `window` scope is the exception and says
+ * so at length.
  */
 
 // --- read models ----------------------------------------------------------
@@ -407,24 +411,45 @@ export const getRisingRankings = query({
  * dissents on that ballot. Rare, and the alternative is picking one of two tied
  * positions and calling everyone on the other side a rebel.
  *
- * ## The read this makes
+ * ## Two scopes, and why both stay
  *
- * ⚠ The only query in this file whose cost is not bounded by the roster. It
- * reads the period's ballots and every vote record on them: ~630 records per
- * ballot, so ~25 ballots reach 16 000 documents and Convex's read limit. So
- * `maxBallots` bounds it explicitly, defaulting to the most recent 20, and the
- * response says which window it used — a leaderboard computed over an unstated
- * subset of ballots is a number with no meaning, and the UI states the window
- * beside it rather than presenting a partial count as a career total.
+ * `scope: "period"` — the default — reads `dissentTallies`, the roll-up
+ * convex/votes.ts maintains as each ballot lands. That makes the board a 630-row
+ * indexed scan over the whole electoral period rather than a re-tally of its
+ * ballots, and it is the reason the number on this page is now a period figure
+ * instead of a window.
  *
- * A period-wide dissent count needs the tally maintained at ingest, on
- * `voteRecords` or a counter table. That is a schema change and belongs with the
- * pipeline; this query is correct for the window it names.
+ * `scope: "window"` computes the old way: read the most recent `maxBallots`
+ * ballots and tally them here. ⚠ Its cost is not bounded by the roster — ~630
+ * records per ballot, so ~25 ballots reach 16 000 documents and Convex's read
+ * limit — which is why `maxBallots` bounds it explicitly at 20 and why it cannot
+ * be the default. It stays for two things the maintained tally cannot do: it is
+ * correct on a deployment where `backfillDissent` has not yet run, and it is the
+ * independent second opinion that makes a drifted tally visible rather than
+ * merely plausible.
+ *
+ * `ballotsExamined` reports which window was used and is **0 for the period
+ * scope** — not because nothing was examined, but because "the last N ballots"
+ * is not the shape of that answer. The UI reads `scope` to decide what to say;
+ * printing "0 ballots" beside a period-wide count would be the same
+ * unstated-subset problem in a new place.
  */
 export const getCrossPartyRankings = query({
   args: {
     wahlperiode: v.number(),
-    /** Most recent ballots to examine. See the read-cost note above. */
+    /**
+     * Which figure to return. Defaults to the maintained period tally.
+     *
+     * An argument rather than a second query, for the reason `getRankings`'
+     * `direction` gives: the two differ in where the counts come from and in
+     * nothing else — same filters, same ranking, same row shape — and a
+     * `getCrossPartyRankingsForWindow` would be this function copied, with the
+     * tie rule and the filter order free to drift between the copies.
+     */
+    scope: v.optional(v.union(v.literal("period"), v.literal("window"))),
+    /** Most recent ballots to examine, for `scope: "window"` only. See the
+     * read-cost note above. Ignored by the period scope, which examines all of
+     * them by construction. */
     maxBallots: v.optional(v.number()),
     ...rankingFilters,
     ...pageArgs,
@@ -441,80 +466,30 @@ export const getCrossPartyRankings = query({
         birthDate: v.union(v.null(), v.string()),
         /** Ballots voted against the own group's line. */
         dissents: v.number(),
-        /** Ballots in the window where this MP cast a vote — the denominator,
-         * without which a dissent count cannot be read. */
+        /** Cast votes in a group that had a line — the denominator, without
+         * which a dissent count cannot be read. */
         ballotsCast: v.number(),
         dissentRate: v.number(),
         totalScore: v.number(),
       }),
     ),
     total: v.number(),
-    /** The window actually examined, so the page can state it. */
+    /** Which figure these rows are. Echoed rather than assumed by the caller:
+     * the two scopes produce the same shape and very different numbers. */
+    scope: v.union(v.literal("period"), v.literal("window")),
+    /** The window actually examined, so the page can state it. 0 for the period
+     * scope — see the header. */
     ballotsExamined: v.number(),
   }),
   handler: async (ctx, args) => {
-    // 20 ballots × ~630 records ≈ 12 600 documents, inside the ~16 000 limit
-    // with room for the roster and the sheets themselves.
-    const maxBallots = Math.max(1, Math.min(40, Math.floor(args.maxBallots ?? 20)))
-
-    const sheets = await ctx.db
-      .query("voteSheets")
-      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .order("desc")
-      .take(maxBallots)
-
+    const scope = args.scope ?? "period"
     const mps = await roster(ctx, args.wahlperiode)
     const nowMs = Date.now()
 
-    const dissents = new Map<string, number>()
-    const cast = new Map<string, number>()
-
-    for (const sheet of sheets) {
-      const records = await ctx.db
-        .query("voteRecords")
-        .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
-        .collect()
-
-      // Tally each group's cast votes, then take the modal one as its line.
-      const tallies = new Map<string, Map<string, number>>()
-      for (const record of records) {
-        if (record.vote === "absent") continue
-        const group = record.partyAtVote ?? mps.get(record.mpInternalId)?.fraktion
-        if (group === undefined) continue
-        const byVote = tallies.get(group) ?? new Map<string, number>()
-        byVote.set(record.vote, (byVote.get(record.vote) ?? 0) + 1)
-        tallies.set(group, byVote)
-      }
-
-      const lines = new Map<string, string>()
-      for (const [group, byVote] of tallies) {
-        let best: string | null = null
-        let bestCount = 0
-        let tied = false
-        for (const [vote, count] of byVote) {
-          if (count > bestCount) {
-            best = vote
-            bestCount = count
-            tied = false
-          } else if (count === bestCount) {
-            tied = true
-          }
-        }
-        // An exactly split group has no line — see the header.
-        if (best !== null && !tied) lines.set(group, best)
-      }
-
-      for (const record of records) {
-        if (record.vote === "absent") continue
-        const group = record.partyAtVote ?? mps.get(record.mpInternalId)?.fraktion
-        if (group === undefined) continue
-        cast.set(record.mpInternalId, (cast.get(record.mpInternalId) ?? 0) + 1)
-        const line = lines.get(group)
-        if (line !== undefined && record.vote !== line) {
-          dissents.set(record.mpInternalId, (dissents.get(record.mpInternalId) ?? 0) + 1)
-        }
-      }
-    }
+    const { counts, ballotsExamined } =
+      scope === "period"
+        ? await periodDissent(ctx, args.wahlperiode)
+        : await windowDissent(ctx, args.wahlperiode, args.maxBallots, mps)
 
     // Scores ride along so the board can show the activity score in its last
     // column like every other board. Keyed on the period total (`month: null`).
@@ -527,10 +502,9 @@ export const getCrossPartyRankings = query({
     const totals = new Map(scores.map((row) => [row.mpInternalId, row.totalScore]))
 
     const rows = []
-    for (const [mpInternalId, ballotsCast] of cast) {
+    for (const [mpInternalId, tally] of counts) {
       const mp = mps.get(mpInternalId)
       if (!mp || !passes(mp, args, nowMs)) continue
-      const count = dissents.get(mpInternalId) ?? 0
       rows.push({
         mpInternalId,
         name: mp.name,
@@ -539,9 +513,9 @@ export const getCrossPartyRankings = query({
         photoCredit: mp.photoCredit ?? null,
         state: stateOf(mp.constituency),
         birthDate: mp.birthDate,
-        dissents: count,
-        ballotsCast,
-        dissentRate: ballotsCast === 0 ? 0 : count / ballotsCast,
+        dissents: tally.dissents,
+        ballotsCast: tally.ballotsCast,
+        dissentRate: tally.ballotsCast === 0 ? 0 : tally.dissents / tally.ballotsCast,
         totalScore: totals.get(mpInternalId) ?? 0,
       })
     }
@@ -553,10 +527,108 @@ export const getCrossPartyRankings = query({
     )
     return {
       ...paged(ordered, Math.max(0, Math.floor(args.offset ?? 0)), pageLimit(args.limit, 50)),
-      ballotsExamined: sheets.length,
+      scope,
+      ballotsExamined,
     }
   },
 })
+
+/** What either scope produces: one entry per member who cast a countable vote. */
+type DissentCounts = Map<string, { dissents: number; ballotsCast: number }>
+
+/**
+ * The maintained period tally, read straight off `dissentTallies`.
+ *
+ * One indexed scan of ~630 rows, which is the whole point of the table — the
+ * expensive per-ballot direction was already paid at ingest by
+ * `refreshBallotDissent` in convex/votes.ts.
+ *
+ * A member with no row is **absent from the result**, not present with zero. On
+ * a deployment mid-backfill that is the honest answer: the board lists the
+ * members whose ballots have been counted, and a zero row would seat an
+ * uncounted member among them claiming perfect loyalty. The same reason
+ * `scoredRoster` drops a score whose MP is not on the roster rather than
+ * rendering it under its id.
+ */
+async function periodDissent(
+  ctx: QueryCtx,
+  wahlperiode: number,
+): Promise<{ counts: DissentCounts; ballotsExamined: number }> {
+  const tallies = await ctx.db
+    .query("dissentTallies")
+    .withIndex("by_wahlperiode_and_dissents", (q) => q.eq("wahlperiode", wahlperiode))
+    .collect()
+
+  const counts: DissentCounts = new Map()
+  for (const row of tallies) {
+    // Members who have cast nothing countable are left out for the same reason a
+    // missing row is: the board is about how often someone broke with their
+    // group, and "never had the chance" is not a low score.
+    if (row.ballotsCast === 0 && row.dissents === 0) continue
+    counts.set(row.mpInternalId, { dissents: row.dissents, ballotsCast: row.ballotsCast })
+  }
+  // Not "no ballots" — see the header. The period scope's answer is not a window,
+  // so it reports no window rather than a misleading one.
+  return { counts, ballotsExamined: 0 }
+}
+
+/**
+ * The bounded window: tally the most recent `maxBallots` ballots here and now.
+ *
+ * The pre-tally implementation, unchanged in what it counts and moved into its
+ * own function so the two scopes cannot drift in the filtering, ranking and
+ * paging they share. It applies the same rule the stored flags do —
+ * `tallyByGroup` and `isRebel` from convex/votes.ts, which is what the ballot
+ * page renders — rather than the hand-rolled modal-vote loop that used to live
+ * here. That loop agreed with them, which is exactly the problem: a fourth copy
+ * of "the group's line" is a fourth chance to disagree about who dissented, and
+ * this one had already re-implemented the tie rule.
+ */
+async function windowDissent(
+  ctx: QueryCtx,
+  wahlperiode: number,
+  maxBallots: number | undefined,
+  mps: Map<string, Doc<"mps">>,
+): Promise<{ counts: DissentCounts; ballotsExamined: number }> {
+  // 20 ballots × ~630 records ≈ 12 600 documents, inside the ~16 000 limit
+  // with room for the roster and the sheets themselves.
+  const limit = Math.max(1, Math.min(40, Math.floor(maxBallots ?? 20)))
+
+  const sheets = await ctx.db
+    .query("voteSheets")
+    .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", wahlperiode))
+    .order("desc")
+    .take(limit)
+
+  const fraktionOf = (mpInternalId: string) => mps.get(mpInternalId)?.fraktion ?? ""
+  const counts: DissentCounts = new Map()
+
+  for (const sheet of sheets) {
+    const records = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+      .collect()
+
+    const groups = tallyByGroup(records, fraktionOf)
+    for (const record of records) {
+      const group = record.partyAtVote ?? fraktionOf(record.mpInternalId)
+      if (group === "") continue
+      const majority = groups.get(group)?.majority ?? null
+      // The same rule the stored flags apply, through the same function — so
+      // the window figure and the period figure count the same events and a
+      // disagreement between them means the tally has drifted, rather than
+      // meaning the two scopes were never comparable.
+      const { dissent, counted } = dissentFlagsFor(record.vote, majority)
+      if (!counted) continue
+      const tally = counts.get(record.mpInternalId) ?? { dissents: 0, ballotsCast: 0 }
+      tally.ballotsCast++
+      if (dissent) tally.dissents++
+      counts.set(record.mpInternalId, tally)
+    }
+  }
+
+  return { counts, ballotsExamined: sheets.length }
+}
 
 // --- filter options -------------------------------------------------------
 
