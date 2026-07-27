@@ -49,11 +49,12 @@ import { cn } from "@/lib/utils"
  *
  * ## Why the ring and the bird can be addressed separately
  *
- * `ringClassName` and `markClassName` exist for exactly one caller — the seal
- * that draws itself on in components/home-sitzungswoche/seal-splash.tsx — and
- * they are here rather than solved at that call site because the two obvious
- * alternatives are both worse, and components/hero-animation.tsx already
- * records why. Animating the ring needs a class on the `<circle>` *element*.
+ * `ringClassName` and `markClassName` exist so a caller can animate the ring
+ * and the eagle on separate timelines. They were added for the seal that struck
+ * itself on Concept B's splash (`/home-b`), which has since been deleted along
+ * with the concept, so they currently have no caller — kept because the two
+ * obvious alternatives for the next one are both worse, and
+ * components/hero-animation.tsx already records why. Animating the ring needs a class on the `<circle>` *element*.
  * Reaching it from outside would mean either a CSS descendant selector into
  * this component's internals, which silently stops matching the day the markup
  * changes, or a third copy of the artwork, which that file calls "exactly the

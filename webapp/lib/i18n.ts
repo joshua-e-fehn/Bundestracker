@@ -65,6 +65,12 @@ const de = {
     "Nachvollziehbare, messbare Aktivität der Mitglieder des Deutschen Bundestages — aus offiziellen Daten.",
 
   "nav.home": "Startseite",
+  // `/` is the narrative page and this is the dashboard it used to be: the
+  // stats row, both leaderboards, the Fraktionen, the ballots and the feed on
+  // one screen with no story around them. Named for what it is rather than
+  // "Übersicht", because a reader who wants today's numbers without the
+  // argument is looking for exactly this word.
+  "nav.dashboard": "Dashboard",
   "nav.members": "Abgeordnete",
   "nav.activity": "Aktivität",
   "nav.rankings": "Rangliste",
@@ -649,31 +655,52 @@ const de = {
   "home.feedTitle": "Zuletzt geschehen",
   "home.showAll": "Alle ansehen",
 
-  // --- "Das Protokoll" — the narrative home page (/home-a) ------------------
+  // --- the home page --------------------------------------------------------
   //
   // The one place on this site where the copy makes an argument rather than
   // labelling a figure, so it is written rather than assembled: five chapters,
   // each a question a first-time reader actually has, answered in a sentence
   // above the data that backs it.
   //
-  // Two rules govern every string below and both are load-bearing.
+  // Three rules govern every string below and all three are load-bearing.
+  //
+  // **The subject is Bundestracker, not the Protokoll.** These strings opened
+  // as a page *about* the Bundestag's published record — the title was "Das
+  // Protokoll" and the lead promised "fünf Kapitel über ein Parlament". That is
+  // an essay's framing, and it left the reader on the home page of a site whose
+  // own purpose was never stated. What this project is for is the argument the
+  // front page has to make: parliamentary work is public, public is not the
+  // same as *accessible*, and closing that gap is what the site does. The
+  // chapters below now answer that in order — what the chamber is, why
+  // transparency needs more than publication, how the measure works, who it
+  // ranks, and what happened today.
   //
   // **The narrative may not out-claim the data.** The page's premise is that
   // every figure comes from a Bundestag record (AGENTS.md), so a sentence that
   // says more than the record does costs more here than a dull one. Chapter 3
   // therefore states the score's three structural limits as part of the story
   // instead of leaving them to the caveat boxes — a story that omits the limits
-  // of its own measure would be both a worse dashboard and a worse story.
+  // of its own measure would be both a worse dashboard and a worse story. That
+  // rule binds the new vision copy hardest: "Transparenz" is the one word on
+  // this page that could be used to claim anything, so every sentence carrying
+  // it names something the site actually does.
   //
   // **German is written first and translated second.** These are not label
-  // strings where a literal rendering serves; "Was es tut, ist öffentlich" is a
-  // sentence with a rhythm, and the English is a sibling rather than a gloss.
-  "protokoll.title": "Das Protokoll",
-  // The subtitle under the wordmark, before Chapter 1 opens. Says what the page
-  // is about to do, so a reader who wants none of it can take the skip link
+  // strings where a literal rendering serves; "Öffentlich ist nicht dasselbe
+  // wie zugänglich" is a sentence with a rhythm, and the English is a sibling
+  // rather than a gloss.
+  //
+  // The keys keep their `protokoll.` prefix. Renaming them to `home.*` would
+  // collide with the dashboard's own `home.*` block a few lines above — the two
+  // pages both exist now, at `/` and `/dashboard`, and one namespace holding
+  // both would be a rename that made the file harder to read rather than
+  // easier.
+  "protokoll.title": "Transparenz durch Daten",
+  // The subtitle under the wordmark, before Chapter 1 opens. Says what the site
+  // is for, so a reader who wants none of the story can take the skip link
   // beside it knowing what they are skipping.
   "protokoll.lead":
-    "Fünf Kapitel über ein Parlament, das seine Arbeit veröffentlicht — und darüber, was sich daraus messen lässt und was nicht.",
+    "Der Bundestag veröffentlicht seine Arbeit — in Tausenden Drucksachen, Protokollen und Abstimmungslisten. Bundestracker macht daraus etwas Nachvollziehbares: jede Rede, jeder Antrag, jede namentliche Abstimmung, jeder Abgeordnete, nachlesbar an einem Ort.",
   // §7's requirement #1, and the one this redesign is most likely to lose: a
   // returning reader who wants today's Abstimmungen must not have to scroll
   // through a story they have read. A quiet link, not a modal and not a stored
@@ -682,13 +709,19 @@ const de = {
   "protokoll.readTheRecord": "Das Protokoll lesen",
   // The rail down the left gutter. Decorative to the eye, but it is also the
   // chapter navigation, so it is named for a screen reader.
-  "protokoll.progressLabel": "Fortschritt im Protokoll",
+  "protokoll.progressLabel": "Fortschritt auf dieser Seite",
   "protokoll.chapterLabel": "Kapitel {index}: {title}",
 
   "protokoll.chapter1Number": "Kapitel eins",
   "protokoll.chapter1Title": "Ein Parlament, 630 Sitze",
   "protokoll.chapter1Standfirst":
     "Der 21. Deutsche Bundestag hat 630 Sitze — jeder davon ein Mandat, jedes Mandat eine Person, die im Namen von rund 60 Millionen Wahlberechtigten abstimmt. Das ist der Gegenstand dieser Seite.",
+  // Under the arc, and both figures are needed at once: how many seats are
+  // drawn so far, and how many there are. One interpolated string rather than a
+  // figure beside a label, because the label *also* contained a count and the
+  // two rendered as "635635 Sitze" — see `SeatCount` in
+  // components/home-protokoll/chapter-chamber.tsx for the measurement.
+  "protokoll.chapter1SeatsDrawn": "{drawn} von {total} Sitzen",
   // Scrolls into view as the arc completes. The one sentence that says what the
   // picture is *not*, because a picture of a parliament is read as a picture of
   // *that* parliament — the same warning components/seating-notice.tsx carries.
@@ -704,9 +737,15 @@ const de = {
     "Der Bogen zählt Mandate, nicht gleichzeitig besetzte Sitze: Scheidet jemand aus und rückt jemand nach, trägt ein Sitz in einer Wahlperiode zwei Mandate. Deshalb liegt die Summe der Fraktionen über den 630 Sitzen des Bundestages.",
 
   "protokoll.chapter2Number": "Kapitel zwei",
-  "protokoll.chapter2Title": "Was es tut, ist öffentlich",
+  "protokoll.chapter2Title": "Warum Transparenz zählt",
+  // The chapter that carries the site's reason to exist, so it is the one that
+  // must not overclaim. The distinction it turns on — published is not the same
+  // as accessible — is a statement about the sources rather than about
+  // politics: the data *is* all public, and it arrives as thousands of separate
+  // documents that no one reads end to end. That gap is what a tracker closes,
+  // and it is the honest version of "empowering citizens".
   "protokoll.chapter2Standfirst":
-    "Jeder Antrag, jede Rede, jede namentliche Abstimmung und jede Anfrage wird protokolliert und als offene Daten veröffentlicht. Diese Seite rechnet nichts hinzu — sie zählt, was ohnehin im Protokoll steht.",
+    "Öffentlich ist nicht dasselbe wie zugänglich. Jeder Antrag, jede Rede, jede namentliche Abstimmung wird veröffentlicht — verteilt auf Zehntausende Dokumente, die niemand vollständig liest. Bundestracker zählt sie zusammen und macht sie vergleichbar. Hinzugerechnet wird nichts.",
 
   "protokoll.chapter3Number": "Kapitel drei",
   "protokoll.chapter3Title": "Wie wir messen",
@@ -731,15 +770,19 @@ const de = {
     "Beide Enden derselben Rangliste, nebeneinander. Ein Tracker, der nur die Spitze veröffentlicht, veröffentlicht eine Bestenliste — und keine überprüfbare Messung.",
 
   "protokoll.chapter5Number": "Kapitel fünf",
-  "protokoll.chapter5Title": "Was heute geschah",
+  "protokoll.chapter5Title": "Der aktuelle Stand",
   "protokoll.chapter5Standfirst":
     "Der laufende Betrieb: die zuletzt namentlich abgestimmten Vorlagen und die jüngsten Einträge im Protokoll. Diese Seite aktualisiert sich, sobald die nächtliche Auswertung neue Daten geladen hat.",
 
-  // The closing line, after the last chapter. Ends on what the reader can do
-  // rather than on a summary of what they just read.
-  "protokoll.outroTitle": "Das ganze Protokoll",
+  // The closing block, after the last chapter. Ends on what the reader can *do*
+  // — which is the point of the whole page, and was previously a statement
+  // about the data's provenance ("Das ganze Protokoll") that read as a second
+  // conclusion rather than as an invitation. The traceability claim it made is
+  // kept, because it is what makes the invitation credible, but it now supports
+  // the call rather than being it.
+  "protokoll.outroTitle": "Sehen Sie selbst nach",
   "protokoll.outroLead":
-    "Jede Zahl auf dieser Seite lässt sich bis zum Dokument zurückverfolgen, aus dem sie stammt.",
+    "Suchen Sie Ihren Wahlkreisabgeordneten, vergleichen Sie Fraktionen, lesen Sie nach, wer wie abgestimmt hat. Jede Zahl auf dieser Seite lässt sich bis zu dem Dokument zurückverfolgen, aus dem sie stammt.",
 
   // --- the opening animation ("630 Sitze") ----------------------------------
   //
@@ -750,113 +793,6 @@ const de = {
   "protokoll.splashLabel": "Eröffnungssequenz",
   "protokoll.splashSkip": "Überspringen",
   "protokoll.splashCounting": "630 Sitze",
-
-  // --- the narrative home page (app/home-c) -------------------------------
-  //
-  // Five claim sentences, one per chapter, and each is the *heading* of the
-  // section it opens rather than a caption above it — the accessible name a
-  // screen reader announces for that region. So each has to stand alone as a
-  // description of what follows.
-  //
-  // The register is deliberate and is the whole concept: every sentence states
-  // what the figures below it claim, and the caveat that follows the data
-  // states what they do not. The caveats are not new — `home.statNamedVotesNote`,
-  // `home.bottomMPsCaveat` and `parties.smallGroupCaveat` already exist and
-  // already say these things. What is new is that the page is *built* around
-  // them instead of printing them underneath.
-  //
-  // Written German-first and translated, not the other way round. "Belegt" is
-  // the load-bearing word — it means evidenced, documented, backed by a record —
-  // and it is what the whole site claims. English has no single word for it, so
-  // the English sentences say it in more words rather than reaching for
-  // "proven", which claims more.
-  "homeC.claimIntro":
-    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
-  // Chapter 2 — the four summary figures. Names the honest limit of two of them
-  // in the sentence itself: `getChamberStats` reports a floor where it cannot
-  // count exactly, and the `+` on the card is meaningless unless the reader has
-  // been told what it means.
-  "homeC.claimStats":
-    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
-  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
-  // that is what the two boards together put on trial.
-  "homeC.claimActivity":
-    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
-  // Chapter 4 — parties and votes. Two sections under one claim because they
-  // make the same move: both aggregate individuals into a group, and both are
-  // read as statements about the group.
-  "homeC.claimParties":
-    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
-  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
-  // no measurement: it reports what was published, and says so.
-  "homeC.claimFeed":
-    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
-
-  // The skip link, and §7's first defence: a returning reader who wants today's
-  // votes should not have to scroll through a story they have read. Named for
-  // where it goes rather than for what it skips.
-  "homeC.skipToData": "Direkt zu den Daten",
-  // The pledge under the hero. Short enough to be read, specific enough to be
-  // checked — it names the two things the site will not do rather than
-  // promising that it is trustworthy.
-  "homeC.heroPledge":
-    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
-
-  // --- /home-b — "Sitzungswoche" ------------------------------------------
-  //
-  // The narrative home page: a sitting week, read as the chamber fills. Five
-  // chapters, declared in lib/sitzungswoche.ts, each with a title, a lead
-  // sentence and a paragraph.
-  //
-  // The register is the one the rest of this dictionary uses and the one the
-  // federal sites use — plain, declarative, and careful about what the data
-  // does not say. Two things it deliberately is not: it does not address the
-  // reader as "du", and it makes no claim the sections underneath cannot back.
-  // Every chapter that could be read as more than its evidence carries a
-  // caveat, and those are reused from the keys that already state them rather
-  // than reworded here.
-  "homeB.title": "Eine Sitzungswoche",
-  "homeB.lead":
-    "Vier Tage im Plenarsaal, wie die offenen Daten sie festhalten — vom Einzug der Fraktionen bis zum Eintrag im Protokoll.",
-  // The skip affordance. "Direkt zu den Daten" rather than "Überspringen": it
-  // says where it goes, not what it avoids, which is what a reader who has read
-  // the story once is actually looking for.
-  "homeB.skipToData": "Direkt zu den Daten",
-  "homeB.skipToDataLabel": "Erzählung überspringen und direkt zu den Zahlen",
-  // The pinned chamber's caption. A `figcaption` rather than an `aria-label` on
-  // the SVG, so it serves a sighted reader too: the colour mode is the one
-  // thing the picture changes between chapters and cannot itself say.
-  "homeB.chamberCaption": "{count} Sitze — eingefärbt nach {mode}",
-  // Chapter 1 — the chamber fills. The §9 warning belongs here above all: this
-  // is the moment a reader takes a dot for a named member's actual chair.
-  "homeB.arrivalTitle": "Der Saal füllt sich",
-  "homeB.arrivalLead": "630 Mandate, sechs Fraktionen, eine Sitzordnung nach Größe.",
-  "homeB.arrivalBody":
-    "Eine Sitzungswoche beginnt damit, dass die Fraktionen ihre Plätze einnehmen. Wie viele Sitze jede von ihnen hält, ist amtlich belegt und aus dem Abgeordnetenverzeichnis abzählbar — wer wo sitzt, ist es nicht.",
-  // Chapter 2 — a bill is tabled. Coalition colouring, because that is the
-  // division a tabled bill is read against.
-  "homeB.tabledTitle": "Eine Vorlage wird eingebracht",
-  "homeB.tabledLead": "Anträge, Gesetzentwürfe, Anfragen — der Stoff der Woche.",
-  "homeB.tabledBody":
-    "Jede Vorlage trägt die Namen derer, die sie eingebracht haben. Das ist die erste Spur, die parlamentarische Arbeit in den offenen Daten hinterlässt — und die einzige, die vollständig ist, weil eine Drucksache ohne Urheber nicht existiert.",
-  // Chapter 3 — the ballot. The chamber shows participation rather than the
-  // result: it is drawn from bloc sizes, so it cannot know how a named member
-  // voted, and painting it as though it did is the one claim §9 forbids.
-  "homeB.ballotTitle": "Es wird abgestimmt",
-  "homeB.ballotLead": "Namentlich, und damit nachvollziehbar bis zum einzelnen Mandat.",
-  "homeB.ballotBody":
-    "Die namentliche Abstimmung ist die Ausnahme im Bundestag, nicht die Regel — und zugleich die einzige Abstimmungsform, für die das Verhalten jedes einzelnen Mandats veröffentlicht wird. Der Saal zeigt hier die Teilnahmequote; wie eine Fraktion tatsächlich votiert hat, steht in den Balken daneben.",
-  // Chapter 4 — the record is written.
-  "homeB.recordTitle": "Das Protokoll entsteht",
-  "homeB.recordLead": "Reden, Ausschussarbeit, Anfragen — Zeile für Zeile.",
-  "homeB.recordBody":
-    "Was im Saal gesagt und getan wird, erscheint als Eintrag: im stenografischen Protokoll, in der Drucksachenliste, im Ausschussbericht. Der Aktivitätswert summiert genau diese Einträge — nicht die Arbeit, sondern ihre veröffentlichte Spur.",
-  // Chapter 5 — the period accumulates. Committee work closes the week
-  // deliberately: it is the part of the job that leaves the least trace.
-  "homeB.periodTitle": "Und über die Wahlperiode",
-  "homeB.periodLead": "Aus einzelnen Wochen wird ein Beitragsdiagramm.",
-  "homeB.periodBody":
-    "Eine Woche sagt wenig, vier Jahre sagen mehr. Über die Wahlperiode hinweg zeigt sich, wo ein Mandat seinen Schwerpunkt setzt — im Plenum, im Ausschuss oder in der schriftlichen Anfrage.",
 
   "footer.dataSource": "Datenquelle",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",
@@ -1352,6 +1288,7 @@ const en: Dictionary = {
     "Transparent, measurable activity of the members of the German Bundestag — from official records.",
 
   "nav.home": "Home",
+  "nav.dashboard": "Dashboard",
   "nav.members": "Members",
   "nav.activity": "Activity",
   "nav.rankings": "Rankings",
@@ -1824,33 +1761,39 @@ const en: Dictionary = {
   "home.feedTitle": "Latest activity",
   "home.showAll": "Show all",
 
-  // --- "Das Protokoll" — the narrative home page (/home-a) ------------------
+  // --- the home page --------------------------------------------------------
   //
   // The German is the original here rather than the translation; see the note
-  // on the German block. "The Record" is left untranslated in the title,
-  // because the page is *about* the Bundestag's own Protokoll and the German
-  // word is the thing being named — the subtitle carries the meaning instead.
-  "protokoll.title": "Das Protokoll",
+  // on the German block for what these strings argue and why they were
+  // rewritten away from naming the Protokoll.
+  //
+  // The title no longer keeps a German word untranslated. It used to — the page
+  // was named after the Bundestag's own Protokoll, and that word was the thing
+  // being named — but the page is now about what this site does with the
+  // record rather than about the record itself, and "Transparency through data"
+  // is a claim that has to be legible to make.
+  "protokoll.title": "Transparency through data",
   "protokoll.lead":
-    "Five chapters about a parliament that publishes its own work — and about what can be measured from it, and what cannot.",
+    "The Bundestag publishes its work — across thousands of papers, transcripts and division lists. Bundestracker turns that into something you can follow: every speech, every motion, every named vote, every member, in one place.",
   "protokoll.skipToData": "Straight to the data",
   "protokoll.readTheRecord": "Read the record",
-  "protokoll.progressLabel": "Progress through the record",
+  "protokoll.progressLabel": "Progress through this page",
   "protokoll.chapterLabel": "Chapter {index}: {title}",
 
   "protokoll.chapter1Number": "Chapter one",
   "protokoll.chapter1Title": "One parliament, 630 seats",
   "protokoll.chapter1Standfirst":
     "The 21st German Bundestag holds 630 seats — each one a mandate, each mandate a person voting on behalf of some 60 million eligible voters. That is what this site is about.",
+  "protokoll.chapter1SeatsDrawn": "{drawn} of {total} seats",
   "protokoll.chapter1Note":
     "The size of each parliamentary group is backed by official records; the position of any single seat on the arc is not — the Bundestag publishes no machine-readable seating plan.",
   "protokoll.chapter1MandateNote":
     "The arc counts mandates, not seats occupied at one time: when a member leaves and a replacement arrives, one seat carries two mandates within an electoral period. That is why the groups sum to more than the Bundestag's 630 seats.",
 
   "protokoll.chapter2Number": "Chapter two",
-  "protokoll.chapter2Title": "What it does is public",
+  "protokoll.chapter2Title": "Why transparency matters",
   "protokoll.chapter2Standfirst":
-    "Every motion, every speech, every named vote and every written question is recorded and published as open data. This site adds nothing — it counts what the record already says.",
+    "Public is not the same as accessible. Every motion, every speech, every named vote is published — spread across tens of thousands of documents nobody reads in full. Bundestracker counts them up and makes them comparable. Nothing is added.",
 
   "protokoll.chapter3Number": "Chapter three",
   "protokoll.chapter3Title": "How we measure",
@@ -1868,72 +1811,18 @@ const en: Dictionary = {
     "Both ends of the same ranking, side by side. A tracker that publishes only the top is publishing a highlight reel — not a measurement anyone can check.",
 
   "protokoll.chapter5Number": "Chapter five",
-  "protokoll.chapter5Title": "What happened today",
+  "protokoll.chapter5Title": "Where things stand",
   "protokoll.chapter5Standfirst":
     "The chamber in motion: the most recent named ballots and the latest entries in the record. This page updates itself as the nightly sweep loads new data.",
 
-  "protokoll.outroTitle": "The whole record",
+  "protokoll.outroTitle": "See for yourself",
   "protokoll.outroLead":
-    "Every figure on this page can be traced back to the document it came from.",
+    "Look up your constituency member, compare parliamentary groups, read who voted which way. Every figure on this page can be traced back to the document it came from.",
 
   // --- the opening animation ("630 Sitze") ----------------------------------
   "protokoll.splashLabel": "Opening sequence",
   "protokoll.splashSkip": "Skip",
   "protokoll.splashCounting": "630 seats",
-
-  // --- the narrative home page (app/home-c) -------------------------------
-  //
-  // See the German block for what these are and why they read as they do. The
-  // one translation note worth keeping: German "belegt" — evidenced, documented,
-  // backed by a record — has no single English word, and "proven" claims more
-  // than the sources support. So the English says it in more words.
-  "homeC.claimIntro":
-    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
-  "homeC.claimStats":
-    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
-  "homeC.claimActivity":
-    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
-  "homeC.claimParties":
-    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
-  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
-
-  "homeC.skipToData": "Straight to the data",
-  "homeC.heroPledge":
-    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
-
-  // --- /home-b — "Sitzungswoche" ---
-  //
-  // "Sitzungswoche" is kept untranslated in the title below and glossed in the
-  // lead, the way this dictionary already keeps "Fraktion" and "Wahlperiode":
-  // it is the parliament's own term for the thing, "sitting week" is not
-  // idiomatic English for it, and an English reader of a Bundestag tracker is
-  // better served by the word they will meet everywhere else on the site.
-  "homeB.title": "A sitting week",
-  "homeB.lead":
-    "Four days in the chamber, as the open data records them — from the groups taking their seats to the entry in the record.",
-  "homeB.skipToData": "Straight to the data",
-  "homeB.skipToDataLabel": "Skip the narrative and go straight to the figures",
-  "homeB.chamberCaption": "{count} seats — coloured by {mode}",
-  "homeB.arrivalTitle": "The chamber fills",
-  "homeB.arrivalLead": "630 mandates, six groups, seated by size.",
-  "homeB.arrivalBody":
-    "A sitting week begins with the parliamentary groups taking their places. How many seats each of them holds is officially recorded and countable from the register of members — who sits where is not.",
-  "homeB.tabledTitle": "A motion is tabled",
-  "homeB.tabledLead": "Motions, bills, questions — the substance of the week.",
-  "homeB.tabledBody":
-    "Every paper carries the names of those who brought it. That is the first trace parliamentary work leaves in the open data, and the only one that is complete, because a paper without an author does not exist.",
-  "homeB.ballotTitle": "The vote is taken",
-  "homeB.ballotLead": "By name, and so traceable to the individual mandate.",
-  "homeB.ballotBody":
-    "The named ballot is the exception in the Bundestag rather than the rule — and at the same time the only form of vote for which each individual mandate's position is published. The chamber here shows participation; how a group actually voted is in the bars beside it.",
-  "homeB.recordTitle": "The record is written",
-  "homeB.recordLead": "Speeches, committee work, questions — line by line.",
-  "homeB.recordBody":
-    "What is said and done in the chamber appears as an entry: in the stenographic record, in the list of papers, in the committee report. The activity score adds up exactly those entries — not the work, but its published trace.",
-  "homeB.periodTitle": "And across the electoral period",
-  "homeB.periodLead": "Single weeks become a contributions graph.",
-  "homeB.periodBody":
-    "One week says little; four years say more. Across the electoral period it becomes visible where a mandate puts its weight — in the chamber, in committee, or in the written question.",
 
   "footer.dataSource": "Data source",
   "footer.dataSourceName": "Deutscher Bundestag — Open Data",

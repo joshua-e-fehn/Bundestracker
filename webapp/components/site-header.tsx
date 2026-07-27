@@ -40,6 +40,12 @@ import { cn } from "@/lib/utils"
  * entries for whichever branch builds those pages.
  */
 const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
+  // First, and the only entry that is not a section of the site: `/` is the
+  // narrative page and this is the dashboard `/` used to be. A returning reader
+  // who wants today's figures rather than the argument needs one click to reach
+  // them from anywhere, and the home page's own skip link only serves the
+  // reader who is already on it.
+  { href: "/dashboard", labelKey: "nav.dashboard" },
   { href: "/mps", labelKey: "nav.members" },
   { href: "/parties", labelKey: "nav.parties" },
   { href: "/votes", labelKey: "nav.votes" },

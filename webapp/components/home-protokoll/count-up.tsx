@@ -35,6 +35,29 @@ import { REVEAL_TRANSITION, useReveal } from "./use-reveal"
  * React, and there is no hook there to run `formatApproximateCount` on the way.
  * A subscription into `useState` re-renders one small element at 60 fps, which
  * for four numbers is nothing.
+ *
+ * ## Why the *last* frame is the value and not the animation's end
+ *
+ * §9 again, and this is the failure that made the figures read as zeros. The
+ * count runs from 0 to `value` on the reveal, and `value` arrives from a Convex
+ * query that resolves independently of the reader's scroll. Measured on a 390 px
+ * viewport against WP21 data: the reveal fired while three of the four stats
+ * were still `undefined`, each rendered `0`, and each then animated 0 → 0 and
+ * stopped — so the row read "630 / 0 / 0+ / 0" for a chamber with 69 ballots and
+ * 16 416 speeches, permanently, because the animation had already completed by
+ * the time the real figure landed.
+ *
+ * The effect therefore depends on `value` and re-runs when it changes, and the
+ * rendered figure falls back to `value` rather than to 0 whenever no animation
+ * is in flight. A figure on this page is never a number the record does not
+ * support: the count-up is a sweetener over a correct value, so when the two
+ * disagree the value wins.
+ *
+ * The caller compounds that guarantee by not mounting this until its stat has
+ * resolved (`ChapterPublic` renders a skeleton meanwhile), so the common path
+ * never animates a placeholder at all. This handles the case that slips past it
+ * — a figure that changes *after* the count has run, which the nightly sweep
+ * makes a real event on a page that subscribes.
  */
 export function CountUp({
   value,
@@ -51,12 +74,21 @@ export function CountUp({
   const { locale } = useLocale()
   const reduceMotion = useReducedMotion()
   const { ref, revealed } = useReveal<HTMLSpanElement>()
-  const [shown, setShown] = useState(reduceMotion === true ? value : 0)
+  /**
+   * The number on screen while an animation is running, or `null` when none is
+   * — in which case `value` itself is rendered.
+   *
+   * Null rather than seeding this with 0, so that "counting from zero" and "the
+   * figure is zero" are different states. Seeded with 0 they are the same one,
+   * and a count that finished before its query landed is indistinguishable from
+   * a chamber that held no ballots. See the header.
+   */
+  const [counting, setCounting] = useState<number | null>(null)
 
   useEffect(() => {
     if (!revealed) return
     if (reduceMotion === true) {
-      setShown(value)
+      setCounting(null)
       return
     }
     // 1.1 s, longer than the page's 0.5 s reveal on purpose: a number counting
@@ -67,18 +99,26 @@ export function CountUp({
       duration: 1.1,
       delay,
       ease: [0.16, 1, 0.3, 1],
-      onUpdate: (latest) => setShown(latest),
-      // Guarantees the last frame is the exact value rather than 4 999.7,
-      // which `formatApproximateCount` would round to 5.000 anyway — but the
-      // rounding would be luck rather than a promise.
-      onComplete: () => setShown(value),
+      onUpdate: (latest) => setCounting(latest),
+      // Hands the figure back to `value`. Not `setCounting(value)`: the last
+      // frame of an eased run is 4 999.7 rather than 5 000, and rounding it
+      // would land on the right number by luck rather than by construction.
+      // Releasing to `null` renders `value` itself, which is exact by
+      // definition and stays exact if the query updates afterwards.
+      onComplete: () => setCounting(null),
     })
-    return () => controls.stop()
+    // Stops *and* releases. A run cancelled mid-count — because `value`
+    // changed, or the card unmounted — must not leave the last intermediate
+    // frame on screen as though it were the figure.
+    return () => {
+      controls.stop()
+      setCounting(null)
+    }
   }, [revealed, value, delay, reduceMotion])
 
   return (
     <span ref={ref} className="tabular-nums">
-      {formatApproximateCount(Math.round(shown), exact, locale)}
+      {formatApproximateCount(Math.round(counting ?? value), exact, locale)}
     </span>
   )
 }
