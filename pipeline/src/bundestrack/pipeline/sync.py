@@ -49,7 +49,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from bundestrack.api.base import BundestagAPIError
@@ -59,7 +59,7 @@ from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import VoteClient
 from bundestrack.config import Settings, get_settings
 from bundestrack.models.dip import Aktivitaet, Plenarprotokoll
-from bundestrack.models.votes import VoteSheet, VoteSheetLink
+from bundestrack.models.votes import Vote, VoteSheet, VoteSheetLink
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
 from bundestrack.pipeline.load import BatchResult, ConvexLoader
@@ -194,6 +194,11 @@ class Pipeline:
         #: stage and posted by the motion stage — sponsorships are known before
         #: the motions they attach to are written.
         self._sponsorships: dict[str, dict[str, str | None]] = {}
+        #: ISO date → that day's published ballot outcomes. Memoised because a
+        #: sitting holds several ballots and they share a query: WP21 sitting 90
+        #: is eight ballots and one fetch. A day that failed is cached empty
+        #: rather than retried per ballot.
+        self._vote_outcomes: dict[str, transform.OutcomeIndex] = {}
 
     def close(self) -> None:
         for client in (self.dip, self.stammdaten, self.protocols, self.votes, self.loader):
@@ -550,6 +555,17 @@ class Pipeline:
             except BundestagAPIError as error:
                 stage.notes.append(f"{link.title}: {error}")
                 continue
+            if sheet.wahlperiode < self.wahlperiode:
+                # The listing runs newest-first and a Wahlperiode is contiguous
+                # in time, so the first ballot from an *earlier* period means
+                # every entry after it is earlier still. Without this the stage
+                # walks all ~1 015 entries and downloads every one before
+                # discarding it on the next line — each download a request
+                # against a WAF that IP-blocks (§2.6). A WP21 run is ~70 sheets.
+                stage.notes.append(
+                    f"Listing reached WP{sheet.wahlperiode}, before WP{self.wahlperiode} — stopping"
+                )
+                break
             if sheet.wahlperiode != self.wahlperiode:
                 continue
 
@@ -587,12 +603,24 @@ class Pipeline:
         absent — a record whose ballot is unknown has nothing to be a record
         *of*, and Convex refuses to insert a placeholder that would then have
         no published tally to check against.
+
+        The outcome is looked up here rather than in `load_votes`, and that
+        placement is load-bearing: that loop walks the whole ~1 015-entry
+        listing and only discards a sheet from another period *after*
+        downloading it, so a query hoisted into it would be hundreds of extra
+        requests at the shared 1 req/s pacer for data thrown away. Here it is
+        paid only for ballots actually being written.
         """
         title = link.title or sheet.title or f"Namentliche Abstimmung {_ballot_key(sheet)}"
         sheets.record(
             _as_batch(
                 self.loader.upsert_vote_sheet(
-                    transform.vote_sheet_payload(sheet, title=title, sheet_date=link.date)
+                    transform.vote_sheet_payload(
+                        sheet,
+                        result=self._outcome_for(sheet, link),
+                        title=title,
+                        sheet_date=link.date,
+                    )
                 )
             )
         )
@@ -604,6 +632,52 @@ class Pipeline:
                 transform.vote_event_payloads(sheet, resolver, title=title)
             )
         )
+
+    def _outcome_for(self, sheet: VoteSheet, link: VoteSheetLink) -> str:
+        """This ballot's published outcome, or `""` when DIP has none for it.
+
+        Always a string, never None: `voteSheetInput.result` is a required
+        `v.string()` (webapp/convex/schema.ts), so a null is a 400 rather than
+        an absent field. `""` is what the UI renders as "outcome not published
+        yet", which is also the honest reading of a ballot DIP has not decided
+        yet or that this join could not identify.
+        """
+        day = link.date or sheet.date
+        if day is None:
+            return ""
+        counts = sheet.tally()
+        key = (
+            sheet.wahlperiode,
+            sheet.sitzungnr,
+            counts[Vote.YES],
+            counts[Vote.NO],
+            counts[Vote.ABSTAIN],
+        )
+        return self._outcomes_on(day).get(key, "")
+
+    def _outcomes_on(self, day: date) -> transform.OutcomeIndex:
+        """The outcomes DIP publishes for one sitting day, fetched once.
+
+        The failure is caught here rather than left to `_guard`, which isolates
+        the whole *stage*: an uncaught error would abandon every remaining
+        ballot in the run, and the sheets are the expensive part — they have
+        already been downloaded by the time this is called. A day that failed is
+        cached empty so the run does not retry it once per ballot.
+        """
+        key = day.isoformat()
+        if key not in self._vote_outcomes:
+            try:
+                self._vote_outcomes[key] = transform.vote_outcome_index(
+                    self.dip.iter_namentliche_abstimmungen(
+                        self.wahlperiode, date_from=key, date_to=key
+                    )
+                )
+            except BundestagAPIError as error:
+                # Not fatal: the ballot and its votes are still worth storing,
+                # and a later sync re-reads the outcome as an upsert.
+                logger.warning("No published outcomes for %s: %s", key, error)
+                self._vote_outcomes[key] = {}
+        return self._vote_outcomes[key]
 
     # -- stage 8: seating --------------------------------------------------
 
@@ -768,6 +842,41 @@ def run_backfill(
     return report
 
 
+def revote(
+    wahlperiode: int = CURRENT_WAHLPERIODE,
+    *,
+    incremental: bool = False,
+    settings: Settings | None = None,
+    dry_run: bool = False,
+    pipeline: Pipeline | None = None,
+) -> RunReport:
+    """Re-read a period's ballots, and nothing else.
+
+    The roster first, because the vote sheets carry **no MP id at all** (§4.1)
+    — every row is matched by printed name, and the resolver that does it is
+    built from Stammdaten. That is one ZIP, so this stays a cheap command.
+
+    Exists because neither existing entry point can re-read stored ballots at a
+    sensible cost. `sync` stops at the first ballot it already has, so it
+    updates none of them; `backfill` re-runs the 80 537-activity stages to get
+    at them. After a change to how a ballot is parsed or enriched — which is
+    exactly when the stored rows are the ones that are wrong — this is the
+    re-run that costs ~70 sheet downloads instead of hours.
+    """
+    owned = pipeline is None
+    run = pipeline or Pipeline(wahlperiode, settings=settings, dry_run=dry_run)
+    report = RunReport(wahlperiode, "votes")
+    try:
+        _guard(report, "roster", lambda: run.load_roster(report))
+        if run.resolver is None or not run.resolver.roster():
+            logger.error("No roster for WP%d — ballots cannot be name-matched", wahlperiode)
+            return report
+        _guard(report, "votes", lambda: run.load_votes(report, incremental=incremental))
+    finally:
+        _finish(run, report, owned=owned)
+    return report
+
+
 def recompute_scores(
     wahlperiode: int = CURRENT_WAHLPERIODE,
     *,
@@ -896,5 +1005,6 @@ __all__ = [
     "backfill",
     "init",
     "recompute_scores",
+    "revote",
     "sync",
 ]

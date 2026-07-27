@@ -21,7 +21,7 @@ import pytest
 from bundestrack.api.protocols import ProtocolClient
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import parse_sheet
-from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang
+from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang, Vorgangsposition
 from bundestrack.models.votes import Vote
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
@@ -754,3 +754,121 @@ def _resolver_with_undated_seats(stammdaten_id: str, *, drop_mandate_start: bool
         update["start_date"] = None
     mp.mandates[mp.mandates.index(mandate)] = mandate.model_copy(update=update)
     return resolver
+
+
+# --- vote outcomes --------------------------------------------------------
+
+
+def _decided(
+    sitzungnr: int,
+    tenor: str,
+    bemerkung: str | None,
+    *,
+    dokumentart: str = "Plenarprotokoll",
+) -> Vorgangsposition:
+    """A procedure step that decided one ballot, for the index below."""
+    return Vorgangsposition.model_validate(
+        {
+            "id": "1",
+            "vorgangsposition": "3. Beratung",
+            "zuordnung": "BT",
+            "gang": True,
+            "fortsetzung": False,
+            "nachtrag": False,
+            "vorgangstyp": "Gesetzgebung",
+            "typ": "Vorgangsposition",
+            "titel": "T",
+            "dokumentart": "Plenarprotokoll",
+            "vorgang_id": "1",
+            "datum": "2026-07-10",
+            "aktualisiert": "2026-07-10T00:00:00+02:00",
+            "fundstelle": {
+                "id": "5806",
+                "dokumentnummer": f"21/{sitzungnr}",
+                "datum": "2026-07-10",
+                "dokumentart": dokumentart,
+                "herausgeber": "BT",
+            },
+            "beschlussfassung": [
+                {
+                    "beschlusstenor": tenor,
+                    "abstimmungsart": "Namentliche Abstimmung",
+                    "abstimm_ergebnis_bemerkung": bemerkung,
+                }
+            ],
+        }
+    )
+
+
+def test_a_ballots_outcome_is_keyed_by_its_sitting_and_tally() -> None:
+    """The join the vote sheets cannot make on their own.
+
+    The sheets carry the votes and no outcome; DIP carries the outcome and no
+    votes (§3.2, §4.1), and neither publishes an id the other has. The sitting
+    narrows to a day's ballots and the tally picks one out — verified against
+    WP21 sitting 90, where all eight matched exactly and uniquely.
+    """
+    index = transform.vote_outcome_index(
+        [
+            _decided(90, "Annahme in Ausschussfassung", "519:43:0"),
+            _decided(90, "Ablehnung der Vorlage", "58:462:80"),
+        ]
+    )
+
+    assert index[(21, 90, 519, 43, 0)] == "Annahme in Ausschussfassung"
+    assert index[(21, 90, 58, 462, 80)] == "Ablehnung der Vorlage"
+
+
+def test_a_tally_with_a_trailing_note_still_joins() -> None:
+    # A live WP21 value. Parsing it with `split(":")` would produce a key that
+    # matches no ballot, and the outcome would silently never attach.
+    index = transform.vote_outcome_index(
+        [_decided(90, "Ablehnung der Vorlage", "539:56:1 (Annahme der Beschlussempfehlung)")]
+    )
+
+    assert index == {(21, 90, 539, 56, 1): "Ablehnung der Vorlage"}
+
+
+def test_a_step_with_no_usable_key_is_skipped(caplog: pytest.LogCaptureFixture) -> None:
+    # Nothing to join on: no tally, or a Drucksache fundstelle whose number is
+    # not a sitting at all (§5.1, and see `Vorgangsposition.sitzung`).
+    index = transform.vote_outcome_index(
+        [
+            _decided(90, "Überweisung", None),
+            _decided(216, "Annahme", "1:2:3", dokumentart="Drucksache"),
+        ]
+    )
+
+    assert index == {}
+
+
+def test_two_ballots_with_one_tally_leave_no_outcome(caplog: pytest.LogCaptureFixture) -> None:
+    """A tie on the only discriminating field means this join cannot say which
+    ballot is which — so neither is attached, and the collision is logged.
+
+    Guessing would put the wrong outcome on a real vote, which is the one error
+    here that nothing downstream could detect.
+    """
+    with caplog.at_level("WARNING"):
+        index = transform.vote_outcome_index(
+            [
+                _decided(90, "Annahme der Vorlage", "300:300:0"),
+                _decided(90, "Ablehnung der Vorlage", "300:300:0"),
+            ]
+        )
+
+    assert index == {}
+    assert "cannot say which is which" in caplog.text
+
+
+def test_a_tenor_repeated_verbatim_is_not_a_collision() -> None:
+    # Two entries agreeing is not ambiguity — DIP lists a decision more than
+    # once when a step is amended, and dropping it would lose a real outcome.
+    index = transform.vote_outcome_index(
+        [
+            _decided(90, "Annahme der Vorlage", "300:200:0"),
+            _decided(90, "Annahme der Vorlage", "300:200:0"),
+        ]
+    )
+
+    assert index == {(21, 90, 300, 200, 0): "Annahme der Vorlage"}

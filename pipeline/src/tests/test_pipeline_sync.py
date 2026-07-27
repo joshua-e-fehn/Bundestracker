@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
-from bundestrack.models.dip import Aktivitaet
+from bundestrack.models.dip import Aktivitaet, Vorgangsposition
+from bundestrack.models.votes import VoteSheet, VoteSheetLink
 from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
 from bundestrack.pipeline.state import (
@@ -29,7 +31,7 @@ from bundestrack.pipeline.state import (
     load_state,
     save_state,
 )
-from bundestrack.pipeline.sync import Pipeline, RunReport, backfill, sync
+from bundestrack.pipeline.sync import Pipeline, RunReport, backfill, revote, sync
 from tests.conftest import fixture_bytes, fixture_json
 
 
@@ -53,9 +55,18 @@ class StubStammdaten(StubClient):
 class StubDIP(StubClient):
     """DIP, answering with recorded pages and remembering its filters."""
 
-    def __init__(self, *, aktivitaeten: list[Aktivitaet] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        aktivitaeten: list[Aktivitaet] | None = None,
+        abstimmungen: list[Vorgangsposition] | None = None,
+    ) -> None:
         self.aktivitaeten = aktivitaeten or []
+        self.abstimmungen = abstimmungen or []
         self.since: list[str | None] = []
+        #: The days `_outcomes_on` asked about, so a test can assert the memo
+        #: holds — a sitting of eight ballots must cost one query, not eight.
+        self.outcome_days: list[str | None] = []
 
     def iter_personen(self, wahlperiode=None, *, updated_since=None, **extra):
         return iter(())
@@ -74,10 +85,27 @@ class StubDIP(StubClient):
     def iter_plenarprotokolle(self, wahlperiode=None, *, updated_since=None, **extra):
         return iter(())
 
+    def iter_namentliche_abstimmungen(self, wahlperiode=None, *, date_from=None, **extra):
+        self.outcome_days.append(date_from)
+        return iter(self.abstimmungen)
+
 
 class StubVotes(StubClient):
+    """The named-vote listing, answering with sheets held in order.
+
+    A list of pairs rather than a dict keyed by link: `VoteSheetLink` is not
+    frozen, so it is unhashable, and the listing is an ordered sequence anyway —
+    which is the property `load_votes` relies on to stop early.
+    """
+
+    def __init__(self, *, sheets: list[tuple[VoteSheetLink, VoteSheet]] | None = None) -> None:
+        self._sheets = sheets or []
+
     def iter_vote_links(self, **kwargs):
-        return iter(())
+        return iter(link for link, _ in self._sheets)
+
+    def fetch_sheet(self, link: VoteSheetLink) -> VoteSheet:
+        return next(sheet for candidate, sheet in self._sheets if candidate is link)
 
 
 class RecordingLoader(ConvexLoader):
@@ -106,6 +134,7 @@ class RecordingLoader(ConvexLoader):
 def build(
     *,
     dip: StubDIP | None = None,
+    votes: StubVotes | None = None,
     state: SyncState | None = None,
     tmp_path=None,
 ) -> tuple[Pipeline, RecordingLoader]:
@@ -124,7 +153,7 @@ def build(
         dip=dip or StubDIP(),
         stammdaten=StubStammdaten(),
         protocols=StubClient(),
-        votes=StubVotes(),
+        votes=votes or StubVotes(),
         loader=loader,
         state=state if state is not None else SyncState(),
     )
@@ -479,3 +508,184 @@ def test_an_older_period_says_committee_data_was_never_published(tmp_path) -> No
 
     (stage,) = [s for s in report.stages if s.name == "committees"]
     assert any("§6.4" in note for note in stage.notes)
+
+
+# --- vote outcomes --------------------------------------------------------
+
+
+def ballot(
+    sitzungnr: int,
+    abstimmnr: int,
+    *,
+    yes: int = 1,
+    no: int = 0,
+    wahlperiode: int = 21,
+    day: str = "2026-07-10",
+) -> tuple[VoteSheetLink, VoteSheet]:
+    """One listing entry and the sheet behind it, with a chosen tally.
+
+    Rows name the one MP the Stammdaten excerpt carries, so `vote-records`
+    resolves rather than quarantining — what is under test here is the outcome
+    attached to the sheet, not the name join.
+    """
+    records = [
+        {
+            "wahlperiode": wahlperiode,
+            "sitzungnr": sitzungnr,
+            "abstimmnr": abstimmnr,
+            "name": "Stetten",
+            "vorname": "Christian",
+            "titel": "Frhr. von",
+            "vote": vote,
+        }
+        for vote, count in (("yes", yes), ("no", no))
+        for _ in range(count)
+    ]
+    sheet = VoteSheet.model_validate(
+        {
+            "wahlperiode": wahlperiode,
+            "sitzungnr": sitzungnr,
+            "abstimmnr": abstimmnr,
+            "title": f"Ballot {sitzungnr}/{abstimmnr}",
+            "date": day,
+            "records": records,
+        }
+    )
+    link = VoteSheetLink.model_validate(
+        {
+            "title": sheet.title,
+            "xlsx_url": f"https://example.invalid/{sitzungnr}-{abstimmnr}.xlsx",
+            "date": day,
+        }
+    )
+    return link, sheet
+
+
+def decided(sitzungnr: int, tenor: str, bemerkung: str) -> Vorgangsposition:
+    """A DIP procedure step publishing one ballot's outcome."""
+    return Vorgangsposition.model_validate(
+        {
+            "id": "1",
+            "vorgangsposition": "3. Beratung",
+            "zuordnung": "BT",
+            "gang": True,
+            "fortsetzung": False,
+            "nachtrag": False,
+            "vorgangstyp": "Gesetzgebung",
+            "titel": "T",
+            "typ": "Vorgangsposition",
+            "dokumentart": "Plenarprotokoll",
+            "vorgang_id": "1",
+            "datum": "2026-07-10",
+            "aktualisiert": "2026-07-10T00:00:00+02:00",
+            "fundstelle": {
+                "id": "5806",
+                "dokumentnummer": f"21/{sitzungnr}",
+                "datum": "2026-07-10",
+                "dokumentart": "Plenarprotokoll",
+                "herausgeber": "BT",
+            },
+            "beschlussfassung": [
+                {
+                    "beschlusstenor": tenor,
+                    "abstimmungsart": "Namentliche Abstimmung",
+                    "abstimm_ergebnis_bemerkung": bemerkung,
+                }
+            ],
+        }
+    )
+
+
+def test_a_ballot_is_stored_with_the_outcome_dip_published(tmp_path) -> None:
+    """The sheets carry the votes and no outcome, DIP the outcome and no votes
+    (§3.2, §4.1) — so a ballot's `result` exists only if the two are joined."""
+    dip = StubDIP(abstimmungen=[decided(90, "Annahme in Ausschussfassung", "3:1:0")])
+    votes = StubVotes(sheets=[ballot(90, 8, yes=3, no=1)])
+    pipeline, loader = build(dip=dip, votes=votes, tmp_path=tmp_path)
+
+    revote(21, pipeline=pipeline)
+    (posted,) = loader.payloads("vote-sheets")
+
+    assert posted["result"] == "Annahme in Ausschussfassung"
+
+
+def test_a_ballot_dip_has_no_outcome_for_stores_an_empty_string(tmp_path) -> None:
+    """Never None: `voteSheetInput.result` is a required `v.string()`
+    (webapp/convex/schema.ts), so a null is a 400 rather than an absent field.
+
+    `""` is what the UI renders as "outcome not published yet", which is the
+    honest reading of a ballot DIP has not decided — or one this join could not
+    identify.
+    """
+    dip = StubDIP(abstimmungen=[decided(90, "Annahme der Vorlage", "999:1:0")])
+    votes = StubVotes(sheets=[ballot(90, 8, yes=3, no=1)])
+    pipeline, loader = build(dip=dip, votes=votes, tmp_path=tmp_path)
+
+    revote(21, pipeline=pipeline)
+    (posted,) = loader.payloads("vote-sheets")
+
+    assert posted["result"] == ""
+    assert isinstance(posted["result"], str)
+
+
+def test_a_sitting_of_several_ballots_costs_one_outcome_query(tmp_path) -> None:
+    """WP21 sitting 90 is eight ballots on one day. Un-memoised that is eight
+    paginated queries at the shared 1 req/s pacer, against a WAF that
+    IP-blocks (§2.6) — for one query's worth of answer."""
+    dip = StubDIP(abstimmungen=[decided(90, "Annahme der Vorlage", "3:1:0")])
+    votes = StubVotes(sheets=[ballot(90, n, yes=3, no=1) for n in (1, 2, 3)])
+    pipeline, _ = build(dip=dip, votes=votes, tmp_path=tmp_path)
+
+    revote(21, pipeline=pipeline)
+
+    assert dip.outcome_days == ["2026-07-10"]
+
+
+def test_a_failed_outcome_lookup_still_stores_the_ballot(tmp_path) -> None:
+    """`_guard` isolates the *stage*, so an uncaught error here would abandon
+    every remaining ballot — and the sheets are the expensive part, already
+    downloaded by the time the outcome is asked for."""
+
+    class RefusingDIP(StubDIP):
+        def iter_namentliche_abstimmungen(self, wahlperiode=None, *, date_from=None, **extra):
+            self.outcome_days.append(date_from)
+            raise BundestagAPIError("the WAF is blocking us")
+
+    dip = RefusingDIP()
+    votes = StubVotes(sheets=[ballot(90, n, yes=3, no=1) for n in (1, 2)])
+    pipeline, loader = build(dip=dip, votes=votes, tmp_path=tmp_path)
+
+    report = revote(21, pipeline=pipeline)
+    (stage,) = [s for s in report.stages if s.name == "votes"]
+
+    assert stage.ok
+    assert len(loader.payloads("vote-sheets")) == 2
+    assert all(p["result"] == "" for p in loader.payloads("vote-sheets"))
+    # Cached empty rather than retried once per ballot.
+    assert dip.outcome_days == ["2026-07-10"]
+
+
+def test_the_listing_stops_at_the_first_ballot_from_an_earlier_period(tmp_path) -> None:
+    """The listing is newest-first and a Wahlperiode is contiguous in time.
+
+    Without the early stop the stage walks all ~1 015 entries and downloads
+    every one before discarding it — each download a request against a WAF that
+    IP-blocks (§2.6). A WP21 run should be ~70 sheets, not the whole archive.
+    """
+    votes = StubVotes(
+        sheets=[
+            ballot(90, 1, yes=3, no=1),
+            ballot(88, 4, yes=3, no=1, wahlperiode=20, day="2024-01-01"),
+            ballot(87, 2, yes=3, no=1),
+        ]
+    )
+    pipeline, loader = build(votes=votes, tmp_path=tmp_path)
+
+    report = revote(21, pipeline=pipeline)
+    (stage,) = [s for s in report.stages if s.name == "votes"]
+
+    # The WP21 ballot *after* the WP20 one is never reached — which is the
+    # point: it does not exist in a real listing, and paying to find that out
+    # costs the whole archive.
+    assert len(loader.payloads("vote-sheets")) == 1
+    assert any("stopping" in note for note in stage.notes)

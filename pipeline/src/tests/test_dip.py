@@ -333,6 +333,100 @@ def test_a_roll_call_step_is_detectable_from_its_beschlussfassung() -> None:
     assert position.is_namentliche_abstimmung
 
 
+def _position(**overrides: object) -> Vorgangsposition:
+    """A minimal procedure step, for the join-key properties below."""
+    document: dict[str, object] = {
+        "id": "1",
+        "vorgangsposition": "3. Beratung",
+        "zuordnung": "BT",
+        "gang": True,
+        "fortsetzung": False,
+        "nachtrag": False,
+        "vorgangstyp": "Gesetzgebung",
+        "typ": "Vorgangsposition",
+        "titel": "T",
+        "dokumentart": "Plenarprotokoll",
+        "vorgang_id": "1",
+        "datum": "2026-07-10",
+        "aktualisiert": "2026-07-10T00:00:00+02:00",
+    }
+    document.update(overrides)
+    return Vorgangsposition.model_validate(document)
+
+
+def _fundstelle(dokumentnummer: str, dokumentart: str = "Plenarprotokoll") -> dict[str, object]:
+    return {
+        "id": "5806",
+        "dokumentnummer": dokumentnummer,
+        "datum": "2026-07-10",
+        "dokumentart": dokumentart,
+        "herausgeber": "BT",
+    }
+
+
+def test_a_ballots_tally_is_read_from_the_head_of_free_text() -> None:
+    """`abstimm_ergebnis_bemerkung` opens with `yes:no:abstain` and sometimes
+    carries prose after it — a live WP21 value is
+    `"539:56:1 (Annahme der Beschlussempfehlung auf Ablehnung)"`.
+
+    This is the only field that tells two ballots in one sitting apart, so
+    mis-slicing it would attach the wrong outcome to a vote.
+    """
+    plain = _position(
+        beschlussfassung=[{"beschlusstenor": "A", "abstimm_ergebnis_bemerkung": "519:43:0"}]
+    )
+    annotated = _position(
+        beschlussfassung=[
+            {
+                "beschlusstenor": "A",
+                "abstimm_ergebnis_bemerkung": "539:56:1 (Annahme der Beschlussempfehlung)",
+            }
+        ]
+    )
+
+    assert plain.beschlussfassung[0].tally == (519, 43, 0)
+    assert annotated.beschlussfassung[0].tally == (539, 56, 1)
+
+
+def test_a_bemerkung_that_is_only_prose_has_no_tally() -> None:
+    # The recorded fixture carries exactly this shape, so `split(":")` would
+    # raise on real data rather than on a hypothetical.
+    prose = _position(
+        beschlussfassung=[
+            {
+                "beschlusstenor": "Überweisung",
+                "abstimm_ergebnis_bemerkung": "Festlegung der Federführung gegen den Wunsch",
+            }
+        ]
+    )
+    absent = _position(beschlussfassung=[{"beschlusstenor": "Überweisung"}])
+
+    assert prose.beschlussfassung[0].tally is None
+    assert absent.beschlussfassung[0].tally is None
+
+
+def test_the_sitting_key_comes_only_from_a_plenarprotokoll_fundstelle() -> None:
+    """⚠ The sibling `beschlussfassung[].dokumentnummer` is a *Drucksache*
+    number, and a step can be recorded against one too.
+
+    So an unguarded parse of `"21/216"` yields "sitting 216" — not a parse
+    failure but a plausible wrong join, which is the kind this codebase refuses
+    to make.
+    """
+    protocol = _position(fundstelle=_fundstelle("21/90"))
+    drucksache = _position(fundstelle=_fundstelle("21/216", "Drucksache"))
+
+    assert protocol.sitzung == (21, 90)
+    assert drucksache.sitzung is None
+    assert _position().sitzung is None
+
+
+def test_a_bundesrat_document_number_yields_no_sitting() -> None:
+    # §5.1: a bare running number with no slash, which `.split("/")` misparses
+    # into nonsense. `Plenarprotokoll.sitzungsnummer` guards the same way.
+    assert _position(fundstelle=_fundstelle("1044")).sitzung is None
+
+
 def test_committee_referrals_keep_the_lead_committee_flag(no_pacing: None) -> None:
     # §3.3: `federfuehrung` separates the lead committee from co-advising ones,
     # which is what lets a metric weight them differently.

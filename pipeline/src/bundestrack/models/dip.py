@@ -28,10 +28,15 @@ the wrong direction to fail.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+#: The vote counts at the head of `abstimm_ergebnis_bemerkung` — see
+#: `Beschlussfassung.tally`, which is where the shape is explained.
+_TALLY_PATTERN = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*:\s*(\d+)")
 
 
 def _unwrap_single(value: Any) -> Any:
@@ -174,6 +179,33 @@ class Beschlussfassung(DIPModel):
     grundlage: str | None = None
     dokumentnummer: str | None = None
     mehrheit: str | None = None
+
+    @property
+    def tally(self) -> tuple[int, int, int] | None:
+        """`(yes, no, abstain)` from `abstimm_ergebnis_bemerkung`, or None.
+
+        The field is free text that *usually* opens with the counts —
+        `"519:43:0"` — and sometimes carries prose after them, e.g.
+        `"539:56:1 (Annahme der Beschlussempfehlung auf Ablehnung)"`. It is also
+        sometimes prose alone, with no counts at all.
+
+        So the pattern is anchored at the start and a `split(":")` is wrong
+        twice over: it raises on the prose-only form and mis-slices the
+        parenthesised one. None is returned for anything that does not begin
+        with three counts, which is what lets the caller treat "no tally here"
+        as ordinary rather than exceptional.
+
+        This is the only field that distinguishes two ballots taken in the same
+        sitting, so it is what joins a DIP outcome to a parsed vote sheet — see
+        `transform.vote_outcome_index`.
+        """
+        if not self.abstimm_ergebnis_bemerkung:
+            return None
+        match = _TALLY_PATTERN.match(self.abstimm_ergebnis_bemerkung)
+        if match is None:
+            return None
+        yes, no, abstain = match.groups()
+        return int(yes), int(no), int(abstain)
 
 
 #: The `abstimmungsart` value that marks a roll-call vote (§3.2, complete enum).
@@ -355,6 +387,31 @@ class Vorgangsposition(DIPModel):
         fetching — the votes themselves are not in DIP.
         """
         return any(b.abstimmungsart == NAMENTLICHE_ABSTIMMUNG for b in self.beschlussfassung)
+
+    @property
+    def sitzung(self) -> tuple[int, int] | None:
+        """`(wahlperiode, sitzungnr)` of the sitting this step was recorded in.
+
+        Half of the key that joins a published outcome to a parsed vote sheet —
+        the sheet's name encodes the same two numbers (§4.1). The other half is
+        `Beschlussfassung.tally`, because a sitting holds several ballots.
+
+        ⚠ Read from `fundstelle`, and **only** when that is a Plenarprotokoll. A
+        step can be recorded against a Drucksache instead, and the sibling
+        `beschlussfassung[].dokumentnummer` is a Drucksache number in any case —
+        so an unguarded parse of `"21/216"` yields "sitting 216", which is not a
+        parse failure but a plausible wrong join.
+
+        Returns None on a Bundesrat number too, for the reason
+        `Plenarprotokoll.sitzungsnummer` gives: it is a bare running number with
+        no slash, and `.split("/")` misparses it into nonsense (§5.1).
+        """
+        if self.fundstelle is None or self.fundstelle.dokumentart != "Plenarprotokoll":
+            return None
+        period, _, sitting = self.fundstelle.dokumentnummer.partition("/")
+        if not period.isdigit() or not sitting.isdigit():
+            return None
+        return int(period), int(sitting)
 
 
 class Drucksache(DIPModel):

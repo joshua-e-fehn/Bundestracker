@@ -40,7 +40,7 @@ from collections.abc import Iterable, Iterator
 from datetime import date
 from typing import Any
 
-from bundestrack.models.dip import Aktivitaet, Drucksache, Vorgang
+from bundestrack.models.dip import Aktivitaet, Drucksache, Vorgang, Vorgangsposition
 from bundestrack.models.speeches import Protocol
 from bundestrack.models.stammdaten import MP, CommitteeMembership, Mandate
 from bundestrack.models.votes import Vote, VoteSheet
@@ -360,6 +360,68 @@ def vote_sheet_payload(
         "totalEligible": sheet.total_eligible,
         "sourceUrl": sheet.source_url,
     }
+
+
+#: `(wahlperiode, sitzungnr, yes, no, abstain)` → the published `beschlusstenor`.
+OutcomeIndex = dict[tuple[int, int, int, int, int], str]
+
+
+def vote_outcome_index(positions: Iterable[Vorgangsposition]) -> OutcomeIndex:
+    """DIP procedure steps → the outcome of each ballot they decided.
+
+    The vote sheets carry the votes and no outcome; DIP `/vorgangsposition`
+    carries the outcome and no votes (§3.2, §4.1). Neither side publishes an id
+    the other has, so the join is behavioural: the sitting identifies the day's
+    ballots, and the `yes:no:abstain` tally picks one out of them. Verified
+    against WP21 sitting 90 — eight ballots, eight DIP entries, every tally
+    exactly and uniquely matched.
+
+    ## An ambiguous key is dropped, not guessed
+
+    If two entries for one sitting share a tally but disagree on the tenor,
+    both are removed and the collision logged. A tie on the only discriminating
+    field means this join cannot tell the ballots apart, and picking either
+    would attach the wrong outcome to a vote — the one error class the sources
+    make unrecoverable, since nothing downstream could detect it. A missing
+    entry degrades to `result: ""`, which the UI already renders as "outcome not
+    published yet".
+
+    Every entry carrying a parseable tally is indexed, not only those whose own
+    `abstimmungsart` is `Namentliche Abstimmung`: the tally *is* the
+    discriminator, and a published count belongs to the ballot it counts either
+    way. Filtering more tightly would drop a tally that sits on a sibling entry.
+    """
+    index: OutcomeIndex = {}
+    ambiguous: set[tuple[int, int, int, int, int]] = set()
+
+    for position in positions:
+        sitting = position.sitzung
+        if sitting is None:
+            continue
+        for decision in position.beschlussfassung:
+            tally = decision.tally
+            tenor = clean_text(decision.beschlusstenor)
+            if tally is None or not tenor:
+                continue
+            key = (*sitting, *tally)
+            if key in ambiguous:
+                continue
+            existing = index.get(key)
+            if existing is not None and existing != tenor:
+                logger.warning(
+                    "Two outcomes for WP%d sitting %d at %d:%d:%d — %r and %r. Neither is "
+                    "attached: the tally is the only field that tells one ballot from "
+                    "another, so this join cannot say which is which.",
+                    *key,
+                    existing,
+                    tenor,
+                )
+                ambiguous.add(key)
+                del index[key]
+                continue
+            index[key] = tenor
+
+    return index
 
 
 def vote_record_payloads(sheet: VoteSheet, resolver: MPResolver) -> Payload:

@@ -1,10 +1,11 @@
 """Command-line entry point for the Bundestrack pipeline.
 
-Four commands, matching the four times data moves:
+Five commands, matching the times data moves:
 
     init                 first full fetch of the current electoral period
     sync                 daily incremental fetch (what the cron runs)
     backfill --wp 20     one named electoral period, start to finish
+    votes                re-read one period's ballots, and nothing else
     scores               recompute activity scores now, without waiting
 
 Every command is a thin shell here: argument parsing and reporting only. The
@@ -124,6 +125,41 @@ def backfill(ctx: click.Context, electoral_period: int) -> None:
         "backfill",
         electoral_period=electoral_period,
         run=lambda **kwargs: pipeline.backfill(electoral_period, **kwargs),
+    )
+
+
+@cli.command()
+@click.option(
+    "--wp",
+    "electoral_period",
+    type=int,
+    default=CURRENT_ELECTORAL_PERIOD,
+    show_default=True,
+    metavar="N",
+    help="Wahlperiode whose ballots to re-read.",
+)
+@click.option(
+    "--new-only",
+    is_flag=True,
+    help="Stop at the first ballot already stored, as `sync` does.",
+)
+@click.pass_context
+def votes(ctx: click.Context, electoral_period: int, new_only: bool) -> None:
+    """Re-read one period's named ballots, and nothing else.
+
+    For when the stored ballots are the rows that are wrong — a change to how a
+    sheet is parsed, or to the outcome attached to it. `sync` stops at the first
+    ballot it already has and so updates none of them; `backfill` reaches them
+    only by re-running every other stage first, which is hours.
+
+    Fetches the roster too, because the sheets carry no MP id at all (§4.1) and
+    every row is matched by printed name. That is one ZIP.
+    """
+    _run(
+        ctx,
+        "votes",
+        electoral_period=electoral_period,
+        run=lambda **kwargs: pipeline.revote(electoral_period, incremental=new_only, **kwargs),
     )
 
 
