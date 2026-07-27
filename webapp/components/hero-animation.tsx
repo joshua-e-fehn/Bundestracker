@@ -198,11 +198,12 @@ export function HeroAnimationSlot({ className }: { className?: string }) {
  * `pathLength={1}` on the ring, so the draw-on is expressible without a
  * descendant selector and without a copy — see components/brand-mark.tsx.
  *
- * It is deliberately not reinstated on this crest. The splash on /home-b is
- * where a seal being struck has a job to do (it is the loading state, and the
- * drawing *is* the wait); in the hero it would be a 0.35 s stagger on an element
- * the reader has already arrived at, which is what "not worth it" meant then and
- * still means. The capability is shared; the choice to use it is per call site.
+ * It is deliberately not reinstated on this crest. Concept B's splash — since
+ * deleted with the concept — was where a seal being struck had a job to do (it
+ * was the loading state, and the drawing *was* the wait); in the hero it would
+ * be a 0.35 s stagger on an element the reader has already arrived at, which is
+ * what "not worth it" meant then and still means. The capability is shared; the
+ * choice to use it is per call site.
  *
  * `text-gold-brand`, against `BrandMark`'s own `text-gold` default and for the
  * reason that default exists: the ink tier is for hairlines at 20 px, where the

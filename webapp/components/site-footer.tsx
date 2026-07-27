@@ -34,13 +34,23 @@ export function SiteFooter() {
           </div>
 
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-            {/* First, and the only internal link in this row. The disclaimer
-                below states that Bundestrack is not the Bundestag's own; this is
-                where a reader who wants to know what it *is* — and what the
-                figures do and do not measure — goes from any page on the site.
-                `Link` rather than `<a>`: an in-app route, unlike the two
-                outbound links beside it, so it has no external-link icon and
-                does not open a tab. */}
+            {/* The dashboard, first. `/` is the narrative page, so this is the
+                one route that is otherwise reachable only from the header — and
+                the footer is where a reader who has scrolled to the bottom of
+                the story is standing when they decide they would rather have
+                the numbers. */}
+            <Link
+              href="/dashboard"
+              className="rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {t("nav.dashboard")}
+            </Link>
+            {/* The disclaimer below states that Bundestrack is not the
+                Bundestag's own; this is where a reader who wants to know what it
+                *is* — and what the figures do and do not measure — goes from any
+                page on the site. `Link` rather than `<a>`: an in-app route,
+                unlike the two outbound links beside it, so it has no
+                external-link icon and does not open a tab. */}
             <Link
               href="/about"
               className="rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"

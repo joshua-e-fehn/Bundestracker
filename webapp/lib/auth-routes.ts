@@ -71,49 +71,20 @@ export const PUBLIC_PATHS = [
   // and what they do not, so gating it would put the site's own caveats behind
   // an account while leaving the numbers they qualify in the open.
   "/about",
-  // The narrative home pages, as candidates for `/`. Not in the nav and
-  // `noindex` — they are designs being looked at rather than destinations — but
-  // public all the same: each is the home page's own content, and a route that
-  // redirects to `/sign-in` cannot be judged against the one it might replace.
-  // Caught by the filesystem check, on the commit that added the page, for the
-  // seventh time.
-  // The methodology page. Public for the same reason as everything above it,
-  // and with a sharper edge: it is the page that explains what the figures mean
-  // and what they do not, so gating it would put the site's own caveats behind
-  // an account while leaving the numbers they qualify in the open.
-  "/about",
-  // `/home-a` is the narrative home page ("Das Protokoll"), a parallel route to
-  // `/` so the two can be compared before either wins — see app/home-a/page.tsx.
-  // Nothing links to it from the site chrome, which is exactly what would have
-  // made this omission survive review: the only way to reach it is by typing the
-  // URL, and it would have 404'd for whoever did.
-  "/home-a",
-  "/home-b",
-  // The third narrative candidate, beside `/` while the redesign is being looked
-  // at rather than over it. It goes when the concept does — either deleted, or
-  // promoted to `/`, in which case the existing "/" entry already covers it and
-  // this line is removed with the route.
-  "/home-c",
-  // The Untersuchungsausschuss quorum calculator, and the eighth time the
-  // filesystem check has caught this before a browser did — it failed on the
-  // commit that added `app/inquiry-quorum/page.tsx` with no line here. Public
-  // like everything else: the page is arithmetic over the public roster, and
-  // the one figure on it that is not official is marked as ours rather than
-  // hidden behind an account.
-  "/inquiry-quorum",
-  // Caught by the filesystem check, on the commit that added each page.
+  // The dashboard — the stats row, both leaderboards, the Fraktionen, the
+  // ballots and the feed, which is what `/` was before the narrative page took
+  // that route. Public for the reason everything above it is, and with the
+  // sharpest version of the ⚠: it is now the *only* route showing several of
+  // those sections in one place, and it is linked from the header and the
+  // footer of every page on the site. Omitting it here would send every reader
+  // who clicked "Dashboard" to a 404 that looks like a broken route.
   //
-  // All three are listed because all three routes exist. Two of them were lost
-  // in the home-* merges — this file was resolved by taking one side whole, so
-  // `/home-a` and `/home-c` fell out while their pages stayed on disk, and the
-  // filesystem check went red. That is the eighth time it has earned its keep,
-  // and the first time it caught a *merge* rather than a new page.
-  //
-  // Each goes when its concept does — either deleted, or promoted to `/`, in
-  // which case the existing "/" entry already covers it.
-  "/home-a",
-  "/home-b",
-  "/home-c",
+  // The three `/home-*` candidates that used to be listed here are gone: `/`
+  // is Concept A, and B and C were deleted with their components. That is the
+  // resolution the note they carried anticipated — "each goes when its concept
+  // does — either deleted, or promoted to `/`, in which case the existing '/'
+  // entry already covers it."
+  "/dashboard",
 ]
 
 export function isPublicPath(pathname: string) {

@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
  * ## Why the level is a prop
  *
  * It was a hardcoded `h2`, which is right on every page that puts these
- * directly under its `h1`. The narrative home page (app/home-a/page.tsx) nests
+ * directly under its `h1`. The narrative home page (app/page.tsx) nests
  * them one level deeper — each chapter is an `h2` and the boards inside it are
  * subsections — so a fixed `h2` flattened the outline: "Wer ist aktiv?" and
  * "Aktivste Abgeordnete" came out as siblings, which tells a screen reader the
