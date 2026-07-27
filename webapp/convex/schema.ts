@@ -185,7 +185,7 @@ export const mpInput = {
   /** Wahlkreis name. Null for list MPs, who have no constituency. */
   constituency: v.union(v.null(), v.string()),
   wahlperiode: v.number(),
-  bio: v.union(v.null(), v.string()),
+  bio: v.optional(v.union(v.null(), v.string())),
   /**
    * The MP's official portrait on `bundestag.de`, hotlinked.
    *
@@ -204,17 +204,16 @@ export const mpInput = {
    * as a pair with `photoUrl`: displaying the credit is the licence condition,
    * so a portrait that arrives without one is dropped by the pipeline rather
    * than shown bare. */
-  photoCredit: v.union(v.null(), v.string()),
+  photoCredit: v.optional(v.union(v.null(), v.string())),
   birthDate: v.union(v.null(), v.string()),
   /** From abgeordnetenwatch (83.4 % of WP21). Stammdaten publishes no
    * education field at all, so this has no official counterpart. */
-  education: v.union(v.null(), v.string()),
-  /** Stammdaten `BERUF` — the trade practised *before* the mandate (94.3 %). */
-  profession: v.union(v.null(), v.string()),
+  education: v.optional(v.union(v.null(), v.string())),
+  profession: v.optional(v.union(v.null(), v.string())),
   /** abgeordnetenwatch's `occupation` — what the MP does *now*, which for a
-   * sitting member is often `MdB` (88.1 %). Deliberately not merged with
-   * `profession`: the two answer different questions and disagree usefully. */
-  occupation: v.union(v.null(), v.string()),
+   * sitting MP is usually a past tense (`Rechtsanwalt`, `Lehrerin`). Distinct
+   * from `profession`: the two answer different questions and disagree usefully. */
+  occupation: v.optional(v.union(v.null(), v.string())),
   /**
    * How to reach the MP, as the Bundestag actually publishes it.
    *
@@ -228,7 +227,8 @@ export const mpInput = {
    * The Berlin office is not stored: it is `Platz der Republik 1` for all 630,
    * so it belongs in the UI as a constant, not in 630 rows.
    */
-  contact: v.union(
+  contact: v.optional(
+    v.union(
     v.null(),
     v.object({
       /** `bundestag.de/services/formular/contactform?mdbId=…`. The `mdbId` is a
@@ -243,6 +243,7 @@ export const mpInput = {
        * an enum: the list is the Bundestag's and it grows. */
       socials: v.array(v.object({ platform: v.string(), url: v.string() })),
     }),
+    ),
   ),
   /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`). */
   electionMethod: v.union(v.null(), v.string()),
