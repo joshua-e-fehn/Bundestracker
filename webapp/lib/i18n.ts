@@ -431,6 +431,28 @@ const de = {
   "vote.invalid": "Ungültig",
   "vote.absent": "Nicht abgegeben",
 
+  // --- published ballot outcomes ---
+  //
+  // The German values here are the Bundestag's own `beschlusstenor` wording,
+  // **byte for byte**. That is load-bearing rather than stylistic: the /votes
+  // result filter groups on the stored string (convex/votes.ts) and matches the
+  // reader's selection against it exactly, so a "tidied" value here would make
+  // the badge disagree with the dropdown that selects it. lib/vote-outcomes.ts
+  // pins the identity with a round-trip test.
+  //
+  // Only the tenors seen in the corpus are listed, and the map is exact-match:
+  // `beschlusstenor` is free text (§3.2), so an unrecognised outcome keeps its
+  // own German words rather than being rounded to the nearest translation.
+  "votes.outcome.pending": "Ausstehend",
+  "votes.outcome.annahme": "Annahme",
+  "votes.outcome.ablehnung": "Ablehnung",
+  "votes.outcome.annahmeDerVorlage": "Annahme der Vorlage",
+  "votes.outcome.ablehnungDerVorlage": "Ablehnung der Vorlage",
+  "votes.outcome.annahmeInAusschussfassung": "Annahme in Ausschussfassung",
+  "votes.outcome.ueberweisung": "Überweisung",
+  "votes.outcome.erledigt": "Erledigt",
+  "votes.outcome.zurueckgezogen": "Zurückgezogen",
+
   // --- voting explorer (list, detail, per-MP table) ---
   "votes.title": "Namentliche Abstimmungen",
   "votes.subtitle":
@@ -939,6 +961,24 @@ const en: Dictionary = {
   "vote.abstain": "Abstained",
   "vote.invalid": "Invalid",
   "vote.absent": "Did not vote",
+
+  // --- published ballot outcomes ---
+  //
+  // Translated only where the German tenor is an exact, known one — see the
+  // note on the German block, and lib/vote-outcomes.ts. "Vorlage" is rendered
+  // "motion" rather than "bill": it covers Anträge and Entschließungsanträge as
+  // well as Gesetzentwürfe, and "bill" would claim a legislative status most of
+  // them do not have. "Annahme in Ausschussfassung" keeps its qualifier for the
+  // same reason — the chamber adopted the committee's text, not the original.
+  "votes.outcome.pending": "Pending",
+  "votes.outcome.annahme": "Adopted",
+  "votes.outcome.ablehnung": "Rejected",
+  "votes.outcome.annahmeDerVorlage": "Motion adopted",
+  "votes.outcome.ablehnungDerVorlage": "Motion rejected",
+  "votes.outcome.annahmeInAusschussfassung": "Adopted as amended in committee",
+  "votes.outcome.ueberweisung": "Referred to committee",
+  "votes.outcome.erledigt": "Concluded",
+  "votes.outcome.zurueckgezogen": "Withdrawn",
 
   // --- voting explorer (list, detail, per-MP table) ---
   // "Namentliche Abstimmung" is kept as "recorded vote" rather than "roll-call
