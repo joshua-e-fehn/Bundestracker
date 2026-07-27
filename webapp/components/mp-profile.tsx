@@ -34,12 +34,30 @@ export type MPDoc = {
   party: string
   constituency: string | null
   photoUrl: string | null
-  bio: string | null | undefined
   birthDate: string | null
-  education: string | null | undefined
-  profession: string | null | undefined
   electionMethod: string | null
   datesInOffice: { start: string; end: string | null } | null
+  /**
+   * The enrichment fields, all three optional as well as nullable.
+   *
+   * `?:` rather than `| undefined` is the load-bearing part. These are
+   * `v.optional` in convex/schema.ts, because they were added to a populated
+   * `mps` table and Convex validates every existing row at deploy time — a
+   * required field there rejects the deploy outright. `v.optional` makes the
+   * generated document type declare the *property* optional, and a required
+   * `bio: string | null | undefined` is not assignable from that: the key may
+   * be missing entirely, not merely hold `undefined`.
+   *
+   * So there are three states, not two — key absent (the row predates the
+   * field), `null` (the source published nothing), and a value — and the two
+   * absences mean the same thing to a reader. Every use below narrows on
+   * truthiness, which handles all three; see the longer note on
+   * `SeatTooltipData.profession` in components/seat-tooltip.tsx for the outage
+   * that a `!== null` check caused here.
+   */
+  bio?: string | null
+  education?: string | null
+  profession?: string | null
 }
 
 export function MPProfile({
