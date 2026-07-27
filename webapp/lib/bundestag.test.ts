@@ -4,6 +4,7 @@ import {
   formatDate,
   fraktionClassName,
   initials,
+  occupationOf,
   protocolPdfUrl,
 } from "./bundestag"
 import { foldName } from "./search"
@@ -15,8 +16,13 @@ import { foldName } from "./search"
  * reproduce formulas §8 of docs/api-research.md verified against real
  * documents, and their failure mode is a link to the *wrong* paper rather than
  * a broken one — a reader cannot tell those apart. And `initials` is what
- * roughly two rows in three actually render (§6.5 measured portrait coverage at
- * 36.5 %), so it is the common path, not the fallback.
+ * a handful of rows actually render — §6.5 put portrait coverage at 36.5 %, but
+ * the Bundestag's own listing publishes one for all 639 WP21 MPs and 635 join
+ * to the roster, so initials are now the exception rather than the rule.
+ *
+ * `occupationOf` is here because three components call it and would otherwise
+ * each pick their own fallback — which is how the same MP ends up reading as a
+ * lawyer in the table and an MdB on the seating map.
  */
 
 describe("drucksachePdfUrl", () => {
@@ -170,5 +176,36 @@ describe("foldName", () => {
 
   test("is case- and whitespace-insensitive", () => {
     expect(foldName("  MERZ ")).toBe("merz")
+  })
+})
+
+describe("occupationOf", () => {
+  test("prefers what the MP does now over what they did before", () => {
+    // The two sources answer related questions differently and both are stored:
+    // `occupation` is abgeordnetenwatch's current answer, `profession` is
+    // Stammdaten's `BERUF` — the trade practised before the mandate.
+    expect(occupationOf({ occupation: "MdB", profession: "Rechtsanwalt" })).toBe("MdB")
+  })
+
+  test("falls back to the former profession, which has the wider coverage", () => {
+    // 94.3 % of WP21 against 88.1 %, so this is not a rare path.
+    expect(occupationOf({ occupation: null, profession: "Informatikerin" })).toBe("Informatikerin")
+  })
+
+  test("an unrecorded occupation is null, never an empty string", () => {
+    // Null means "not recorded" and the UI omits the line; an empty string
+    // would render as a labelled blank, which reads as a value that failed to
+    // load rather than one that was never published.
+    expect(occupationOf({ occupation: null, profession: null })).toBeNull()
+    expect(occupationOf({ occupation: "  ", profession: "" })).toBeNull()
+  })
+
+  test("a field missing entirely is treated as unrecorded, not as a crash", () => {
+    // ⚠ The deploy-skew window: a browser running a build whose Convex
+    // counterpart has not deployed yet receives rows without the key at all.
+    // `undefined` passes a `!== null` check and then throws on `.trim()` —
+    // which is exactly the outage components/seat-tooltip.tsx documents.
+    expect(occupationOf({})).toBeNull()
+    expect(occupationOf({ profession: "Lehrerin" })).toBe("Lehrerin")
   })
 })

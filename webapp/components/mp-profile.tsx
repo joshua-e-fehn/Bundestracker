@@ -10,7 +10,7 @@ import { MPScorePanel } from "@/components/mp-score-panel"
 import { useLocale } from "@/components/providers/locale-provider"
 import { TrendGraphs } from "@/components/trend-graphs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatDate } from "@/lib/bundestag"
+import { formatDate, occupationOf } from "@/lib/bundestag"
 import type { Locale } from "@/lib/i18n"
 
 /**
@@ -27,6 +27,16 @@ import type { Locale } from "@/lib/i18n"
  * the server, already fetched — see app/mps/[id]/page.tsx.
  */
 
+/**
+ * ⚠ The enrichment fields are `| null | undefined`, not `| null`.
+ *
+ * Same reason as `SeatTooltipData` in components/seat-tooltip.tsx, which
+ * records the outage: during the window between a frontend deploy and the
+ * Convex deploy that backs it, a field the client expects simply is not on the
+ * document, and `undefined` is not `null`. A `!== null` check lets it through
+ * to a `.trim()` that throws and takes the page to its error boundary. Narrow
+ * with `?.` and treat both as "not recorded".
+ */
 export type MPDoc = {
   internalId: string
   name: string
@@ -34,12 +44,20 @@ export type MPDoc = {
   party: string
   constituency: string | null
   photoUrl: string | null
+  photoCredit?: string | null
   bio: string | null
   birthDate: string | null
   education: string | null
   profession: string | null
+  occupation?: string | null
   electionMethod: string | null
   datesInOffice: { start: string; end: string | null } | null
+  contact?: {
+    formUrl: string | null
+    constituencyOffice: string | null
+    homepage: string | null
+    socials: Array<{ platform: string; url: string }>
+  } | null
 }
 
 export function MPProfile({
@@ -74,8 +92,21 @@ export function MPProfile({
           <Card>
             <CardContent className="flex flex-col items-center gap-3 pt-2 text-center">
               <MPPhoto name={mp.name} photoUrl={mp.photoUrl} className="size-28" />
+              {/* The licence condition, not a nicety: these portraits are
+                  photographer-credited rather than open-licensed (§6.5), so a
+                  portrait that renders must render its credit with it. */}
+              {mp.photoUrl && mp.photoCredit?.trim() ? (
+                <p className="-mt-1 text-[11px] text-muted-foreground leading-tight">
+                  {t("mp.photoCredit", { credit: mp.photoCredit })}
+                </p>
+              ) : null}
               <div className="flex flex-col items-center gap-2">
                 <h1 className="font-semibold text-2xl tracking-tight">{mp.name}</h1>
+                {/* Directly under the name, because it is the one line that
+                    says who this person is rather than how they rank. */}
+                {occupationOf(mp) ? (
+                  <p className="text-muted-foreground text-sm">{occupationOf(mp)}</p>
+                ) : null}
                 <FraktionBadge fraktion={mp.fraktion} />
                 {/* The party, when it differs from the group. `CDU` inside
                     `CDU/CSU` is not news; a `fraktionslos` MP's former party
@@ -92,6 +123,7 @@ export function MPProfile({
           </Card>
 
           <Biography mp={mp} locale={locale} />
+          <Contact mp={mp} />
           <MPCommittees mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
         </aside>
 
@@ -133,6 +165,11 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
 
   const rows: Array<{ label: string; value: string }> = []
   if (mp.birthDate) rows.push({ label: t("mp.birthDate"), value: formatDate(mp.birthDate, locale) })
+  // Both, and labelled apart. `profession` is Stammdaten's `BERUF` — the trade
+  // practised before the mandate — and `occupation` is what the MP does now,
+  // which for a sitting member is often `MdB`. Collapsing them would drop a
+  // real answer; the header line above shows only the current one.
+  if (mp.occupation?.trim()) rows.push({ label: t("mp.occupation"), value: mp.occupation })
   if (mp.profession) rows.push({ label: t("mp.profession"), value: mp.profession })
   if (mp.education) rows.push({ label: t("mp.education"), value: mp.education })
   if (mp.electionMethod) rows.push({ label: t("mp.electionMethod"), value: mp.electionMethod })
@@ -168,6 +205,105 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
             {mp.bio ? <p className="text-sm leading-relaxed">{mp.bio}</p> : null}
           </>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** One outbound link in the Contact card. */
+export type ContactLink = { key: string; label: string; href: string }
+
+/**
+ * The links a contact block yields, in the order they are shown.
+ *
+ * Exported and pure so it can be tested without a renderer, in the same spirit
+ * as `referenceHref` in components/activity-feed-item.tsx — the rule about
+ * *which* links exist is the part worth asserting, and it needs no DOM.
+ *
+ * `labels` is passed in rather than read from the locale here, because a pure
+ * function that calls a hook is neither.
+ */
+export function contactLinks(
+  contact: MPDoc["contact"],
+  labels: { form: string; homepage: string },
+): ContactLink[] {
+  if (!contact) return []
+  const links: ContactLink[] = []
+  // The form first: it is the only route to the MP the Bundestag itself
+  // offers, and the closest thing to the email address that does not exist.
+  if (contact.formUrl?.trim()) {
+    links.push({ key: "form", label: labels.form, href: contact.formUrl })
+  }
+  if (contact.homepage?.trim()) {
+    links.push({ key: "homepage", label: labels.homepage, href: contact.homepage })
+  }
+  for (const social of contact.socials ?? []) {
+    if (social.url?.trim()) {
+      links.push({ key: `social:${social.url}`, label: social.platform, href: social.url })
+    }
+  }
+  return links
+}
+
+/**
+ * How to reach this MP — as much of it as is actually published.
+ *
+ * ⚠ **No email address and no phone number**, and that is a property of the
+ * sources rather than a gap here: `MDB_STAMMDATEN.DTD` declares no contact
+ * elements at all, and the biography pages carry no `mailto:` or `tel:` links.
+ * The card says so in words. Leaving the absence unexplained would read as
+ * data the pipeline had failed to fetch, and someone would go looking for it.
+ *
+ * The Berlin office is not shown: it is `Platz der Republik 1` for all 630, so
+ * it is a fact about the Bundestag rather than about this MP.
+ */
+function Contact({ mp }: { mp: MPDoc }) {
+  const { t } = useLocale()
+  const office = mp.contact?.constituencyOffice?.trim()
+  const links = contactLinks(mp.contact, {
+    form: t("mp.contactForm"),
+    homepage: t("mp.homepage"),
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("mp.contact")}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {links.length === 0 && !office ? (
+          <p className="text-muted-foreground text-sm">{t("mp.noContact")}</p>
+        ) : (
+          <>
+            {office ? (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-muted-foreground text-xs">{t("mp.constituencyOffice")}</span>
+                {/* `whitespace-pre-line`: the line breaks are the address's
+                    structure, and a doubled one separates two offices. */}
+                <address className="whitespace-pre-line text-sm not-italic leading-snug">
+                  {office}
+                </address>
+              </div>
+            ) : null}
+            {links.length > 0 ? (
+              <ul className="flex flex-col gap-1.5">
+                {links.map((link) => (
+                  <li key={link.key}>
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm hover:underline"
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        )}
+        <p className="text-muted-foreground text-xs leading-snug">{t("mp.noDirectContact")}</p>
       </CardContent>
     </Card>
   )

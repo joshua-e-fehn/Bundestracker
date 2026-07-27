@@ -308,7 +308,23 @@ const de = {
   "mp.birthDate": "Geboren",
   "mp.education": "Ausbildung",
   "mp.profession": "Beruf",
+  "mp.occupation": "Tätigkeit",
   "mp.electionMethod": "Mandatsart",
+  // --- contact ---
+  //
+  // ⚠ No `mp.email` and no `mp.phone`, deliberately: neither is published in
+  // any Bundestag source, so the Contact card offers the form the Bundestag
+  // itself offers. `mp.noDirectContact` says so rather than leaving a reader
+  // to conclude the data is merely missing.
+  "mp.contact": "Kontakt",
+  "mp.contactForm": "Kontaktformular",
+  "mp.constituencyOffice": "Wahlkreisbüro",
+  "mp.homepage": "Website",
+  "mp.socialProfiles": "Profile im Internet",
+  "mp.noContact": "Keine Kontaktdaten erfasst.",
+  "mp.noDirectContact":
+    "Der Bundestag veröffentlicht keine E-Mail-Adressen und Telefonnummern von Abgeordneten.",
+  "mp.photoCredit": "Foto: {credit}",
   "mp.datesInOffice": "Mandatszeit",
   "mp.stillServing": "im Amt",
   "mp.noBiography": "Für diese Wahlperiode liegen keine biografischen Angaben vor.",
@@ -858,7 +874,17 @@ const en: Dictionary = {
   "mp.birthDate": "Born",
   "mp.education": "Education",
   "mp.profession": "Profession",
+  "mp.occupation": "Occupation",
   "mp.electionMethod": "Elected via",
+  // --- contact ---
+  "mp.contact": "Contact",
+  "mp.contactForm": "Contact form",
+  "mp.constituencyOffice": "Constituency office",
+  "mp.homepage": "Website",
+  "mp.socialProfiles": "Profiles online",
+  "mp.noContact": "No contact details recorded.",
+  "mp.noDirectContact": "The Bundestag does not publish members' email addresses or phone numbers.",
+  "mp.photoCredit": "Photo: {credit}",
   "mp.datesInOffice": "Time in office",
   "mp.stillServing": "in office",
   "mp.noBiography": "No biographical details are recorded for this electoral period.",

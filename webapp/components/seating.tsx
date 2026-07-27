@@ -69,6 +69,7 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
     // recorded" the schema means by null, rather than an `undefined` that the
     // tooltip's narrowing would have to guard separately. See `SeatTooltipData`.
     profession: entry.profession ?? null,
+    occupation: entry.occupation ?? null,
     photoUrl: entry.photoUrl,
     seatLabel: entry.seat.seatLabel,
     row: entry.seat.row,

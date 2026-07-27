@@ -5,17 +5,28 @@ import { cn } from "@/lib/utils"
 /**
  * An MP's portrait, or their initials.
  *
- * The fallback is the common case, not the exception: §6.5 of
- * docs/api-research.md measured Wikimedia Commons coverage at **36.5 %** of
- * WP21 and warns in as many words to "design the UI with a graceful
- * initials/placeholder fallback". Roughly two rows in three render as letters.
+ * The fallback is now the exception rather than the rule, but it is still
+ * load-bearing. §6.5 measured Wikimedia Commons coverage at 36.5 % of WP21 and
+ * concluded the UI would mostly render letters; the Bundestag's own MP listing
+ * turned out to publish a portrait for **all 639**, of which 635 join to the
+ * roster (pipeline `api/mp_profiles.py`). So most rows are faces — and the
+ * handful that are not are real rows, not a temporary gap.
  *
- * Deliberately not `next/image`. The sources are Wikimedia Commons URLs the
- * pipeline resolves per MP, so the host list is not known at build time, and
- * every unconfigured host is a hard render error rather than a broken image —
- * a wrong trade for a picture that is optional to begin with. `<img>` inside
- * Radix's Avatar degrades to the fallback on error, which is the behaviour this
- * data needs.
+ * ⚠ **A portrait is not shown without its credit.** These are
+ * photographer-credited works rather than open-licensed ones, which is the one
+ * part of §6.5 that still holds. This component renders the image; the *credit*
+ * is rendered beside it by the caller, because it belongs next to the picture
+ * at whatever size the page is showing it. `mps.photoCredit` travels with
+ * `mps.photoUrl` for that reason, and the pipeline drops a portrait that
+ * arrives without one.
+ *
+ * Deliberately not `next/image`. The URLs are on `bundestag.de` today and were
+ * on Wikimedia Commons in the previous design, so the host list is a property
+ * of the data rather than of the build — and every unconfigured host in
+ * `next/image` is a hard render error rather than a broken image, which is the
+ * wrong trade for a picture that is optional to begin with. `<img>` inside
+ * Radix's Avatar degrades to the fallback on error, which is what this data
+ * needs. (`next.config.ts` accordingly configures no `remotePatterns`.)
  */
 export function MPPhoto({
   name,

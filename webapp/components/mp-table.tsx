@@ -27,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { api } from "@/convex/_generated/api"
-import { formatNumber, formatPercent, stateOf } from "@/lib/bundestag"
+import { formatNumber, formatPercent, occupationOf, stateOf } from "@/lib/bundestag"
 import type { TranslationKey } from "@/lib/i18n"
 import { foldName } from "@/lib/search"
 
@@ -74,12 +74,18 @@ type Row = {
      * list MP, so the filter must not fold the two together. */
     electionMethod: string | null
     photoUrl: string | null
+    /** What the MP does now (abgeordnetenwatch), falling back to what they did
+     * before (Stammdaten `BERUF`) — see `occupationOf`. ⚠ `| undefined` as
+     * well as `| null`: a deploy that lands before its Convex counterpart
+     * serves rows without the field at all (components/seat-tooltip.tsx). */
+    occupation?: string | null
+    profession?: string | null
   }
   score: { totalScore: number; voteParticipationRate: number } | null
   committees: string[]
 }
 
-type SortKey = "name" | "fraktion" | "constituency" | "score" | "participation"
+type SortKey = "name" | "fraktion" | "occupation" | "constituency" | "score" | "participation"
 type SortDirection = "asc" | "desc"
 
 const PAGE_SIZE = 25
@@ -113,6 +119,8 @@ const SORT_OPTIONS: ReadonlyArray<{ key: SortKey; direction: SortDirection }> = 
   { key: "name", direction: "desc" },
   { key: "fraktion", direction: "asc" },
   { key: "fraktion", direction: "desc" },
+  { key: "occupation", direction: "asc" },
+  { key: "occupation", direction: "desc" },
   { key: "constituency", direction: "asc" },
   { key: "constituency", direction: "desc" },
   { key: "score", direction: "desc" },
@@ -125,6 +133,7 @@ const SORT_OPTIONS: ReadonlyArray<{ key: SortKey; direction: SortDirection }> = 
 const SORT_LABEL_KEYS: Record<SortKey, TranslationKey> = {
   name: "mps.columnName",
   fraktion: "mp.party",
+  occupation: "mp.occupation",
   constituency: "mps.columnConstituency",
   score: "mps.columnScore",
   participation: "mps.columnParticipation",
@@ -440,6 +449,16 @@ export function MPTable({
                 sort={sort}
                 onSort={toggleSort}
               />
+              {/* After the party, per the brief. `lg:` rather than `md:`:
+                  occupations are free text and often long, so on a tablet it
+                  and the constituency together squeeze the name column. */}
+              <SortableHead
+                label={t("mp.occupation")}
+                sortKey="occupation"
+                sort={sort}
+                onSort={toggleSort}
+                className="hidden lg:table-cell"
+              />
               <SortableHead
                 label={t("mps.columnConstituency")}
                 sortKey="constituency"
@@ -467,7 +486,7 @@ export function MPTable({
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   {rows.length === 0 ? t("mps.emptyRoster") : t("mps.empty")}
                 </TableCell>
               </TableRow>
@@ -574,6 +593,11 @@ function MPRow({ row }: { row: Row }) {
       </TableCell>
       <TableCell>
         <FraktionBadge fraktion={row.mp.fraktion} />
+      </TableCell>
+      {/* Clamped to one line: these are free text and run to 60 characters,
+          which would set the row height for the whole table. */}
+      <TableCell className="hidden max-w-56 truncate text-muted-foreground lg:table-cell">
+        {occupationOf(row.mp) ?? <span className="text-muted-foreground/60">—</span>}
       </TableCell>
       <TableCell className="hidden text-muted-foreground md:table-cell">
         {row.mp.constituency ?? t("mps.listMandate")}
@@ -699,6 +723,10 @@ function isMissing(row: Row, key: SortKey): boolean {
   switch (key) {
     case "constituency":
       return row.mp.constituency === null
+    // Sorts to the bottom in both directions, like an unscored MP: an MP with
+    // no recorded occupation is unknown, not alphabetically first.
+    case "occupation":
+      return occupationOf(row.mp) === null
     case "score":
     case "participation":
       return row.score === null
@@ -728,6 +756,8 @@ function compareRows(a: Row, b: Row, key: SortKey): number {
       return compareByName(a, b)
     case "fraktion":
       return a.mp.fraktion.localeCompare(b.mp.fraktion, "de")
+    case "occupation":
+      return (occupationOf(a.mp) ?? "").localeCompare(occupationOf(b.mp) ?? "", "de")
     case "constituency":
       return (a.mp.constituency ?? "").localeCompare(b.mp.constituency ?? "", "de")
     case "score":
