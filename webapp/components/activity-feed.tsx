@@ -21,7 +21,7 @@ import { Slider } from "@/components/ui/slider"
 import { api } from "@/convex/_generated/api"
 import { type GroupableEvent, groupFeedEvents } from "@/lib/feed-grouping"
 import { scoreGroup, sortableScore } from "@/lib/feed-scoring"
-import { formatScore } from "@/lib/format"
+import { formatScore, scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 import { resolveWeights } from "@/lib/scoring"
 import { EVENT_TYPES, type EventType } from "@/lib/taxonomy"
@@ -194,12 +194,12 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
     [groups, weights],
   )
 
-  /** The slider's ceiling, from the loaded rows and rounded up so the top one
-   * sits inside the range rather than exactly at its end. Derived rather than
-   * fixed, like components/mp-table.tsx's: a group's total scales with its
-   * signature count and has no natural bound. */
+  /** The slider's ceiling, from the loaded rows. `scoreCeiling` carries the
+   * rounding rule and the empty-list fallback, shared with the roster filter in
+   * components/mp-table.tsx so two sliders over the same kind of number cannot
+   * round differently. */
   const maxScore = useMemo(
-    () => Math.ceil(Math.max(0, ...scored.map((row) => sortableScore(row.score))) / 10) * 10,
+    () => scoreCeiling(scored.map((row) => sortableScore(row.score))),
     [scored],
   )
 
@@ -218,7 +218,7 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
    * The reader's own `minScore` is deliberately not overwritten: widening the
    * type filter again restores the ceiling, and with it the threshold they set.
    */
-  const threshold = Math.min(minScore, maxScore || 100)
+  const threshold = Math.min(minScore, maxScore)
 
   /**
    * The rows as displayed: filtered, then ordered.
@@ -321,8 +321,8 @@ export function ActivityFeed({ wahlperiode }: { wahlperiode: number }) {
             <Slider
               id="feed-min-score"
               min={0}
-              max={maxScore || 100}
-              step={Math.max(1, Math.round((maxScore || 100) / 100))}
+              max={maxScore}
+              step={Math.max(1, Math.round(maxScore / 100))}
               value={[threshold]}
               onValueChange={([value]) => setMinScore(value)}
               className="mt-3 w-[12rem] max-w-full"
