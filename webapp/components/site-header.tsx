@@ -8,6 +8,7 @@ import { useState } from "react"
 import { BrandMark } from "@/components/brand-mark"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
+import { SearchBar } from "@/components/search-bar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -45,6 +46,23 @@ const NAV_LINKS: ReadonlyArray<{ href: string; labelKey: TranslationKey }> = [
   { href: "/seating", labelKey: "nav.seating" },
   { href: "/feed", labelKey: "nav.feed" },
 ]
+
+/**
+ * Search, which is a link in the sheet and a *box* in the bar.
+ *
+ * Deliberately not a sixth entry in `NAV_LINKS`. Above `xl` the header carries
+ * the search box itself, and a link beside it pointing at the same feature
+ * would be a second control for one thing — the box is the faster of the two
+ * and already goes there on submit. Below `xl` the box is hidden and this is
+ * how the feature is reached, so the sheet renders it.
+ *
+ * The width arithmetic is why the box cannot simply join the row. The comment
+ * on the inline nav below records that the five links measure 564 px and the
+ * bar needed 913 px at 768 px; adding a 208 px box puts it at 1 121 px against
+ * the 1 104 px of content a `max-w-6xl` container gives at `xl`. So the two
+ * swap rather than stack: links and box above `xl`, box and sheet below it.
+ */
+const SEARCH_LINK = { href: "/search", labelKey: "search.title" } as const
 
 /** One spelling of a path in both languages, deliberately. The URLs are shared
  * artefacts — a link pasted into a chat should not read differently depending on
@@ -175,8 +193,17 @@ export function SiteHeader() {
         </nav>
 
         {/* Pushes the controls right and absorbs the slack, so the nav stays
-            left-aligned next to the brand at every width. */}
-        <div className="flex-1" />
+            left-aligned next to the brand at every width. The search box sits
+            inside it rather than in the control cluster: the slack is exactly
+            the space a box wants, and `justify-end` keeps it against the
+            controls instead of floating mid-bar. */}
+        <div className="flex min-w-0 flex-1 justify-end px-2">
+          {/* `xl`, one step above the nav's own `lg` — see `SEARCH_LINK`. At
+              `lg` the five links plus a box exceed the container, so the box
+              waits for the width that fits both. Below this the sheet carries
+              the search link. */}
+          <SearchBar className="hidden xl:flex" />
+        </div>
 
         <div className="flex shrink-0 items-center gap-1">
           {/* The slack between the nav and the controls used to be dead space
@@ -216,8 +243,15 @@ export function SiteHeader() {
                   {t("nav.menu")}
                 </SheetTitle>
               </SheetHeader>
+              {/* The search box itself, not just its link: below `xl` the bar
+                  has no room for one, and the sheet is where the reader looks
+                  for everything the bar could not fit. Submitting navigates,
+                  which closes the sheet along with the page change. */}
+              <div className="px-2 pb-2">
+                <SearchBar className="max-w-none" />
+              </div>
               <nav aria-label={t("nav.menu")} className="grid gap-0.5 px-2">
-                {NAV_LINKS.map(({ href, labelKey }) => (
+                {[...NAV_LINKS, SEARCH_LINK].map(({ href, labelKey }) => (
                   <Link
                     key={href}
                     href={href}

@@ -4,6 +4,7 @@ import { type Preloaded, usePreloadedQuery } from "convex/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useDeferredValue, useMemo, useState } from "react"
+import { ALL, FilterSelect } from "@/components/filter-select"
 import { FraktionBadge } from "@/components/fraktion-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -83,11 +84,6 @@ type SortKey = "name" | "fraktion" | "constituency" | "score" | "participation"
 type SortDirection = "asc" | "desc"
 
 const PAGE_SIZE = 25
-
-/** Sentinel for "no filter". Radix's Select forbids an empty-string value —
- * it reserves that for the cleared state — so the all-groups option needs a
- * value of its own rather than `""`. */
-const ALL = "__all__"
 
 /**
  * The two mandate types, as the values Stammdaten writes.
@@ -595,55 +591,6 @@ function MPRow({ row }: { row: Row }) {
         )}
       </TableCell>
     </TableRow>
-  )
-}
-
-/**
- * One labelled filter dropdown, with its "no filter" option.
- *
- * Four of these differ only in their options, which is enough repetition to
- * factor out — the same shape `RankingsFilters` uses on the rankings page, and
- * for the same labelling reason stated there: Radix renders the trigger as a
- * `<button>`, so a `<Label htmlFor>` does associate with it (a button is a
- * labelable element) but only because the trigger carries the matching `id`.
- * Passing `id` through is what keeps that association from silently lapsing.
- *
- * `truncate` on the trigger, because a committee name is longer than any column
- * this grid gives it, and the alternative to truncating is a control that sets
- * its own column's width from its longest option.
- */
-function FilterSelect({
-  id,
-  label,
-  value,
-  onChange,
-  allLabel,
-  options,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  allLabel: string
-  options: ReadonlyArray<{ value: string; label: string }>
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="max-w-[min(24rem,90vw)]">
-          <SelectItem value={ALL}>{allLabel}</SelectItem>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   )
 }
 

@@ -55,6 +55,11 @@ export const PUBLIC_PATHS = [
   // filesystem check that exists precisely to catch this caught it, and the
   // fix is the one line it was written to demand.
   "/votes",
+  // The keyword search. Added *with* its page rather than after a debugging
+  // session, because the test above failed the moment `app/search/page.tsx`
+  // existed — which is the fifth time this list has been the thing that
+  // caught it, and the first time it cost nothing.
+  "/search",
 ]
 
 export function isPublicPath(pathname: string) {
