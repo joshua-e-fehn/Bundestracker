@@ -7,6 +7,7 @@ import {
   formatPercent,
   formatScore,
   initials,
+  scoreCeiling,
 } from "./format"
 
 /**
@@ -151,5 +152,42 @@ describe("initials", () => {
     expect(initials("Cher")).toBe("C")
     expect(initials("")).toBe("?")
     expect(initials("   ")).toBe("?")
+  })
+})
+
+describe("scoreCeiling", () => {
+  /**
+   * Two sliders depend on this — the roster filter in components/mp-table.tsx
+   * and the feed threshold in components/activity-feed.tsx — and both of its
+   * failure modes are silent. A ceiling that rounds *down* excludes the very
+   * row a reader drags to the top to find; a ceiling of zero renders a slider
+   * whose thumb cannot move, which looks enabled and does nothing.
+   */
+  test("rounds up to the next ten so the top row is inside the range", () => {
+    expect(scoreCeiling([412.5])).toBe(420)
+    expect(scoreCeiling([1, 2, 3])).toBe(10)
+  })
+
+  test("an exact multiple of ten is not pushed to the next one", () => {
+    expect(scoreCeiling([420])).toBe(420)
+  })
+
+  test("an empty list falls back rather than returning a dead zero", () => {
+    // `max={0}` is a slider with no travel. Both call sites used to spell this
+    // as `|| 100` at the point of use.
+    expect(scoreCeiling([])).toBe(100)
+    expect(scoreCeiling([], 50)).toBe(50)
+  })
+
+  test("an all-zero list falls back too", () => {
+    // Reachable on the feed: a page whose rows are all votes and speeches has
+    // no apportionable score, so every value is 0.
+    expect(scoreCeiling([0, 0, 0])).toBe(100)
+  })
+
+  test("negative values cannot drag the ceiling below zero", () => {
+    // No score is negative today, but a weight a user sets to a negative number
+    // would make one, and a negative `max` throws off the Radix slider.
+    expect(scoreCeiling([-5])).toBe(100)
   })
 })

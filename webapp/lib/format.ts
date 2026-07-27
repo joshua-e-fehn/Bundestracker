@@ -174,6 +174,38 @@ export function formatBy(
 }
 
 /**
+ * The ceiling for a score slider, from the scores it has to span.
+ *
+ * Rounded *up* to the next ten so the top row sits inside the range rather than
+ * exactly at its end — a thumb dragged fully right should still include the
+ * highest-scoring row, not sit on the boundary that excludes it.
+ *
+ * Derived rather than fixed, and that is the reason this is worth a function:
+ * scores are unbounded sums that grow through a Wahlperiode, and a feed group's
+ * total also scales with its signature count. Any constant here would be wrong
+ * by the end of a period.
+ *
+ * ⚠ Returns the `fallback` for an empty list, not 0. A slider with `max={0}` has
+ * no travel — its thumb cannot move — so an empty roster would render a control
+ * that looks enabled and does nothing. Both call sites previously spelled this
+ * as a `|| 100` at the point of use, which also caught a *derived* zero (every
+ * row unscorable), and folding it in here keeps that behaviour in one place.
+ *
+ * Beside the score formatters rather than in either component: the two call
+ * sites — components/mp-table.tsx's roster filter and
+ * components/activity-feed.tsx's feed threshold — had the same expression, and
+ * a rounding rule that differs between two sliders showing the same kind of
+ * number is the sort of drift a reader notices and cannot explain.
+ */
+export function scoreCeiling(scores: readonly number[], fallback = 100): number {
+  // Spread rather than a reduce, matching the call sites it replaces. `Math.max`
+  // of nothing is -Infinity, which the 0 floor absorbs.
+  const highest = Math.max(0, ...scores)
+  const rounded = Math.ceil(highest / 10) * 10
+  return rounded || fallback
+}
+
+/**
  * A `YYYY-MM` as a month name — "Juli 2026" / "July 2026".
  *
  * UTC-anchored like every other date here: a stored month parsed in local time

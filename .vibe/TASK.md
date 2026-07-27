@@ -1,3 +1,3 @@
-# Task — favicon-bundesadler
+# Task — feed-score-grouping
 
-Rework the favicon with the real Bundesadler. Read /tmp/task-favicon.md for full instructions.
+Activity feed grouping with score differentiation. Read /tmp/task-feed-grouping.md for full instructions.

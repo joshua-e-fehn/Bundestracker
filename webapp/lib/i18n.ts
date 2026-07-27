@@ -239,6 +239,52 @@ const de = {
   "feed.showAllActors": "Alle {count} anzeigen",
   "feed.jointNote":
     "Gemeinsam eingebracht. Die Reihenfolge ist die der Datenquelle — eine Erst- oder Mitzeichnung wird vom DIP nicht veröffentlicht.",
+  // Collapse as well as expand: a reader who opened forty names has every
+  // reason to want them out of the way again. See components/activity-feed-item.tsx.
+  "feed.collapseActors": "Weniger anzeigen",
+
+  // --- what an entry contributed to the activity score ---------------------
+
+  // The row's own contribution. `{points}` is already formatted by
+  // `formatScore`, so the sign lives in the string rather than in the number —
+  // a contribution is always an addition, and "+" says so without implying a
+  // change over time the way `formatDelta` would.
+  "feed.score.total": "+{points} Punkte",
+  // The arithmetic behind the total, so the figure can be checked rather than
+  // trusted. Every member of a group scores the same — the grouping key
+  // contains both fields the score reads — which is what makes this a
+  // multiplication rather than a sum. See lib/feed-scoring.ts.
+  "feed.score.perMember": "{count} × {points}",
+  "feed.score.label": "Beitrag zum Aktivitätswert",
+  // Shown instead of a figure. Naming the limit rather than printing a dash:
+  // each is a case where the score exists but cannot be apportioned to one
+  // record, which is a different claim from "scored zero".
+  "feed.score.unscorable": "Kein Einzelwert",
+  "feed.score.reason.rate":
+    "Die Abstimmungsteilnahme ist eine Quote über alle namentlichen Abstimmungen, kein Wert je Abstimmung — ein einzelner Eintrag trägt keinen eigenen Betrag.",
+  "feed.score.reason.perWord":
+    "Reden werden nach Wortzahl gewichtet, nicht je Beitrag. Die Wortzahl steht am Redebeitrag selbst, nicht an diesem Eintrag.",
+  "feed.score.reason.standing":
+    "Ausschussarbeit zählt als Sitz, nicht als datiertes Ereignis — es gibt keinen Wert je Eintrag.",
+  "feed.score.reason.unrecognised":
+    "Diese Aktivitätsart ist in der Gewichtung noch nicht erfasst. Sie wird gezählt und ausgewiesen, statt still mit null zu gewichten.",
+
+  // --- sorting and filtering the feed --------------------------------------
+
+  "feed.sort.label": "Sortieren",
+  "feed.sort.chronological": "Neueste zuerst",
+  "feed.sort.score": "Höchster Wert zuerst",
+  // The honest boundary of a client-side sort over a cursor-paginated feed:
+  // it orders what has been loaded, not the period. Stated rather than implied,
+  // because a sorted list looks complete.
+  "feed.sort.loadedOnly":
+    "Sortiert und filtert die bereits geladenen Einträge — nicht die gesamte Wahlperiode. „Mehr laden“ holt weitere.",
+  "feed.filter.minScore": "Mindestwert",
+  // Rows without an apportionable value are kept when the threshold is zero and
+  // dropped above it — they cannot be compared against a number. Said out loud,
+  // since silently hiding votes and speeches would look like missing data.
+  "feed.filter.minScoreNote": "Einträge ohne Einzelwert werden ab einem Mindestwert ausgeblendet.",
+  "feed.filter.hidden": "{count} ausgeblendet",
 
   "event.motion": "Antrag",
   "event.speech": "Rede",
@@ -1021,6 +1067,29 @@ const en: Dictionary = {
   "feed.showAllActors": "Show all {count}",
   "feed.jointNote":
     "Tabled jointly. The order is the data source's — DIP publishes no distinction between first and co-signatory.",
+  "feed.collapseActors": "Show fewer",
+
+  "feed.score.total": "+{points} points",
+  "feed.score.perMember": "{count} × {points}",
+  "feed.score.label": "Contribution to the activity score",
+  "feed.score.unscorable": "No per-entry value",
+  "feed.score.reason.rate":
+    "Vote participation is a rate across all named ballots, not a value per ballot — a single entry carries no amount of its own.",
+  "feed.score.reason.perWord":
+    "Speeches are weighted by word count, not per contribution. The word count belongs to the speech record, not to this entry.",
+  "feed.score.reason.standing":
+    "Committee work counts as a seat held, not as a dated event — there is no value per entry.",
+  "feed.score.reason.unrecognised":
+    "This activity kind is not yet covered by the weighting. It is counted and surfaced rather than silently weighted as zero.",
+
+  "feed.sort.label": "Sort",
+  "feed.sort.chronological": "Newest first",
+  "feed.sort.score": "Highest value first",
+  "feed.sort.loadedOnly":
+    "Sorts and filters the entries loaded so far — not the whole electoral period. “Load more” fetches further ones.",
+  "feed.filter.minScore": "Minimum value",
+  "feed.filter.minScoreNote": "Entries with no per-entry value are hidden above a minimum.",
+  "feed.filter.hidden": "{count} hidden",
 
   "event.motion": "Motion",
   "event.speech": "Speech",

@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table"
 import type { api } from "@/convex/_generated/api"
 import { formatNumber, formatPercent, stateOf } from "@/lib/bundestag"
+import { scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 import { foldName } from "@/lib/search"
 
@@ -193,11 +194,11 @@ export function MPTable({
     return ELECTION_METHODS.filter((method) => present.has(method))
   }, [rows])
 
-  // The ceiling for the score slider, rounded up so the top MP is inside the
-  // range rather than exactly at its end. Derived rather than fixed: scores are
-  // unbounded sums and grow through a Wahlperiode.
+  // The ceiling for the score slider. `scoreCeiling` carries the rounding rule
+  // and the empty-roster fallback, shared with the feed's threshold slider in
+  // components/activity-feed.tsx.
   const maxScore = useMemo(
-    () => Math.ceil(Math.max(0, ...rows.map((row) => row.score?.totalScore ?? 0)) / 10) * 10,
+    () => scoreCeiling(rows.map((row) => row.score?.totalScore ?? 0)),
     [rows],
   )
 
@@ -379,8 +380,8 @@ export function MPTable({
           <Slider
             id="mp-score"
             min={0}
-            max={maxScore || 100}
-            step={Math.max(1, Math.round((maxScore || 100) / 100))}
+            max={maxScore}
+            step={Math.max(1, Math.round(maxScore / 100))}
             value={[minScore]}
             onValueChange={([value]) => {
               setMinScore(value)
