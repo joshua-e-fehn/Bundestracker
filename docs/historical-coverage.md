@@ -66,6 +66,39 @@ and mark a missing one as *not computed* rather than as a zero
 
 `scripts/historical-backfill.sh` does both, per period, in one process.
 
+## What the UI does with a backfilled period — today, nothing
+
+The data lands, and every page still shows WP21. This is worth stating plainly
+because a backfill that "worked" and a backfill nobody can see look identical
+from the browser.
+
+- `app/mps/page.tsx`, `app/mps/[id]/page.tsx` and the MP table all pass the
+  `CURRENT_WAHLPERIODE = 21` constant from `lib/bundestag.ts`. Nothing accepts a
+  period from the URL or from a control.
+- `convex/mps.ts` exports `getMPMandates` — documented as "the profile page's
+  period switcher", returning every period a person served in — and **no
+  component calls it**. The backend for browsing history exists; the front end
+  does not.
+- `getCurrentWahlperiode` reads the *newest* ingested period
+  (`newestWahlperiode`, ordered descending), so backfilling WP14–20 cannot
+  displace WP21 on the home page. Verified live during the WP20 run: it still
+  answered `21`.
+
+So the backfill is a data-layer change. Surfacing it needs a period control on
+the MP list and profile, wired to `getMPMandates` — a separate piece of work,
+and the reason the queries were already written to take a `wahlperiode`
+argument rather than assume one.
+
+### A pre-existing discrepancy this exposed
+
+`getChamberStats` reports 642 MPs for WP21 where §6.2's reconciliation says
+630, and `getFractionSizes` sums to 647 mandate rows against the 635 the
+Stammdaten dump holds. Both figures predate this backfill — they are read off
+WP21 rows written by earlier runs — and both are larger than the source, which
+points at ingested rows rather than at the counting. Not investigated here; it
+is a WP21 data question, not a historical-coverage one, and fixing the count
+would have hidden it.
+
 ## Running a backfill
 
 ```bash
