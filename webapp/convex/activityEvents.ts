@@ -52,17 +52,18 @@ async function addOne(ctx: MutationCtx, input: ObjectType<typeof activityEventIn
     return { created: true, skipped: false }
   }
 
-  // Matched on (eventType, referenceId) then narrowed to this MP. Use
-  // .filter().first() instead of .collect() + .find() to avoid reading
-  // thousands of rows when a vote has 600+ MP events sharing a referenceId.
+  // Direct O(1) lookup via triple-key index — avoids scanning all events
+  // for a referenceId (which can be 600+ for a single vote).
   const existing = await ctx.db
     .query("activityEvents")
-    .withIndex("by_eventType_and_referenceId", (q) =>
-      q.eq("eventType", input.eventType).eq("referenceId", input.referenceId),
+    .withIndex("by_eventType_and_referenceId_and_mpInternalId", (q) =>
+      q
+        .eq("eventType", input.eventType)
+        .eq("referenceId", input.referenceId)
+        .eq("mpInternalId", input.mpInternalId),
     )
-    .filter((q) => q.eq(q.field("mpInternalId"), input.mpInternalId))
-    .first()
-  const row = await upsertRow(ctx, "activityEvents", existing ?? null, input, now)
+    .unique()
+  const row = await upsertRow(ctx, "activityEvents", existing, input, now)
   return { created: row.created, skipped: false }
 }
 

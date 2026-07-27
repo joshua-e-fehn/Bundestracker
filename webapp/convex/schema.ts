@@ -546,6 +546,9 @@ const schema = defineSchema({
     // motion's signatory count, and `addActivityEvent` picks its own MP out of
     // it.
     .index("by_eventType_and_referenceId", ["eventType", "referenceId"])
+    // Triple-key lookup so addOne can find an existing row in O(1) instead of
+    // scanning all events for a referenceId (which can be 600+ for a vote).
+    .index("by_eventType_and_referenceId_and_mpInternalId", ["eventType", "referenceId", "mpInternalId"])
     // The chamber-wide feed.
     .index("by_wahlperiode_and_date", ["wahlperiode", "date"])
     // Its type-filtered form, for the same reason the per-MP pair above is two
