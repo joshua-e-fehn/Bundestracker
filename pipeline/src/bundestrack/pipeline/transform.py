@@ -335,10 +335,10 @@ def dip_link_payloads(resolver: MPResolver) -> list[Payload]:
 # --- enrichment -----------------------------------------------------------
 
 
-def portrait_enrichment(
+def resolve_profiles(
     profiles: Iterable[MPProfileLink], resolver: MPResolver
-) -> tuple[list[MPEnrichment], list[str]]:
-    """Listing entries → enrichment, joined to the roster by printed name.
+) -> tuple[list[tuple[str, MPProfileLink]], list[str]]:
+    """Listing entries → `(internal id, entry)` pairs, joined by printed name.
 
     Returns the matches and the printed names that did not match, because both
     are worth reporting: the listing is the complete roster from the
@@ -349,12 +349,11 @@ def portrait_enrichment(
     misses are middle initials and MPs missing from the dump entirely — see
     `models.enrichment.normalise_printed_name`.
 
-    An MP whose portrait had no photographer credit arrives here with
-    `portrait=None` (the parser drops it, §6.5) and still yields an entry: the
-    profile URL is what a later contact fetch needs, and it is independent of
-    whether the picture was usable.
+    The whole entry is returned rather than only its portrait, because the
+    caller needs the profile URL too: the contact fetch is keyed on internal id
+    and has no other route back to the page.
     """
-    matched: list[MPEnrichment] = []
+    matched: list[tuple[str, MPProfileLink]] = []
     unmatched: list[str] = []
     for profile in profiles:
         name = normalise_printed_name(profile.printed_name)
@@ -365,8 +364,22 @@ def portrait_enrichment(
         if internal is None:
             unmatched.append(profile.printed_name)
             continue
-        matched.append(MPEnrichment(internal_id=internal, portrait=profile.portrait))
+        matched.append((internal, profile))
     return matched, unmatched
+
+
+def portrait_enrichment(matched: Iterable[tuple[str, MPProfileLink]]) -> list[MPEnrichment]:
+    """Resolved listing entries → the portrait half of their enrichment.
+
+    An MP whose portrait had no photographer credit arrives with
+    `portrait=None` — the parser drops it rather than let a credited image be
+    shown bare (§6.5) — and still yields a record, because the pair is still a
+    resolved MP whose contact block is worth fetching.
+    """
+    return [
+        MPEnrichment(internal_id=internal, portrait=profile.portrait)
+        for internal, profile in matched
+    ]
 
 
 def politician_enrichment(

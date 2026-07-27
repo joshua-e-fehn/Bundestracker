@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -73,6 +73,15 @@ class SyncState(BaseModel):
     #: on every Bundestag protocol (§5.1), and the MD5 of the XML — so this is
     #: what lets a sync skip re-downloading ~1.2 MB per unchanged sitting.
     protocol_hashes: dict[str, str] = Field(default_factory=dict)
+    #: Internal id → the date that MP's biography page was last read, ISO
+    #: `YYYY-MM-DD`. The contact block is one ~280 KB page per MP and there are
+    #: 630 of them, so fetching the lot every sync is ~12 minutes and ~175 MB
+    #: through a WAF that counts both (§2.6). This is what lets a run fetch only
+    #: the MPs it has never read or has not read recently.
+    #:
+    #: Portraits are *not* keyed here: they come from the listing, which is ~27
+    #: requests for all 639, so there is nothing to save by skipping any.
+    contact_fetched_on: dict[str, str] = Field(default_factory=dict)
     #: Ballots already ingested, per Wahlperiode, as `wp/sitzung/abstimmung`.
     #: The named-vote listing ignores every date parameter tried in research
     #: (§4.1), so an incremental run cannot ask the server for new ballots — it
@@ -138,9 +147,7 @@ class SyncState(BaseModel):
         this and the per-stream detail beneath it.
         """
         marks = [
-            value
-            for key, value in self.watermarks.items()
-            if key.startswith(f"{wahlperiode}:")
+            value for key, value in self.watermarks.items() if key.startswith(f"{wahlperiode}:")
         ]
         return max(marks) if marks else None
 
@@ -166,6 +173,36 @@ class SyncState(BaseModel):
         time instead of skipping it forever.
         """
         self.protocol_hashes[protocol_id] = xml_hash
+
+    # -- contact freshness -------------------------------------------------
+
+    def contact_is_stale(self, internal_id: str, *, today: date, max_age_days: int) -> bool:
+        """Should this MP's biography page be re-read?
+
+        True for an MP never read, and for one read longer ago than
+        `max_age_days`. An unparseable date is treated as stale — re-reading
+        one page is cheaper than reasoning about how a bad value got there.
+        """
+        recorded = self.contact_fetched_on.get(internal_id)
+        if not recorded:
+            return True
+        try:
+            fetched = date.fromisoformat(recorded)
+        except ValueError:
+            logger.warning(
+                "Ignoring unparseable contact fetch date %r for %s", recorded, internal_id
+            )
+            return True
+        return (today - fetched).days >= max_age_days
+
+    def record_contact_fetch(self, internal_id: str, *, today: date) -> None:
+        """Remember that an MP's page was read, once its contact block landed.
+
+        Recorded after a successful parse rather than at download, on the same
+        reasoning as `record_protocol_hash`: a run that dies between fetching
+        and writing should re-read that page next time, not skip it for a week.
+        """
+        self.contact_fetched_on[internal_id] = today.isoformat()
 
     # -- ballots -----------------------------------------------------------
 

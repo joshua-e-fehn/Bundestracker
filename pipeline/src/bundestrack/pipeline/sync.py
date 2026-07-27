@@ -49,11 +49,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
+from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient, parse_politicians
 from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.dip import DIPClient
+from bundestrack.api.mp_profiles import MPProfileClient
 from bundestrack.api.protocols import ProtocolClient
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import VoteClient
@@ -85,6 +87,25 @@ FIRST_XML_WAHLPERIODE = 18
 #: one request, and small enough that an 80 537-record backfill streams through
 #: memory rather than being collected into a list first.
 STREAM_BATCH = 500
+
+#: How long an MP's contact block is trusted before the page is re-read.
+#:
+#: Thirty days because the data barely moves — a constituency office address
+#: and a set of social handles change on the scale of a term, not a week —
+#: while the fetch is one ~280 KB page per MP against a WAF that counts bytes
+#: (§2.6). At 630 MPs a full pass is ~12 minutes; spread over thirty days it is
+#: ~21 pages a night, which is noise beside the rest of a sync.
+CONTACT_MAX_AGE_DAYS = 30
+
+#: Biography pages to fetch in one run, at most.
+#:
+#: The bound is the point: without it the first run after a fresh checkout — or
+#: after the state file is lost, which the gitignore says costs "a wider fetch
+#: window, not correctness" — would fetch all 630 pages in one sitting. That is
+#: ~12 minutes of sustained requests, which is exactly the shape §2.6 records
+#: as tripping the WAF. Capped, the backfill spreads over a few nights instead,
+#: and every night's sync still finishes.
+CONTACT_FETCH_LIMIT = 120
 
 
 @dataclass
@@ -168,6 +189,8 @@ class Pipeline:
         stammdaten: StammdatenClient | None = None,
         protocols: ProtocolClient | None = None,
         votes: VoteClient | None = None,
+        profiles: MPProfileClient | None = None,
+        abgeordnetenwatch: AbgeordnetenwatchClient | None = None,
         loader: ConvexLoader | None = None,
         state: SyncState | None = None,
     ) -> None:
@@ -183,6 +206,8 @@ class Pipeline:
         self.stammdaten = stammdaten or StammdatenClient()
         self.protocols = protocols or ProtocolClient()
         self.votes = votes or VoteClient()
+        self.profiles = profiles or MPProfileClient()
+        self.abgeordnetenwatch = abgeordnetenwatch or AbgeordnetenwatchClient()
         self.loader = loader or ConvexLoader(
             self.settings.require_convex_http_url(),
             self.settings.pipeline_api_key,
@@ -194,9 +219,22 @@ class Pipeline:
         #: stage and posted by the motion stage — sponsorships are known before
         #: the motions they attach to are written.
         self._sponsorships: dict[str, dict[str, str | None]] = {}
+        #: internal id → biography page URL, learned from the portrait listing
+        #: and consumed by the contact fetch in the same stage. The listing is
+        #: the only place the two are seen together, and the contact fetch is
+        #: keyed on internal id.
+        self._profile_urls: dict[str, str] = {}
 
     def close(self) -> None:
-        for client in (self.dip, self.stammdaten, self.protocols, self.votes, self.loader):
+        for client in (
+            self.dip,
+            self.stammdaten,
+            self.protocols,
+            self.votes,
+            self.profiles,
+            self.abgeordnetenwatch,
+            self.loader,
+        ):
             client.close()
 
     def __enter__(self) -> Pipeline:
@@ -279,7 +317,133 @@ class Pipeline:
         # second copy — every write here is an upsert on `(internalId, wp)`.
         self.loader.upsert_mps(transform.roster_payloads(resolver))
 
-    # -- stage 3: committees ----------------------------------------------
+    # -- stage 3: MP enrichment -------------------------------------------
+
+    def enrich_mps(self, report: RunReport, *, today: date | None = None) -> None:
+        """Portraits, occupation, education and contact details onto the roster.
+
+        Three sources, fetched at three different rates because they cost three
+        very different amounts:
+
+        1. **The bundestag.de listing** — every run. ~27 requests for all 639
+           portraits, which is cheap enough that skipping any would save
+           nothing. Joined by printed name (§7.1); 635 of 639 resolve.
+        2. **abgeordnetenwatch** — every run. ~19 requests for occupation and
+           education, joined by *Stammdaten id* rather than by name.
+        3. **The per-MP biography page** — only when missing or stale. One
+           ~280 KB page each, so this is the one that has to be rationed; see
+           `CONTACT_MAX_AGE_DAYS` and `CONTACT_FETCH_LIMIT`.
+
+        Nothing is posted here. The enrichment is attached to the resolver and
+        written by the *roster* upsert at the end, because that upsert replaces
+        these columns and runs again on every sync — a separately-posted
+        `photoUrl` would be nulled by the next roster write. Which also means
+        this stage must run after `link_dip_persons`, whose own roster re-post
+        would otherwise blank what this stage had just written.
+
+        A failure in any one source is a note, not an aborted stage: an MP
+        whose page 404s must not cost the other 629 their portraits.
+        """
+        stage = report.stage("enrich-mps")
+        resolver = self._require_resolver()
+        today = today or datetime.now(UTC).date()
+
+        self._enrich_portraits(stage, resolver)
+        self._enrich_politicians(stage, resolver)
+        self._enrich_contacts(stage, resolver, today=today)
+
+        enriched = len(resolver.internal_ids()) - len(resolver.unenriched_internal_ids())
+        roster_size = len(resolver.internal_ids())
+        stage.notes.append(f"{enriched}/{roster_size} MPs enriched")
+
+        # The roster carries these columns, so this is the write. An upsert on
+        # `(internalId, wahlperiode)`, exactly as `link_dip_persons` does above.
+        stage.result = self.loader.upsert_mps(transform.roster_payloads(resolver))
+
+    def _enrich_portraits(self, stage: StageReport, resolver: MPResolver) -> None:
+        """The listing: a portrait and a profile URL for every MP."""
+        try:
+            profiles = list(self.profiles.iter_profiles())
+        except BundestagAPIError as error:
+            stage.notes.append(f"Portrait listing unavailable: {error}")
+            return
+
+        matched, unmatched = transform.resolve_profiles(profiles, resolver)
+        resolver.attach_enrichment(transform.portrait_enrichment(matched))
+        # Kept for the contact stage below, which is keyed on internal id and
+        # has no other route back to the page.
+        self._profile_urls = {internal: profile.profile_url for internal, profile in matched}
+        stage.notes.append(f"{len(matched)}/{len(profiles)} portraits matched to the roster")
+        if unmatched:
+            # Not an error, and worth naming rather than counting: the listing
+            # is the Bundestag's own roster, so a name here that resolves to
+            # nobody means the Stammdaten dump is behind (§7.3) — which is a
+            # fact about the snapshot, not about the MP.
+            stage.notes.append(
+                f"{len(unmatched)} listed MPs did not match the Stammdaten snapshot "
+                f"(§7.3, retried next sync): {', '.join(sorted(unmatched)[:5])}"
+                + ("…" if len(unmatched) > 5 else "")
+            )
+
+    def _enrich_politicians(self, stage: StageReport, resolver: MPResolver) -> None:
+        """abgeordnetenwatch: occupation and education, joined by id."""
+        try:
+            politicians = parse_politicians(self.abgeordnetenwatch.iter_politicians())
+        except BundestagAPIError as error:
+            # 429 lands here. Losing occupation for a run is a blank column,
+            # not a wrong one, so it is reported and the stage carries on.
+            stage.notes.append(f"abgeordnetenwatch unavailable: {error}")
+            return
+        enriched = transform.politician_enrichment(politicians, resolver)
+        resolver.attach_enrichment(enriched)
+        stage.notes.append(f"{len(enriched)} MPs given an occupation or education")
+
+    def _enrich_contacts(self, stage: StageReport, resolver: MPResolver, *, today: date) -> None:
+        """The per-MP biography pages — rationed, and only the stale ones.
+
+        ⚠ There is no email address and no phone number to find here. Neither
+        is published anywhere (`api.mp_profiles`); what this collects is the
+        contact *form*, the constituency office and the MP's own social
+        profiles.
+        """
+        urls = self._profile_urls
+        if not urls:
+            stage.notes.append("No profile URLs — skipping contact fetch")
+            return
+
+        stale = [
+            (internal, url)
+            for internal, url in sorted(urls.items())
+            if self.state.contact_is_stale(internal, today=today, max_age_days=CONTACT_MAX_AGE_DAYS)
+        ]
+        if not stale:
+            stage.notes.append("Every contact block is fresh")
+            return
+
+        budget = stale[:CONTACT_FETCH_LIMIT]
+        fetched = 0
+        for internal, url in budget:
+            try:
+                contact = self.profiles.fetch_contact(url)
+            except BundestagAPIError as error:
+                # One page failing must not cost the rest — the same rule
+                # `load_speeches` applies to a protocol that will not download.
+                stage.notes.append(f"{internal}: {error}")
+                continue
+            resolver.attach_enrichment([transform.contact_enrichment(internal, contact)])
+            self.state.record_contact_fetch(internal, today=today)
+            fetched += 1
+
+        remaining = len(stale) - len(budget)
+        note = f"{fetched} contact blocks read"
+        if remaining:
+            # Said out loud rather than left as a silent cap: a reader looking
+            # at a half-populated Contact column should be able to tell "still
+            # backfilling" from "the Bundestag publishes nothing for these".
+            note += f", {remaining} deferred to a later run (limit {CONTACT_FETCH_LIMIT}/run)"
+        stage.notes.append(note)
+
+    # -- stage 4: committees ----------------------------------------------
 
     def load_committees(self, report: RunReport) -> None:
         """Committee seats, from the same dump as the roster.
@@ -805,6 +969,11 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
         return
 
     _guard(report, "dip-persons", lambda: run.link_dip_persons(report))
+    # After dip-persons, and that ordering is load-bearing: both stages finish
+    # by re-posting the roster, and the roster upsert replaces the enrichment
+    # columns. Enriching first would have `link_dip_persons` null every
+    # portrait it had just written.
+    _guard(report, "enrich-mps", lambda: run.enrich_mps(report))
     _guard(report, "committees", lambda: run.load_committees(report))
     _guard(report, "activities", lambda: run.load_activities(report, since=since))
     _guard(report, "motions", lambda: run.load_motions(report, since=since))

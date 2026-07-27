@@ -70,10 +70,16 @@ BASE_URL = "https://www.bundestag.de"
 #: means "look at that attribute again", not "the MPs are gone".
 AJAX_LIST_URL = f"{BASE_URL}/ajax/filterlist/de/abgeordnete/biografien/1040594-1040594"
 
-#: MPs per listing request. The teasers are compact (~750 B each), so a larger
-#: page is fewer requests for the same bytes — which is the trade the WAF cares
-#: about (§2.6). 24 keeps a page around 20 KB.
-LIST_PAGE_SIZE = 24
+#: MPs per listing request.
+#:
+#: ⚠ **The endpoint ignores `limit` and always returns 12.** Verified against
+#: `limit=12`, `24` and `60`, all of which answer with exactly 12 teasers. So
+#: this constant is not a request for a page size — it is a statement of the
+#: page size the server has, and `iter_profiles` advances its offset by what it
+#: actually received rather than by this number. Advancing by a requested 24
+#: while being served 12 would skip every other MP, silently and with no error:
+#: the run would simply enrich half the chamber.
+LIST_PAGE_SIZE = 12
 
 #: Stop after this many MPs even if the listing keeps answering. The real
 #: listing ends at 639; this is a runaway guard, not the contract.
@@ -392,11 +398,16 @@ class MPProfileClient(BundestagClient):
         (api/votes.py), and this endpoint is the same machinery — but it also
         publishes the total, so the arithmetic runs first and the empty page is
         the safety net.
+
+        ⚠ **The offset advances by rows received, never by `limit`.** The server
+        ignores `limit` and serves 12 regardless (see `LIST_PAGE_SIZE`), so
+        adding the requested page size would skip whatever the gap was — a
+        `limit=24` run would enrich every other MP and report no error at all,
+        because each page it did read parsed perfectly.
         """
         offset = 0
-        seen = 0
         total: int | None = None
-        while seen < max_entries:
+        while offset < max_entries:
             parser = parse_listing(
                 self.get_text(AJAX_LIST_URL, params={"limit": limit, "offset": offset})
             )
@@ -404,11 +415,9 @@ class MPProfileClient(BundestagClient):
                 total = parser.total
             if not parser.entries:
                 return
-            for entry in parser.entries:
-                yield entry
-                seen += 1
-            offset += limit
-            if total is not None and seen >= total:
+            yield from parser.entries
+            offset += len(parser.entries)
+            if total is not None and offset >= total:
                 return
 
     def fetch_contact(self, profile_url: str) -> MPContact:

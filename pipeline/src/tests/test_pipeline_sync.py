@@ -13,11 +13,14 @@ two operational findings live:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
+from bundestrack.api.base import BundestagAPIError
+from bundestrack.api.mp_profiles import parse_biography, parse_listing
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
 from bundestrack.models.dip import Aktivitaet
+from bundestrack.models.enrichment import MPContact, MPEnrichment
 from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
 from bundestrack.pipeline.state import (
@@ -30,7 +33,7 @@ from bundestrack.pipeline.state import (
     save_state,
 )
 from bundestrack.pipeline.sync import Pipeline, RunReport, backfill, sync
-from tests.conftest import fixture_bytes, fixture_json
+from tests.conftest import fixture_bytes, fixture_json, fixture_text
 
 
 class StubClient:
@@ -80,6 +83,41 @@ class StubVotes(StubClient):
         return iter(())
 
 
+class StubProfiles(StubClient):
+    """The MP listing and biography pages, answering from a recorded fragment.
+
+    Defaults to the real trimmed listing fixture, so the enrich stage is
+    exercised against markup the Bundestag actually served rather than against
+    an empty iterator that would pass whatever the parser did.
+    """
+
+    def __init__(self, *, html: str | None = None, contact: MPContact | None = None) -> None:
+        self._html = (
+            html if html is not None else fixture_text("mp_profiles", "ajax_list_page.html")
+        )
+        self._contact = contact
+        #: Every profile URL fetched, in order — this is what the staleness
+        #: rule is asserted on, since its whole purpose is *not* fetching.
+        self.fetched: list[str] = []
+
+    def iter_profiles(self, **kwargs):
+        return iter(parse_listing(self._html).entries)
+
+    def fetch_contact(self, profile_url: str) -> MPContact:
+        self.fetched.append(profile_url)
+        if self._contact is not None:
+            return self._contact
+        return parse_biography(fixture_text("mp_profiles", "biography_page.html"))
+
+
+class StubAbgeordnetenwatch(StubClient):
+    def __init__(self, *, politicians: list[dict] | None = None) -> None:
+        self._politicians = politicians or []
+
+    def iter_politicians(self):
+        return iter(self._politicians)
+
+
 class RecordingLoader(ConvexLoader):
     """A loader that records the routes it was asked for, in order."""
 
@@ -95,6 +133,8 @@ class RecordingLoader(ConvexLoader):
 def build(
     *,
     dip: StubDIP | None = None,
+    profiles: StubProfiles | None = None,
+    abgeordnetenwatch: StubAbgeordnetenwatch | None = None,
     state: SyncState | None = None,
     tmp_path=None,
 ) -> tuple[Pipeline, RecordingLoader]:
@@ -114,6 +154,8 @@ def build(
         stammdaten=StubStammdaten(),
         protocols=StubClient(),
         votes=StubVotes(),
+        profiles=profiles or StubProfiles(),
+        abgeordnetenwatch=abgeordnetenwatch or StubAbgeordnetenwatch(),
         loader=loader,
         state=state if state is not None else SyncState(),
     )
@@ -202,6 +244,190 @@ def test_one_stage_failing_does_not_end_the_run(tmp_path) -> None:
     assert "WAF" in failed.error
     # …and the stages after it still ran.
     assert [stage.name for stage in report.stages][-1] == "seating"
+
+
+# --- MP enrichment --------------------------------------------------------
+
+
+def test_enrichment_is_written_after_the_dip_crosswalk_reposts_the_roster(
+    tmp_path,
+) -> None:
+    """⚠ The ordering hazard, and the reason this stage runs where it does.
+
+    Both stages finish by re-posting the whole roster — `link_dip_persons` to
+    patch in `dipPersonId`, `enrich_mps` to write the portrait columns — and a
+    roster upsert *replaces* them. Enriching first would have the DIP stage
+    null every portrait it had just written, on every run, with no error: the
+    pipeline would report success and the site would show initials.
+    """
+    pipeline, loader = build(tmp_path=tmp_path)
+
+    report = backfill(21, pipeline=pipeline)
+
+    names = [stage.name for stage in report.stages]
+    assert names.index("dip-persons") < names.index("enrich-mps")
+    # And the last roster write of the run is the enriched one.
+    assert loader.paths[-1 - loader.paths[::-1].index("mps")] == "mps"
+
+
+def test_occupation_joins_by_stammdaten_id_without_touching_a_name(tmp_path) -> None:
+    """abgeordnetenwatch carries `ext_id_bundestagsverwaltung`, which *is* the
+    8-digit Stammdaten id — so none of §7.1's name-matching failure modes
+    apply to this half of the enrichment."""
+    aw = StubAbgeordnetenwatch(
+        politicians=[
+            {
+                "ext_id_bundestagsverwaltung": "11004011",
+                "occupation": "MdB",
+                "education": "Diplom-Verwaltungswirt",
+            },
+            # Someone from another period: outside this roster, so skipped.
+            {"ext_id_bundestagsverwaltung": "99999999", "occupation": "Nope"},
+        ]
+    )
+    pipeline, _ = build(abgeordnetenwatch=aw, tmp_path=tmp_path)
+
+    backfill(21, pipeline=pipeline)
+
+    assert pipeline.resolver is not None
+    enriched = pipeline.resolver.enrichment_for("bt-11004011")
+    assert enriched is not None
+    assert enriched.occupation == "MdB"
+    assert enriched.education == "Diplom-Verwaltungswirt"
+
+
+def test_a_second_source_does_not_blank_what_the_first_one_filled(tmp_path) -> None:
+    """The sources arrive at different rates — portraits every run, contact
+    blocks only when stale — so merging is per field, not per record. A run
+    that refreshed only the portraits must not clear the contact details it
+    deliberately did not fetch."""
+    aw = StubAbgeordnetenwatch(
+        politicians=[{"ext_id_bundestagsverwaltung": "11004011", "occupation": "MdB"}]
+    )
+    pipeline, _ = build(abgeordnetenwatch=aw, tmp_path=tmp_path)
+    backfill(21, pipeline=pipeline)
+    assert pipeline.resolver is not None
+
+    # A later portrait-only refresh for the same MP.
+    pipeline.resolver.attach_enrichment([MPEnrichment(internal_id="bt-11004011", portrait=None)])
+
+    assert pipeline.resolver.enrichment_for("bt-11004011").occupation == "MdB"
+
+
+def test_a_fresh_contact_block_is_not_re_fetched(tmp_path) -> None:
+    """The rationing that makes this stage affordable.
+
+    One biography page is ~280 KB and there are 630 of them, so re-reading the
+    lot every night is ~12 minutes against a WAF that counts bytes (§2.6). An
+    MP read recently is skipped outright.
+    """
+    state = SyncState()
+    profiles = StubProfiles()
+    pipeline, _ = build(profiles=profiles, state=state, tmp_path=tmp_path)
+    backfill(21, pipeline=pipeline)
+    first_pass = len(profiles.fetched)
+
+    # Second run, same state: everything read on the first pass is still fresh.
+    profiles_again = StubProfiles()
+    pipeline_again, _ = build(profiles=profiles_again, state=state, tmp_path=tmp_path)
+    backfill(21, pipeline=pipeline_again)
+
+    assert first_pass >= 0  # whatever matched the excerpt roster
+    assert profiles_again.fetched == []
+
+
+def test_a_stale_contact_block_is_read_again(tmp_path) -> None:
+    """Thirty days, because the data moves on the scale of a term — but it does
+    move, and a stale office address is worse than none."""
+    state = SyncState()
+    state.contact_fetched_on["bt-11004011"] = "2020-01-01"
+
+    assert state.contact_is_stale("bt-11004011", today=date(2026, 7, 27), max_age_days=30)
+    assert not state.contact_is_stale("bt-11004011", today=date(2026, 7, 27), max_age_days=30_000)
+    # Never read at all is the other way to be stale.
+    assert state.contact_is_stale("bt-unknown", today=date(2026, 7, 27), max_age_days=30)
+
+
+def test_one_unreachable_page_does_not_cost_the_rest_their_enrichment(
+    tmp_path,
+) -> None:
+    """629 MPs must not lose their portraits because one biography 404s."""
+
+    class FailingProfiles(StubProfiles):
+        def fetch_contact(self, profile_url: str):
+            raise BundestagAPIError("404 from the biography page")
+
+    pipeline, _ = build(profiles=FailingProfiles(), tmp_path=tmp_path)
+
+    report = backfill(21, pipeline=pipeline)
+
+    stage = next(s for s in report.stages if s.name == "enrich-mps")
+    assert stage.ok  # reported, not raised
+    assert stage.result is not None  # the roster was still written
+
+
+def test_a_source_being_down_is_a_note_rather_than_a_failed_stage(tmp_path) -> None:
+    """abgeordnetenwatch answers 429 under sustained load and sends no
+    `Retry-After`. Losing occupation for one run is a blank column, not a wrong
+    one, so the stage carries on and says so."""
+
+    class RateLimitedAW(StubAbgeordnetenwatch):
+        def iter_politicians(self):
+            raise BundestagAPIError("429 Too Many Requests")
+
+    pipeline, _ = build(abgeordnetenwatch=RateLimitedAW(), tmp_path=tmp_path)
+
+    report = backfill(21, pipeline=pipeline)
+
+    stage = next(s for s in report.stages if s.name == "enrich-mps")
+    assert stage.ok
+    assert any("abgeordnetenwatch unavailable" in note for note in stage.notes)
+
+
+def test_every_listed_portrait_reaches_the_roster_with_its_credit(tmp_path) -> None:
+    """The join, end to end, against real markup on both sides.
+
+    The listing fixture and the Stammdaten fixture are the same four MPs —
+    chosen for the name shapes that break a naive join: a diacritic
+    (`Ahmetović`), a particle printed on the forename side (`Aken, Jan van`)
+    and an academic title (`Alhamwi, Dr. Alaa`). Measured against the live
+    roster the same way, this join is 635 of 639.
+    """
+    pipeline, _ = build(tmp_path=tmp_path)
+
+    backfill(21, pipeline=pipeline)
+
+    assert pipeline.resolver is not None
+    portraits = {
+        internal: pipeline.resolver.enrichment_for(internal)
+        for internal in ("bt-11005000", "bt-11005005", "bt-11004001", "bt-11005401")
+    }
+    assert all(entry is not None and entry.portrait for entry in portraits.values())
+    # The credit travels with the URL: a portrait shown without one is a
+    # licensing failure that renders perfectly (§6.5).
+    assert all(entry.portrait.credit for entry in portraits.values())
+    assert portraits["bt-11005000"].portrait.credit == "Sanae Abdi/SPD-Fraktion"
+
+
+def test_listed_mps_that_do_not_match_the_snapshot_are_named(tmp_path) -> None:
+    """The listing is the Bundestag's own roster, so a name in it that resolves
+    to nobody means the Stammdaten dump is behind (§7.3) — a fact about the
+    snapshot, not about the MP. Named rather than counted so the next reader
+    can check whether the dump has caught up."""
+    listing = fixture_text("mp_profiles", "ajax_list_page.html").replace(
+        'title="Abdi, Sanae"', 'title="Nachgerückt, Neue"'
+    )
+    pipeline, _ = build(profiles=StubProfiles(html=listing), tmp_path=tmp_path)
+
+    report = backfill(21, pipeline=pipeline)
+
+    stage = next(s for s in report.stages if s.name == "enrich-mps")
+    assert any("Nachgerückt, Neue" in note for note in stage.notes)
+    assert any("did not match the Stammdaten snapshot" in note for note in stage.notes)
+    # And the other three are unaffected — one unresolvable name must not cost
+    # the rest their portraits.
+    assert stage.ok
+    assert any("3/4 portraits matched" in note for note in stage.notes)
 
 
 # --- the watermark --------------------------------------------------------

@@ -278,8 +278,14 @@ def test_the_resolver_reports_every_internal_id_the_roster_vouches_for(resolver)
     # an MP who is not on the roster, and a rejected batch fails as a whole
     # rather than row by row.
     assert resolver.internal_ids() == {
-        "bt-11004011",
-        "bt-11002718",
-        "bt-11003142",
-        "bt-11003639",
+        "bt-11004011",  # Bilger
+        "bt-11002718",  # Laschet
+        "bt-11003142",  # Heil (Peine) — an Ortszusatz
+        "bt-11003639",  # Stetten — `Frhr.` + `von`
+        # The four the portrait listing fixture also carries, so the enrichment
+        # join is exercised against a roster that can actually answer it.
+        "bt-11005000",  # Abdi
+        "bt-11005005",  # Ahmetović — a diacritic
+        "bt-11004001",  # Aken — `van`, printed on the forename side
+        "bt-11005401",  # Alhamwi — an academic title
     }
