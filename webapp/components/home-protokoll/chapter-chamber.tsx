@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
 import { partyColor, partyLabel } from "@/lib/parties"
-import { buildArc, CHAPTERS, revealThreshold, STATUTORY_SEATS } from "@/lib/protokoll"
+import { buildArc, revealThreshold, STATUTORY_SEATS } from "@/lib/protokoll"
 
 /**
  * Chapter 1 — the chamber assembling itself as the reader scrolls.
@@ -265,7 +265,3 @@ export function ChapterChamber({ wahlperiode }: { wahlperiode: number | null | u
     </div>
   )
 }
-
-/** This chapter's definition, so the page composes `CHAPTERS` rather than
- * restating the order. */
-export const CHAMBER_CHAPTER = CHAPTERS[0]

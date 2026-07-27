@@ -8,8 +8,8 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
-import { type FractionSize, foldFractionSizes, partyColor, partyLabel } from "@/lib/parties"
-import { layoutHemicycle, seatingRank } from "@/lib/seating"
+import { type FractionSize, partyColor, partyLabel } from "@/lib/parties"
+import { buildArc } from "@/lib/protokoll"
 import { cn } from "@/lib/utils"
 
 /**
@@ -42,75 +42,27 @@ import { cn } from "@/lib/utils"
  * state in `components/seating.tsx`.
  */
 
-/** Cap on the dots drawn. The real chamber is 630 and every one of them fits;
- * this only bounds a pathological roster from turning the hero into a
- * thousand-node SVG. */
-const MAX_PREVIEW_SEATS = 700
-
 /**
- * One dot per seat, in political order, coloured by group.
+ * The arc, from `buildArc` (lib/protokoll.ts).
  *
- * Expanding the counts into seats here rather than asking the server for rows is
- * what keeps this to a single cheap query — and the expansion is the same
- * left-to-right bloc order `generateSeating` uses, so the wedges land where a
- * reader who has seen /seating expects them.
+ * This used to expand the counts itself — fold onto one entry per party, sort
+ * into political order, one fill per seat, cap the radius, size the viewBox —
+ * and that expansion is now shared with the narrative home page's Chapter 1 and
+ * its opening animation. It is the same picture in all three places and it was
+ * the same forty lines in two, which is precisely the arrangement §2 of the
+ * research warned about and this file's own header argues against for the
+ * legend fold: "one home for the rule".
+ *
+ * The reasoning those forty lines carried has moved with them rather than been
+ * dropped — why the radius is capped at 0.08, why `foldFractionSizes` runs
+ * before anything is drawn, why index *i* of the arc is index *i* of the
+ * bloc-ordered fills. See `buildArc`.
+ *
+ * `useMemo` because 630 positions is real trigonometry and this component
+ * re-renders on every locale toggle.
  */
 function useArc(fractionSizes: ReadonlyArray<FractionSize> | undefined) {
-  return useMemo(() => {
-    if (fractionSizes === undefined) return null
-
-    // Folded onto one entry per *party* before anything is sorted or drawn.
-    //
-    // Without it this legend rendered "Fraktionslos 1" and "Fraktionslos 3" as
-    // two entries in the same grey, because `getFractionSizes` groups by the
-    // stored string and production holds both spellings. The dots were already
-    // right — `partyColor` folds — so it was only the key beside them that
-    // disagreed, with /seating and /parties showing the correct merged 4.
-    //
-    // `foldFractionSizes` rather than a fold written here: this component built
-    // its own legend from raw strings while components/seating-legend.tsx
-    // folded, which is how the two came to answer the same question
-    // differently. One home for the rule, in lib/parties.ts.
-    const ordered = foldFractionSizes(fractionSizes).sort(
-      (a, b) =>
-        seatingRank(a.fraktion) - seatingRank(b.fraktion) ||
-        a.fraktion.localeCompare(b.fraktion, "de"),
-    )
-
-    const fills: string[] = []
-    for (const { fraktion, count } of ordered) {
-      const seats = Math.max(0, Math.min(count, MAX_PREVIEW_SEATS - fills.length))
-      for (let seat = 0; seat < seats; seat++) fills.push(partyColor(fraktion))
-    }
-
-    const layout = layoutHemicycle(fills.length)
-    return {
-      layout,
-      // `seatRadius` is derived from the *tightest spacing in the arc*, which
-      // is right at 630 seats (0.019 of the unit radius) and far too generous
-      // at the low end: a 12-seat development fixture spreads so loosely that
-      // the same rule sizes each dot at 0.164 and the card renders a dozen
-      // balloons rather than a chamber.
-      //
-      // Capped rather than the row count forced. Overriding `rows` was the
-      // first attempt and is worse: short rows put their seats at the arc's
-      // extreme angles, so a 12-seat chamber scatters into corners instead of
-      // reading as a bank. Capping keeps the geometry `layoutHemicycle`
-      // computed — which is the geometry /seating draws — and only declines to
-      // draw a dot larger than a thumbnail can carry.
-      //
-      // 0.08 is four times the real chamber's radius, so every roster from
-      // ~90 seats up is unaffected and renders at its natural density; only a
-      // fixture small enough to look wrong either way is clamped.
-      seatRadius: Math.min(layout.seatRadius, 0.08),
-      // `positions` comes back sorted left to right, so index i of the arc is
-      // index i of the bloc-ordered fills — the property `layoutHemicycle`'s
-      // header documents and the reason the wedges read as wedges.
-      seats: layout.positions.map((position, index) => ({ position, fill: fills[index] })),
-      total: fills.length,
-      groups: ordered,
-    }
-  }, [fractionSizes])
+  return useMemo(() => buildArc(fractionSizes), [fractionSizes])
 }
 
 export function SeatingPreview({
@@ -133,17 +85,11 @@ export function SeatingPreview({
   }
   if (arc.total === 0) return null
 
-  // Recomputed from the capped radius rather than taken from the layout, which
-  // sized its box for the uncapped dots — using it would leave a band of empty
-  // space around a small-dotted arc and float the picture inside its card.
-  const extent = 1 + arc.seatRadius
-  const viewBox = {
-    x: -extent,
-    y: -extent,
-    width: 2 * extent,
-    height: extent + arc.seatRadius,
-  }
-
+  // `arc.viewBox` is already sized from the *capped* radius — `buildArc` does
+  // that recomputation, for the reason its comment gives: a box sized from the
+  // uncapped dots leaves a band of empty space around a small-dotted arc and
+  // floats the picture inside its card. This component used to redo the
+  // arithmetic here.
   return (
     <Link
       href="/seating"
@@ -166,7 +112,7 @@ export function SeatingPreview({
           carries the accessible name. */}
       <svg
         aria-hidden="true"
-        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+        viewBox={`${arc.viewBox.x} ${arc.viewBox.y} ${arc.viewBox.width} ${arc.viewBox.height}`}
         className="h-auto w-full"
       >
         {arc.seats.map(({ position, fill }) => (

@@ -744,6 +744,59 @@
   }
 }
 
+/* --- the gold wash ----------------------------------------------------------
+ *
+ * The one decorative element on the home pages: a soft radial gold behind the
+ * headline, blurred past the point of having an edge.
+ *
+ * `--chart-3` at 28 % rather than `--gold` at some alpha, because the chart ramp
+ * is already a single-hue gold defined for *both* themes — a literal here would
+ * be either too bright on the dark page or invisible on the light one. It is
+ * the middle of that ramp, so the wash sits under the page's text at the same
+ * remove in either theme.
+ *
+ * A utility because the same gradient is painted by app/page.tsx's hero and by
+ * the narrative page's scroll-bound backdrop, and it was the same 90-character
+ * `color-mix` expression in both. The two are deliberately the *same* wash —
+ * one parked, one drifting — so that the redesign reads as the same site while
+ * the two are compared, and a literal in each is how one of them ends up at
+ * 24 %.
+ *
+ * Callers own the geometry (size, position, blur) and the motion. This is only
+ * the paint.
+ */
+@utility gold-wash {
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklch, var(--chart-3) 28%, transparent),
+    transparent
+  );
+}
+
+/* --- the document rule ------------------------------------------------------
+ *
+ * A gold hairline across the top of each chapter of `/home-a`, and above its
+ * closing section.
+ *
+ * Deliberately *not* `federal-rule`. That utility is the flag, and the note on
+ * it above is explicit that the flag stays confined to the 3 px edge of the
+ * site chrome rather than being used as decoration — five flags down one page
+ * would be exactly the "sports kit" failure it warns about. This is the
+ * document's own rule, not the state's: one hue, one pixel, at the strength
+ * that reads as a printed rule rather than as a border.
+ *
+ * A utility rather than the two inline copies it replaces, because the two were
+ * `h-px w-full bg-gold/25` written out twice in different files — and the
+ * failure that invites is the quiet one, where a later chapter is added with
+ * `bg-gold/20` and the page's rhythm is subtly uneven with nothing to diff
+ * against.
+ */
+@utility document-rule {
+  height: 1px;
+  width: 100%;
+  background-color: color-mix(in oklch, var(--gold) 25%, transparent);
+}
+
 /* --- the pinned chamber -----------------------------------------------------
  *
  * The scroll track Chapter 1 of `/home-a` pins its hemicycle inside — see

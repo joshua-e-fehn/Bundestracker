@@ -8,8 +8,7 @@ import {
   PartyComparisonPreview,
   TopMPs,
 } from "@/components/home-sections"
-import { CHAPTERS } from "@/lib/protokoll"
-import { REVEAL_OFFSET, REVEAL_TRANSITION, useReveal } from "./use-reveal"
+import { useReveal } from "./use-reveal"
 
 /**
  * Chapters 4 and 5 — the dashboard, inside the narrative.
@@ -41,16 +40,10 @@ import { REVEAL_OFFSET, REVEAL_TRANSITION, useReveal } from "./use-reveal"
  */
 
 export function ChapterBoards({ wahlperiode }: { wahlperiode: number | null | undefined }) {
-  const { ref, revealed } = useReveal<HTMLDivElement>()
+  const { ref, motion: reveal } = useReveal<HTMLDivElement>()
 
   return (
-    <motion.div
-      ref={ref}
-      className="grid grid-cols-[minmax(0,1fr)] gap-12"
-      initial={{ opacity: 0, y: REVEAL_OFFSET }}
-      animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET }}
-      transition={REVEAL_TRANSITION}
-    >
+    <motion.div ref={ref} className="grid grid-cols-[minmax(0,1fr)] gap-12" {...reveal}>
       {/* `minmax(0,1fr)` rather than a bare implicit column, for app/page.tsx's
           reason: a grid item's `min-width` is `auto`, so a single-column track
           sizes itself to its widest content instead of to the viewport. */}
@@ -71,21 +64,12 @@ export function ChapterBoards({ wahlperiode }: { wahlperiode: number | null | un
 }
 
 export function ChapterToday({ wahlperiode }: { wahlperiode: number | null | undefined }) {
-  const { ref, revealed } = useReveal<HTMLDivElement>()
+  const { ref, motion: reveal } = useReveal<HTMLDivElement>()
 
   return (
-    <motion.div
-      ref={ref}
-      className="grid grid-cols-[minmax(0,1fr)] gap-12"
-      initial={{ opacity: 0, y: REVEAL_OFFSET }}
-      animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET }}
-      transition={REVEAL_TRANSITION}
-    >
+    <motion.div ref={ref} className="grid grid-cols-[minmax(0,1fr)] gap-12" {...reveal}>
       <LatestVotes wahlperiode={wahlperiode} level={3} />
       <ActivityFeedPreview wahlperiode={wahlperiode} level={3} />
     </motion.div>
   )
 }
-
-export const BOARDS_CHAPTER = CHAPTERS[3]
-export const TODAY_CHAPTER = CHAPTERS[4]

@@ -189,7 +189,7 @@ function Outro() {
 
   return (
     <section className="grid gap-6">
-      <div aria-hidden className="h-px w-full bg-gold/25" />
+      <div aria-hidden className="document-rule" />
       <div className="grid max-w-2xl gap-3">
         <h2 className="font-semibold text-2xl tracking-tight">{t("protokoll.outroTitle")}</h2>
         <p className="text-muted-foreground leading-relaxed">{t("protokoll.outroLead")}</p>

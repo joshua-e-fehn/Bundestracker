@@ -126,11 +126,7 @@ function Hero({ wahlperiode }: { wahlperiode: number | null | undefined }) {
           a `closest-side` radial behind a blur, indistinguishable. */}
       <div
         aria-hidden
-        className="-z-10 -translate-x-1/2 pointer-events-none absolute top-[-8rem] left-1/2 h-[24rem] w-[48rem] max-w-full rounded-full opacity-60 blur-3xl"
-        style={{
-          background:
-            "radial-gradient(closest-side, color-mix(in oklch, var(--chart-3) 28%, transparent), transparent)",
-        }}
+        className="gold-wash -z-10 -translate-x-1/2 pointer-events-none absolute top-[-8rem] left-1/2 h-[24rem] w-[48rem] max-w-full rounded-full opacity-60 blur-3xl"
       />
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-10">

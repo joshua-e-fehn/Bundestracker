@@ -7,9 +7,8 @@ import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { TranslationKey } from "@/lib/i18n"
-import { CHAPTERS } from "@/lib/protokoll"
 import { CountUp } from "./count-up"
-import { REVEAL_OFFSET, REVEAL_TRANSITION, useReveal } from "./use-reveal"
+import { useReveal } from "./use-reveal"
 
 /**
  * Chapter 2 — the four headline figures, counting up.
@@ -59,18 +58,12 @@ const FIGURES: ReadonlyArray<{
 
 export function ChapterPublic({ wahlperiode }: { wahlperiode: number | null | undefined }) {
   const { t } = useLocale()
-  const { ref, revealed } = useReveal<HTMLDivElement>()
+  const { ref, motion: reveal } = useReveal<HTMLDivElement>()
   const skip = wahlperiode === null || wahlperiode === undefined
   const stats = useQuery(api.stats.getChamberStats, skip ? "skip" : { wahlperiode })
 
   return (
-    <motion.div
-      ref={ref}
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-      initial={{ opacity: 0, y: REVEAL_OFFSET }}
-      animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET }}
-      transition={REVEAL_TRANSITION}
-    >
+    <motion.div ref={ref} className="grid grid-cols-1 gap-4 sm:grid-cols-2" {...reveal}>
       {FIGURES.map(({ key, labelKey, noteKey }, index) => {
         const stat = stats?.[key]
         return (
@@ -95,5 +88,3 @@ export function ChapterPublic({ wahlperiode }: { wahlperiode: number | null | un
     </motion.div>
   )
 }
-
-export const PUBLIC_CHAPTER = CHAPTERS[1]

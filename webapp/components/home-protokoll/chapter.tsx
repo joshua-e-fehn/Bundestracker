@@ -4,7 +4,7 @@ import { motion } from "framer-motion"
 import { useLocale } from "@/components/providers/locale-provider"
 import type { Chapter as ChapterDefinition } from "@/lib/protokoll"
 import { cn } from "@/lib/utils"
-import { REVEAL_OFFSET, REVEAL_TRANSITION, useReveal } from "./use-reveal"
+import { useReveal } from "./use-reveal"
 
 /**
  * One chapter of the record: a rule, a number, a heading, a standfirst, and
@@ -45,7 +45,7 @@ export function Chapter({
   className?: string
 }) {
   const { t } = useLocale()
-  const { ref, revealed } = useReveal<HTMLElement>()
+  const { ref, motion: reveal } = useReveal<HTMLElement>()
   const headingId = `${chapter.anchor}-heading`
 
   return (
@@ -58,26 +58,17 @@ export function Chapter({
       // the 3 px rule; 6 rem leaves a little air above the rule.
       className={cn("scroll-mt-24", className)}
     >
-      {/* The chapter rule: a hairline in the brand gold, drawn across the top
-          of every chapter.
+      {/* The chapter rule. `document-rule` (app/globals.css) rather than
+          `federal-rule`, and the note there explains why at length: the flag
+          stays confined to the site chrome's 3 px edge, so the page's own
+          hairline is a single gold one. */}
+      <div aria-hidden className="document-rule" />
 
-          `federal-rule` was the first version and is wrong here — that utility
-          is the flag, and app/globals.css is explicit that the flag stays
-          confined to the 3 px edge of the site chrome rather than being used as
-          a decorative element. Five flags down one page would be exactly the
-          "sports kit" failure it warns about. A single gold hairline is the
-          document's own rule, not the state's. */}
-      <div aria-hidden className="h-px w-full bg-gold/25" />
-
-      <motion.div
-        className="mt-6 grid max-w-3xl gap-3"
-        // The finished state is the `animate` target and the *initial* state is
-        // the offset, so a reduced-motion reader — for whom `revealed` is true
-        // on the first render — never sees the offset at all.
-        initial={{ opacity: 0, y: REVEAL_OFFSET }}
-        animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET }}
-        transition={REVEAL_TRANSITION}
-      >
+      {/* `reveal` is the `initial`/`animate`/`transition` triple from
+          `useReveal`. The finished state is the `animate` target and the
+          offset is the `initial`, so a reduced-motion reader — for whom
+          `revealed` is true on the first render — never sees the offset. */}
+      <motion.div className="mt-6 grid max-w-3xl gap-3" {...reveal}>
         {/* The chapter number, in the gold ink tier rather than the fill tier:
             this is text at 12 px, which is exactly the case app/globals.css's
             two-tier split exists for — `--gold-brand` measures 2.4:1 on the

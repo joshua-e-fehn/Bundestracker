@@ -88,12 +88,14 @@ export function ProtokollBackdrop({
 
   return (
     <>
+      {/* `gold-wash` (app/globals.css) is the paint; this owns the geometry and
+          the motion. The same utility is on app/page.tsx's hero, so the two
+          pages' washes cannot drift into different golds while Joshua is
+          comparing them. */}
       <motion.div
         aria-hidden
-        className="-z-10 -translate-x-1/2 pointer-events-none fixed top-[-6rem] left-1/2 h-[26rem] w-[52rem] max-w-full rounded-full blur-3xl"
+        className="gold-wash -z-10 -translate-x-1/2 pointer-events-none fixed top-[-6rem] left-1/2 h-[26rem] w-[52rem] max-w-full rounded-full blur-3xl"
         style={{
-          background:
-            "radial-gradient(closest-side, color-mix(in oklch, var(--chart-3) 28%, transparent), transparent)",
           // Reduced motion gets the wash at rest — present, not moving. §9: the
           // resting state is the finished picture, and for a background wash
           // "finished" is simply the wash, at its opening position.

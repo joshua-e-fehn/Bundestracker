@@ -40,8 +40,39 @@ export function useReveal<T extends Element = HTMLElement>() {
   const ref = useRef<T>(null)
   const reduceMotion = useReducedMotion()
   const inView = useInView(ref, { once: true, margin: "0px 0px -40% 0px" })
+  const revealed = reduceMotion === true || inView
 
-  return { ref, revealed: reduceMotion === true || inView }
+  // `motion` spreads the whole reveal, so a call site is
+  // `<motion.div ref={ref} {...motion} />` rather than three props it has to
+  // get right. Six of them spelled out the same `initial` / `animate` /
+  // `transition` triple, and the failure that invites is silent: an `animate`
+  // that forgets to return to `y: 0`, or an `initial` whose offset does not
+  // match the one it animates back from, still renders — just permanently 16 px
+  // off, which reads as a spacing bug rather than as a broken reveal.
+  return { ref, revealed, motion: revealProps(revealed) }
+}
+
+/**
+ * The three props that make an element arrive.
+ *
+ * Separate from `useReveal` because two call sites need the props *without* a
+ * second observer: Chapter 3's seven rows and its conclusion all arrive off one
+ * `revealed`, staggered by index, and giving each row its own `useReveal` would
+ * be seven observers for one block that is already entirely on screen when the
+ * first one fires.
+ *
+ * The `initial` is the offset and the `animate` returns to rest, so a
+ * reduced-motion reader — for whom `revealed` is true on the very first render
+ * — never sees the offset at all. Written this way round rather than as an
+ * animation that gets disabled, which is app/globals.css's rule: disabling an
+ * animation leaves the element on its *first* frame, i.e. permanently invisible.
+ */
+export function revealProps(revealed: boolean, delay = 0) {
+  return {
+    initial: { opacity: 0, y: REVEAL_OFFSET },
+    animate: revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET },
+    transition: delay > 0 && revealed ? { ...REVEAL_TRANSITION, delay } : REVEAL_TRANSITION,
+  }
 }
 
 /**

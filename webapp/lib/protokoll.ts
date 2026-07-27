@@ -35,15 +35,15 @@ import { layoutHemicycle, type SeatPosition, seatingRank } from "./seating"
 // --- the arc --------------------------------------------------------------
 
 /**
- * Cap on the dots drawn, matching `MAX_PREVIEW_SEATS` in
- * components/seating-preview.tsx.
+ * Cap on the dots drawn.
  *
  * The real chamber is 630 and every one of them fits; this only bounds a
- * pathological roster from turning the page's opening frame into a
- * thousand-node SVG. It is stated again rather than imported because the two
- * are the same *number* for different reasons — that one guards a hero
- * thumbnail, this one guards an animated entrance where each node also carries
- * a transition.
+ * pathological roster from turning a hero thumbnail — or an animated entrance
+ * where each node also carries a transition — into a thousand-node SVG.
+ *
+ * It matches `MAX_PAGE` in convex/lib/ingest.ts, which is 700 for the same
+ * reason: the roster is 630 seats and 635 mandates (§6.2), so anything above
+ * that is not a Bundestag.
  */
 export const MAX_ARC_SEATS = 700
 
@@ -100,15 +100,57 @@ export function centreOutwardDistance(angle: number): number {
 }
 
 /**
+ * Lays out `fills.length` seats and gives each one its colour.
+ *
+ * The whole arc except *where the colours came from*, which is the only thing
+ * `buildArc` and `placeholderArc` differ in — one reads a roster, the other
+ * paints a neutral placeholder — and everything else about them was identical
+ * down to the `extent` arithmetic. Two copies is how the splash's arc and the
+ * chapter's come to differ by a seat radius, which is exactly the drift the
+ * module header says must not happen.
+ *
+ * The two decisions it makes:
+ *
+ *  - **The radius is capped.** `layoutHemicycle` derives it from the tightest
+ *    spacing in the arc, which is right at 630 seats (0.019 of the unit radius)
+ *    and far too generous at the low end — a 12-seat development fixture would
+ *    render as a dozen balloons. Capping rather than forcing the row count
+ *    keeps the geometry `/seating` draws; overriding `rows` was tried and is
+ *    worse, since short rows put their seats at the arc's extreme angles and a
+ *    small chamber scatters into corners instead of reading as a bank.
+ *  - **The viewBox is recomputed from the capped radius**, not taken from the
+ *    layout, which sized its own box for the *uncapped* dots. Using that one
+ *    leaves a band of empty space around a small-dotted arc and floats the
+ *    picture inside its frame.
+ */
+function arcFrom(fills: readonly string[], groups: FractionSize[]): Arc {
+  const layout = layoutHemicycle(fills.length)
+  const seatRadius = Math.min(layout.seatRadius, MAX_SEAT_RADIUS)
+  const extent = 1 + seatRadius
+
+  return {
+    seats: layout.positions.map((position, index) => ({
+      position,
+      fill: fills[index],
+      distance: centreOutwardDistance(position.angle),
+    })),
+    seatRadius,
+    viewBox: { x: -extent, y: -extent, width: 2 * extent, height: extent + seatRadius },
+    total: fills.length,
+    groups,
+  }
+}
+
+/**
  * Expands Fraktion counts into a drawable arc.
  *
- * The expansion is the same one components/seating-preview.tsx performs, and
- * deliberately so: counts fold onto one entry per party (`foldFractionSizes`,
- * which is what stops production's two spellings of "Fraktionslos" reading as
- * two groups), sort into political order (`seatingRank`), and then become one
- * fill per seat. `layoutHemicycle` returns `positions` sorted left to right, so
- * index *i* of the arc is index *i* of the bloc-ordered fills — the property
- * that makes the wedges read as wedges.
+ * Counts fold onto one entry per party (`foldFractionSizes`, which is what
+ * stops production's two spellings of "Fraktionslos" reading as two groups),
+ * sort into political order (`seatingRank`), and then become one fill per seat.
+ * `layoutHemicycle` returns `positions` sorted left to right, so index *i* of
+ * the arc is index *i* of the bloc-ordered fills — the property that makes the
+ * wedges read as wedges, where filling row by row would give the largest group
+ * the inner rows entirely and turn the blocs into radial bands.
  *
  * Returns null for `undefined` input — Convex still loading — rather than an
  * empty arc, so a caller can tell "no answer yet" from "an empty chamber".
@@ -128,24 +170,7 @@ export function buildArc(fractionSizes: ReadonlyArray<FractionSize> | undefined)
     for (let seat = 0; seat < seats; seat++) fills.push(partyColor(fraktion))
   }
 
-  const layout = layoutHemicycle(fills.length)
-  const seatRadius = Math.min(layout.seatRadius, MAX_SEAT_RADIUS)
-  // Recomputed from the capped radius rather than taken from the layout, which
-  // sized its box for the uncapped dots — using it would leave a band of empty
-  // space around a small-dotted arc and float the picture inside its frame.
-  const extent = 1 + seatRadius
-
-  return {
-    seats: layout.positions.map((position, index) => ({
-      position,
-      fill: fills[index],
-      distance: centreOutwardDistance(position.angle),
-    })),
-    seatRadius,
-    viewBox: { x: -extent, y: -extent, width: 2 * extent, height: extent + seatRadius },
-    total: fills.length,
-    groups,
-  }
+  return arcFrom(fills, groups)
 }
 
 /**
@@ -164,21 +189,13 @@ export function buildArc(fractionSizes: ReadonlyArray<FractionSize> | undefined)
  * whose whole premise is that every figure is backed by a record.
  */
 export function placeholderArc(seatCount: number): Arc {
-  const layout = layoutHemicycle(seatCount)
-  const seatRadius = Math.min(layout.seatRadius, MAX_SEAT_RADIUS)
-  const extent = 1 + seatRadius
-  return {
-    seats: layout.positions.map((position) => ({
-      position,
-      fill: "var(--muted-foreground)",
-      distance: centreOutwardDistance(position.angle),
-    })),
-    seatRadius,
-    viewBox: { x: -extent, y: -extent, width: 2 * extent, height: extent + seatRadius },
-    total: layout.positions.length,
-    groups: [],
-  }
+  return arcFrom(new Array(Math.max(0, seatCount)).fill(PLACEHOLDER_FILL), [])
 }
+
+/** The placeholder's one colour — see `placeholderArc` for why it is a neutral
+ * and not a party palette. Named so the test asserts against the constant
+ * rather than against a repeated literal. */
+export const PLACEHOLDER_FILL = "var(--muted-foreground)"
 
 /**
  * The statutory size of the Bundestag, and the number the splash counts.

@@ -5,9 +5,8 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { formatRawComponent, SCORE_COMPONENT_LABELS } from "@/components/score-breakdown"
 import { formatNumber } from "@/lib/bundestag"
 import { formatScore } from "@/lib/format"
-import { CHAPTERS } from "@/lib/protokoll"
 import { computeScore, DEFAULT_WEIGHTS, SCORE_COMPONENTS } from "@/lib/scoring"
-import { REVEAL_OFFSET, REVEAL_TRANSITION, useReveal } from "./use-reveal"
+import { REVEAL_TRANSITION, revealProps, useReveal } from "./use-reveal"
 
 /**
  * Chapter 3 — the seven score components, arriving one at a time, collapsing
@@ -63,6 +62,17 @@ const EXAMPLE_INPUTS = {
   billSponsorships: 7,
 } as const
 
+/**
+ * Seconds between one component arriving and the next.
+ *
+ * 0.09 puts the seventh row roughly 0.6 s behind the first — long enough that
+ * they are read as a sequence rather than as one block appearing, short enough
+ * that the reader is not waiting for the total. Named because four things
+ * derive from it (the rows, their bars, the collapse and the limits) and four
+ * copies of `0.09` is how the total ends up arriving before the last row.
+ */
+const STAGGER = 0.09
+
 export function ChapterMeasure() {
   const { t, locale } = useLocale()
   const { ref, revealed } = useReveal<HTMLDivElement>()
@@ -81,16 +91,16 @@ export function ChapterMeasure() {
       <ol className="grid gap-4">
         {SCORE_COMPONENTS.map((component, index) => {
           const row = breakdown[component]
+          // The stagger. `revealed` flips once for the whole list and each row
+          // takes its delay from its own index, so the seven arrive in order
+          // without seven observers. `revealProps` rather than `useReveal` here
+          // for exactly that: the block is entirely on screen by the time the
+          // first row fires.
           return (
             <motion.li
               key={component}
               className="grid gap-1.5"
-              initial={{ opacity: 0, y: REVEAL_OFFSET }}
-              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET }}
-              // The stagger. `revealed` flips once for the whole list and each
-              // row delays off its own index, so the seven arrive in order
-              // without seven observers.
-              transition={{ ...REVEAL_TRANSITION, delay: revealed ? index * 0.09 : 0 }}
+              {...revealProps(revealed, index * STAGGER)}
             >
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="font-medium">{t(SCORE_COMPONENT_LABELS[component])}</span>
@@ -126,8 +136,11 @@ export function ChapterMeasure() {
                   style={{ transformOrigin: "left" }}
                   transition={{
                     ...REVEAL_TRANSITION,
+                    // Longer than the row it sits under and a beat behind it,
+                    // so the bar is read as the row's *consequence* — the label
+                    // states the arithmetic, then the bar shows the size of it.
                     duration: 0.7,
-                    delay: revealed ? index * 0.09 + 0.1 : 0,
+                    delay: revealed ? index * STAGGER + 0.1 : 0,
                   }}
                 />
               </div>
@@ -141,12 +154,7 @@ export function ChapterMeasure() {
           an eighth row. */}
       <motion.div
         className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-gold/25 border-t pt-6"
-        initial={{ opacity: 0, y: REVEAL_OFFSET }}
-        animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: REVEAL_OFFSET }}
-        transition={{
-          ...REVEAL_TRANSITION,
-          delay: revealed ? SCORE_COMPONENTS.length * 0.09 + 0.15 : 0,
-        }}
+        {...revealProps(revealed, SCORE_COMPONENTS.length * STAGGER + 0.15)}
       >
         <div className="grid gap-1">
           <span className="font-medium text-sm">{t("score.total")}</span>
@@ -164,13 +172,18 @@ export function ChapterMeasure() {
           worse dashboard *and* a worse story. Set as prose at body size rather
           than in the site's standard `CaveatNote` box, because here it is the
           chapter's conclusion rather than a footnote to it. */}
+      {/* Fades without moving, unlike everything else on this page — the one
+          deliberate exception to `revealProps`, which is why it spells its
+          props out. The chapter's conclusion should settle in rather than
+          arrive: it is a qualification of what the reader has just been shown,
+          and a qualification that slides up reads as another finding. */}
       <motion.p
         className="max-w-2xl border-border border-l-2 pl-4 text-muted-foreground text-sm leading-relaxed"
         initial={{ opacity: 0 }}
         animate={{ opacity: revealed ? 1 : 0 }}
         transition={{
           ...REVEAL_TRANSITION,
-          delay: revealed ? SCORE_COMPONENTS.length * 0.09 + 0.3 : 0,
+          delay: revealed ? SCORE_COMPONENTS.length * STAGGER + 0.3 : 0,
         }}
       >
         {t("protokoll.chapter3Limits")}
@@ -178,5 +191,3 @@ export function ChapterMeasure() {
     </div>
   )
 }
-
-export const MEASURE_CHAPTER = CHAPTERS[2]

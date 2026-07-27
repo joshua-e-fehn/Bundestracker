@@ -6,6 +6,7 @@ import {
   centreOutwardDistance,
   DATA_ANCHOR,
   MAX_ARC_SEATS,
+  PLACEHOLDER_FILL,
   placeholderArc,
   revealThreshold,
   STATUTORY_SEATS,
@@ -165,7 +166,7 @@ describe("placeholderArc", () => {
     // Bundestag that does not exist, shown on the page whose premise is that
     // every figure is backed by a record.
     const fills = new Set(placeholderArc(STATUTORY_SEATS).seats.map((seat) => seat.fill))
-    expect(fills).toEqual(new Set(["var(--muted-foreground)"]))
+    expect(fills).toEqual(new Set([PLACEHOLDER_FILL]))
     expect(placeholderArc(STATUTORY_SEATS).groups).toEqual([])
   })
 

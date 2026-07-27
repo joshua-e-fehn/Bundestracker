@@ -4,7 +4,7 @@ import { animate, useReducedMotion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { formatApproximateCount } from "@/lib/format"
-import { REVEAL_TRANSITION, useReveal } from "./use-reveal"
+import { useReveal } from "./use-reveal"
 
 /**
  * A figure that counts up to its value when the reader reaches it.
@@ -82,8 +82,3 @@ export function CountUp({
     </span>
   )
 }
-
-/** The transition a count-up's *container* uses, so a card and the number
- * inside it arrive together. Re-exported rather than imported twice at the call
- * site. */
-export { REVEAL_TRANSITION }
