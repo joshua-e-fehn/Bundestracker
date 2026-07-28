@@ -156,6 +156,9 @@ const de = {
   "rankings.board.mostActive": "Aktivste",
   "rankings.board.mostActive.desc":
     "Gesamter Aktivitätswert der Wahlperiode, gewichtet nach den Standardgewichten.",
+  "rankings.board.normalised": "Aktivität je Monat im Amt",
+  "rankings.board.normalised.desc":
+    "Aktivitätswert geteilt durch die Zeit im Amt. Wer im Lauf der Wahlperiode nachgerückt ist, wird hier nicht mehr an Kolleginnen und Kollegen mit doppelt so langer Amtszeit gemessen.",
   "rankings.board.speeches": "Meiste Reden",
   "rankings.board.speeches.desc":
     "Redebeiträge im Plenum. Die Wortzahl steht daneben — sie ist der Wert, den die Bewertung nutzt.",
@@ -191,6 +194,8 @@ const de = {
   "rankings.column.bills": "Gesetzentwürfe",
   "rankings.column.change": "Veränderung",
   "rankings.column.previous": "Vormonat",
+  "rankings.column.perMonth": "Wert je Monat",
+  "rankings.column.tenureDays": "Tage im Amt",
 
   "rankings.filter.fraktion": "Fraktion",
   "rankings.filter.state": "Bundesland",
@@ -221,6 +226,15 @@ const de = {
     "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
   "rankings.caveat.rising":
     "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
+  // ⚠ The honest limit on the normalised board. The divisor is elapsed days,
+  // not sitting weeks — the Bundestag sits in roughly twenty a year and no
+  // dataset publishes that calendar (§9), so "per month in office" is calendar
+  // time rather than parliamentary exposure. Over a whole period the two are
+  // close; over one month they are not.
+  "rankings.caveat.normalised":
+    "Geteilt wird durch die Kalenderzeit im Amt, nicht durch Sitzungswochen — der Sitzungskalender ist nirgends maschinenlesbar veröffentlicht. Über eine ganze Wahlperiode liegen beide nah beieinander, für einzelne Monate nicht.",
+  "rankings.normalisedUnrankable":
+    "{count} Mandat(e) ohne Wertung: keine erfasste Mandatszeit oder weniger als 30 Tage im Amt. Ein zu kurzer Zeitraum ergibt keine belastbare Quote — deshalb erscheinen sie hier nicht statt mit dem Wert null.",
   "rankings.noPreviousMonth":
     "Für die gesamte Wahlperiode gibt es keinen Vormonat. Wählen Sie einen Monat.",
 
@@ -410,7 +424,14 @@ const de = {
   "mp.noCommittees": "Keine Ausschussmitgliedschaften erfasst.",
   "mp.latestSpeeches": "Neueste Reden",
   "mp.latestMotions": "Neueste Anträge",
+  "mp.latestQuestions": "Neueste Anfragen",
   "mp.latestVotes": "Neueste namentliche Abstimmungen",
+  "mp.noQuestions": "Für diese Wahlperiode sind keine Anfragen erfasst.",
+  // The two instruments, named as the Bundestag names them. Not translated into
+  // a description ("schriftliche Anfrage") because these are the terms on the
+  // Drucksache and the ones a reader will search for.
+  "mp.questionMajor": "Große Anfrage",
+  "mp.questionMinor": "Kleine Anfrage",
   "mp.noSpeeches": "Keine Reden erfasst.",
   "mp.noMotions": "Keine Anträge erfasst.",
   "mp.noVotes": "Keine namentlichen Abstimmungen erfasst.",
@@ -625,6 +646,22 @@ const de = {
   "votes.groupShare": "({share})",
   "votes.rebelsNote":
     "Als Abweichung zählt eine Stimme, die von der Mehrheit der eigenen Fraktion abweicht. Enthaltungen und nicht abgegebene Stimmen bleiben dabei außer Betracht.",
+
+  // --- lame-duck ballots ---
+  // A ballot taken after an election and before the new Bundestag convened.
+  // "Geschäftsführend" is the word German uses for an authority that continues
+  // in office after its mandate has run out — the same word applied to a
+  // caretaker government — and it is the one a German reader recognises.
+  "votes.lameDuck": "Geschäftsführend",
+  "votes.lameDuckTooltip":
+    "Abgestimmt nach der Bundestagswahl, aber vor der konstituierenden Sitzung des neuen Bundestages: Der alte Bundestag war zu diesem Zeitpunkt bereits abgewählt, aber noch voll handlungsfähig.",
+  // The badge is two words; this is what they mean. Deliberately states that the
+  // vote was lawful — the flag marks a fact about the calendar, not a verdict on
+  // the ballot, and a notice that left that out would read as an accusation.
+  "votes.lameDuckNotice":
+    "Diese Abstimmung fand zwischen der Bundestagswahl und der konstituierenden Sitzung des neuen Bundestages statt. Nach Art. 39 Abs. 1 GG endet die Wahlperiode erst mit dem Zusammentritt des neuen Bundestages — der alte Bundestag war also rechtmäßig und mit allen Befugnissen im Amt, obwohl die Wählerinnen und Wähler ihn bereits ersetzt hatten.",
+  "votes.lameDuckMaintained":
+    "Wahl- und Konstituierungstermine werden von Bundestracker gepflegt, sie stehen in keinem Bundestags-Datensatz. Stand: {date}.",
   "votes.recordsTitle": "Einzelstimmen",
   "votes.recordsEmpty": "Für diese Abstimmung sind keine Einzelstimmen erfasst.",
 
@@ -692,8 +729,14 @@ const de = {
   // parliamentary work leaves no machine-readable trace, an office (Präsidium,
   // a ministry) changes what a member does rather than how much, and an MP the
   // nightly sweep has not reached scores 0 without having been idle.
+  // The fourth distortion, added with the normalised board: this is a ranking of
+  // *totals*, and a member sworn in mid-Wahlperiode had less time to accumulate
+  // one. `datesInOffice` was stored per mandate all along and nothing divided by
+  // it, so the bottom board was comparing four years against eighteen months
+  // without saying so. The sentence names the board that does divide, because a
+  // caveat a reader can act on beats one they can only note.
   "home.bottomMPsCaveat":
-    "Ein niedriger Wert heißt „wenig erfasst“, nicht „wenig gearbeitet“: Ausschussberatungen, Wahlkreisarbeit und Regierungsämter hinterlassen in den offenen Daten kaum Spuren. Nur bewertete Mandate erscheinen hier.",
+    "Ein niedriger Wert heißt „wenig erfasst“, nicht „wenig gearbeitet“: Ausschussberatungen, Wahlkreisarbeit und Regierungsämter hinterlassen in den offenen Daten kaum Spuren. Verglichen werden außerdem Gesamtwerte — wer erst im Lauf der Wahlperiode nachgerückt ist, hatte weniger Zeit, einen zu sammeln; die Rangliste „Aktivität je Monat im Amt“ rechnet das heraus. Nur bewertete Mandate erscheinen hier.",
   "home.latestVotesTitle": "Neueste namentliche Abstimmungen",
   "home.feedTitle": "Zuletzt geschehen",
   "home.showAll": "Alle ansehen",
@@ -1588,6 +1631,9 @@ const en: Dictionary = {
   "rankings.board.mostActive": "Most active",
   "rankings.board.mostActive.desc":
     "Total activity score for the electoral period, under the default weights.",
+  "rankings.board.normalised": "Activity per month in office",
+  "rankings.board.normalised.desc":
+    "Activity score divided by time in office. A member who took their seat part-way through the electoral period is no longer measured against colleagues with twice the exposure.",
   "rankings.board.speeches": "Most speeches",
   "rankings.board.speeches.desc":
     "Plenary speech segments. The word count sits alongside — that is the figure scoring uses.",
@@ -1622,6 +1668,8 @@ const en: Dictionary = {
   "rankings.column.bills": "Bills",
   "rankings.column.change": "Change",
   "rankings.column.previous": "Previous month",
+  "rankings.column.perMonth": "Score per month",
+  "rankings.column.tenureDays": "Days in office",
 
   "rankings.filter.fraktion": "Parliamentary group",
   "rankings.filter.state": "Federal state",
@@ -1649,6 +1697,10 @@ const en: Dictionary = {
     "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
   "rankings.caveat.rising":
     "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
+  "rankings.caveat.normalised":
+    "The divisor is calendar time in office, not sitting weeks — the sitting calendar is published nowhere in machine-readable form. Across a whole electoral period the two are close; for a single month they are not.",
+  "rankings.normalisedUnrankable":
+    "{count} mandate(s) not ranked: no recorded time in office, or less than 30 days served. Too short a span yields no dependable rate — so they are absent here rather than shown as zero.",
   "rankings.noPreviousMonth":
     "The whole electoral period has no previous month. Pick a month instead.",
 
@@ -1787,7 +1839,15 @@ const en: Dictionary = {
   "mp.noCommittees": "No committee memberships recorded.",
   "mp.latestSpeeches": "Latest speeches",
   "mp.latestMotions": "Latest motions",
+  "mp.latestQuestions": "Latest written questions",
   "mp.latestVotes": "Latest recorded votes",
+  "mp.noQuestions": "No written questions recorded for this electoral period.",
+  // The German terms are kept: these are the names printed on the Drucksache,
+  // and "major/minor interpellation" is a translation no reader would search
+  // for. The gloss carries the distinction that matters — one is debated in the
+  // chamber, the other answered in writing.
+  "mp.questionMajor": "Große Anfrage (debated)",
+  "mp.questionMinor": "Kleine Anfrage (written reply)",
   "mp.noSpeeches": "No speeches recorded.",
   "mp.noMotions": "No motions recorded.",
   "mp.noVotes": "No recorded votes.",
@@ -1952,6 +2012,18 @@ const en: Dictionary = {
   "votes.groupShare": "({share})",
   "votes.rebelsNote":
     "A vote counts as a rebellion when it differs from the majority of the member's own parliamentary group. Abstentions and votes not cast are disregarded.",
+
+  // --- lame-duck ballots ---
+  // "Lame-duck session" rather than a literal rendering of "geschäftsführend":
+  // it is the established English term for exactly this situation, where
+  // "caretaker" in English usually describes a government rather than a chamber.
+  "votes.lameDuck": "Lame-duck session",
+  "votes.lameDuckTooltip":
+    "Voted after the federal election but before the new Bundestag's constitutive sitting: the outgoing Bundestag had already been replaced at the ballot box while retaining its full powers.",
+  "votes.lameDuckNotice":
+    "This ballot was taken between the federal election and the constitutive sitting of the new Bundestag. Under Art. 39(1) of the Basic Law the electoral term ends only when the new Bundestag convenes — so the outgoing chamber was lawfully in office with all of its powers, although the electorate had already replaced it.",
+  "votes.lameDuckMaintained":
+    "Election and constitutive-sitting dates are maintained by Bundestracker; they appear in no Bundestag dataset. As of: {date}.",
   "votes.recordsTitle": "Individual votes",
   "votes.recordsEmpty": "No individual votes are recorded for this ballot.",
 
@@ -2003,7 +2075,7 @@ const en: Dictionary = {
   "home.bottomMPsTitle": "Least recorded activity",
   "home.bottomMPsSubtitle": "Lowest activity score in the current electoral period",
   "home.bottomMPsCaveat":
-    "A low figure means “little recorded”, not “little done”: committee deliberation, constituency work and government office leave next to no trace in the open data. Only scored mandates appear here.",
+    "A low figure means “little recorded”, not “little done”: committee deliberation, constituency work and government office leave next to no trace in the open data. These are also totals — a member who took their seat part-way through the electoral period had less time to accumulate one, which the “activity per month in office” board corrects for. Only scored mandates appear here.",
   "home.latestVotesTitle": "Latest named votes",
   "home.feedTitle": "Latest activity",
   "home.showAll": "Show all",

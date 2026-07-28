@@ -4,6 +4,7 @@ import { useQuery } from "convex/react"
 import { Info } from "lucide-react"
 import Link from "next/link"
 import { useMemo } from "react"
+import { LameDuckBadge } from "@/components/lame-duck-badge"
 import { MPCard } from "@/components/mp-card"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -464,8 +465,20 @@ export function LatestVotes({
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-sm">{sheet.title}</div>
-                <div className="mt-0.5 text-muted-foreground text-xs tabular-nums">
-                  {formatDateShort(sheet.date, locale)}
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    {formatDateShort(sheet.date, locale)}
+                  </span>
+                  {/* The same mark the list and the detail page carry, on the
+                      date line for the same reason it sits there in the list —
+                      the title is the slot that truncates. Compact: this is a
+                      five-row preview card. */}
+                  <LameDuckBadge
+                    date={sheet.date}
+                    wahlperiode={sheet.wahlperiode}
+                    locale={locale}
+                    compact
+                  />
                 </div>
               </div>
               <VoteOutcomeBadge result={sheet.result} locale={locale} />

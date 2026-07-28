@@ -1,3 +1,3 @@
-# Task — fix-build-merge
+# Task — three-easy-wins
 
-Fix build errors from merge conflicts. Read /tmp/task-fix-build2.md. Push to main.
+Build lame-duck vote flag, term-normalised activity view, and written questions panel. Read /tmp/task-three-wins.md for full instructions.
