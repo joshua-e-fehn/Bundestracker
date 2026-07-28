@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { internalMutation, internalQuery } from "./_generated/server"
+import { MAX_SCORE_BATCH } from "./activityScores"
 import { newestWahlperiode } from "./mps"
 
 /**
@@ -19,11 +20,26 @@ import { newestWahlperiode } from "./mps"
  * to guard against.
  */
 
-/** Rows per slice. Deliberately below `recomputeScores`' own default: this runs
- * unattended against the largest MPs' record sets, where the per-MP read cost
- * is highest, so the ceiling that matters is the busiest backbencher's, not the
- * average one's. */
-const SWEEP_BATCH = 25
+/**
+ * Rows per slice.
+ *
+ * This was 25, chosen as a value "deliberately below `recomputeScores`' own
+ * default" of 50 — but both were guesses, and on 2026-07-27 the nightly sweep
+ * read 32 002 documents scoring 25 MPs and died on Convex's ~16 000 limit. The
+ * reasoning was sound and the number was not: nothing measured the per-MP cost,
+ * so "below the default" was below another guess rather than below the limit.
+ *
+ * It is now `MAX_SCORE_BATCH`, which convex/activityScores.ts derives from that
+ * failure's own telemetry and enforces as a clamp. Naming the constant rather
+ * than restating a number keeps the sweep from drifting above the ceiling again
+ * — the clamp would catch it, but silently, by scoring fewer MPs per slice than
+ * this file claimed to ask for.
+ *
+ * The original rationale still holds and still argues for this value: the sweep
+ * runs unattended against the busiest members' record sets, so the ceiling that
+ * matters is the heaviest MP's cost, not the average one's.
+ */
+const SWEEP_BATCH = MAX_SCORE_BATCH
 
 /**
  * The electoral period to score, and the month to score alongside the total.

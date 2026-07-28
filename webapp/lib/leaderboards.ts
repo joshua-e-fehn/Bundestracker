@@ -18,7 +18,15 @@ import type { RankingMetric } from "./taxonomy"
 export type BoardColumn = {
   /** Which field of the row to read. Constrained to the metrics the query
    * returns, so a column naming a field that is not there is a type error. */
-  field: RankingMetric | "change" | "previousScore" | "dissents" | "ballotsCast" | "dissentRate"
+  field:
+    | RankingMetric
+    | "change"
+    | "previousScore"
+    | "dissents"
+    | "ballotsCast"
+    | "dissentRate"
+    | "scorePerMonth"
+    | "tenureDays"
   labelKey: TranslationKey
   /** How to render the number. `rate` is a 0…1 share shown as a percentage;
    * `delta` carries an explicit sign, because "+12" and "12" say different
@@ -40,10 +48,21 @@ export type Leaderboard = {
    *  - `metric` — `getMetricRankings`, ranking one stored column.
    *  - `rising` — `getRisingRankings`, differencing two months.
    *  - `crossParty` — `getCrossPartyRankings`, computed from ballots.
+   *  - `normalised` — `getNormalisedRankings`, score per month in office.
+   *    Its own kind rather than a metric, because the divisor is a *roster*
+   *    field and no score row carries the quotient — see that query's header.
    */
-  kind: "metric" | "rising" | "crossParty"
+  kind: "metric" | "rising" | "crossParty" | "normalised"
   /** The ranked column, for a `metric` board. */
   metric?: RankingMetric
+  /**
+   * Whether this board's ordering answers a question the totals cannot.
+   *
+   * Only `normalised` sets it, and it drives one thing: the page prints how many
+   * members the board could not rank. Every other board holds every member the
+   * filters admit, so "610 of 630" would be a line with nothing to say.
+   */
+  reportsUnrankable?: boolean
   /** Columns shown before the activity score, ranked one first. */
   columns: BoardColumn[]
   /**
@@ -65,6 +84,38 @@ export const LEADERBOARDS: Leaderboard[] = [
     kind: "metric",
     metric: "totalScore",
     columns: [],
+  },
+  // Directly after `most-active`, because it is the same board with a fair
+  // denominator: a reader who has just seen the totals is one tab away from
+  // seeing what they look like corrected for time in office. Burying it at the
+  // end would make it a curiosity rather than the check on the board above it.
+  {
+    id: "per-month",
+    labelKey: "rankings.board.normalised",
+    descriptionKey: "rankings.board.normalised.desc",
+    kind: "normalised",
+    reportsUnrankable: true,
+    columns: [
+      {
+        field: "scorePerMonth",
+        labelKey: "rankings.column.perMonth",
+        format: "score",
+        // Sortable in both directions, and the ascending read is the point:
+        // "least activity per month in office" is the honest version of the
+        // home page's bottom board.
+        sortable: true,
+      },
+      // The divisor, printed beside the quotient. A rate whose denominator is
+      // invisible is a number the reader cannot check, and this board is an
+      // argument about denominators.
+      {
+        field: "tenureDays",
+        labelKey: "rankings.column.tenureDays",
+        format: "integer",
+        sortable: false,
+      },
+    ],
+    caveatKey: "rankings.caveat.normalised",
   },
   {
     id: "speeches",

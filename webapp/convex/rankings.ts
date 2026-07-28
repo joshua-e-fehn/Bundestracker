@@ -9,6 +9,10 @@ import {
   RANKING_METRICS,
   type RankingMetric,
 } from "../lib/taxonomy"
+// The tenure denominator, imported rather than restated — see
+// `getNormalisedRankings`, which is the only board whose figure is not a stored
+// column and therefore the only one that could grow a second copy of a formula.
+import { normalisedScore, tenureDays } from "../lib/tenure"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { monthWindow } from "./activityScores"
@@ -309,6 +313,109 @@ export const getMetricRankings = query({
       (row) => row.name,
     )
     return paged(ordered, Math.max(0, Math.floor(args.offset ?? 0)), pageLimit(args.limit, 50))
+  },
+})
+
+// --- activity per month in office -----------------------------------------
+
+/**
+ * The tenth board: activity score divided by time in office.
+ *
+ * ## Why this is not `getMetricRankings` with another metric
+ *
+ * Every metric there is a stored column on `activityScores`, which is what makes
+ * that query one indexed slice re-sorted. This figure is not stored and cannot
+ * be: it depends on `mps.datesInOffice`, a *roster* field, so it exists only
+ * after the join those boards do for filtering. Adding it to `RANKING_METRICS`
+ * would put a name in the metric union that no score row answers to, and the
+ * type would say otherwise.
+ *
+ * It is also the one board where a member can be **absent for a reason that is
+ * not a filter**. See below; no other board has that, and it is why the return
+ * shape carries `unrankable`.
+ *
+ * ## What the denominator is, and what it is not
+ *
+ * `normalisedScore` in lib/tenure.ts — days between `datesInOffice.start` and
+ * either its `end` or today, expressed in 30-day months. The rule lives there
+ * rather than here because the browser renders the same figure on the home
+ * page's board, and two copies would be two answers.
+ *
+ * ⚠ Elapsed time is not parliamentary exposure. The Bundestag sits in sitting
+ * weeks and no dataset publishes that calendar (§9), so this divides by days on
+ * the clock. `rankings.caveat.normalised` states it on the page.
+ *
+ * ## Members without a rate are dropped and counted, not zeroed
+ *
+ * A mandate with no `datesInOffice`, or one shorter than `MIN_TENURE_DAYS`,
+ * yields null — "cannot be ranked", not "scored nothing". Ranking them at zero
+ * would seat exactly the short-serving members at the bottom of the board built
+ * to stop that happening.
+ *
+ * So they are excluded, and `unrankable` reports how many, because a board that
+ * silently holds 610 of 630 members reads as the whole chamber. The page says
+ * what is missing — the same rule `ballotsExamined` follows for the cross-party
+ * scopes.
+ */
+export const getNormalisedRankings = query({
+  args: {
+    wahlperiode: v.number(),
+    month: v.union(v.null(), v.string()),
+    direction: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+    ...rankingFilters,
+    ...pageArgs,
+  },
+  returns: v.object({
+    rows: v.array(
+      v.object({
+        ...rankingRow.fields,
+        /** Activity score per 30 days in office. Never null in a returned row —
+         * a member without one is not on this board at all. */
+        scorePerMonth: v.number(),
+        /** Days in office, so the page can show the denominator beside the
+         * rate. A rate whose divisor is invisible is a number a reader cannot
+         * check, and this whole board is an argument about divisors. */
+        tenureDays: v.number(),
+      }),
+    ),
+    total: v.number(),
+    /** Members the filters admitted but this board cannot rank — no recorded
+     * mandate span, or one below the floor. Stated rather than swallowed; see
+     * the header. */
+    unrankable: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    monthWindow(args.month)
+
+    const joined = await scoredRoster(ctx, args.wahlperiode, args.month, args)
+
+    // One `asOf` for every row in the query, the same rule `passes` follows for
+    // age brackets: two members' denominators must not be measured against
+    // clocks a few milliseconds apart. Sliced to a UTC calendar day because
+    // that is what every date in the schema is.
+    const asOf = new Date().toISOString().slice(0, 10)
+
+    const rows = []
+    let unrankable = 0
+    for (const { score, mp } of joined) {
+      const perMonth = normalisedScore(score.totalScore, mp.datesInOffice, asOf)
+      const days = tenureDays(mp.datesInOffice, asOf)
+      if (perMonth === null || days === null) {
+        unrankable++
+        continue
+      }
+      rows.push({ ...toRow(score, mp), scorePerMonth: perMonth, tenureDays: days })
+    }
+
+    const ordered = ranked(
+      rows,
+      (row) => (args.direction === "asc" ? -row.scorePerMonth : row.scorePerMonth),
+      (row) => row.name,
+    )
+    return {
+      ...paged(ordered, Math.max(0, Math.floor(args.offset ?? 0)), pageLimit(args.limit, 50)),
+      unrankable,
+    }
   },
 })
 

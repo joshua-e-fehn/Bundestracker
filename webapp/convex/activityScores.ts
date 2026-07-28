@@ -216,6 +216,60 @@ export const computeScore = internalMutation({
 })
 
 /**
+ * Ceiling on how many MPs one `recomputeScores` call may score.
+ *
+ * ## The number this is derived from
+ *
+ * A slice's cost is *not* bounded by anything in this file — it is the sum of
+ * four per-MP reads in four other modules, and each one grows with the corpus.
+ * The nightly sweep of 2026-07-27 crossed the limit and the deployment recorded
+ * what it had touched: 32 002 documents for **25** MPs, against Convex's
+ * ~16 000 per transaction.
+ *
+ * | table       | documents |
+ * |-------------|-----------|
+ * | voteRecords |    10 270 |
+ * | voteSheets  |    10 245 |
+ * | activities  |     8 604 |
+ * | speeches    |     2 111 |
+ * | mps         |       772 |
+ *
+ * That is ~1 280 documents per MP, because `month !== null` scores each member
+ * twice — once for the month, once for the period total — and `voteParticipation`
+ * resolves every one of their ballots through `ctx.db.get` (which is why
+ * `voteSheets` almost exactly matches `voteRecords`). Eight MPs is ~10 200 plus
+ * the roster read, which leaves real headroom under 16 000 rather than sitting
+ * just below it.
+ *
+ * ## Why a dedicated ceiling rather than `pageLimit`
+ *
+ * `pageLimit` clamps to `MAX_PAGE`, which convex/lib/ingest.ts deliberately
+ * raised to **700** so the roster could be listed in one page. Applied to *this*
+ * argument it authorises 700 MPs — the whole chamber — in one transaction,
+ * which is the exact shape this function's own header says it exists to avoid.
+ * The two numbers answer different questions: how many rows may cross the wire,
+ * and how many transactions' worth of reads may be attempted at once. Sharing
+ * one constant between them is how the second silently inherited the first.
+ *
+ * Clamps rather than rejects, unlike `assertBatchSize`. An oversized *write*
+ * batch must fail so the pipeline can chunk and retry, but an oversized score
+ * slice has a correct smaller answer: take fewer MPs and report a `nextCursor`.
+ * Every caller already loops on that cursor, so a clamped slice completes the
+ * same roster in more passes rather than dropping anyone.
+ *
+ * Exported for convex/activityScores.test.ts.
+ */
+export const MAX_SCORE_BATCH = 8
+
+export function scoreBatchSize(requested: number | undefined): number {
+  // `Number.isFinite` first, for `pageLimit`'s reason: NaN survives `Math.min`
+  // and would reach `.slice(cursor, NaN)` as an empty slice — a sweep that
+  // reports `scored: 0` and terminates, which reads as a fully-scored roster.
+  if (requested === undefined || !Number.isFinite(requested)) return MAX_SCORE_BATCH
+  return Math.max(1, Math.min(MAX_SCORE_BATCH, Math.floor(requested)))
+}
+
+/**
  * Recomputes a slice of the roster — the cron's unit of work.
  *
  * Batched by MP rather than run for the whole chamber in one transaction:
@@ -225,7 +279,19 @@ export const computeScore = internalMutation({
  * `hasMore` is how it knows where it got to.
  *
  * `month` null recomputes only the period total; passing a month recomputes
- * both it and the total, because a month's data changing changes the total too.
+ * both it and the total, because a month's data changing changes the total too
+ * — and it is why a slice costs twice what its MP count suggests.
+ *
+ * ⚠ `MAX_SCORE_BATCH` is a measured bound, not a safe one in perpetuity. It is
+ * sized against the per-MP cost this deployment recorded, and that cost rises
+ * as the period accumulates ballots and speeches. The read limit is per
+ * *transaction*, so batching a single source inside one call cannot help;
+ * only fewer MPs per call, or a cheaper per-MP read, can. The cheaper read is
+ * available and not taken here: `voteParticipation` in convex/votes.ts fetches
+ * one `voteSheets` row per `voteRecords` row, re-reading the same few hundred
+ * ballots for every member, and is called twice per MP over windows that share
+ * every row. That is ~64 % of the cost above and the next thing to fix if this
+ * ceiling has to fall again.
  */
 export const recomputeScores = internalMutation({
   args: {
@@ -240,17 +306,24 @@ export const recomputeScores = internalMutation({
     hasMore: v.boolean(),
   }),
   handler: async (ctx, args) => {
-    const batchSize = pageLimit(args.batchSize, 50)
-    const cursor = args.cursor ?? 0
+    const batchSize = scoreBatchSize(args.batchSize)
+    const cursor = Math.max(0, Math.floor(args.cursor ?? 0))
 
-    // The roster is bounded (630-odd for WP21) so collecting ids is cheap; it
-    // is the per-MP scoring reads that need slicing, not this.
-    const roster = await ctx.db
+    // One past the end of the slice, rather than the whole roster: the extra row
+    // is what answers `hasMore` without reading the 700-odd members this call
+    // will not score. `.collect()` here cost 772 documents *per slice*, which
+    // was affordable at 25 MPs a slice and is 5 % of the budget at 8 — the
+    // paging got finer, so the fixed cost of paging had to stop being paid in
+    // full each time.
+    //
+    // Index order is the same one `.collect()` returned, so a cursor from a
+    // previous slice still means what it meant.
+    const window = await ctx.db
       .query("mps")
       .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .collect()
+      .take(cursor + batchSize + 1)
 
-    const slice = roster.slice(cursor, cursor + batchSize)
+    const slice = window.slice(cursor, cursor + batchSize)
     const now = Date.now()
     for (const mp of slice) {
       if (args.month !== null) {
@@ -266,8 +339,11 @@ export const recomputeScores = internalMutation({
       await computeAndStore(ctx, mp.internalId, args.wahlperiode, null, DEFAULT_WEIGHTS, now)
     }
 
+    // Strictly more than the slice means a member the `take` saw and this call
+    // did not score. An exhausted roster returns a null cursor, which is what
+    // stops the sweep rescheduling itself.
+    const hasMore = window.length > cursor + batchSize
     const nextCursor = cursor + slice.length
-    const hasMore = nextCursor < roster.length
     return { scored: slice.length, nextCursor: hasMore ? nextCursor : null, hasMore }
   },
 })
