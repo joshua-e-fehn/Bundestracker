@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { monthWindow } from "./activityScores"
+import { MAX_SCORE_BATCH, monthWindow, scoreBatchSize } from "./activityScores"
+import { pageLimit } from "./lib/ingest"
 
 /**
  * Tests for the scoring window.
@@ -71,5 +72,75 @@ describe("monthWindow", () => {
       expect(from).toMatch(/^\d{4}-\d{2}-\d{2}$/)
       expect(to).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
+  })
+})
+
+/**
+ * Tests for the score batch ceiling.
+ *
+ * `scoreBatchSize` is what keeps one `recomputeScores` call inside Convex's
+ * ~16 000-document read limit. Worth testing for the same reason as
+ * `monthWindow`: both failure modes are quiet. A batch that is too large throws
+ * a read-limit error at 03:15 UTC where only the logs see it, and the sweep
+ * stops mid-roster leaving most of the chamber on yesterday's scores; a batch
+ * that clamps to zero or NaN reports `scored: 0` and terminates, which is
+ * indistinguishable from a roster that has been fully scored.
+ */
+describe("scoreBatchSize", () => {
+  test("defaults to the measured ceiling", () => {
+    // The sweep passes an explicit size, but the HTTP backfill route may not.
+    expect(scoreBatchSize(undefined)).toBe(MAX_SCORE_BATCH)
+  })
+
+  test("clamps above the ceiling rather than rejecting", () => {
+    // A slice has a correct smaller answer — take fewer MPs, report a cursor —
+    // unlike an oversized write batch, which `assertBatchSize` must reject so
+    // the pipeline can chunk and retry.
+    expect(scoreBatchSize(50)).toBe(MAX_SCORE_BATCH)
+    expect(scoreBatchSize(700)).toBe(MAX_SCORE_BATCH)
+  })
+
+  test("passes through a smaller request", () => {
+    expect(scoreBatchSize(1)).toBe(1)
+    expect(scoreBatchSize(5)).toBe(5)
+  })
+
+  test("never returns zero, negative, or fractional", () => {
+    // Zero is the dangerous one: `.slice(c, c)` is empty, so the call reports
+    // `scored: 0` with `hasMore` false and the sweep stops believing it is done.
+    expect(scoreBatchSize(0)).toBe(1)
+    expect(scoreBatchSize(-5)).toBe(1)
+    expect(scoreBatchSize(3.7)).toBe(3)
+  })
+
+  test("rejects NaN and Infinity rather than passing them to slice", () => {
+    // NaN survives Math.min unchanged and would reach `.slice(cursor, NaN)` —
+    // an empty slice that looks like a finished roster. `pageLimit` guards the
+    // same way and for the same reason.
+    expect(scoreBatchSize(Number.NaN)).toBe(MAX_SCORE_BATCH)
+    expect(scoreBatchSize(Number.POSITIVE_INFINITY)).toBe(MAX_SCORE_BATCH)
+  })
+
+  test("is strictly tighter than pageLimit, which it deliberately does not use", () => {
+    // The bug this function exists for. `pageLimit` clamps to MAX_PAGE = 700 —
+    // raised so the roster could be listed in one page — which applied to a
+    // score batch authorises the whole chamber in one transaction, the exact
+    // shape `recomputeScores` exists to avoid. The two answer different
+    // questions: how many rows may cross the wire, and how many transactions'
+    // worth of reads may be attempted at once.
+    expect(pageLimit(700)).toBeGreaterThan(scoreBatchSize(700))
+    for (const requested of [25, 50, 700]) {
+      expect(scoreBatchSize(requested)).toBeLessThanOrEqual(pageLimit(requested))
+    }
+  })
+
+  test("the ceiling leaves headroom under the read limit", () => {
+    // Sized from the failure's own telemetry: 32 002 documents for 25 MPs is
+    // ~1 280 per MP, because `month !== null` scores each member twice and
+    // `voteParticipation` resolves a voteSheet per voteRecord. The assertion is
+    // the arithmetic, so a future raise of MAX_SCORE_BATCH has to argue with it.
+    const PER_MP = 32_002 / 25
+    const ROSTER_READ = 772
+    expect(MAX_SCORE_BATCH * PER_MP + ROSTER_READ).toBeLessThan(16_000)
   })
 })

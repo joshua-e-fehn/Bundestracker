@@ -218,7 +218,15 @@ export function HeroAnimationSlot({ className }: { className?: string }) {
  * keeps the footprint the other two variants were balanced against.
  */
 function EagleSeal() {
-  return <BrandMark className="hero-mark size-32 shrink-0 text-gold-brand" />
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/logo-512.webp"
+      alt=""
+      aria-hidden="true"
+      className="hero-mark size-32 shrink-0"
+    />
+  )
 }
 
 /**
