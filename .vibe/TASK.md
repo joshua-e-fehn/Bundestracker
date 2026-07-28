@@ -1,3 +1,3 @@
-# Task — fix-build-merge
+# Task — badge-resources
 
-Fix build errors from merge conflicts. Read /tmp/task-fix-build2.md. Push to main.
+Build mandate-type badge, chamber-level mandate split, and votes on Bundestag's own resources collection. Read /tmp/task-badge-resources.md for full instructions.

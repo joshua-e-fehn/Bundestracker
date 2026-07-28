@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { PartyKey } from "./parties"
 import {
   buildRadarSeries,
+  byDirectShare,
+  chamberMandateSplit,
   coalitionSplit,
   coverageGapKey,
   DEFAULT_PARTY_METRIC_ID,
@@ -9,9 +11,9 @@ import {
   PARTY_METRICS,
   type PartyAggregate,
   type PartyMetricValues,
+  partyMetricById,
   RADAR_MAX,
   RADAR_METRICS,
-  partyMetricById,
   rankPartiesBy,
 } from "./party-comparison"
 
@@ -51,8 +53,19 @@ function party(
   scored: number,
   means: Partial<PartyMetricValues> = {},
   medianScore = 0,
+  /** Defaults to every mandate on the state list, which keeps the split summing
+   * to `mandates` for the coalition and radar tests that do not care about it.
+   * The mandate tests below pass their own. */
+  mandateSplit: Partial<PartyAggregate["mandateSplit"]> = {},
 ): PartyAggregate {
-  return { partyKey, mandates, scored, means: values(means), medianScore }
+  return {
+    partyKey,
+    mandates,
+    scored,
+    means: values(means),
+    medianScore,
+    mandateSplit: { direct: 0, list: mandates, unknown: 0, ...mandateSplit },
+  }
 }
 
 describe("PARTY_METRICS", () => {
@@ -346,5 +359,93 @@ describe("coverageGapKey", () => {
     // Unreachable while `scored <= mandates`, which the query guarantees — but a
     // negative here would otherwise print "−2 mandates are missing".
     expect(coverageGapKey(-2)).toBeNull()
+  })
+})
+
+describe("chamberMandateSplit", () => {
+  test("sums the groups rather than restating the roster", () => {
+    // WP21's real figures (§9): 276 direct against 359 list across 635
+    // mandates. The headline is the sum of the bars underneath it precisely so
+    // a reader can add them up and get the same number.
+    const rows = [
+      party("cdu-csu", 209, 209, {}, 0, { direct: 172, list: 37 }),
+      party("afd", 150, 150, {}, 0, { direct: 41, list: 109 }),
+      party("spd", 121, 121, {}, 0, { direct: 44, list: 77 }),
+      party("gruene", 87, 87, {}, 0, { direct: 12, list: 75 }),
+      party("linke", 65, 65, {}, 0, { direct: 6, list: 59 }),
+      party("fraktionslos", 3, 3, {}, 0, { direct: 1, list: 2 }),
+    ]
+    expect(chamberMandateSplit(rows)).toEqual({
+      direct: 276,
+      list: 359,
+      unknown: 0,
+      total: 635,
+    })
+  })
+
+  test("counts an un-ingested mandate as unknown, not as a list seat", () => {
+    // The whole reason `unknown` is a third bucket. Folding it into `list`
+    // would report this group as 90 % list when a tenth of it is simply not
+    // known — and the total would still look right, which is what makes the
+    // collapse invisible.
+    const split = chamberMandateSplit([
+      party("spd", 10, 10, {}, 0, { direct: 3, list: 6, unknown: 1 }),
+    ])
+    expect(split).toEqual({ direct: 3, list: 6, unknown: 1, total: 10 })
+  })
+
+  test("totals nothing for an empty chamber", () => {
+    // The pre-ingest state. A zero total is what the card's own guard divides
+    // by, so this pins that it is 0 rather than NaN or undefined.
+    expect(chamberMandateSplit([])).toEqual({ direct: 0, list: 0, unknown: 0, total: 0 })
+  })
+})
+
+describe("byDirectShare", () => {
+  test("orders by share, not by count", () => {
+    // The distinction the ordering exists for. CDU/CSU has by far the most
+    // direct mandates in absolute terms, but sorting on the count would just
+    // reproduce the seat order of the table above — and here the smaller group
+    // is the more direct-mandate one.
+    const big = party("cdu-csu", 100, 100, {}, 0, { direct: 60, list: 40 })
+    const small = party("spd", 10, 10, {}, 0, { direct: 9, list: 1 })
+    expect(byDirectShare([big, small]).map((row) => row.partyKey)).toEqual(["spd", "cdu-csu"])
+  })
+
+  test("sorts a group with no known mandate types last, not at zero", () => {
+    // An unmeasured group is not a group without direct mandates. At 0 % it
+    // would sort above nobody and below everybody — which happens to be the
+    // same place, so this asserts the *reason*: a group that genuinely has no
+    // direct mandates must still outrank one whose types were never ingested.
+    const unknown = party("linke", 5, 5, {}, 0, { direct: 0, list: 0, unknown: 5 })
+    const allList = party("gruene", 5, 5, {}, 0, { direct: 0, list: 5 })
+    expect(byDirectShare([unknown, allList]).map((row) => row.partyKey)).toEqual([
+      "gruene",
+      "linke",
+    ])
+  })
+
+  test("does not mutate the array it was given", () => {
+    // The rows come straight from a Convex subscription's result, which React
+    // holds across renders; sorting it in place would reorder the ranked table
+    // above as a side effect of drawing this card.
+    const rows = [
+      party("spd", 10, 10, {}, 0, { direct: 1, list: 9 }),
+      party("cdu-csu", 10, 10, {}, 0, { direct: 9, list: 1 }),
+    ]
+    byDirectShare(rows)
+    expect(rows.map((row) => row.partyKey)).toEqual(["spd", "cdu-csu"])
+  })
+
+  test("keeps every group, including the unscored ones", () => {
+    // `rankPartiesBy` drops groups the sweep has not reached, because a mean
+    // over nobody is not a figure. A mandate split is known regardless — it is
+    // read off the roster — so dropping one here would make this card disagree
+    // with the seat counts in the table above.
+    const rows = [
+      party("spd", 10, 0, {}, 0, { direct: 4, list: 6 }),
+      party("cdu-csu", 10, 10, {}, 0, { direct: 5, list: 5 }),
+    ]
+    expect(byDirectShare(rows)).toHaveLength(2)
   })
 })

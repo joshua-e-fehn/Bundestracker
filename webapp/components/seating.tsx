@@ -69,6 +69,8 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
     // recorded" the schema means by null, rather than an `undefined` that the
     // tooltip's narrowing would have to guard separately. See `SeatTooltipData`.
     profession: entry.profession ?? null,
+    // `?? null` for the same deploy-window reason as `profession` above.
+    electionMethod: entry.electionMethod ?? null,
     photoUrl: entry.photoUrl,
     // `?? null` for the same deploy-window reason as `profession` above — this
     // field is newer than the deployed `getSeatingWithMPs`, and `MPPhoto` shows

@@ -1122,6 +1122,83 @@ export const getFraktionVoteBreakdown = query({
 })
 
 /**
+ * A named set of ballots, looked up by natural key.
+ *
+ * ## Why the caller passes the keys
+ *
+ * The set this exists for — ballots on the Bundestag's own resources — is a
+ * **curated editorial list**, and it lives in lib/own-resources-votes.ts where
+ * each entry states its grounds and a reviewer can read the diff. Nothing about
+ * that judgement belongs in the database: a `selfDealing` column would have to
+ * survive every re-ingest, would record no reason, and would let the list be
+ * changed without a diff. So this query knows how to *fetch* a set and nothing
+ * about which ballots are in one.
+ *
+ * That also makes it reusable. Any future curated collection — confidence
+ * votes, constitutional amendments — is this query with a different list, not a
+ * second query with a second flag.
+ *
+ * ## The natural key, not the document id
+ *
+ * `(wahlperiode, sitzungnr, abstimmnr)` is what §4.1 says the sheet name
+ * encodes, so a curated list keyed on it survives a re-ingest that rebuilds the
+ * table and hands out new `_id`s. A list of ids would silently empty itself the
+ * first time the corpus was reloaded — and an empty "votes on the Bundestag's
+ * own resources" page is precisely the failure a reader would misread as a
+ * finding.
+ *
+ * ## Missing is a real answer
+ *
+ * A requested key with no sheet is **omitted**, not returned as a null row. The
+ * ballot may not be ingested yet, or the curated list may name one that does not
+ * exist; either way the page shows the ballots it can prove and the count of
+ * what it asked for is the caller's to compare. The alternative — throwing —
+ * would let one stale curated entry take down the whole page.
+ *
+ * Bounded by the list: one indexed `.unique()` per key, and a curated
+ * collection is a few dozen entries at most. `MAX_BALLOT_KEYS` is the guard
+ * that keeps it that way rather than letting a caller turn this into a scan of
+ * the corpus.
+ */
+export const MAX_BALLOT_KEYS = 60
+
+export const getVoteSheetsByKey = query({
+  args: {
+    keys: v.array(
+      v.object({
+        wahlperiode: v.number(),
+        sitzungnr: v.number(),
+        abstimmnr: v.number(),
+      }),
+    ),
+  },
+  returns: v.array(voteSheetDoc),
+  handler: async (ctx, args) => {
+    if (args.keys.length > MAX_BALLOT_KEYS) {
+      // Throwing rather than truncating, the same call `getVotesByMP` makes at
+      // `MAX_GROUP_COMPARISONS` and for the same reason: a silently shortened
+      // collection is indistinguishable from a collection with fewer ballots
+      // in it, which is the one thing a curated list must never look like.
+      throw new Error(
+        `getVoteSheetsByKey: ${args.keys.length} keys exceeds the ${MAX_BALLOT_KEYS} this query will read`,
+      )
+    }
+
+    const sheets = []
+    for (const key of args.keys) {
+      const sheet = await findSheet(ctx, key.wahlperiode, key.sitzungnr, key.abstimmnr)
+      // Omitted, not null — see the header.
+      if (sheet) sheets.push(toVoteSheetDoc(sheet))
+    }
+
+    // Newest first, matching every other list of ballots on the site. Sorted
+    // here rather than trusting the caller's order, which is an editorial
+    // ordering and not a chronological one.
+    return sheets.sort((a, b) => b.date.localeCompare(a.date))
+  },
+})
+
+/**
  * One MP's votes, newest ballot first — the profile page's voting tab.
  *
  * `groupVote` is what the MP's own group did on that ballot, so the page can

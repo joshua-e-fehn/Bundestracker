@@ -111,6 +111,17 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
           say so before they start. */}
       <CaveatNote>{t("votes.namedOnlyNotice")}</CaveatNote>
 
+      {/* The curated collection, linked from the list it is drawn from — a page
+          nothing points at is a page nobody reads. A plain link rather than a
+          promoted card: this list is the record, and the collection is one
+          reading of it. */}
+      <p className="text-sm">
+        <Link href="/votes/own-resources" className="font-medium underline underline-offset-4">
+          {t("votes.ownResources.title")}
+        </Link>{" "}
+        <span className="text-muted-foreground">{t("votes.ownResources.linkHint")}</span>
+      </p>
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex min-w-[12rem] flex-1 flex-col gap-1.5">
           <label htmlFor="vote-list-search" className="text-muted-foreground text-xs">

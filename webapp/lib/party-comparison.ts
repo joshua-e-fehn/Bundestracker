@@ -97,6 +97,35 @@ export type PartyAggregate = {
    * the ranked table sorts on, and nine medians would be a table nobody reads.
    */
   medianScore: number
+  /**
+   * How this group's mandates were won, counted rather than averaged.
+   *
+   * ## The one figure on this page that is a total
+   *
+   * Everything above is a mean per *scored* member, and `parties.meansNotice`
+   * says so above every chart. This is the exception, and it is a real one
+   * rather than an oversight: `electionMethod` is a field on the **roster**, so
+   * every mandate carries one whether or not the nightly sweep has reached it.
+   * There is no per-document double count to avoid here — §3.4's "one record
+   * per MP per document" problem is what makes a summed *activity* figure
+   * meaningless, and a member holds exactly one mandate. So this sums, the
+   * denominator is `mandates` rather than `scored`, and the section that
+   * renders it has to say that out loud instead of letting the notice above it
+   * appear to qualify a complete count.
+   *
+   * ## Three buckets, not two
+   *
+   * `unknown` is carried rather than folded into `list`. An MP whose
+   * `MANDATSART` was not ingested is not a list MP, and a two-segment bar would
+   * report a partial ingest as an all-list Fraktion — the same collapse
+   * `mandateType` returns null to prevent. `direct + list + unknown` always
+   * equals `mandates`, which is what lets the bar be read as a whole.
+   */
+  mandateSplit: {
+    direct: number
+    list: number
+    unknown: number
+  }
 }
 
 /**
@@ -500,4 +529,66 @@ export function coverageGapKey(missing: number): { key: TranslationKey; missing:
  */
 export function hasCoalitionSplit(split: CoalitionSplit): boolean {
   return split.government.scored > 0 && split.opposition.scored > 0
+}
+
+// --- mandate composition ---------------------------------------------------
+
+/**
+ * The whole chamber's mandate split, summed from the groups.
+ *
+ * Summed rather than queried separately, and that is the point: the headline
+ * ("X of Y mandates were won in a constituency") and the per-group bars under
+ * it are then arithmetically the same figures, so a reader who adds up the bars
+ * gets the headline. A second query over the same roster would be a second
+ * chance to disagree, which is the reasoning `getPartyComparison`'s own header
+ * gives for feeding four views from one read.
+ *
+ * ⚠ **`total` is mandates, not seats.** WP21 has 635 mandate rows for 630
+ * concurrent seats — five departures and five replacements, which convex/stats.ts
+ * documents at length — so this deliberately does *not* say "of 630". Printing
+ * the statutory seat count against a roster-derived numerator would put two
+ * contradictory totals on one screen, and the numerator is the one that can be
+ * checked against the table above it.
+ */
+export function chamberMandateSplit(rows: readonly PartyAggregate[]): {
+  direct: number
+  list: number
+  unknown: number
+  total: number
+} {
+  const split = { direct: 0, list: 0, unknown: 0, total: 0 }
+  for (const row of rows) {
+    split.direct += row.mandateSplit.direct
+    split.list += row.mandateSplit.list
+    split.unknown += row.mandateSplit.unknown
+    // From the same field the segments came from rather than from `mandates`,
+    // so the total cannot disagree with its own parts even if a future bucket
+    // is added and a call site forgets it.
+    split.total += row.mandateSplit.direct + row.mandateSplit.list + row.mandateSplit.unknown
+  }
+  return split
+}
+
+/**
+ * Groups ordered for the mandate-composition section: most direct mandates
+ * first.
+ *
+ * Not the seat order the rest of the page uses. The section exists to answer
+ * "who came in through the constituencies", and sorting by size would just
+ * reproduce the ranked table above with a different bar on it — CDU/CSU leads
+ * on both, and the interesting rows (a large group that is nearly all list, a
+ * small one that is not) would be buried in the middle either way.
+ *
+ * Sorted on the **share**, not the count, because the count is size again:
+ * CDU/CSU's 172 direct mandates beat everyone's total. Groups whose mandates
+ * are entirely unknown sort last rather than at 0 % — an unmeasured group is
+ * not a group without direct mandates, the distinction `mandateType` exists to
+ * keep. Ties break on the key so the order is stable across renders.
+ */
+export function byDirectShare(rows: readonly PartyAggregate[]): PartyAggregate[] {
+  const share = (row: PartyAggregate): number => {
+    const known = row.mandateSplit.direct + row.mandateSplit.list
+    return known === 0 ? -1 : row.mandateSplit.direct / known
+  }
+  return [...rows].sort((a, b) => share(b) - share(a) || a.partyKey.localeCompare(b.partyKey))
 }

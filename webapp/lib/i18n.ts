@@ -604,6 +604,54 @@ const de = {
   "votes.columnBreakdown": "Stimmverteilung",
   "votes.count": "{count} von {total} Abstimmungen",
 
+  // --- votes on the Bundestag's own resources ---
+  // ⚠ The only curated list of ballots on this site. The strings here carry
+  // three things a query-driven page never has to say: that the selection is
+  // editorial, when it was last reviewed, and — crucially — the counterweight.
+  // The page must not publish one side of a live dispute, so `audited` is not
+  // optional trimming: it is the reason the page is publishable at all.
+  "votes.ownResources.title": "Abstimmungen über eigene Angelegenheiten",
+  "votes.ownResources.subtitle":
+    "Namentliche Abstimmungen, in denen der Bundestag über seine eigenen Ressourcen entschieden hat: Parteienfinanzierung, politische Stiftungen und das Wahlrecht, das über die Mandate selbst bestimmt.",
+  "votes.ownResources.curatedNotice":
+    "Diese Sammlung ist redaktionell zusammengestellt. Die Abstimmungen und alle Zahlen stammen unverändert aus den amtlichen Abstimmungslisten des Bundestages — die Auswahl, welche Abstimmung hierher gehört, ist dagegen eine Einordnung dieser Redaktion und kein Merkmal der Quelldaten.",
+  "votes.ownResources.asOf": "Stand: {month}.",
+  /** Der Hinweis neben dem Link auf /votes — sagt, dass die Sammlung eine
+   * Auswahl ist, damit der Link nicht wie ein weiterer Filter aussieht. */
+  "votes.ownResources.linkHint": "— eine redaktionelle Auswahl aus diesen Abstimmungen.",
+  // The counterweight. Fraktion finances ARE audited — stating the scrutiny
+  // question without the existing scrutiny would be an argument, not a record.
+  "votes.ownResources.audited":
+    "Gegenposition, die dazugehört: Die Mittel der Fraktionen unterliegen der Prüfung durch den Bundesrechnungshof (§ 53 Abgeordnetengesetz), und die Parteien legen jährliche Rechenschaftsberichte vor, die vom Bundestagspräsidenten geprüft werden. Dass ein Parlament über eigene Ressourcen entscheidet, heißt nicht, dass diese Mittel unkontrolliert bleiben.",
+  // Why there is no Diäten section. An absent category is a finding only if the
+  // reader knows why it is absent.
+  "votes.ownResources.payNotice":
+    "Zu den Abgeordnetenentschädigungen („Diäten“) findet sich hier keine Abstimmung, weil es keine gibt: Seit der Reform von 2014 wird die Entschädigung nach § 11 Abgeordnetengesetz jährlich automatisch an den Nominallohnindex des Statistischen Bundesamtes angepasst — ohne Beschluss des Bundestages und damit ohne namentliche Abstimmung.",
+  "votes.ownResources.empty":
+    "Die Abstimmungen dieser Sammlung sind noch nicht in die Datenbank geladen.",
+  "votes.ownResources.topic.pay": "Entschädigung",
+  "votes.ownResources.topic.partyFinancing": "Parteienfinanzierung",
+  "votes.ownResources.topic.foundations": "Politische Stiftungen",
+  "votes.ownResources.topic.electoralLaw": "Wahlrecht",
+  // One rationale per curated ballot — the sentence that says why *this* vote
+  // belongs in the collection. Kept per-ballot rather than per-topic: a generic
+  // reason would be a category label repeated, and the grounds are the part a
+  // reader should be able to disagree with specifically.
+  "votes.ownResources.rationale.parteiengesetz20":
+    "Änderung des Parteiengesetzes: Der Bundestag beschließt über die staatliche Finanzierung genau der Parteien, denen seine Mitglieder angehören.",
+  "votes.ownResources.rationale.stiftungsfinanzierung20":
+    "Das Stiftungsfinanzierungsgesetz regelt erstmals gesetzlich die Mittel für die parteinahen politischen Stiftungen — und damit Gelder, die den im Bundestag vertretenen Parteien nahestehen.",
+  "votes.ownResources.rationale.wahlrecht20":
+    "Die Wahlrechtsreform 2023 verkleinerte den Bundestag und strich die Grundmandatsklausel: Die Abgeordneten stimmten darüber ab, wie viele Mandate es künftig gibt und unter welchen Bedingungen Fraktionen einziehen.",
+  "votes.ownResources.rationale.wahlrechtBundeswahlgesetz20":
+    "Erneute Änderung des Bundeswahlgesetzes — eine Entscheidung darüber, nach welchen Regeln die Mandate vergeben werden, getroffen von den Inhaberinnen und Inhabern dieser Mandate.",
+  "votes.ownResources.rationale.wahlpruefung20":
+    "Wahlprüfung: Der Bundestag entscheidet über Einsprüche gegen die Gültigkeit der Wahl, aus der er selbst hervorgegangen ist.",
+  "votes.ownResources.rationale.wahlrecht21":
+    "Antrag zur Reform des Wahlrechts: erneut eine Abstimmung über die Regeln, nach denen die Abstimmenden ihr Mandat erhalten haben.",
+  "votes.ownResources.rationale.wahlpruefung21":
+    "Zurückweisung von Einsprüchen gegen die Bundestagswahl — der Bundestag befindet über die Rechtmäßigkeit seiner eigenen Zusammensetzung.",
+
   // --- vote detail ---
   "votes.backToList": "Zurück zu den Abstimmungen",
   "votes.notFound": "Diese Abstimmung existiert nicht oder wurde noch nicht geladen.",
@@ -997,6 +1045,22 @@ const de = {
   // seat, the same call SEATING_ORDER makes — with the warning beside it.
   "parties.smallGroupCaveat":
     "Bei kleinen Gruppen ist ein Mittelwert instabil: Bei drei Mandaten verschiebt ein einzelnes sehr aktives Mitglied den Durchschnitt um ein Drittel. Die Mandatszahl steht deshalb in jeder Tabelle daneben.",
+
+  // --- mandate composition ---
+  // The one section on this page whose figures are counts rather than means,
+  // which is why `countNotice` exists: the notice at the top of the page tells
+  // the reader everything is a mean, and this is where that stops.
+  "parties.mandates.title": "Mandatsarten",
+  "parties.mandates.subtitle":
+    "Wie die Mitglieder jeder Fraktion in den Bundestag gekommen sind: über ein Direktmandat im Wahlkreis oder über eine Landesliste.",
+  // "Mandate", nicht "Sitze": Der Datensatz zählt Mandate der Wahlperiode, und
+  // die sind wegen Nachrückerinnen und Nachrückern zahlreicher als die 630
+  // gleichzeitigen Sitze. Siehe `chamberMandateSplit`.
+  "parties.mandates.headline": "{direct} von {total} Mandaten sind Direktmandate",
+  "parties.mandates.headlineShare": "({share} der zugeordneten Mandate)",
+  "parties.mandates.rowCounts": "{direct} direkt · {list} Liste",
+  "parties.mandates.countNotice":
+    "Anders als die übrigen Zahlen auf dieser Seite sind dies vollständige Auszählungen, keine Mittelwerte: Die Mandatsart steht im Stammdatensatz jedes Mandats und hängt nicht davon ab, ob die Aktivität bereits bewertet wurde. Mandate ohne hinterlegte Mandatsart bleiben ungezählt und erscheinen weder als Direkt- noch als Listenmandat.",
 
   // --- coalition vs opposition ---
   "parties.coalition.title": "Regierung und Opposition",
@@ -1935,6 +1999,43 @@ const en: Dictionary = {
   "votes.columnBreakdown": "Distribution",
   "votes.count": "{count} of {total} votes",
 
+  // --- votes on the Bundestag's own resources ---
+  /** ⚠ The only curated ballot list on the site. `audited` is the counterweight
+   * and is not optional — see the German entries. */
+  "votes.ownResources.title": "Votes on the Bundestag's own resources",
+  "votes.ownResources.subtitle":
+    "Recorded votes in which the Bundestag decided on its own resources: party financing, the political foundations, and the electoral law that governs the mandates themselves.",
+  "votes.ownResources.curatedNotice":
+    "This collection is editorially assembled. The ballots and every figure come unchanged from the Bundestag's official voting records — but the selection of which ballot belongs here is a judgement made by this site, not a property of the source data.",
+  "votes.ownResources.asOf": "Last reviewed: {month}.",
+  /** Beside the link on /votes, so it does not read as another filter. */
+  "votes.ownResources.linkHint": "— an editorial selection from these ballots.",
+  "votes.ownResources.audited":
+    "The counterweight that belongs with this: the Fraktionen's funds are audited by the Bundesrechnungshof (Federal Court of Audit) under § 53 of the Members of the Bundestag Act, and parties file annual financial statements examined by the President of the Bundestag. That a parliament decides on its own resources does not mean those funds go unscrutinised.",
+  "votes.ownResources.payNotice":
+    "You will find no ballot on members' pay (\"Diäten\") here, because none exists: since the 2014 reform, § 11 of the Members of the Bundestag Act indexes the allowance automatically each year to the Federal Statistical Office's nominal wage index — without a decision of the Bundestag, and therefore without a recorded vote.",
+  "votes.ownResources.empty": "The ballots in this collection have not been loaded yet.",
+  "votes.ownResources.topic.pay": "Members' pay",
+  "votes.ownResources.topic.partyFinancing": "Party financing",
+  "votes.ownResources.topic.foundations": "Political foundations",
+  "votes.ownResources.topic.electoralLaw": "Electoral law",
+  /** One rationale per ballot, not per topic — the grounds are the part a
+   * reader should be able to disagree with specifically. */
+  "votes.ownResources.rationale.parteiengesetz20":
+    "Amendment to the Political Parties Act: the Bundestag deciding on state funding for precisely the parties its members belong to.",
+  "votes.ownResources.rationale.stiftungsfinanzierung20":
+    "The Foundation Financing Act put the funding of the party-aligned political foundations on a statutory basis for the first time — money flowing to bodies close to the parties represented in the chamber.",
+  "votes.ownResources.rationale.wahlrecht20":
+    "The 2023 electoral reform shrank the Bundestag and abolished the basic-mandate clause: members voted on how many seats there would be, and on the terms under which groups enter parliament at all.",
+  "votes.ownResources.rationale.wahlrechtBundeswahlgesetz20":
+    "A further amendment to the Federal Elections Act — a decision on the rules by which mandates are allocated, taken by the holders of those mandates.",
+  "votes.ownResources.rationale.wahlpruefung20":
+    "Election scrutiny: the Bundestag ruling on objections to the validity of the election that produced it.",
+  "votes.ownResources.rationale.wahlrecht21":
+    "A motion to reform the electoral law: again a vote on the rules under which those voting obtained their seats.",
+  "votes.ownResources.rationale.wahlpruefung21":
+    "Rejection of objections to the federal election — the Bundestag ruling on the lawfulness of its own composition.",
+
   // --- vote detail ---
   "votes.backToList": "Back to votes",
   "votes.notFound": "This vote does not exist, or has not been loaded yet.",
@@ -2197,6 +2298,21 @@ const en: Dictionary = {
     "The activity score is a weighted sum; the weighting is a choice, not a verdict. A group average inherits that choice.",
   "parties.smallGroupCaveat":
     "A mean over a small group is volatile: with three mandates, one very active member shifts the average by a third. The mandate count therefore sits beside every figure.",
+
+  // --- mandate composition ---
+  /** Counts, not means — see the German entries and `countNotice`, which is the
+   * exception to the notice at the top of the page. */
+  "parties.mandates.title": "Mandate by type",
+  "parties.mandates.subtitle":
+    "How each group's members entered the Bundestag: by winning a constituency outright, or from a state list.",
+  /** "Mandates", not "seats": the roster counts mandates held during the
+   * electoral period, which replacements make more numerous than the 630
+   * concurrent seats. See `chamberMandateSplit`. */
+  "parties.mandates.headline": "{direct} of {total} mandates were won in a constituency",
+  "parties.mandates.headlineShare": "({share} of mandates with a recorded type)",
+  "parties.mandates.rowCounts": "{direct} constituency · {list} list",
+  "parties.mandates.countNotice":
+    "Unlike the other figures on this page these are complete counts rather than means: the mandate type is recorded against every mandate in the roster and does not depend on whether activity has been scored yet. Mandates with no recorded type are left uncounted and appear as neither constituency nor list.",
 
   // --- coalition vs opposition ---
   "parties.coalition.title": "Government and opposition",

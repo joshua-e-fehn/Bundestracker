@@ -35,6 +35,67 @@ export function isEventType(value: string): value is EventType {
   return (EVENT_TYPES as readonly string[]).includes(value)
 }
 
+// --- mandate types --------------------------------------------------------
+
+/**
+ * How a member won their seat, as the values Stammdaten writes.
+ *
+ * `MANDATSART` verbatim — `Direktwahl` for a constituency won outright,
+ * `Landesliste` for a seat taken from a party's state list. Stored raw on
+ * `mps.electionMethod` (convex/schema.ts) and compared against verbatim rather
+ * than derived from whether `constituency` is null. Those two agree today and
+ * are different claims: a direct mandate whose constituency name failed to
+ * ingest would be counted as a list MP by the derivation, silently, and every
+ * count on the site would report a chamber with more list seats than it has.
+ *
+ * Here rather than in a component because four surfaces now need them — the
+ * roster's filter, the badge, the parties dashboard's split and the Convex
+ * query that aggregates it — and `convex/` may not import from a React-adjacent
+ * path. This module is already the one both sides share; see the file header.
+ *
+ * **Nullable at the source.** An MP whose mandate type was not ingested is
+ * *unknown*, not a list MP, so every consumer must keep the third case rather
+ * than folding it into a default. `mandateType` below is what does the
+ * narrowing, and it returns null rather than guessing.
+ */
+export const MANDATE_TYPES = ["Direktwahl", "Landesliste"] as const
+
+export type MandateType = (typeof MANDATE_TYPES)[number]
+
+/**
+ * `electionMethod` narrowed to a known mandate type, or null.
+ *
+ * Null for an absent value *and* for an unrecognised one — a spelling this
+ * vocabulary does not know is exactly as unusable as a missing one, and
+ * returning it anyway would put an unlabelled value into a badge.
+ */
+export function mandateType(electionMethod: string | null | undefined): MandateType | null {
+  if (electionMethod === null || electionMethod === undefined) return null
+  return (MANDATE_TYPES as readonly string[]).includes(electionMethod)
+    ? (electionMethod as MandateType)
+    : null
+}
+
+/**
+ * The translation key naming each mandate type.
+ *
+ * The keys the roster's filter already used (`mps.electionDirect` /
+ * `mps.electionList`), pointed at from here rather than restated — the badge,
+ * the roster's constituency fallback and the parties dashboard's split all name
+ * the same two things, and a second pair of strings would be a second
+ * vocabulary free to drift from the filter that selects on it.
+ *
+ * Typed as the literal keys rather than as `TranslationKey`: this module may
+ * not import from lib/i18n.ts (it is loaded inside Convex's V8 runtime through
+ * the schema — see the file header), and a `string` here would let a typo reach
+ * `t()` as a missing key. The consumers are all in the browser and check the
+ * value against their own `TranslationKey` at the call site.
+ */
+export const MANDATE_LABEL_KEYS = {
+  Direktwahl: "mps.electionDirect",
+  Landesliste: "mps.electionList",
+} as const satisfies Record<MandateType, string>
+
 // --- ranking metrics ------------------------------------------------------
 
 /**

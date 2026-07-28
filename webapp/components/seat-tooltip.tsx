@@ -1,5 +1,6 @@
 "use client"
 
+import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -53,6 +54,18 @@ export type SeatTooltipData = {
    * same thing here ("no profession recorded"), so both are handled the same.
    */
   profession: string | null | undefined
+  /**
+   * `Direktwahl` or `Landesliste` — how this seat was won.
+   *
+   * `| undefined` as well as `| null` for the same deploy-window reason as
+   * `profession` above: this field is newer than the deployed
+   * `getSeatingWithMPs`, so a browser running this build against a backend that
+   * has not been redeployed yet receives rows without the key at all. Nothing
+   * here narrows on `!== null`, precisely because that is the check that took
+   * the seating page to its error boundary last time — `mandateType` treats
+   * absent, null and unrecognised alike, which is the whole reason it exists.
+   */
+  electionMethod: string | null | undefined
   photoUrl: string | null
   /** `| undefined` for the same deploy-window reason as `profession` above:
    * this field is newer than the deployed `getSeatingWithMPs`. */
@@ -83,7 +96,15 @@ export function SeatTooltip({ seat, mode }: { seat: SeatTooltipData; mode: Seati
         </div>
       </div>
 
-      <PartyBadge fraktion={seat.fraktion} className="w-fit" />
+      {/* The group and how the seat was won, on one row. Full-width rather than
+          `compact`: a tooltip is opened deliberately and has 224 px to work
+          with, so the word can be shown where a 126 px card row could only
+          afford the letter. `w-fit` stays on the party badge so neither pill
+          stretches to the row. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <PartyBadge fraktion={seat.fraktion} className="w-fit" />
+        <MandateBadge electionMethod={seat.electionMethod} locale={locale} />
+      </div>
 
       {/* Omitted entirely when absent, not rendered as an empty row: Stammdaten
           carries no `BERUF` for a large share of the roster, and a blank line
