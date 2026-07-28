@@ -2,10 +2,11 @@
 
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react"
 import Link from "next/link"
+import { MandateBadge } from "@/components/mandate-badge"
+import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { RankMedal } from "@/components/rank-medal"
-import { MPPhoto } from "@/components/mp-photo"
 import {
   Table,
   TableBody,
@@ -44,6 +45,10 @@ export type RankingTableRow = {
   /** Rendered with the portrait or not at all — the licence condition these
    * images carry. See components/mp-photo.tsx. */
   photoCredit?: string | null
+  /** `Direktwahl` or `Landesliste`, badged beside the group. Optional because
+   * two boards are built from shapes that predate the field — `mandateType`
+   * turns anything it does not recognise, absent included, into no badge. */
+  electionMethod?: string | null
   totalScore: number
 } & Record<string, unknown>
 
@@ -156,8 +161,22 @@ export function RankingsTable({
               </span>
             </TableCell>
 
+            {/* The mandate type rides in the group's column rather than taking
+                one of its own. A board already carries up to four metric
+                columns plus the score, and a fifth non-numeric column would
+                push the numbers — which are what a leaderboard is read for —
+                off a laptop's width. Compact for the same reason: the word
+                would be wider than the group badge above it.
+
+                Not repeated in the narrow-screen fallback above: that block
+                exists to keep a name legible when its column is hidden, and the
+                group is what does that. A second badge there would spend a
+                phone's width on the less contextual of the two. */}
             <TableCell className="hidden sm:table-cell">
-              <PartyBadge fraktion={row.fraktion} />
+              <span className="flex items-center gap-1.5">
+                <PartyBadge fraktion={row.fraktion} />
+                <MandateBadge electionMethod={row.electionMethod} locale={locale} compact />
+              </span>
             </TableCell>
 
             {allColumns.map((column) => (

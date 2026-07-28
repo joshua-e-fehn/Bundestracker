@@ -85,6 +85,12 @@ const rankingRow = v.object({
   /** Federal state, from the constituency (`WKR_LAND`) — null for a list MP
    * whose record carries no state. See `stateOf`. */
   state: v.union(v.null(), v.string()),
+  /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`), stored raw and
+   * carried here so a leaderboard can badge the mandate type without a second
+   * query per row — the same reason `dissent` rides along below rather than
+   * being fetched per card. Null where the record has none: unknown is not a
+   * list mandate, and `mandateType` (lib/taxonomy.ts) keeps the two apart. */
+  electionMethod: v.union(v.null(), v.string()),
   birthDate: v.union(v.null(), v.string()),
   totalScore: v.number(),
   motionCount: v.number(),
@@ -221,6 +227,7 @@ function toRow(score: Doc<"activityScores">, mp: Doc<"mps">) {
     photoCredit: mp.photoCredit ?? null,
     occupation: occupationOf(mp),
     state: stateOf(mp.constituency),
+    electionMethod: mp.electionMethod,
     birthDate: mp.birthDate,
     totalScore: score.totalScore,
     motionCount: score.motionCount,

@@ -98,6 +98,7 @@ export async function mpLabel(
 ): Promise<{
   name: string
   fraktion: string
+  electionMethod: string | null
   photoUrl: string | null
   photoCredit: string | null
 }> {
@@ -105,6 +106,16 @@ export async function mpLabel(
   return {
     name: mp?.name ?? mpInternalId,
     fraktion: mp?.fraktion ?? "",
+    // How the seat was won (`MANDATSART`), carried alongside the group for the
+    // same reason the group is carried: it is a fact about *who this member is*
+    // that a list wants to badge, and fetching it per row in each of the seven
+    // surfaces built on this would be seven copies of one lookup.
+    //
+    // Null for a mandate this label could not resolve — §7.3's Stammdaten lag
+    // leaves a real id with no row for a period — and null is *not* a list
+    // mandate. `mandateType` in lib/taxonomy.ts is what keeps the two apart on
+    // the way to a badge.
+    electionMethod: mp?.electionMethod ?? null,
     photoUrl: mp?.photoUrl ?? null,
     // Travels with `photoUrl`, never separately. Displaying the credit is the
     // licence condition on these portraits (convex/schema.ts:207), so a label

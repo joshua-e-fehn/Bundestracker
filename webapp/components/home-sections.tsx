@@ -250,6 +250,8 @@ function ActivityBoard({
               // Joined onto the ranking row rather than fetched per card — see
               // the note on `MPCard`'s `dissent` prop.
               dissent={entry.dissent}
+              // Likewise joined onto the row, not queried per card.
+              electionMethod={entry.electionMethod}
               // No rank number on the ascending board. `getRankings` numbers
               // its slice from 1 in both directions, so a "1" here would read
               // as "the least active member in the Bundestag" — a claim about

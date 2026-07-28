@@ -240,6 +240,14 @@ export const getSeatingWithMPs = query({
       fraktion: v.string(),
       party: v.string(),
       constituency: v.union(v.null(), v.string()),
+      /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`), so the hover
+       * card can state how the seat was won. The one fact about a seat that the
+       * *diagram* cannot encode: §9 makes the arc synthetic, so position says
+       * nothing, and the colour is already spent on the group or on a score.
+       *
+       * Null where the mandate did not resolve, which is not a list seat — the
+       * card omits the row rather than asserting one. */
+      electionMethod: v.union(v.null(), v.string()),
       /** `BERUF` from Stammdaten — free text, often absent. Carried so the
        * hover card can say who someone is rather than only how they score;
        * null where the record has none, which the card renders as an omitted
@@ -296,6 +304,7 @@ export const getSeatingWithMPs = query({
         fraktion: mp?.fraktion ?? seat.faction,
         party: mp?.party ?? "",
         constituency: mp?.constituency ?? null,
+        electionMethod: mp?.electionMethod ?? null,
         profession: mp?.profession ?? null,
         occupation: mp?.occupation ?? null,
         photoUrl: mp?.photoUrl ?? null,

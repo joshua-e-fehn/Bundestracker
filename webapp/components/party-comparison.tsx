@@ -1,14 +1,15 @@
 "use client"
 
 import { useQuery } from "convex/react"
+import { CaveatNote } from "@/components/caveat-note"
 import { PartyCoalitionCard } from "@/components/party-coalition-card"
 import { PartyComparisonRadar } from "@/components/party-comparison-radar"
 import { PartyDisciplineCard } from "@/components/party-discipline-card"
+import { PartyMandateCard } from "@/components/party-mandate-card"
 import { PartyMetricChart } from "@/components/party-metric-chart"
 import { PartyScoreTable } from "@/components/party-score-table"
-import { SectionHeading } from "@/components/section-heading"
-import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
+import { SectionHeading } from "@/components/section-heading"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
@@ -126,6 +127,13 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
           <PartyMetricChart parties={comparison.parties} />
         </CardContent>
       </Card>
+
+      {/* Above the coalition card and below the charts: like that card it folds
+          the same six rows into a second view, and unlike the charts it is a
+          count rather than a mean — so it sits at the boundary between the two
+          halves of the page rather than among the figures its own notice has to
+          except itself from. */}
+      <PartyMandateCard parties={comparison.parties} />
 
       <PartyCoalitionCard parties={comparison.parties} wahlperiode={wahlperiode} />
 

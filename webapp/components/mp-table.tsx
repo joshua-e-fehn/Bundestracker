@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { useDeferredValue, useMemo, useState } from "react"
 import { ALL, FilterSelect } from "@/components/filter-select"
 import { FraktionBadge } from "@/components/fraktion-badge"
+import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,7 @@ import { formatNumber, formatPercent, stateOf } from "@/lib/bundestag"
 import { scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 import { foldName } from "@/lib/search"
+import { MANDATE_LABEL_KEYS, MANDATE_TYPES, mandateType } from "@/lib/taxonomy"
 
 /**
  * The roster table: search, filter, sort, page.
@@ -90,15 +92,18 @@ type SortDirection = "asc" | "desc"
 const PAGE_SIZE = 25
 
 /**
- * The two mandate types, as the values Stammdaten writes.
+ * The mandate type as a *word*, for a cell that has no room for a badge.
  *
- * Compared against `electionMethod` verbatim rather than derived from whether
- * `constituency` is null. Those two agree today and are different claims: a
- * direct mandate whose constituency name failed to ingest would be counted as a
- * list MP by the derivation, silently, and the roster would report a chamber
- * with more list seats than it has.
+ * The same vocabulary `MandateBadge` renders, resolved through the same
+ * `mandateType` narrowing — so the constituency column and the badge beside it
+ * cannot disagree about what an unrecognised `MANDATSART` means. An em dash for
+ * the unknown case, matching the score columns: see the call site.
  */
-const ELECTION_METHODS = ["Direktwahl", "Landesliste"] as const
+function mandateLabel(electionMethod: string | null, t: (key: TranslationKey) => string): string {
+  const type = mandateType(electionMethod)
+  if (type === null) return "—"
+  return t(MANDATE_LABEL_KEYS[type])
+}
 
 /**
  * Every column the sort dropdown offers, in the order it offers them.
@@ -194,7 +199,7 @@ export function MPTable({
    * offer a "Direktwahl" filter that selects nobody. */
   const electionMethods = useMemo(() => {
     const present = new Set(rows.flatMap((row) => row.mp.electionMethod ?? []))
-    return ELECTION_METHODS.filter((method) => present.has(method))
+    return MANDATE_TYPES.filter((method) => present.has(method))
   }, [rows])
 
   // The ceiling for the score slider. `scoreCeiling` carries the rounding rule
@@ -339,7 +344,7 @@ export function MPTable({
             allLabel={t("mps.allElectionMethods")}
             options={electionMethods.map((method) => ({
               value: method,
-              label: t(method === "Direktwahl" ? "mps.electionDirect" : "mps.electionList"),
+              label: t(MANDATE_LABEL_KEYS[method]),
             }))}
           />
         )}
@@ -578,10 +583,33 @@ function MPRow({ row }: { row: Row }) {
         </div>
       </TableCell>
       <TableCell>
-        <FraktionBadge fraktion={row.mp.fraktion} />
+        {/* The mandate type shares the group's cell rather than taking a
+            seventh column: this table already gives four columns to the two
+            score figures and the constituency, and the roster is the widest
+            table on the site. Compact, matching components/rankings-table.tsx,
+            so the two tables badge the same field the same way.
+
+            In *this* cell rather than the constituency one because that column
+            is `hidden md:table-cell` — a phone would lose the badge entirely,
+            and the mandate type is exactly the thing a narrow roster has room
+            to say when the constituency name does not fit. */}
+        <span className="flex items-center gap-1.5">
+          <FraktionBadge fraktion={row.mp.fraktion} />
+          <MandateBadge electionMethod={row.mp.electionMethod} locale={locale} compact />
+        </span>
       </TableCell>
       <TableCell className="hidden text-muted-foreground md:table-cell">
-        {row.mp.constituency ?? t("mps.listMandate")}
+        {/* The fallback reads the *stored* mandate type, not the absence of a
+            constituency. Those two agree today and are different claims —
+            `ELECTION_METHODS` above says so at length about the filter, and the
+            same trap was live in this cell: a direct mandate whose
+            `WKR_NAME` failed to ingest printed "Landesliste" in the roster,
+            asserting a list seat from a gap in the data.
+
+            Three cases, so three renderings. An em dash where neither field is
+            known, matching the score columns below — an unknown constituency is
+            not a mandate type, and the word would invent one. */}
+        {row.mp.constituency ?? mandateLabel(row.mp.electionMethod, t)}
       </TableCell>
       <TableCell className="text-right tabular-nums">
         {/* An em dash, not a zero: the cron has not scored this MP, which is a

@@ -1,8 +1,8 @@
 import { v } from "convex/values"
 // Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
-import { type PartyKey, PARTY_KEYS, partyFor } from "../lib/parties"
+import { PARTY_KEYS, type PartyKey, partyFor } from "../lib/parties"
 import { competitionRanks } from "../lib/ranking"
-import { RANKING_METRICS } from "../lib/taxonomy"
+import { mandateType, RANKING_METRICS } from "../lib/taxonomy"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { literalUnion } from "./lib/validators"
@@ -77,6 +77,15 @@ const partyAggregate = v.object({
   scored: v.number(),
   means: metricValues,
   medianScore: v.number(),
+  /** Mandates by how they were won. A count, not a mean — see `PartyAggregate`
+   * in lib/party-comparison.ts, which explains why this one figure is allowed
+   * to be a total and why `unknown` is a third bucket rather than folded into
+   * `list`. Sums to `mandates`. */
+  mandateSplit: v.object({
+    direct: v.number(),
+    list: v.number(),
+    unknown: v.number(),
+  }),
 })
 
 /** One MP in a party's own ranked list. A trimmed `rankingRow` — this table
@@ -105,12 +114,21 @@ type Accumulator = {
   scored: number
   sums: Record<string, number>
   scores: number[]
+  /** Counted off the roster, so unlike every other figure here it is complete
+   * rather than bounded by the sweep. See `mandateSplit` on `partyAggregate`. */
+  mandateSplit: { direct: number; list: number; unknown: number }
 }
 
 function emptyAccumulator(): Accumulator {
   const sums: Record<string, number> = {}
   for (const metric of RANKING_METRICS) sums[metric] = 0
-  return { mandates: 0, scored: 0, sums, scores: [] }
+  return {
+    mandates: 0,
+    scored: 0,
+    sums,
+    scores: [],
+    mandateSplit: { direct: 0, list: 0, unknown: 0 },
+  }
 }
 
 /**
@@ -200,6 +218,16 @@ export const getPartyComparison = query({
       const accumulator = byParty.get(key) ?? emptyAccumulator()
       accumulator.mandates++
 
+      // Off the stored `MANDATSART`, narrowed through the shared vocabulary —
+      // never derived from `constituency === null`. The two agree today and are
+      // different claims, and here the difference would be visible: a direct
+      // mandate whose constituency name failed to ingest would move a segment
+      // from one side of the bar to the other rather than into `unknown`.
+      const mandate = mandateType(mp.electionMethod)
+      if (mandate === "Direktwahl") accumulator.mandateSplit.direct++
+      else if (mandate === "Landesliste") accumulator.mandateSplit.list++
+      else accumulator.mandateSplit.unknown++
+
       const score = scores.get(mp.internalId)
       if (score) {
         accumulator.scored++
@@ -245,6 +273,7 @@ export const getPartyComparison = query({
           scored: accumulator.scored,
           means,
           medianScore: median(accumulator.scores),
+          mandateSplit: accumulator.mandateSplit,
         }
       })
       // Largest group first, so the table and the radar's legend read like the

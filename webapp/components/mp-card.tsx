@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react"
 import Link from "next/link"
 import { DissentBadge } from "@/components/dissent-badge"
+import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -158,6 +159,7 @@ export function MPCard({
   photoCredit,
   totalScore,
   dissent,
+  electionMethod,
   rank,
   showHeatmap = false,
   className,
@@ -187,6 +189,21 @@ export function MPCard({
    * fetched. See `isNotableDissenter`, which draws the same line for null.
    */
   dissent?: { dissents: number; ballotsCast: number } | null
+  /**
+   * How this MP won their seat, where the list already has it.
+   *
+   * A **prop for the same reason `dissent` is one**: `getRankings` joins
+   * `electionMethod` onto each row beside the name it already denormalises, so
+   * badging it costs a list nothing. A query per card would put the heatmap's
+   * cost on every roster on the site.
+   *
+   * Undefined means "this list does not carry the field" and renders as
+   * nothing, which is also what an unrecognised or absent value renders as —
+   * see `mandateType`. That collapse is safe here in a way it would not be for
+   * a *count*: a missing badge asserts nothing, where a missing number would be
+   * read as a zero.
+   */
+  electionMethod?: string | null
   /** Position in a ranked list, if this card is in one. */
   rank?: number
   /** Fetches this MP's recent activity. One query per card — fine for a handful,
@@ -249,7 +266,22 @@ export function MPCard({
               instead of pushing it. */}
           <div className="flex min-w-0 items-center gap-1.5">
             <PartyBadge fraktion={fraktion} className="w-fit" />
+            {/* `compact`, and for the reason the comment above gives about the
+                dissent badge: this row's width is what the name borrows from,
+                and at the home page's half-width board it has 126 px.
+                "Direktmandat" spelled out would take all of it. The letter
+                keeps the word in the tooltip and the accessible name.
+
+                After the dissent badge rather than before: dissent is the rarer
+                mark and the more newsworthy one, so it stays adjacent to the
+                group badge it qualifies. The mandate type is on every card. */}
             <DissentBadge tally={dissent} locale={locale} compact className="shrink-0" />
+            <MandateBadge
+              electionMethod={electionMethod}
+              locale={locale}
+              compact
+              className="shrink-0"
+            />
           </div>
         </div>
 

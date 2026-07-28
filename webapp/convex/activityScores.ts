@@ -459,6 +459,11 @@ export const getRankings = query({
       mpInternalId: v.string(),
       name: v.string(),
       fraktion: v.string(),
+      /** `Direktwahl` or `Landesliste`, joined from the roster by `mpLabel` so
+       * `MPCard` can badge the mandate type without a query per card — the same
+       * economy `dissent` below is joined for. Null where the mandate could not
+       * be resolved, which is not the same as a list seat; see `mandateType`. */
+      electionMethod: v.union(v.null(), v.string()),
       ...photoFields,
       totalScore: v.number(),
       scoreBreakdown,
@@ -506,6 +511,7 @@ export const getRankings = query({
         mpInternalId: row.mpInternalId,
         name: mp.name,
         fraktion: mp.fraktion,
+        electionMethod: mp.electionMethod,
         photoUrl: mp.photoUrl,
         photoCredit: mp.photoCredit,
         totalScore: row.totalScore,
