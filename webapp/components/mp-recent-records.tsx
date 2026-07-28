@@ -8,7 +8,7 @@ import { api } from "@/convex/_generated/api"
 import { drucksachePdfUrl, formatDate, formatNumber, protocolPdfUrl } from "@/lib/bundestag"
 
 /**
- * The three "latest five" panels: speeches, motions, recorded votes.
+ * The four "latest five" panels: speeches, motions, written questions, votes.
  *
  * Five each, not fifty. This is a summary beside the score, and the queries
  * behind it are the profile-page reads their own docstrings name — a longer
@@ -16,7 +16,15 @@ import { drucksachePdfUrl, formatDate, formatNumber, protocolPdfUrl } from "@/li
  *
  * Every row that can link to its source document does. `drucksachePdfUrl` and
  * `protocolPdfUrl` reconstruct the address from the deterministic patterns in
- * §8 of docs/api-research.md, which is why no URL is stored per row.
+ * §8 of docs/api-research.md, which is why no URL is stored per row. Questions
+ * are the exception and say why at `RecentQuestions`.
+ *
+ * The questions panel is in this file rather than beside it, which is a
+ * deliberate reversal of the obvious split: it is a fourth instance of the same
+ * thing — same `Panel` chrome, same `LIMIT`, same three-state loading rule — and
+ * a `mp-recent-questions.tsx` would have carried its own copy of all three. The
+ * panels are siblings on one page; the moment they stop sharing a definition of
+ * "latest five" is the moment one of them starts showing eight.
  */
 export function MPRecentRecords({
   mpInternalId,
@@ -29,6 +37,10 @@ export function MPRecentRecords({
     <div className="flex flex-col gap-6">
       <RecentSpeeches mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
       <RecentMotions mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
+      {/* Between the motions an MP tables and the votes they cast: a written
+          question is the same kind of act as a motion — something the member
+          initiated — where a vote is a response to someone else's. */}
+      <RecentQuestions mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
       <RecentVotes mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
     </div>
   )
@@ -128,6 +140,82 @@ function RecentMotions({
               </li>
             )
           })}
+        </ul>
+      )}
+    </Panel>
+  )
+}
+
+/**
+ * Kleine and Große Anfragen — the questions this member put to the government.
+ *
+ * ## Why this panel exists
+ *
+ * `getQuestionsByMP` sat in convex/questions.ts with no caller. Written
+ * questions are the cheapest scrutiny instrument an individual member has: no
+ * majority needed, no committee slot, no speaking time, and the government must
+ * answer. That makes them the nearest thing to a floor on what a backbencher can
+ * be *seen* to do — and until now a visitor could read that an MP asked forty of
+ * them, because the score panel counts them, without being able to see one.
+ *
+ * A count nobody can open is exactly the kind of figure AGENTS.md says this site
+ * does not publish.
+ *
+ * ## Both kinds are marked, not merged
+ *
+ * The distinction is constitutional rather than editorial — a Große Anfrage is
+ * debated in the chamber, a Kleine Anfrage answered in writing — which is why
+ * `type` is a closed union in the schema where `aktivitaetsart` is not. They are
+ * also lopsided, Kleine Anfragen dominating, so an undifferentiated list would
+ * let one debated question vanish among thirty written ones. The badge renders
+ * on both rather than only on the rare kind: an unbadged row would read as
+ * "kind unknown" rather than as the common case.
+ *
+ * ## No source link, and that is the honest answer
+ *
+ * The three sibling panels link every row to its document; this one cannot. A
+ * question reaches the database as an `/aktivitaet` record, while the Drucksache
+ * number that would build the address is on a different record with no shared id
+ * — the behavioural-key note in convex/questions.ts. `drucksachePdfUrl` already
+ * refuses to guess rather than emit an address pointing at a different document,
+ * and the same refusal applies here: a link to the wrong Anfrage is worse than
+ * no link.
+ */
+function RecentQuestions({
+  mpInternalId,
+  wahlperiode,
+}: {
+  mpInternalId: string
+  wahlperiode: number
+}) {
+  const { t, locale } = useLocale()
+  const questions = useQuery(api.questions.getQuestionsByMP, {
+    mpInternalId,
+    wahlperiode,
+    limit: LIMIT,
+  })
+
+  return (
+    <Panel title={t("mp.latestQuestions")} loading={questions === undefined}>
+      {questions?.length === 0 ? (
+        <Empty>{t("mp.noQuestions")}</Empty>
+      ) : (
+        <ul className="flex flex-col divide-y">
+          {questions?.map((question) => (
+            <li key={question.id} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <span className="font-medium text-sm leading-snug">{question.subject}</span>
+                <span className="shrink-0 text-muted-foreground text-xs">
+                  {formatDate(question.date, locale)}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs">
+                <span>
+                  {t(question.type === "major" ? "mp.questionMajor" : "mp.questionMinor")}
+                </span>
+              </div>
+            </li>
+          ))}
         </ul>
       )}
     </Panel>

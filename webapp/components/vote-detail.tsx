@@ -4,12 +4,14 @@ import { AlertTriangle, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { CaveatNote } from "@/components/caveat-note"
 import { type FraktionBreakdown, FraktionVoteSummary } from "@/components/fraktion-vote-summary"
+import { LameDuckBadge } from "@/components/lame-duck-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Card } from "@/components/ui/card"
 import { VoteBar, type VoteCounts } from "@/components/vote-bar"
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { VoteTable, type VoteTableRow } from "@/components/vote-table"
 import { formatDate, formatPercent } from "@/lib/format"
+import { isLameDuckVote, LAME_DUCK_MAINTAINED_AS_OF } from "@/lib/lame-duck"
 
 /**
  * One ballot in full: the outcome, the chamber's split, each group's line, and
@@ -73,6 +75,11 @@ export function VoteDetail({
 }) {
   const { t, locale } = useLocale()
 
+  // Through the locale formatter rather than printed raw: every other date on
+  // this page is, and an ISO string beside "18. März 2025" reads as a machine
+  // artefact rather than as a maintenance date.
+  const maintainedAsOf = formatDate(LAME_DUCK_MAINTAINED_AS_OF, locale)
+
   const published: VoteCounts = {
     yes: sheet.yesCount,
     no: sheet.noCount,
@@ -123,12 +130,32 @@ export function VoteDetail({
               })}
             </span>
             <VoteOutcomeBadge result={sheet.result} locale={locale} />
+            {/* Full label here, unlike the list's compact mark: this is the page
+                about this one ballot, so there is room for the word and a
+                reader arriving from a search has no column header to read it
+                from. */}
+            <LameDuckBadge date={sheet.date} wahlperiode={sheet.wahlperiode} locale={locale} />
           </div>
         </div>
       </div>
 
       {/* The caveat that governs every figure on this page. */}
       <CaveatNote>{t("votes.namedOnlyNotice")}</CaveatNote>
+
+      {/* The badge is a two-word label; this is what it means. Rendered on the
+          same condition, through the same function, so the note and the mark
+          cannot appear without each other — a badge reading "Geschäftsführend"
+          with no explanation is a label a reader has no way to check.
+
+          It is a `CaveatNote` rather than body text because it does the same job
+          every other one on this site does: it says the figures below are true
+          and are not the whole story. Here the qualification is about *who*
+          voted rather than about what was counted. */}
+      {isLameDuckVote(sheet.date, sheet.wahlperiode) ? (
+        <CaveatNote>
+          {t("votes.lameDuckNotice")} {t("votes.lameDuckMaintained", { date: maintainedAsOf })}
+        </CaveatNote>
+      ) : null}
 
       {mismatch ? (
         <p className="flex gap-2 rounded-md border border-vote-abstain/40 bg-vote-abstain/10 p-3 text-xs leading-relaxed">

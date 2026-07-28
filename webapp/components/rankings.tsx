@@ -121,12 +121,25 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
     board.kind === "crossParty" ? shared : "skip",
   )
 
+  const normalisedResult = useQuery(
+    api.rankings.getNormalisedRankings,
+    board.kind === "normalised"
+      ? // The direction is the reader's, unlike the other derived boards: this
+        // one is sortable, and its ascending read ("least activity per month in
+        // office") is the fair version of the home page's bottom board rather
+        // than a mere reversal.
+        { ...shared, month: selectedMonth, direction: sort?.direction ?? "desc" }
+      : "skip",
+  )
+
   const result =
     board.kind === "metric"
       ? metricResult
       : board.kind === "rising"
         ? risingResult
-        : crossPartyResult
+        : board.kind === "crossParty"
+          ? crossPartyResult
+          : normalisedResult
 
   /**
    * Every change to the query resets to page 1.
@@ -147,10 +160,17 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
     setPage(0)
   }
 
-  /** Sorting is only meaningful where the board ranks by a column the reader
-   * can change; the two derived boards define their own order. */
+  /**
+   * Sorting is only meaningful where the board ranks by a column the reader can
+   * change; the two derived boards define their own order.
+   *
+   * The normalised board is sortable despite being derived, and only in one
+   * sense: its `direction` flips. Its ranked column is fixed — there is one
+   * quotient — so the reader is choosing which end of it to read rather than
+   * which field to rank on, which is why the query takes no `metric`.
+   */
   function handleSort(field: string) {
-    if (board.kind !== "metric") return
+    if (board.kind !== "metric" && board.kind !== "normalised") return
     setSort((current) =>
       current?.field === field
         ? { field, direction: current.direction === "desc" ? "asc" : "desc" }
@@ -171,7 +191,16 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
   const rows = (result?.rows ?? []) as RankingTableRow[]
   const total = result?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const sortField = sort?.field ?? (board.kind === "metric" ? (board.metric ?? null) : null)
+  const sortField =
+    sort?.field ??
+    (board.kind === "metric"
+      ? (board.metric ?? null)
+      : // The normalised board has one ranked column and it is always the
+        // quotient, so the sort indicator points at it from the first render
+        // rather than only after a click.
+        board.kind === "normalised"
+        ? "scorePerMonth"
+        : null)
 
   const risingUnavailable =
     board.kind === "rising" && (risingMonth === null || risingPrevious === null)
@@ -263,6 +292,20 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
             : t("rankings.crossPartyWindow", { count: crossPartyResult.ballotsExamined })}
         </p>
       )}
+
+      {board.reportsUnrankable === true &&
+      normalisedResult !== undefined &&
+      normalisedResult.unrankable > 0 ? (
+        // Who is *not* on this board. Every other board holds every member the
+        // filters admit, so only this one can be short — a member with no
+        // recorded mandate span, or with less than a month in office, has no
+        // rate rather than a rate of zero (see `normalisedScore`). Saying so is
+        // the same duty `crossPartyPeriod` discharges above: a board that
+        // quietly holds 610 of 630 members reads as the whole chamber.
+        <p className="text-muted-foreground text-xs">
+          {t("rankings.normalisedUnrankable", { count: normalisedResult.unrankable })}
+        </p>
+      ) : null}
 
       {risingUnavailable ? (
         <p className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">

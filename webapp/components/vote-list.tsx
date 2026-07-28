@@ -4,6 +4,7 @@ import { useQuery } from "convex/react"
 import Link from "next/link"
 import { useDeferredValue, useState } from "react"
 import { CaveatNote } from "@/components/caveat-note"
+import { LameDuckBadge } from "@/components/lame-duck-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -229,11 +230,27 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
                       >
                         {sheet.title}
                       </Link>
-                      <div className="mt-0.5 text-muted-foreground text-xs tabular-nums">
-                        {t("votes.sitting", {
-                          sitzungnr: sheet.sitzungnr,
-                          abstimmnr: sheet.abstimmnr,
-                        })}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-muted-foreground text-xs tabular-nums">
+                          {t("votes.sitting", {
+                            sitzungnr: sheet.sitzungnr,
+                            abstimmnr: sheet.abstimmnr,
+                          })}
+                        </span>
+                        {/* On the sitting line rather than beside the title: the
+                            title is the `min-w-0` slot this row takes its width
+                            from, and a badge there would truncate the one thing
+                            a list of votes must show. Compact for the same
+                            reason — in a table row the word would double the
+                            line's height on a phone. The badge decides for
+                            itself whether to render; almost every ballot is
+                            ordinary and shows nothing. */}
+                        <LameDuckBadge
+                          date={sheet.date}
+                          wahlperiode={sheet.wahlperiode}
+                          locale={locale}
+                          compact
+                        />
                       </div>
                       {/* The outcome and the bar both drop out of the row on a
                           phone, so the outcome comes back under the title —
