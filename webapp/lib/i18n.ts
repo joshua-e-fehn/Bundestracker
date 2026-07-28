@@ -218,17 +218,21 @@ const de = {
   "rankings.caveat.committeesCurrentOnly":
     "Ausschussdaten liegen nur für die laufende Wahlperiode vor — frühere Perioden sind nirgends maschinenlesbar veröffentlicht.",
   "rankings.caveat.crossParty":
-    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung, und eine exakt gespaltene Fraktion hat keine Linie, von der abgewichen werden könnte.",
-  // Replaces the old "die letzten N Abstimmungen" line. The figure is now
-  // period-wide, so what has to be stated is the denominator rather than a
-  // window — see `getCrossPartyRankings`.
-  "rankings.crossPartyPeriod":
-    "Gesamte Wahlperiode. Nenner sind die abgegebenen Stimmen in Abstimmungen mit erkennbarer Fraktionslinie.",
-  "rankings.crossPartyWindow": "Nur die letzten {count} namentlichen Abstimmungen.",
+    "Abweichung heißt: anders als die Mehrheit der eigenen Fraktion in derselben Abstimmung. Abwesenheit zählt nicht als Abweichung.",
   "rankings.caveat.rising":
     "Vergleich zweier Kalendermonate. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
   "rankings.noPreviousMonth":
     "Für die gesamte Wahlperiode gibt es keinen Vormonat. Wählen Sie einen Monat.",
+
+  // Which ballots the cross-party board's numbers are *of*. Not a caveat but a
+  // statement of scope: the two scopes of `getCrossPartyRankings` produce the
+  // same row shape over very different sets, so the page says which one it got
+  // rather than leaving a reader to assume — a dissent count over an unnamed
+  // subset is a number without a meaning. The period scope reports no
+  // `ballotsExamined` (it examined all of them, which is not a window), which
+  // is why one of these takes a count and the other cannot.
+  "rankings.crossPartyPeriod": "Gezählt über alle namentlichen Abstimmungen der Wahlperiode.",
+  "rankings.crossPartyWindow": "Gezählt über die letzten {count} namentlichen Abstimmungen.",
 
   "rankings.scoreExplainer":
     "Der Aktivitätswert ist eine gewichtete Summe messbarer Vorgänge. Die Gewichtung ist eine Setzung, keine Wertung — jede Komponente ist einzeln ausgewiesen.",
@@ -419,26 +423,38 @@ const de = {
   "mp.partyLineWith": "auf Fraktionslinie",
   "mp.partyLineAgainst": "gegen die Fraktionsmehrheit",
   "mp.partyLineUnknown": "Fraktionsmehrheit unbekannt",
-  // The period-wide dissent figure — see convex/votes.ts. Deliberately a
-  // sentence rather than a labelled number: "12" beside the word "Abweichungen"
-  // invites reading it as a score, and this is a count of occasions with a
-  // denominator that has to travel with it.
-  "mp.dissent": "Abweichung von der Fraktion",
-  "mp.dissentCount":
-    "{count}-mal anders als die Fraktionsmehrheit gestimmt — bei {cast} abgegebenen Stimmen in dieser Wahlperiode.",
-  "mp.dissentNone":
-    "In dieser Wahlperiode nie anders als die Fraktionsmehrheit gestimmt — bei {cast} abgegebenen Stimmen.",
-  // Distinct from `mp.dissentNone`, and the distinction is the point: a member
-  // who cast no vote is not a member who always voted with their group.
-  "mp.dissentNoBallots":
-    "Keine abgegebene Stimme in einer namentlichen Abstimmung mit erkennbarer Fraktionslinie.",
-  "mp.dissentNotComputed": "Für diese Wahlperiode ist noch keine Abweichungsbilanz berechnet.",
-  "mp.dissentRate": "{rate} der abgegebenen Stimmen",
-  "mp.dissentOfBallots": "{ballots} namentliche Abstimmungen in der Wahlperiode",
-  // The card badge. Two words, because it sits in a 10 px gap beside a name.
+
+  // --- dissent over a whole electoral period ---
+  //
+  // The period figure, as opposed to `mp.partyLineAgainst`, which labels a
+  // single ballot. The distinction is the one components/dissent-badge.tsx
+  // draws at length between itself and `RebelVoteBadge`: one vote against the
+  // group is an event, a rate across a period is a pattern, and the second is
+  // the larger claim.
+  //
+  // `mp.dissentNotComputed` and `mp.dissentNone` are deliberately different
+  // strings. A member the backfill has not reached and a member who never broke
+  // with their group are opposite statements, and `getDissentTally` returns
+  // null for the first precisely so the page need not conflate them — see the
+  // header of lib/dissent.ts.
+  "mp.dissent": "Abweichung von der Fraktionslinie",
   "mp.dissentBadge": "Abweichler:in",
+  // `{rate}` and `{ballots}` come from `DISSENT_BADGE_RATE` and
+  // `DISSENT_MIN_BALLOTS`, never from this string — see components/dissent-badge.tsx.
   "mp.dissentBadgeTooltip":
-    "Hat in mindestens 5 % der abgegebenen Stimmen anders als die eigene Fraktionsmehrheit gestimmt.",
+    "Weicht in mindestens {rate} der abgegebenen Stimmen von der eigenen Fraktion ab, bei mindestens {ballots} abgegebenen Stimmen.",
+  "mp.dissentNotComputed": "Für diese Wahlperiode ist noch keine Abweichung berechnet.",
+  "mp.dissentNoBallots":
+    "In dieser Wahlperiode wurde in keiner namentlichen Abstimmung eine Stimme abgegeben.",
+  // `{cast}` is the denominator, and it is named in both branches: "keine
+  // Abweichung" without the number of votes behind it is a claim over an
+  // unnamed set.
+  "mp.dissentNone": "Keine Abweichung bei {cast} abgegebenen Stimmen.",
+  "mp.dissentCount": "{count} Abweichungen bei {cast} abgegebenen Stimmen.",
+  "mp.dissentRate": "Abweichungsquote {rate}",
+  // The period's ballots, not the member's — context for the denominator above
+  // rather than part of it. See `ballotsInPeriod` in convex/votes.ts.
+  "mp.dissentOfBallots": "{ballots} namentliche Abstimmungen in der Wahlperiode",
   // --- trend charts ---
   //
   // `mp.trends` and `mp.trendsComingSoon` were here until the charts landed:
@@ -1297,6 +1313,39 @@ const de = {
   "about.questions.body":
     "Fehler in den Daten und Einwände gegen die Methodik gehören ins öffentliche Repository. Beides ist willkommen: Eine Kennzahl, die niemand prüfen kann, ist keine.",
   "about.questions.cta": "Zum Quellcode",
+
+  "homeC.claimIntro":
+    "Jede Zahl auf dieser Seite steht für ein Dokument des Deutschen Bundestages. Was nicht dokumentiert ist, steht hier nicht.",
+  // Chapter 2 — the four summary figures. Names the honest limit of two of them
+  // in the sentence itself: `getChamberStats` reports a floor where it cannot
+  // count exactly, and the `+` on the card is meaningless unless the reader has
+  // been told what it means.
+  "homeC.claimStats":
+    "Vier Zahlen für eine Wahlperiode. Zwei davon sind Untergrenzen — wo ein „+“ steht, hat die Zählung ihre Grenze erreicht, nicht der Bundestag.",
+  // Chapter 3 — both leaderboards. The claim is about the *measure*, because
+  // that is what the two boards together put on trial.
+  "homeC.claimActivity":
+    "Der Aktivitätswert misst erfasste Tätigkeit: Anträge, Reden, Abstimmungen, Anfragen, Ausschusssitze. Er misst nicht Einfluss, nicht Qualität und nicht Anwesenheit.",
+  // Chapter 4 — parties and votes. Two sections under one claim because they
+  // make the same move: both aggregate individuals into a group, and both are
+  // read as statements about the group.
+  "homeC.claimParties":
+    "Fraktionen erscheinen hier als Mittelwerte je Mandat, Abstimmungen als namentliche Einzelnachweise. Beides sind Ausschnitte, keine Bilanzen.",
+  // Chapter 5 — the feed. The only chapter without a caveat, because it makes
+  // no measurement: it reports what was published, and says so.
+  "homeC.claimFeed":
+    "Zuletzt geschehen — in der Reihenfolge, in der die offenen Daten es veröffentlicht haben.",
+
+  // The skip link, and §7's first defence: a returning reader who wants today's
+  // votes should not have to scroll through a story they have read. Named for
+  // where it goes rather than for what it skips.
+  "homeC.skipToData": "Direkt zu den Daten",
+  // The pledge under the hero. Short enough to be read, specific enough to be
+  // checked — it names the two things the site will not do rather than
+  // promising that it is trustworthy.
+  "homeC.heroPledge":
+    "Keine Bewertung, keine Gewichtung nach Meinung. Nur was im Amtsblatt, im Protokoll und in der Abstimmungsliste steht.",
+
   // --- Untersuchungsausschuss: das Quorum ---------------------------------
   //
   // Die eine Seite dieser Website, auf der eine gezählte Zahl und eine
@@ -1597,14 +1646,14 @@ const en: Dictionary = {
   "rankings.caveat.committeesCurrentOnly":
     "Committee data exists for the current electoral period only — earlier periods are published nowhere in machine-readable form.",
   "rankings.caveat.crossParty":
-    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent, and a group split exactly in half has no line to break.",
-  "rankings.crossPartyPeriod":
-    "Whole electoral period. The denominator is votes cast in ballots where the group had a discernible line.",
-  "rankings.crossPartyWindow": "The {count} most recent named ballots only.",
+    "Cross-party means voting against the majority of one's own group in the same ballot. An absence is not a dissent.",
   "rankings.caveat.rising":
     "A comparison of two calendar months. A month without a sitting week reads low without anyone having done less.",
   "rankings.noPreviousMonth":
     "The whole electoral period has no previous month. Pick a month instead.",
+
+  "rankings.crossPartyPeriod": "Counted across every named ballot of the electoral period.",
+  "rankings.crossPartyWindow": "Counted across the {count} most recent named ballots.",
 
   "rankings.scoreExplainer":
     "The activity score is a weighted sum of measurable records. The weighting is a choice, not a verdict — every component is shown separately.",
@@ -1751,18 +1800,18 @@ const en: Dictionary = {
   "mp.partyLineWith": "with the group majority",
   "mp.partyLineAgainst": "against the group majority",
   "mp.partyLineUnknown": "group majority unknown",
-  "mp.dissent": "Dissent from the group",
-  "mp.dissentCount":
-    "Voted against their group's majority {count} times — out of {cast} votes cast this electoral period.",
-  "mp.dissentNone":
-    "Never voted against their group's majority this electoral period, across {cast} votes cast.",
-  "mp.dissentNoBallots": "No vote cast in a named ballot where their group had a discernible line.",
-  "mp.dissentNotComputed": "No dissent tally has been computed for this electoral period yet.",
-  "mp.dissentRate": "{rate} of votes cast",
-  "mp.dissentOfBallots": "{ballots} named ballots this electoral period",
-  "mp.dissentBadge": "Dissenter",
+
+  // --- dissent over a whole electoral period ---
+  "mp.dissent": "Dissent from the group line",
+  "mp.dissentBadge": "Frequent dissenter",
   "mp.dissentBadgeTooltip":
-    "Voted against their own group's majority in at least 5% of the votes they cast.",
+    "Votes against their own group in at least {rate} of votes cast, over at least {ballots} votes cast.",
+  "mp.dissentNotComputed": "No dissent figure has been computed for this electoral period yet.",
+  "mp.dissentNoBallots": "No vote was cast in any named ballot in this electoral period.",
+  "mp.dissentNone": "No dissent across {cast} votes cast.",
+  "mp.dissentCount": "{count} dissents across {cast} votes cast.",
+  "mp.dissentRate": "Dissent rate {rate}",
+  "mp.dissentOfBallots": "{ballots} named ballots in the electoral period",
   // --- trend charts ---
   "trends.title": "Trends",
   "trends.subtitle": "Monthly activity across the current electoral period.",
@@ -2400,6 +2449,20 @@ const en: Dictionary = {
   "about.questions.body":
     "Errors in the data and objections to the methodology belong in the public repository. Both are welcome: a measure nobody can check is not one.",
   "about.questions.cta": "View the source code",
+
+  "homeC.claimIntro":
+    "Every figure on this page stands for a document of the German Bundestag. What is not on the record is not here.",
+  "homeC.claimStats":
+    "Four figures for one electoral period. Two of them are floors — where a “+” appears, the count reached its limit, not the Bundestag.",
+  "homeC.claimActivity":
+    "The activity score measures recorded work: motions, speeches, votes, questions, committee seats. It does not measure influence, quality or attendance.",
+  "homeC.claimParties":
+    "Groups appear here as means per mandate, votes as named per-member records. Both are excerpts, not balance sheets.",
+  "homeC.claimFeed": "What has just happened — in the order the open data published it.",
+
+  "homeC.skipToData": "Straight to the data",
+  "homeC.heroPledge":
+    "No rating, no weighting by opinion. Only what stands in the official record, the protocol and the ballot list.",
 
   // --- committee of inquiry: the quorum ------------------------------------
   //
