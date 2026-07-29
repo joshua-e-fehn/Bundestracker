@@ -1,0 +1,373 @@
+{
+ "meta": {
+  "abgeordnetenwatch_api": {
+   "version": "2.9.0",
+   "changelog": "https://www.abgeordnetenwatch.de/api/version-changelog/aktuell",
+   "licence": "CC0 1.0",
+   "licence_link": "https://creativecommons.org/publicdomain/zero/1.0/deed.de",
+   "documentation": "https://www.abgeordnetenwatch.de/api/entitaeten/candidacy-mandate"
+  },
+  "status": "ok",
+  "status_message": "",
+  "result": {
+   "count": 6,
+   "total": 630,
+   "range_start": 0,
+   "range_end": 6
+  }
+ },
+ "data": [
+  {
+   "id": 70826,
+   "entity_type": "candidacy_mandate",
+   "label": "Katrin Zschau (Bundestag 2025 - 2029)",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/70826",
+   "id_external_administration": null,
+   "id_external_administration_description": null,
+   "type": "mandate",
+   "parliament_period": {
+    "id": 161,
+    "entity_type": "parliament_period",
+    "label": "Bundestag 2025 - 2029",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+   },
+   "politician": {
+    "id": 175453,
+    "entity_type": "politician",
+    "label": "Katrin Zschau",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/175453",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/katrin-zschau"
+   },
+   "start_date": "2026-07-20",
+   "end_date": null,
+   "info": "Katrin Zschau ist am 20.07.2026 für Frank Junge in den Deutschen Bundestag nachgerückt.",
+   "electoral_data": {
+    "id": 71701,
+    "entity_type": "electoral_data",
+    "label": "Katrin Zschau (Bundestag 2025 - 2029)",
+    "electoral_list": null,
+    "list_position": null,
+    "constituency": {
+     "id": 13920,
+     "entity_type": "constituency",
+     "label": "14 - Rostock – Landkreis Rostock II (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/constituencies/13920"
+    },
+    "constituency_result": null,
+    "constituency_result_count": null,
+    "mandate_won": "moved_up"
+   },
+   "fraction_membership": [
+    {
+     "id": 13974,
+     "entity_type": "fraction_membership",
+     "label": "SPD seit 20.07.2026",
+     "fraction": {
+      "id": 425,
+      "entity_type": "fraction",
+      "label": "SPD (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/425"
+     },
+     "valid_from": "2026-07-20",
+     "valid_until": null
+    }
+   ]
+  },
+  {
+   "id": 70563,
+   "entity_type": "candidacy_mandate",
+   "label": "Michael Breilmann (Bundestag 2025 - 2029)",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/70563",
+   "id_external_administration": "2345",
+   "id_external_administration_description": null,
+   "type": "mandate",
+   "parliament_period": {
+    "id": 161,
+    "entity_type": "parliament_period",
+    "label": "Bundestag 2025 - 2029",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+   },
+   "politician": {
+    "id": 145873,
+    "entity_type": "politician",
+    "label": "Michael Breilmann",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/145873",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/michael-breilmann"
+   },
+   "start_date": "2026-06-01",
+   "end_date": null,
+   "info": "Michael Breilmann ist am 01.06.2026 für Ansgar Heveling in den Deutschen Bundestag nachgerückt.",
+   "electoral_data": {
+    "id": 71438,
+    "entity_type": "electoral_data",
+    "label": "Michael Breilmann (Bundestag 2025 - 2029)",
+    "electoral_list": {
+     "id": 727,
+     "entity_type": "electoral_list",
+     "label": "Landesliste Nordrhein-Westfalen (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/electoral-lists/727"
+    },
+    "list_position": 18,
+    "constituency": {
+     "id": 14026,
+     "entity_type": "constituency",
+     "label": "120 - Recklinghausen I (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/constituencies/14026"
+    },
+    "constituency_result": null,
+    "constituency_result_count": null,
+    "mandate_won": "moved_up"
+   },
+   "fraction_membership": [
+    {
+     "id": 13963,
+     "entity_type": "fraction_membership",
+     "label": "CDU/CSU seit 01.06.2026",
+     "fraction": {
+      "id": 421,
+      "entity_type": "fraction",
+      "label": "CDU/CSU (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/421"
+     },
+     "valid_from": "2026-06-01",
+     "valid_until": null
+    }
+   ]
+  },
+  {
+   "id": 70562,
+   "entity_type": "candidacy_mandate",
+   "label": "Christoph Naser (Bundestag 2025 - 2029)",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/70562",
+   "id_external_administration": "2841",
+   "id_external_administration_description": null,
+   "type": "mandate",
+   "parliament_period": {
+    "id": 161,
+    "entity_type": "parliament_period",
+    "label": "Bundestag 2025 - 2029",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+   },
+   "politician": {
+    "id": 182901,
+    "entity_type": "politician",
+    "label": "Christoph Naser",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/182901",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/christoph-naser"
+   },
+   "start_date": "2026-05-27",
+   "end_date": null,
+   "info": "Christoph Naser ist am 27.05.2026 für Ronja Kemmer in den Deutschen Bundestag nachgerückt.",
+   "electoral_data": {
+    "id": 71437,
+    "entity_type": "electoral_data",
+    "label": "Christoph Naser (Bundestag 2025 - 2029)",
+    "electoral_list": null,
+    "list_position": null,
+    "constituency": {
+     "id": 14196,
+     "entity_type": "constituency",
+     "label": "290 - Tübingen (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/constituencies/14196"
+    },
+    "constituency_result": null,
+    "constituency_result_count": null,
+    "mandate_won": "moved_up"
+   },
+   "fraction_membership": [
+    {
+     "id": 13962,
+     "entity_type": "fraction_membership",
+     "label": "CDU/CSU seit 27.05.2026",
+     "fraction": {
+      "id": 421,
+      "entity_type": "fraction",
+      "label": "CDU/CSU (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/421"
+     },
+     "valid_from": "2026-05-27",
+     "valid_until": null
+    }
+   ]
+  },
+  {
+   "id": 70561,
+   "entity_type": "candidacy_mandate",
+   "label": "Stefan Glaser (Bundestag 2025 - 2029)",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/70561",
+   "id_external_administration": "2840",
+   "id_external_administration_description": null,
+   "type": "mandate",
+   "parliament_period": {
+    "id": 161,
+    "entity_type": "parliament_period",
+    "label": "Bundestag 2025 - 2029",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+   },
+   "politician": {
+    "id": 182899,
+    "entity_type": "politician",
+    "label": "Stefan Glaser",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/182899",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/stefan-glaser"
+   },
+   "start_date": "2026-05-27",
+   "end_date": null,
+   "info": "Stefan Glaser ist am 27.05.2026 für Andreas Jung in den Deutschen Bundestag nachgerückt.",
+   "electoral_data": {
+    "id": 71436,
+    "entity_type": "electoral_data",
+    "label": "Stefan Glaser (Bundestag 2025 - 2029)",
+    "electoral_list": null,
+    "list_position": null,
+    "constituency": {
+     "id": 14188,
+     "entity_type": "constituency",
+     "label": "282 - Lörrach – Müllheim (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/constituencies/14188"
+    },
+    "constituency_result": null,
+    "constituency_result_count": null,
+    "mandate_won": "moved_up"
+   },
+   "fraction_membership": [
+    {
+     "id": 13961,
+     "entity_type": "fraction_membership",
+     "label": "CDU/CSU seit 27.05.2026",
+     "fraction": {
+      "id": 421,
+      "entity_type": "fraction",
+      "label": "CDU/CSU (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/421"
+     },
+     "valid_from": "2026-05-27",
+     "valid_until": null
+    }
+   ]
+  },
+  {
+   "id": 70129,
+   "entity_type": "candidacy_mandate",
+   "label": "David Mandrella (Bundestag 2025 - 2029)",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/70129",
+   "id_external_administration": "2839",
+   "id_external_administration_description": "mdbID aus der info-xml-Datei der Bundestagsverwaltung",
+   "type": "mandate",
+   "parliament_period": {
+    "id": 161,
+    "entity_type": "parliament_period",
+    "label": "Bundestag 2025 - 2029",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+   },
+   "politician": {
+    "id": 182972,
+    "entity_type": "politician",
+    "label": "David Mandrella",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/182972",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/david-mandrella"
+   },
+   "start_date": "2026-03-30",
+   "end_date": null,
+   "info": "David Mandrella ist am 30.03.2026 für Carsten Träger in den Deutschen Bundestag nachgerückt.",
+   "electoral_data": {
+    "id": 71004,
+    "entity_type": "electoral_data",
+    "label": "David Mandrella (Bundestag 2025 - 2029)",
+    "electoral_list": {
+     "id": 719,
+     "entity_type": "electoral_list",
+     "label": "Landesliste Bayern (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/electoral-lists/719"
+    },
+    "list_position": 15,
+    "constituency": {
+     "id": 14137,
+     "entity_type": "constituency",
+     "label": "231 - Amberg (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/constituencies/14137"
+    },
+    "constituency_result": null,
+    "constituency_result_count": null,
+    "mandate_won": "moved_up"
+   },
+   "fraction_membership": [
+    {
+     "id": 13525,
+     "entity_type": "fraction_membership",
+     "label": "SPD seit 30.03.2026",
+     "fraction": {
+      "id": 425,
+      "entity_type": "fraction",
+      "label": "SPD (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/425"
+     },
+     "valid_from": "2026-03-30",
+     "valid_until": null
+    }
+   ]
+  },
+  {
+   "id": 69047,
+   "entity_type": "candidacy_mandate",
+   "label": "Mayra Vriesema (Bundestag 2025 - 2029)",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates/69047",
+   "id_external_administration": "2838",
+   "id_external_administration_description": "mdbID aus der info-xml-Datei der Bundestagsverwaltung",
+   "type": "mandate",
+   "parliament_period": {
+    "id": 161,
+    "entity_type": "parliament_period",
+    "label": "Bundestag 2025 - 2029",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parliament-periods/161",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/bundestag"
+   },
+   "politician": {
+    "id": 184332,
+    "entity_type": "politician",
+    "label": "Mayra Vriesema",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/184332",
+    "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/mayra-vriesema"
+   },
+   "start_date": "2025-09-01",
+   "end_date": null,
+   "info": "Mayra Vriesema ist am 01.09.2025 für Robert Habeck in den Deutschen Bundestag nachgerückt.",
+   "electoral_data": {
+    "id": 69922,
+    "entity_type": "electoral_data",
+    "label": "Mayra Vriesema (Bundestag 2025 - 2029)",
+    "electoral_list": {
+     "id": 732,
+     "entity_type": "electoral_list",
+     "label": "Landesliste Schleswig-Holstein (Bundestag 2025 - 2029)",
+     "api_url": "https://www.abgeordnetenwatch.de/api/v2/electoral-lists/732"
+    },
+    "list_position": 5,
+    "constituency": null,
+    "constituency_result": null,
+    "constituency_result_count": null,
+    "mandate_won": "moved_up"
+   },
+   "fraction_membership": [
+    {
+     "id": 13482,
+     "entity_type": "fraction_membership",
+     "label": "BÜNDNIS 90/­DIE GRÜNEN seit 01.09.2025",
+     "fraction": {
+      "id": 420,
+      "entity_type": "fraction",
+      "label": "BÜNDNIS 90/­DIE GRÜNEN (Bundestag 2025 - 2029)",
+      "api_url": "https://www.abgeordnetenwatch.de/api/v2/fractions/420"
+     },
+     "valid_from": "2025-09-01",
+     "valid_until": null
+    }
+   ]
+  }
+ ]
+}

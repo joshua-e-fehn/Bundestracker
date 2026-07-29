@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -508,6 +509,120 @@ class MPResolver:
         webapp/convex/mps.ts reads the same set from the other side.
         """
         return sorted(self.internal_ids() - set(self._internal_to_dip))
+
+    def reconcile_mandates(self, mandates: Iterable[dict[str, Any]]) -> MandateReconciliation:
+        """Compare abgeordnetenwatch's mandate list against the roster (§7.3).
+
+        ## What this does, and firmly does not, do
+
+        It **reports**. It writes nothing, adds nobody to the roster, and above
+        all removes nobody from it. MdB-Stammdaten is the roster (§6.1) and this
+        is a community-run source; the one thing it is uniquely good for is
+        being *fresher* — the Stammdaten ZIP is a periodic snapshot that lags
+        mid-term successions, and a mandate here carries a `start_date` and a
+        published note naming who the member replaced.
+
+        So a member present here and absent from the dump is a **known gap with
+        a date on it**, which is a far better thing for an operator to see than
+        a vote row that silently failed to resolve weeks later. A member present
+        in the dump and absent here is the *opposite* and is not acted on at
+        all: it means the community source has not caught up, and deleting an
+        official row on that evidence would be the worst outcome this whole
+        file exists to prevent.
+
+        ## The identity match is by id, never by name
+
+        `politician.id` → `ext_id_bundestagsverwaltung` → the Stammdaten id, via
+        `politician_stammdaten_index`. 628 of 630 resolve on WP21 (measured
+        2026-07-29). The 2 that do not are **quarantined rather than
+        name-matched**: this source publishes a display name and nothing else to
+        disambiguate with, so a fold-and-match here would have none of the
+        safeguards §7.1's algorithm has, and its failure mode is attaching a
+        mandate to the wrong person rather than to none.
+        """
+        report = MandateReconciliation()
+        roster = self.internal_ids()
+
+        for mandate in mandates:
+            report.mandates += 1
+            stammdaten_id = mandate.get("stammdaten_id")
+            name = str(mandate.get("name") or "").strip()
+
+            if not stammdaten_id:
+                # No id to join on. Quarantined, not name-matched — see above.
+                report.unresolved += 1
+                self.quarantine.add(
+                    QuarantinedName(
+                        source="aw-mandate",
+                        nachname=name or str(mandate.get("mandate_id") or "unknown"),
+                        wahlperiode=self.wahlperiode,
+                        context=str(mandate.get("info") or mandate.get("mandate_id") or ""),
+                        reason="ambiguous",
+                    )
+                )
+                continue
+
+            if internal_id(stammdaten_id) in roster:
+                report.on_roster += 1
+                continue
+
+            # On abgeordnetenwatch, absent from the Stammdaten dump: exactly
+            # §7.3's staleness, with a date and a published reason attached.
+            report.missing_from_roster.append(
+                MandateGap(
+                    stammdaten_id=stammdaten_id,
+                    name=name,
+                    start_date=mandate.get("start_date"),
+                    info=mandate.get("info"),
+                    entered_mid_period=bool(mandate.get("entered_mid_period")),
+                )
+            )
+        return report
+
+
+class MandateGap(BaseModel):
+    """One member abgeordnetenwatch records and the Stammdaten dump does not.
+
+    Carries the source's own evidence — the start date and the published
+    succession note — rather than a conclusion, because the fix is a fresher
+    dump and the operator needs to see *how far behind* the snapshot is.
+    """
+
+    stammdaten_id: str
+    name: str
+    start_date: str | None = None
+    info: str | None = None
+    entered_mid_period: bool = False
+
+
+class MandateReconciliation(BaseModel):
+    """What one `reconcile_mandates` pass found.
+
+    A read-only health check on roster freshness. `missing_from_roster` is the
+    actionable half; everything else is the denominator that makes it
+    interpretable — 2 gaps out of 630 is staleness, 600 out of 630 is a broken
+    filter.
+    """
+
+    mandates: int = 0
+    on_roster: int = 0
+    #: Mandates whose member carries no `ext_id_bundestagsverwaltung`, so there
+    #: is no id to join on. Quarantined rather than name-matched.
+    unresolved: int = 0
+    missing_from_roster: list[MandateGap] = Field(default_factory=list)
+
+    @property
+    def mid_period_entrants(self) -> list[MandateGap]:
+        """The gaps the source explicitly marks as successions."""
+        return [gap for gap in self.missing_from_roster if gap.entered_mid_period]
+
+    def summary(self) -> str:
+        return (
+            f"{self.mandates} abgeordnetenwatch mandates: {self.on_roster} on the roster, "
+            f"{len(self.missing_from_roster)} missing from it "
+            f"({len(self.mid_period_entrants)} recorded as mid-period entrants), "
+            f"{self.unresolved} with no id to join on"
+        )
 
 
 class DIPLinkReport(BaseModel):

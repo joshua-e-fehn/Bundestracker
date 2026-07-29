@@ -1,0 +1,183 @@
+{
+ "meta": {
+  "abgeordnetenwatch_api": {
+   "version": "2.9.0",
+   "changelog": "https://www.abgeordnetenwatch.de/api/version-changelog/aktuell",
+   "licence": "CC0 1.0",
+   "licence_link": "https://creativecommons.org/publicdomain/zero/1.0/deed.de",
+   "documentation": "https://www.abgeordnetenwatch.de/api/entitaeten/candidacy-mandate"
+  },
+  "status": "ok",
+  "status_message": "",
+  "result": {
+   "count": 6,
+   "total": 630,
+   "range_start": 0,
+   "range_end": 6
+  }
+ },
+ "data": [
+  {
+   "id": 175453,
+   "entity_type": "politician",
+   "label": "Katrin Zschau",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/175453",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/katrin-zschau",
+   "first_name": "Katrin",
+   "last_name": "Zschau",
+   "birth_name": null,
+   "sex": "f",
+   "year_of_birth": 1976,
+   "party": {
+    "id": 1,
+    "entity_type": "party",
+    "label": "SPD",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parties/1"
+   },
+   "party_past": null,
+   "education": "Politikwissenschaftlerin",
+   "residence": "Rostock",
+   "occupation": "MdB",
+   "statistic_questions": 2,
+   "statistic_questions_answered": 1,
+   "ext_id_bundestagsverwaltung": "11005268",
+   "qid_wikidata": "Q108760646",
+   "field_title": null
+  },
+  {
+   "id": 145873,
+   "entity_type": "politician",
+   "label": "Michael Breilmann",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/145873",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/michael-breilmann",
+   "first_name": "Michael",
+   "last_name": "Breilmann",
+   "birth_name": null,
+   "sex": "m",
+   "year_of_birth": 1983,
+   "party": {
+    "id": 2,
+    "entity_type": "party",
+    "label": "CDU",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parties/2"
+   },
+   "party_past": null,
+   "education": "Jurist",
+   "residence": "Castrop-Rauxel",
+   "occupation": "Mitglied des Deutschen Bundestags",
+   "statistic_questions": 5,
+   "statistic_questions_answered": 4,
+   "ext_id_bundestagsverwaltung": "11005032",
+   "qid_wikidata": "Q108753285",
+   "field_title": null
+  },
+  {
+   "id": 182901,
+   "entity_type": "politician",
+   "label": "Christoph Naser",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/182901",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/christoph-naser",
+   "first_name": "Christoph",
+   "last_name": "Naser",
+   "birth_name": null,
+   "sex": "m",
+   "year_of_birth": null,
+   "party": {
+    "id": 2,
+    "entity_type": "party",
+    "label": "CDU",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parties/2"
+   },
+   "party_past": null,
+   "education": null,
+   "residence": null,
+   "occupation": "Pfarrvikar",
+   "statistic_questions": 3,
+   "statistic_questions_answered": null,
+   "ext_id_bundestagsverwaltung": null,
+   "qid_wikidata": null,
+   "field_title": null
+  },
+  {
+   "id": 182899,
+   "entity_type": "politician",
+   "label": "Stefan Glaser",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/182899",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/stefan-glaser",
+   "first_name": "Stefan",
+   "last_name": "Glaser",
+   "birth_name": null,
+   "sex": "m",
+   "year_of_birth": 1990,
+   "party": {
+    "id": 2,
+    "entity_type": "party",
+    "label": "CDU",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parties/2"
+   },
+   "party_past": null,
+   "education": "Wirtschaftsrecht, LL.M.",
+   "residence": null,
+   "occupation": "Business Development Manager",
+   "statistic_questions": 9,
+   "statistic_questions_answered": 8,
+   "ext_id_bundestagsverwaltung": null,
+   "qid_wikidata": null,
+   "field_title": null
+  },
+  {
+   "id": 182972,
+   "entity_type": "politician",
+   "label": "David Mandrella",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/182972",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/david-mandrella",
+   "first_name": "David",
+   "last_name": "Mandrella",
+   "birth_name": null,
+   "sex": "m",
+   "year_of_birth": 2001,
+   "party": {
+    "id": 1,
+    "entity_type": "party",
+    "label": "SPD",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parties/1"
+   },
+   "party_past": null,
+   "education": null,
+   "residence": null,
+   "occupation": "Lehrer",
+   "statistic_questions": 3,
+   "statistic_questions_answered": null,
+   "ext_id_bundestagsverwaltung": "11005627",
+   "qid_wikidata": "Q138763110",
+   "field_title": null
+  },
+  {
+   "id": 184332,
+   "entity_type": "politician",
+   "label": "Mayra Vriesema",
+   "api_url": "https://www.abgeordnetenwatch.de/api/v2/politicians/184332",
+   "abgeordnetenwatch_url": "https://www.abgeordnetenwatch.de/profile/mayra-vriesema",
+   "first_name": "Mayra",
+   "last_name": "Vriesema",
+   "birth_name": null,
+   "sex": "f",
+   "year_of_birth": 1999,
+   "party": {
+    "id": 5,
+    "entity_type": "party",
+    "label": "BÜNDNIS 90/­DIE GRÜNEN",
+    "api_url": "https://www.abgeordnetenwatch.de/api/v2/parties/5"
+   },
+   "party_past": null,
+   "education": "Politikwissenschaftlerin",
+   "residence": "Husum",
+   "occupation": null,
+   "statistic_questions": 2,
+   "statistic_questions_answered": 2,
+   "ext_id_bundestagsverwaltung": "11005626",
+   "qid_wikidata": "Q135967735",
+   "field_title": null
+  }
+ ]
+}

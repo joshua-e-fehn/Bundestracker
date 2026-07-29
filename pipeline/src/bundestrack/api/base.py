@@ -163,6 +163,25 @@ class _Pacer:
 _SHARED_PACER = _Pacer()
 
 
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """Parse a `Retry-After` header, if the server sent one.
+
+    RFC 7231 permits either a delta-seconds integer (`Retry-After: 30`) or an
+    HTTP-date; we honour the delta form only, because none of the sources this
+    client talks to actually sends a date and a partial parser is worse than no
+    parser. abgeordnetenwatch sends neither form on its 429s (its own docs
+    note the omission), so this returns None on that host and the caller falls
+    back to the jittered exponential.
+    """
+    header = response.headers.get("retry-after")
+    if header is None:
+        return None
+    header = header.strip()
+    if not header.isdigit():
+        return None
+    return float(header)
+
+
 def _is_enodia_challenge(response: httpx.Response) -> bool:
     """Is this the WAF challenge rather than a real redirect?
 
@@ -303,6 +322,36 @@ class BundestagClient:
                     )
                     if attempt < self.max_retries:
                         pacer.sleep(_jittered(backoff))
+                        backoff = min(backoff * 2, MAX_BACKOFF)
+                    continue
+
+                # A 429 is retriable on the same jittered schedule as the WAF
+                # challenge above — this client is the shared transport for
+                # every source, and only one host answers 429 in practice
+                # (abgeordnetenwatch — bundestag.de hosts escalate to Enodia
+                # instead). Reusing the loop rather than lifting the retry
+                # into each client keeps one policy for one class of failure,
+                # and stops a WAF-adjacent 429 from ending the whole
+                # enrichment stage on a hiccup one request from the end
+                # (N4 in `/tmp/review-source-backed-ingestion-gaps.md`).
+                #
+                # `Retry-After` is honoured when present, capped at `MAX_BACKOFF`
+                # so a hostile header cannot pin the run for hours; when absent
+                # (the abgeordnetenwatch case, per its own docs) the jittered
+                # exponential fallback takes over.
+                if response.status_code == 429:
+                    wait = _retry_after_seconds(response) or _jittered(backoff)
+                    wait = min(wait, MAX_BACKOFF)
+                    last_error = RateLimited(f"429 from {target}: {_error_detail(response)[:120]}")
+                    logger.warning(
+                        "429 from %s (attempt %d/%d) — backing off %.0fs",
+                        target,
+                        attempt + 1,
+                        self.max_retries + 1,
+                        wait,
+                    )
+                    if attempt < self.max_retries:
+                        pacer.sleep(wait)
                         backoff = min(backoff * 2, MAX_BACKOFF)
                     continue
 

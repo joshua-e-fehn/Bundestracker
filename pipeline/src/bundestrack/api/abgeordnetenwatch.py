@@ -1,24 +1,42 @@
-"""abgeordnetenwatch.de API v2 — the supplementary vote source.
+"""abgeordnetenwatch.de API v2 — the supplementary roster source.
 
-Community-run, CC0 1.0, no API key, and clean JSON with stable numeric ids —
-which is exactly what the official vote sheets lack (docs/api-research.md §4.3).
-One request returns all 630 per-MP votes for a ballot, and it cross-validates
-against the official XLSX exactly, including absences and the
-maternity-protection annotation.
+Community-run, CC0 1.0, no API key, and clean JSON with stable numeric ids.
+**Not the system of record**, and not consulted for anything the Bundestag
+publishes itself. It earns its place by answering two questions the official
+sources answer late or not at all:
 
-**Not the system of record.** Two reasons, both structural rather than about
-quality: it is community-run, and its poll set is *curated* — WP21 has 63 polls
-against ~1 015 official named votes across the Bundestag's history, so the two
-are not in 1:1 correspondence and a sync keyed on it would silently miss most
-ballots (§4.3). Use it to validate an XLSX parse, and to fill the gap §7.3
-describes: its `candidacies-mandates` records successions with a start date and
-a note naming who an MP replaced, which detects a new MP weeks before the
-Stammdaten snapshot catches up.
+- **Who is sitting *now*.** `candidacies-mandates` records a succession with a
+  `start_date` and a published note — *"ist am 20.07.2026 für Frank Junge in den
+  Deutschen Bundestag nachgerückt"* — weeks before the MdB-Stammdaten snapshot
+  catches up (§7.3). See `get_mandates`, and `MPResolver.reconcile_mandates`,
+  which reads it as a **report on roster freshness and never as a writer**.
 
-It is also the **occupation and education source**. `politicians` carries
-`ext_id_bundestagsverwaltung` — the 8-digit MdB-Stammdaten id — which makes this
-the one external source that joins to the roster *by id* rather than by name
-(§7). See `iter_politicians`.
+- **Occupation and education.** `politicians` carries
+  `ext_id_bundestagsverwaltung`, the 8-digit MdB-Stammdaten id, which makes this
+  the one external source that joins to the roster *by id* rather than by name
+  (§7). See `iter_politicians`.
+
+## ⚠ The `/polls` endpoint is deliberately not used
+
+It was built, tested, and never called — and on inspection it should not be.
+Three findings, measured 2026-07-29:
+
+1. **It is curated, not complete.** 63 polls for WP21 against ~1 015 official
+   named votes in the Bundestag's history (§4.3). Anything keyed on it silently
+   omits most ballots.
+2. **What it adds beyond the official sheets is editorial, not authoritative.**
+   `field_intro` is volunteer-written prose summarising a bill; `field_accepted`
+   restates DIP's `beschlusstenor`; `field_committees` restates DIP's
+   `Ueberweisung`. Bundestrack takes each of those from the official source
+   already.
+3. **No product surface consumes it.** Nothing renders a poll, and the outcome
+   join that `/votes` does use runs through DIP (see `bundestag-vote-outcomes`).
+
+So `iter_polls`, `get_poll_votes`, `parse_votes` and `tally` are **removed**
+rather than left as a wired-looking route nobody calls. The cross-validation
+they were written for remains possible from this same client — the endpoint is
+public and documented — but it is a one-off verification task, not pipeline
+behaviour, and pretending otherwise is what made it dead code twice over.
 
 This host is **not** behind the Enodia WAF — it is not a bundestag.de domain —
 but it goes through the same paced client anyway. Being polite to a volunteer
@@ -34,28 +52,19 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 
 from bundestrack.api.base import BundestagClient
-from bundestrack.models.votes import Vote, tally_votes
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.abgeordnetenwatch.de/api/v2"
 
-#: Bundestag legislature ids (§4.3). Coverage reaches back to 2005.
+#: Bundestag legislature ids (§4.3). Coverage reaches back to 2005, so WP14 and
+#: WP15 have no entry and `_legislature` raises for them — which is the correct
+#: outcome, since Bundestrack backfills further back than this source goes.
 #: These are abgeordnetenwatch's own ids, unrelated to the Wahlperiode number.
 LEGISLATURE_IDS = {21: 161, 20: 132, 19: 111, 18: 97, 17: 83, 16: 67}
 
-#: `vote` values → the shared vocabulary. `no_show` is an absence, and maps to
-#: `ABSENT` rather than `ABSTAIN` — the same distinction the XLSX sheets draw
-#: between `nichtabgegeben` and `Enthaltung` (§4.1).
-VOTE_VALUES = {
-    "yes": Vote.YES,
-    "no": Vote.NO,
-    "abstain": Vote.ABSTAIN,
-    "no_show": Vote.ABSENT,
-}
-
 #: Rows per request. The API caps `range_end`, and paging politely costs little
-#: against a poll set of 63.
+#: against the 630 mandates and ~1 890 politicians the pipeline reads.
 PAGE_SIZE = 100
 
 
@@ -99,37 +108,40 @@ class AbgeordnetenwatchClient(BundestagClient):
             )
         return legislature
 
-    def iter_polls(self, wahlperiode: int = 21) -> Iterator[dict[str, Any]]:
-        """Every recorded ballot for a Wahlperiode.
-
-        ⚠ Curated, not complete — see the module docstring. The filter is
-        `field_legislature`, not `legislature`: the latter is accepted by the
-        router and answers 500.
-        """
-        yield from self._paginate("polls", {"field_legislature": self._legislature(wahlperiode)})
-
-    def get_poll_votes(self, poll_id: int | str) -> list[dict[str, Any]]:
-        """All per-MP votes for one ballot, in a single request.
-
-        `related_data=votes` inlines them, which is the whole appeal: 630
-        records, each with a stable `mandate.id`, for one round trip.
-        """
-        payload = self._get(f"polls/{poll_id}", {"related_data": "votes"})
-        return payload.get("data", {}).get("related_data", {}).get("votes", []) or []
-
-    def get_mandates(
-        self, wahlperiode: int = 21, *, updated_since: str | None = None
-    ) -> Iterator[dict[str, Any]]:
+    def get_mandates(self, wahlperiode: int = 21) -> Iterator[dict[str, Any]]:
         """Mandates for a period — the succession feed (§7.3).
 
         The reason this client exists beyond validation: each record carries a
         `start_date` and an `info` note such as *"ist am 20.07.2026 für Frank
         Junge in den Deutschen Bundestag nachgerückt"*, which identifies an MP
         who has joined mid-period well before the Stammdaten snapshot does.
+        Measured 2026-07-29: 630 mandates for WP21, of which 11 carry such a
+        note and 2 name a member the Stammdaten dump does not yet hold.
+
+        ⚠ **`type=mandate` is not optional.** The collection is
+        *candidacies*-mandates: without it the endpoint also returns candidacies,
+        which are people who *stood* rather than people who sit, and treating one
+        as the other would report an election's losers as members.
+
+        ⚠ The filter parameter is `parliament_period`, the opposite of
+        `iter_polls` above — `field_legislature` answers **500** here, and
+        `field_legislature` is what *polls* needs. Verified live on both.
+        Unfiltered, this endpoint returns every German parliament it tracks: the
+        first page holds Rheinland-Pfalz and Nordrhein-Westfalen rows, so a
+        dropped filter does not narrow badly, it silently mixes chambers.
+
+        ⚠ **There is no `updated_since` here.** The `?updated_since=…` filter
+        answers HTTP 500 on this endpoint (verified live 2026-07-29:
+        *"The following parameter(s) are not valid: updated_since"*). The
+        succession feed is small enough (~630 rows for WP21, ~19 requests) that
+        an unfiltered fetch on every enrichment run is cheap; adding a kwarg
+        that only 500s would be a footgun for a future caller. See N3 in
+        `/tmp/review-source-backed-ingestion-gaps.md`.
         """
-        params: dict[str, Any] = {"parliament_period": self._legislature(wahlperiode)}
-        if updated_since:
-            params["updated_since"] = updated_since
+        params: dict[str, Any] = {
+            "parliament_period": self._legislature(wahlperiode),
+            "type": "mandate",
+        }
         yield from self._paginate("candidacies-mandates", params)
 
     def iter_politicians(self) -> Iterator[dict[str, Any]]:
@@ -155,41 +167,6 @@ class AbgeordnetenwatchClient(BundestagClient):
         the bracketed-filter syntax works for scalar comparisons only.
         """
         yield from self._paginate("politicians", {"ext_id_bundestagsverwaltung[ne]": ""})
-
-
-def parse_votes(votes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Flatten the API's vote objects into comparable rows.
-
-    Shaped for cross-validation against a parsed XLSX sheet: the MP's display
-    name, the mapped vote, and the structured absence reason the official sheets
-    record only as free text in `Bemerkung`.
-
-    An unrecognised `vote` value is skipped with a warning rather than dropped
-    silently or mapped to a guess — the vocabulary is the API's, and it can
-    grow.
-    """
-    rows: list[dict[str, Any]] = []
-    for entry in votes:
-        raw = entry.get("vote")
-        vote = VOTE_VALUES.get(raw)
-        if vote is None:
-            logger.warning("Unknown abgeordnetenwatch vote value %r — skipping", raw)
-            continue
-        mandate = entry.get("mandate") or {}
-        fraction = entry.get("fraction") or {}
-        rows.append(
-            {
-                "vote_id": entry.get("id"),
-                "mandate_id": mandate.get("id"),
-                # `Sanae Abdi (Bundestag 2025 - 2029)` — the period suffix is
-                # stripped so the name is comparable with a sheet's.
-                "name": str(mandate.get("label", "")).split(" (")[0].strip(),
-                "fraktion": str(fraction.get("label", "")).split(" (")[0].strip() or None,
-                "vote": vote,
-                "reason_no_show": entry.get("reason_no_show"),
-            }
-        )
-    return rows
 
 
 def parse_politicians(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, str | None]]:
@@ -224,11 +201,70 @@ def parse_politicians(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, str
     return enriched
 
 
-def tally(rows: list[dict[str, Any]]) -> dict[Vote, int]:
-    """Count each vote value — see `models.votes.tally_votes`.
+def politician_stammdaten_index(rows: Iterable[dict[str, Any]]) -> dict[str, str]:
+    """`{politician_id: stammdaten_id}` — the bridge a mandate needs.
 
-    Deliberately the same function the XLSX route counts with, so the two can
-    be compared directly. They agreed exactly on the ballot checked live:
-    519 yes / 43 no / 68 absent from each.
+    A mandate record names its member only as `politician.id`, which is
+    abgeordnetenwatch's own id and joins to nothing in this repo. The
+    `politicians` collection carries both that id *and*
+    `ext_id_bundestagsverwaltung`, the 8-digit Stammdaten id — so the two
+    together give a mandate a **deterministic** route to the roster, with no
+    name matching and none of §7.1's failure modes.
+
+    ⚠ Do **not** use a mandate's own `id_external_administration` for this. It
+    is populated (629 of 630) and it is numeric, which makes it look like the
+    obvious key — but it is a 3-4 digit id from a different space entirely.
+    Verified on Steffen Bilger: his mandate carries `1566`, while his Stammdaten
+    id is `11004011` and his DIP person id is `1013` (§7). Joining on it would
+    match the wrong member rather than fail to match.
     """
-    return tally_votes(row["vote"] for row in rows)
+    index: dict[str, str] = {}
+    for row in rows:
+        politician_id = row.get("id")
+        stammdaten_id = (row.get("ext_id_bundestagsverwaltung") or "").strip()
+        if politician_id is None or not stammdaten_id:
+            continue
+        index[str(politician_id)] = stammdaten_id
+    return index
+
+
+def parse_mandates(
+    rows: Iterable[dict[str, Any]], stammdaten_by_politician: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Mandate records → the flat rows the roster reconciliation compares.
+
+    `stammdaten_id` is None where the politician carries no
+    `ext_id_bundestagsverwaltung` — 2 of 630 on WP21. That is preserved rather
+    than guessed at: an unresolvable mandate is a real finding about the
+    sources disagreeing, and a name match would turn it into a silent wrong
+    answer. `entered_mid_period` is the source's own `mandate_won == "moved_up"`
+    or the presence of an `info` note, never inferred from the date.
+    """
+    parsed: list[dict[str, Any]] = []
+    for row in rows:
+        politician = row.get("politician") or {}
+        electoral = row.get("electoral_data") or {}
+        politician_id = politician.get("id")
+        parsed.append(
+            {
+                "mandate_id": row.get("id"),
+                "politician_id": str(politician_id) if politician_id is not None else None,
+                "stammdaten_id": stammdaten_by_politician.get(str(politician_id))
+                if politician_id is not None
+                else None,
+                # `Katrin Zschau (Bundestag 2025 - 2029)` — the period suffix is
+                # stripped for the same reason `parse_votes` strips it.
+                "name": str(row.get("label", "")).split(" (")[0].strip(),
+                "start_date": row.get("start_date"),
+                "end_date": row.get("end_date"),
+                # *"ist am 20.07.2026 für Frank Junge in den Deutschen Bundestag
+                # nachgerückt"* — the published succession note, verbatim. Kept
+                # whole rather than parsed for the predecessor's name: it is
+                # free prose, and a regex over it would invent a person.
+                "info": row.get("info") or None,
+                "mandate_won": electoral.get("mandate_won"),
+                "entered_mid_period": electoral.get("mandate_won") == "moved_up"
+                or bool(row.get("info")),
+            }
+        )
+    return parsed
