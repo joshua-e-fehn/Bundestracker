@@ -546,7 +546,7 @@ export const activityEventInput = {
  * German corpus that is most of the misses. lib/search.ts carries the
  * measurement and the reasoning.
  */
-const searchText = v.optional(v.string())
+export const searchText = v.optional(v.string())
 
 /**
  * Computed scores, one row per (MP, Wahlperiode, month).

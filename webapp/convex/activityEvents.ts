@@ -10,7 +10,7 @@ import {
   withId,
 } from "./lib/ingest"
 import { findMandate, mpLabel, requireMandate } from "./mps"
-import { activityEventInput, eventType } from "./schema"
+import { activityEventInput, eventType, searchText } from "./schema"
 
 /**
  * The unified feed: every kind of parliamentary record, on one timeline.
@@ -73,7 +73,10 @@ import { activityEventInput, eventType } from "./schema"
 export const activityEventDoc = v.object({
   id: v.id("activityEvents"),
   ...activityEventInput,
-  searchText: v.optional(v.string()),
+  // The schema's own validator, imported rather than respelled: this field and
+  // the column it describes have to agree about optionality, and two `v.optional
+  // (v.string())`s in two files are two things that can drift.
+  searchText,
   createdAt: v.number(),
 })
 

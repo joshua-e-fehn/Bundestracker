@@ -3,9 +3,10 @@ import { v } from "convex/values"
 import { EVENT_TYPES } from "../lib/taxonomy"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
+import { activityEventDoc } from "./activityEvents"
 import { withId } from "./lib/ingest"
 import { photoFields } from "./mps"
-import { activityEventInput, eventType } from "./schema"
+import { eventType } from "./schema"
 
 /**
  * The chamber-wide activity feed.
@@ -70,15 +71,14 @@ import { activityEventInput, eventType } from "./schema"
  * subscriptions. Same reason `voteRecordDoc` and `getChamberFeed` do it.
  */
 export const feedItem = v.object({
-  id: v.id("activityEvents"),
-  ...activityEventInput,
-  // Declared, though no feed row renders it: `join` spreads `toEventDoc(row)`,
-  // which is the whole stored document, and a `returns` validator missing a
-  // field the handler returns fails the query outright rather than dropping it.
-  // See the longer note on `activityEventDoc` in convex/activityEvents.ts —
-  // same field, same reason, and both 500ed in production together.
-  searchText: v.optional(v.string()),
-  createdAt: v.number(),
+  // The event itself, spread from the *read* model rather than re-derived from
+  // `activityEventInput`: `join` below returns `toEventDoc(row)`, which is the
+  // same stored document `getChamberFeed` returns, so the two must describe it
+  // identically. Restating the shape here is what let them drift apart — this
+  // row and `activityEventDoc` omitted `searchText` and 500ed in production
+  // together. Now there is one description of a stored event and this is a
+  // superset of it. Same composition as `voteRecordRow` in convex/votes.ts:72.
+  ...activityEventDoc.fields,
   name: v.string(),
   fraktion: v.string(),
   ...photoFields,
