@@ -26,20 +26,17 @@ import { passes } from "./rankings"
  * was one of them being unreachable.
  */
 
-/** A mandate row with only the columns `passes` reads. The cast is the same one
- * convex/stats.test.ts makes: `Doc<"mps">` has thirty-odd fields and this
- * predicate touches four, so spelling out the rest would assert nothing and
- * would have to be re-edited by every unrelated schema change. */
-function mandate(fields: {
-  fraktion?: string
-  federalState?: string | null
-  birthDate?: string | null
-}): Doc<"mps"> {
-  return {
-    fraktion: "CDU/CSU",
-    birthDate: "1975-04-12",
-    ...fields,
-  } as unknown as Doc<"mps">
+/** A mandate row carrying only what `passes` reads.
+ *
+ * No cast, which is the point: `passes` takes a `Pick` of the three columns it
+ * filters on — the same shape `peakConcurrentMandates` takes in convex/stats.ts
+ * — so this is a real value of that type rather than a lie about a full
+ * `Doc<"mps">`. A fourth filter added to the predicate is then a type error
+ * here, where an `as unknown as` would have silently kept compiling. */
+type Mandate = Pick<Doc<"mps">, "fraktion" | "federalState" | "birthDate">
+
+function mandate(fields: Partial<Mandate>): Mandate {
+  return { fraktion: "CDU/CSU", birthDate: "1975-04-12", ...fields }
 }
 
 /** Fixed rather than `Date.now()`: the age-bracket arm of `passes` is a

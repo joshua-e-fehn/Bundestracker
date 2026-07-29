@@ -174,8 +174,18 @@ type Filters = { fraktion?: string; state?: string; ageGroup?: AgeGroup }
  * board that quietly holds the wrong members rather than an error. The federal
  * state is the case in point — the filter it replaced matched nobody at all,
  * and looked exactly like a state nobody was from.
+ *
+ * `Pick` rather than the whole document, for the same reason that function
+ * takes one: the parameter then *names* the three columns a filter reads, so a
+ * test constructs exactly those and a fourth filter has to widen this signature
+ * rather than quietly reaching into a row. Both call sites hand it a full
+ * `Doc<"mps">`, which satisfies this.
  */
-export function passes(mp: Doc<"mps">, filters: Filters, nowMs: number): boolean {
+export function passes(
+  mp: Pick<Doc<"mps">, "fraktion" | "federalState" | "birthDate">,
+  filters: Filters,
+  nowMs: number,
+): boolean {
   if (filters.fraktion !== undefined && mp.fraktion !== filters.fraktion) return false
   if (filters.state !== undefined && stateOf(mp.federalState) !== filters.state) return false
   if (filters.ageGroup !== undefined && !inAgeGroup(mp.birthDate, filters.ageGroup, nowMs)) {
