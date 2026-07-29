@@ -2023,7 +2023,13 @@ def test_backfill_vote_vorgang_reads_the_full_period_not_the_daily_sync_window(
     # `aktualisiert >= watermark - OVERLAP` — the class the route exists to
     # catch is precisely everything before.
     stored_mark = "2026-07-25T12:00:00+00:00"
-    state.watermarks["21:vorgangsposition"] = stored_mark
+    # `STREAM_REFERRALS = "committee-referrals"` — the key
+    # `SyncState._key(wp, stream)` composes. Seeding "21:vorgangsposition"
+    # (the pre-fix mistake here) is inert: `state.since(21, STREAM_REFERRALS)`
+    # would return None regardless of the seed, and both assertions below
+    # would pass on the pre-fix `full=False` code. See the final verdict at
+    # `/tmp/final-verdict-source-gaps.md`, lines 67–110.
+    state.watermarks[f"21:{STREAM_REFERRALS}"] = stored_mark
 
     pipeline_run = Pipeline(
         21,
@@ -2048,7 +2054,7 @@ def test_backfill_vote_vorgang_reads_the_full_period_not_the_daily_sync_window(
         "maintenance route was written to catch."
     )
     # The watermark the daily sync depends on is restored to what it was.
-    assert state.watermarks.get("21:vorgangsposition") == stored_mark, (
+    assert state.watermarks.get(f"21:{STREAM_REFERRALS}") == stored_mark, (
         "the maintenance route must not advance the daily sync's referral "
         "watermark — the two runs have different responsibilities and only "
         "the daily sync's advance means 'this is where I got to'"
@@ -2112,7 +2118,13 @@ def test_backfill_vote_vorgang_preserves_the_watermark_even_when_referrals_arriv
     )
     state = SyncState()
     stored_mark = "2026-07-25T12:00:00+00:00"
-    state.watermarks["21:vorgangsposition"] = stored_mark
+    # `STREAM_REFERRALS = "committee-referrals"` — the key
+    # `SyncState._key(wp, stream)` composes. Seeding "21:vorgangsposition"
+    # (the pre-fix mistake here) is inert: `state.since(21, STREAM_REFERRALS)`
+    # would return None regardless of the seed, and both assertions below
+    # would pass on the pre-fix `full=False` code. See the final verdict at
+    # `/tmp/final-verdict-source-gaps.md`, lines 67–110.
+    state.watermarks[f"21:{STREAM_REFERRALS}"] = stored_mark
 
     pipeline_run = Pipeline(
         21,
@@ -2130,7 +2142,7 @@ def test_backfill_vote_vorgang_preserves_the_watermark_even_when_referrals_arriv
 
     backfill_vote_vorgang(21, settings=settings, pipeline=pipeline_run)
 
-    assert state.watermarks.get("21:vorgangsposition") == stored_mark
+    assert state.watermarks.get(f"21:{STREAM_REFERRALS}") == stored_mark
 
 
 def test_load_votes_with_a_populated_map_carries_the_resolved_procedure(tmp_path) -> None:
