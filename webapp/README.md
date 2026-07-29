@@ -17,10 +17,11 @@ A fresh clone needs one command:
 bun install
 ```
 
-That is enough to run `bun run lint`, `bun run typecheck` and `bun test` — every
-gate passes on a clean checkout with **no Convex credentials**, because
-`convex/_generated/` and `convex/betterAuth/_generated/` are committed. See
-below for why.
+That is enough to run every gate — `bun run lint`, `bun run typecheck`,
+`bun test` **and `bun run build`** — on a clean checkout with **no Convex
+credentials**. Two things make that true, and both are deliberate:
+`convex/_generated/` is committed (see below), and the build supplies its own
+placeholder Convex URLs when none are configured (see the next section).
 
 To run the app you also need a Convex deployment:
 
@@ -29,11 +30,38 @@ bunx convex dev     # writes .env.local, regenerates convex/_generated/
 bun run dev
 ```
 
+## Why the build has placeholder URLs
+
 `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` are needed at
-**build** time, not only at runtime — `lib/auth-server.ts` validates them while
-Next.js collects page data, so `bun run build` fails without them. See
-`.env.example`, which also lists the auth secrets; those are set on the Convex
-deployment with `bunx convex env set`, not in a file.
+**build** time, not only at runtime: `lib/auth-server.ts` reads them at module
+load, and `next build` imports it while collecting page data. `lib/convex-url.ts`
+validates them there and throws if either is missing, malformed, or names a
+different deployment from the other.
+
+That check is load-bearing and stays exactly as it is. A build pointed at the
+wrong deployment does not crash — every query succeeds and returns *empty*, so a
+real ballot renders "Diese Abstimmung existiert nicht". The guard exists so that
+fails loudly at build time instead.
+
+The side effect was that `bun run build` could not run at all without a
+configured deployment, which made the repo's own build gate unrunnable by CI and
+by anyone who had just cloned. `scripts/build-env-defaults.sh` closes that:
+
+- it fills in a well-formed `placeholder-build-check-000` pair **only when the
+  variables are unset or empty**, so a real value always wins — Vercel's
+  dashboard values are never touched;
+- the placeholder is a public value by construction (`NEXT_PUBLIC_*` is inlined
+  into the browser bundle) and is never contacted, since no route here is
+  prerendered against live data;
+- it announces itself on stderr, because a placeholder build is a **compile
+  check, not something deployable**.
+
+`scripts/build-env-defaults.test.ts` runs the script for real and pins both
+directions — the fill-in and, more importantly, the never-override.
+
+`.env.example` lists the auth secrets; those are set on the Convex deployment
+with `bunx convex env set`, not in a file, and nothing in the build path reads
+them.
 
 ## Why `convex/_generated/` is committed
 
@@ -76,8 +104,10 @@ bunx convex dev --once
 
 ```bash
 bun run dev            # dev server (Turbopack)
-bun run build          # production build; deploys Convex if CONVEX_DEPLOY_KEY is set
-bun run build:full     # always deploys Convex first
+bun run build          # production build; deploys Convex if CONVEX_DEPLOY_KEY is set,
+                       #   and falls back to placeholder Convex URLs if none are set
+bun run build:full     # always deploys Convex first — no placeholder fallback,
+                       #   because a build that deploys must name a real deployment
 bun run lint           # Biome lint
 bun run format         # Biome format
 bun run check          # Biome format + safe fixes + organise imports

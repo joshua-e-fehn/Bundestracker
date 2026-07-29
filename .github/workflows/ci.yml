@@ -94,20 +94,21 @@ jobs:
       - name: Test (pytest + bun test)
         run: pixi run test
 
-      # The production build, with the two Convex URLs `bun run build` needs at
-      # *build* time — `lib/auth-server.ts` validates them while Next.js
-      # collects page data, so the build fails outright without them (see
-      # webapp/.env.example). They are placeholders and no request is made to
-      # them: nothing is rendered against live data here, and a real URL would
-      # be a secret this workflow deliberately does not hold.
+      # No env block, deliberately. `bun run build` needs the two public Convex
+      # URLs at *build* time — lib/auth-server.ts validates them while Next.js
+      # collects page data — and scripts/build-env-defaults.sh supplies a
+      # placeholder pair when nothing else has, so this step is the same
+      # `pixi run build` anyone can run in a clean checkout.
       #
-      # No `CONVEX_DEPLOY_KEY`, which is what makes this build-only.
-      # `scripts/convex-deploy-if-key.sh` skips the Convex deploy when the key
-      # is unset, so this is exactly the Vercel *preview* build — the
-      # production-equivalent compile of every route, with no deployment.
+      # Setting them here instead would have put the contract in this file,
+      # where only CI benefits from it: `pixi run build` on a fresh clone would
+      # still fail, and this workflow would be asserting something the documented
+      # command does not do. That is exactly how this step failed independent
+      # verification the first time.
+      #
+      # No `CONVEX_DEPLOY_KEY` either, which is what makes this build-only:
+      # scripts/convex-deploy-if-key.sh skips the Convex deploy when the key is
+      # unset, so this is precisely the Vercel *preview* build — every route
+      # compiled, nothing deployed, and no secret held by this workflow.
       - name: Build (production-equivalent, no deploy)
         run: pixi run build
-        env:
-          NEXT_PUBLIC_CONVEX_URL: https://placeholder.convex.cloud
-          NEXT_PUBLIC_CONVEX_SITE_URL: https://placeholder.convex.site
-          NEXT_PUBLIC_SITE_URL: http://localhost:3000

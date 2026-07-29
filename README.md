@@ -27,25 +27,32 @@ pixi install          # solve and install the Python environment
 pixi run install-web  # bun install in webapp/
 ```
 
-That is the whole bootstrap for the gates: `pixi run lint`, `typecheck` and
-`test` all pass from a clean checkout with **no Convex credentials**, because
-`webapp/convex/_generated/` is committed rather than ignored. It has to be —
-`bunx convex codegen` needs a deployment it has access to, so ignoring it put a
-Convex login between a new contributor and the ability to run the tests. The
-full argument is in `webapp/README.md`; `pixi run check-codegen` is what keeps
-the committed copy honest.
+That is the whole bootstrap for the gates: `pixi run lint`, `typecheck`, `test`
+and `build` all pass from a clean checkout with **no Convex credentials**. Two
+things make that true:
 
-Running the *app* does need a deployment. This writes `webapp/.env.local` and
-regenerates `convex/_generated/`:
+- `webapp/convex/_generated/` is committed rather than ignored. It has to be —
+  `bunx convex codegen` needs a deployment it has access to, so ignoring it put
+  a Convex login between a new contributor and the ability to run the tests.
+  `pixi run check-codegen` keeps the committed copy honest.
+- The build falls back to placeholder Convex URLs when none are configured.
+  `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` are validated at
+  **build** time (`webapp/lib/convex-url.ts`), so `bun run build` used to fail
+  outright without them; `webapp/scripts/build-env-defaults.sh` supplies a
+  well-formed pair **only when they are unset**, so a real deployment URL is
+  never overridden and the validator is untouched.
+
+The full argument for both is in `webapp/README.md`.
+
+Running the *app* does need a real deployment. This writes `webapp/.env.local`
+and regenerates `convex/_generated/`:
 
 ```bash
 cd webapp && bunx convex dev
 ```
 
-Both `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` are required at
-**build** time, not only at runtime — `bun run build` fails without them. See
-`webapp/.env.example`, which also lists the auth secrets; those are set on the
-Convex deployment with `bunx convex env set`, not in a file.
+See `webapp/.env.example`, which also lists the auth secrets; those are set on
+the Convex deployment with `bunx convex env set`, not in a file.
 
 ## Commands
 
@@ -70,10 +77,10 @@ is `bun.lock`.
 
 `.github/workflows/ci.yml` runs exactly these tasks — codegen check, lint,
 typecheck, test, then a production-equivalent build — on every push to `main`
-and every pull request. It defines no gate of its own, so what CI checks and
-what you can run locally are the same list by construction. The build there
-carries placeholder Convex URLs and no deploy key, which makes it the Vercel
-*preview* build: every route compiled, nothing deployed.
+and every pull request. It defines no gate of its own and sets no environment of
+its own, so what CI checks and what you can run locally are the same list by
+construction. With no deploy key and no configured Convex URLs, that build is
+the Vercel *preview* build: every route compiled, nothing deployed.
 
 ## Auth
 
