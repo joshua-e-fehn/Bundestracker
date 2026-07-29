@@ -419,6 +419,32 @@ const de = {
   "mp.berlinOffice": "Bundestagsbüro",
   "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
   "mp.noContact": "Für diese Abgeordnete oder diesen Abgeordneten sind keine Kontaktdaten erfasst.",
+  // The empty state, spelled out. `mp.noContact` above says *that* nothing is
+  // recorded; these two say *what that means* — which is the whole difference
+  // between a sparse record and a broken page. The card used to render nothing
+  // at all in this state, so a reader could not tell an absent source from a
+  // failed fetch (GAP-003 of docs/implementation-gap-audit-2026-07-29.md).
+  //
+  // The second line is the same fact `mp.contactFormHint` states beside the
+  // form link, said where there is no form link to attach it to — and it is
+  // stated as the Bundestag's practice rather than as this site's shortfall,
+  // because that is what it is.
+  "mp.noContactExplain":
+    "Der Bundestag veröffentlicht weder E-Mail-Adressen noch Telefonnummern von Abgeordneten — auch nicht dort, wo Kontaktdaten vorliegen. Für diese Abgeordnete oder diesen Abgeordneten ist zudem kein Kontaktformular, keine Webseite und kein Wahlkreisbüro hinterlegt.",
+  /** The substitute that always exists: the postal address of the Bundestag
+   * itself, which reaches every member. Says what the address is *for* — the
+   * `mp.berlinOffice` label directly above already names it, so repeating the
+   * name here would print "Bundestagsbüro" twice in three lines. Under a
+   * heading that has just said nothing is recorded, an unlabelled address reads
+   * as a contradiction; this is the sentence that resolves it. */
+  "mp.postalSubstitute": "Schriftlich erreichbar unter der Anschrift des Bundestages:",
+  /** The directory, as the last resort that is always true: the Bundestag's own
+   * MP listing. Not a per-MP URL — the pipeline stores none for a member it
+   * could not match — so it points at the roster rather than guessing a page. */
+  "mp.officialDirectory": "Abgeordnetenverzeichnis des Bundestages",
+  /** The header's jump to the card below. A skip link within the profile, in
+   * the same spirit as `protokoll.skipToData` on `/`. */
+  "mp.jumpToContact": "Kontakt",
   "mp.committeeRole": "Funktion",
   "mp.committeePeriod": "Zeitraum",
   "mp.noCommittees": "Keine Ausschussmitgliedschaften erfasst.",
@@ -1934,6 +1960,13 @@ const en: Dictionary = {
   "mp.berlinOffice": "Bundestag office",
   "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
   "mp.noContact": "No contact details are recorded for this member.",
+  /** The empty state, spelled out. See the German entries: the point is that a
+   * reader can tell an absent source from a failed fetch. */
+  "mp.noContactExplain":
+    "The Bundestag publishes neither email addresses nor telephone numbers for members — not even where contact details are available. For this member it also lists no contact form, no website and no constituency office.",
+  "mp.postalSubstitute": "Reachable in writing at the Bundestag's address:",
+  "mp.officialDirectory": "The Bundestag's own directory of members",
+  "mp.jumpToContact": "Contact",
   "mp.committeeRole": "Role",
   "mp.committeePeriod": "Period",
   "mp.noCommittees": "No committee memberships recorded.",

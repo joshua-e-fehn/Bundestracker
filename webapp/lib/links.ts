@@ -29,6 +29,20 @@ export const BUNDESTAG_OPEN_DATA_URL = "https://www.bundestag.de/services/openda
  * API the pipeline reads. */
 export const DIP_URL = "https://dip.bundestag.de"
 
+/**
+ * The Bundestag's own directory of members — the page every biography page and
+ * every contact form hangs off.
+ *
+ * The profile's contact card falls back to this when the pipeline holds no
+ * contact block for a member (12 of 635 in WP21). Deliberately the *listing*
+ * and not a guessed per-MP URL: the per-MP page is keyed by bundestag.de's own
+ * CMS id, a fourth MP id space the pipeline only ever learns by matching a name
+ * (see `formUrl` in convex/schema.ts) — so for exactly the members that need
+ * this fallback, there is no id to build one from. A link to a real listing the
+ * reader can search beats a constructed link that 404s.
+ */
+export const BUNDESTAG_MPS_URL = "https://www.bundestag.de/abgeordnete"
+
 /** abgeordnetenwatch, the non-profit whose CC0 data supplements the official
  * roster (§4.3, §10 of docs/api-research.md). */
 export const ABGEORDNETENWATCH_URL = "https://www.abgeordnetenwatch.de"

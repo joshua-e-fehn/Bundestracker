@@ -1,6 +1,6 @@
 "use client"
 
-import { ExternalLinkIcon } from "lucide-react"
+import { ArrowDownIcon, ExternalLinkIcon } from "lucide-react"
 import Link from "next/link"
 import { ActivityHeatmap } from "@/components/activity-heatmap"
 import { FraktionBadge } from "@/components/fraktion-badge"
@@ -12,7 +12,9 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { TrendGraphs } from "@/components/trend-graphs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDate } from "@/lib/bundestag"
+import { CONTACT_ANCHOR, type ContactBlock, contactChannels, hostOf } from "@/lib/contact"
 import type { Locale } from "@/lib/i18n"
+import { BUNDESTAG_MPS_URL } from "@/lib/links"
 
 /**
  * The profile: who this MP is, what they have done, and how it was scored.
@@ -83,13 +85,12 @@ export type MPDoc = {
    * gap here: `MDB_STAMMDATEN.DTD` declares no contact elements and the
    * biography pages carry no `mailto:` or `tel:` links. `formUrl` is the
    * Bundestag's own substitute. See the note on `contact` in convex/schema.ts.
+   *
+   * The shape lives in lib/contact.ts, with the rule for reading it — one
+   * definition, so the card and its tests cannot disagree about what "has
+   * contact data" means.
    */
-  contact?: {
-    formUrl: string | null
-    constituencyOffice: string | null
-    homepage: string | null
-    socials: ReadonlyArray<{ platform: string; url: string }>
-  } | null
+  contact?: ContactBlock
 }
 
 export function MPProfile({
@@ -151,11 +152,35 @@ export function MPProfile({
                   label on a row — and displaying the credit is the condition on
                   which it may be shown at all (convex/schema.ts:207). */}
               <MPPhotoCredit photoUrl={mp.photoUrl} credit={mp.photoCredit} />
+
+              {/* The jump to the card two hundred pixels below. It is in the
+                  identity card rather than beside the name because that is the
+                  block a reader is already looking at when the question "how do
+                  I write to them" occurs to them.
+
+                  A plain anchor, like `/`'s skip link and for the same reasons:
+                  it works before hydration and survives a middle-click. It is
+                  never conditional on `contact` — the card below always renders
+                  now, so a link that appeared only for populated members would
+                  reintroduce the silence this branch exists to remove, on
+                  exactly the members who need the explanation most. */}
+              <ContactJumpLink />
             </CardContent>
           </Card>
 
-          <Biography mp={mp} locale={locale} />
+          {/* Contact directly under the identity card, above the biography.
+              It used to sit third, which put its heading ~1 450 px down the
+              page — about 1.6 viewports, on both desktop and mobile — and the
+              audit of 2026-07-29 found readers concluding from that there were
+              no contact details at all (GAP-002).
+
+              Ordering by what a reader came for rather than by what describes
+              the person: below `lg` this grid is a single column, so sidebar
+              order *is* page order on a phone, and "how do I reach them" is a
+              question people arrive with. The biography follows, then the
+              committee seats — both are context, and context can wait. */}
           <Contact mp={mp} />
+          <Biography mp={mp} locale={locale} />
           <MPCommittees mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
         </aside>
 
@@ -251,6 +276,27 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
 }
 
 /**
+ * The identity card's jump to the contact card below it.
+ *
+ * Quiet, like `/`'s "straight to the data" — it is a shortcut, not a call to
+ * action — but present in the first block of the page, which is the point. The
+ * audit measured the contact heading at 1 385–1 492 px with nothing above it
+ * hinting the card existed (GAP-002); this is the hint.
+ */
+function ContactJumpLink() {
+  const { t } = useLocale()
+  return (
+    <a
+      href={`#${CONTACT_ANCHOR}`}
+      className="flex items-center gap-1.5 rounded-md font-medium text-muted-foreground text-xs underline-offset-4 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      {t("mp.jumpToContact")}
+      <ArrowDownIcon className="size-3" aria-hidden="true" />
+    </a>
+  )
+}
+
+/**
  * How to reach this member.
  *
  * ## There is no email address, and saying so is part of the card
@@ -263,40 +309,60 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
  * rather than a gap in the pipeline. See the note on `contact` in
  * convex/schema.ts, which this card is the reader-facing half of.
  *
+ * ## It renders even when the source published nothing
+ *
+ * It used to return `null` for a member with no contact block, which is 12 of
+ * 635 in WP21 — and, whenever a sync blanks the enrichment columns (GAP-001),
+ * all 635. That made the page *silent* rather than sparse: a reader could not
+ * tell "the Bundestag publishes nothing for this member" from "this site failed
+ * to fetch it", because both rendered as a profile with no contact section on
+ * it. `grep "E-Mail-Adressen"` on Habeck's live page returned zero.
+ *
+ * So the absence is now a state of the card, not the absence of the card. It
+ * says what the Bundestag does and does not publish, prints the Berlin office —
+ * which reaches every member and is true regardless of what the pipeline
+ * holds — and links the Bundestag's own directory as the place to look next.
+ * Nothing in it is invented: there is no fabricated address, no guessed
+ * per-member URL, and no email or phone, because none exists.
+ *
  * ## The Berlin office is a constant, not a row
  *
  * `Platz der Republik 1` is the same for all 630 members, so the schema
  * deliberately does not store it 630 times and this prints it from the
- * dictionary. It is shown for every sitting member, which is what makes the
- * card useful for the roughly half of the roster that lists no constituency
- * office: those members would otherwise get a card with a form link and nothing
- * else.
+ * dictionary. It is what makes the card useful for the roughly half of the
+ * roster that lists no constituency office, and it is the substitute the empty
+ * state leans on — but it is deliberately *not* counted as contact data by
+ * `contactChannels`, or every row would look populated.
  *
- * Renders only what exists, like `Biography` above and for the same reason —
- * `contact` is absent for 13 of 635 WP21 rows, and printing four labelled blanks
- * looks like a broken page rather than a sparse record.
+ * Within the populated state it still renders only what exists, like `Biography`
+ * above and for the same reason: printing four labelled blanks looks like a
+ * broken page rather than a sparse record.
  */
 function Contact({ mp }: { mp: MPDoc }) {
   const { t } = useLocale()
-  const contact = mp.contact
-
-  // The Berlin address alone is not worth a card: it is the same sentence on
-  // every profile, so on a row with no contact data at all it would be four
-  // words of chrome pretending to be a record.
-  if (!contact) return null
-  const hasAny =
-    Boolean(contact.formUrl) ||
-    Boolean(contact.constituencyOffice) ||
-    Boolean(contact.homepage) ||
-    contact.socials.length > 0
-  if (!hasAny) return null
+  const contact = contactChannels(mp.contact)
 
   return (
-    <Card>
+    // `scroll-mt` because the site header is sticky: without it the jump above
+    // lands with the heading underneath the bar. Same treatment, same reason,
+    // as the sections in components/about-page.tsx.
+    <Card id={CONTACT_ANCHOR} className="scroll-mt-20">
       <CardHeader>
         <CardTitle>{t("mp.contact")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {contact.any ? null : (
+          <div className="flex flex-col gap-1">
+            <p className="text-sm leading-snug">{t("mp.noContact")}</p>
+            {/* Why, in the Bundestag's terms rather than this site's. This is
+                the sentence whose absence was GAP-003: without it the reader
+                is left to infer whether the gap is the parliament's or ours. */}
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {t("mp.noContactExplain")}
+            </p>
+          </div>
+        )}
+
         {contact.formUrl ? (
           <div className="flex flex-col gap-1">
             <ExternalLink href={contact.formUrl}>{t("mp.contactForm")}</ExternalLink>
@@ -320,6 +386,13 @@ function Contact({ mp }: { mp: MPDoc }) {
 
         <div className="flex flex-col gap-1">
           <span className="text-muted-foreground text-xs">{t("mp.berlinOffice")}</span>
+          {/* In the empty state the address needs a sentence in front of it,
+              because there it is the *answer* rather than one channel among
+              several — an unlabelled address under "no contact details are
+              recorded" reads as a contradiction. */}
+          {contact.any ? null : (
+            <p className="text-muted-foreground text-xs">{t("mp.postalSubstitute")}</p>
+          )}
           {/* `whitespace-pre-line`, because the address is two lines and the
               dictionary holds it with the newline in it — the same treatment
               the constituency office below needs, and for the same reason. */}
@@ -332,9 +405,7 @@ function Contact({ mp }: { mp: MPDoc }) {
             {/* Newline-separated as printed, and an MP may list two — Sanae
                 Abdi has offices in Köln-Innenstadt and Kalk in one string. So
                 the whitespace is content, not formatting. */}
-            <p className="whitespace-pre-line text-sm leading-snug">
-              {contact.constituencyOffice}
-            </p>
+            <p className="whitespace-pre-line text-sm leading-snug">{contact.constituencyOffice}</p>
           </div>
         ) : null}
 
@@ -354,15 +425,19 @@ function Contact({ mp }: { mp: MPDoc }) {
             </ul>
           </div>
         ) : null}
+
+        {/* The last resort, and only in the empty state: the Bundestag's own
+            listing, where the member's page — and with it the contact form this
+            profile could not resolve — can be looked up by hand. The *listing*
+            rather than a per-MP URL, because the per-MP page is keyed by an id
+            the pipeline learns by name-matching, and a member it failed to
+            match is precisely one it has no id for. See lib/links.ts. */}
+        {contact.any ? null : (
+          <ExternalLink href={BUNDESTAG_MPS_URL}>{t("mp.officialDirectory")}</ExternalLink>
+        )}
       </CardContent>
     </Card>
   )
-}
-
-/** The host of a URL, or null if it does not parse. Used for display only. */
-function hostOf(url: string): string | null {
-  if (!URL.canParse(url)) return null
-  return new URL(url).host.replace(/^www\./, "")
 }
 
 /**
