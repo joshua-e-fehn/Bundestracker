@@ -221,7 +221,12 @@ function toRow(score: Doc<"activityScores">, mp: Doc<"mps">) {
     name: mp.name,
     fraktion: mp.fraktion,
     party: mp.party,
-    photoUrl: mp.photoUrl,
+    // `?? null` because the column is optional on the way in: the pipeline
+    // omits a portrait it did not resolve rather than nulling one it did
+    // (convex/schema.ts:202), so an un-enriched row has no key at all. The
+    // wire shape stays `string | null` — an `undefined` here would fail this
+    // query's own returns validator rather than render initials.
+    photoUrl: mp.photoUrl ?? null,
     // Paired with the URL, always: the credit is the licence condition on
     // these portraits (convex/schema.ts:207).
     photoCredit: mp.photoCredit ?? null,
@@ -623,7 +628,9 @@ export const getCrossPartyRankings = query({
         mpInternalId,
         name: mp.name,
         fraktion: mp.fraktion,
-        photoUrl: mp.photoUrl,
+        // `?? null` for the same reason as `toRow` above: the stored column is
+        // optional, the wire shape is not.
+        photoUrl: mp.photoUrl ?? null,
         photoCredit: mp.photoCredit ?? null,
         state: stateOf(mp.constituency),
         birthDate: mp.birthDate,

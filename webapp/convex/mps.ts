@@ -39,10 +39,30 @@ import { mpInput, scoreBreakdown } from "./schema"
 
 /** The public shape of an MP. Convex's system fields are dropped: `internalId`
  * is the identifier every other table and every URL uses, so exposing `_id`
- * too would invite a second one into the frontend. */
-const mpDoc = v.object({ ...mpInput, createdAt: v.number(), updatedAt: v.number() })
+ * too would invite a second one into the frontend.
+ *
+ * `photoUrl` is re-declared as required-but-nullable rather than inherited from
+ * `mpInput`, because the write shape and the read shape want opposite things
+ * here. On the way *in* the column is optional so the pipeline can omit a
+ * portrait it did not resolve instead of nulling the stored one
+ * (convex/schema.ts:202) — that omission is the whole fix for the 2026-07-29
+ * blanking. On the way *out* an absent key would make every consumer handle a
+ * third state that means exactly what `null` already means, so `toMpDoc`
+ * normalises it and the eight components rendering portraits keep the
+ * `string | null` they were written against. */
+export const mpDoc = v.object({
+  ...mpInput,
+  photoUrl: v.union(v.null(), v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
 
-const toMpDoc = withoutSystemFields<"mps">
+/** Drops the system fields and fills in the read shape's one total column —
+ * see `mpDoc` on why `photoUrl` is nullable here but optional in storage. */
+function toMpDoc(row: Doc<"mps">) {
+  const doc = withoutSystemFields<"mps">(row)
+  return { ...doc, photoUrl: doc.photoUrl ?? null }
+}
 
 // --- lookup ---------------------------------------------------------------
 
@@ -128,7 +148,19 @@ export async function mpLabel(
 
 /** The pair every portrait is rendered from. Declared once so a query returning
  * a photo cannot omit the credit by leaving a field out of its validator — the
- * type error is the point. */
+ * type error is the point.
+ *
+ * ⚠ **Both are total here while both are `v.optional` in storage**, so a query
+ * answering with this validator must not project a `Doc<"mps">` straight into
+ * it: a row the pipeline left un-enriched has the key *absent*, that reads back
+ * as `undefined`, and `undefined` fails this validator — taking down the whole
+ * query with a bare "Server Error" naming neither field nor function
+ * (convex/schema.ts:210, and cf. `activityEvents.test.ts`). Feed the row through
+ * `mpLabel` above, which applies `?? null` to both, or guard the projection with
+ * an explicit `?? null` as `rankings.ts`, `search.ts`, `parties.ts` and
+ * `userPreferences.ts` do. `tsc` will not catch the omission, because the
+ * generated `Doc` type says `photoUrl?: string | null` and a spread drops the
+ * key silently. */
 export const photoFields = {
   photoUrl: v.union(v.null(), v.string()),
   photoCredit: v.union(v.null(), v.string()),

@@ -364,7 +364,10 @@ export const searchMPs = query({
         mpInternalId,
         name: mp.name,
         fraktion: mp.fraktion,
-        photoUrl: mp.photoUrl,
+        // `?? null` for the same reason as `occupation` below — `photoUrl` is
+        // `v.optional` too (convex/schema.ts:202), because the pipeline omits a
+        // portrait it did not resolve rather than nulling a stored one.
+        photoUrl: mp.photoUrl ?? null,
         photoCredit: mp.photoCredit ?? null,
         constituency: mp.constituency,
         // `?? null`, because `mps.occupation` is `v.optional` (convex/schema.ts:216)

@@ -10,6 +10,13 @@ boundary rather than trusted downstream:
 1. **Absent is `null`, never a missing key.** The Convex validators require
    every nullable field to be *present*, so a forgotten field is a 400 naming
    it rather than a row silently written without it.
+
+   The one deliberate exception is the `mps` enrichment columns, and it is the
+   exception that proves the rule: because every ingestion mutation is a
+   `ctx.db.patch` over the keys present, a key sent as null does not describe
+   an absence, it *causes* one. That is safe for a source read in full on every
+   run and destructive for one a given run may not have reached — see the ⚠ in
+   `mp_payload`, and the outage it documents.
 2. **Dates are ISO `YYYY-MM-DD` strings**, so lexicographic order is
    chronological and an index range needs no parsing. The sources publish
    `TT.MM.JJJJ` and `datetime.date`; converting is this layer's job.
@@ -222,12 +229,30 @@ def mp_payload(
     `photoUrl` would therefore survive until the next roster write and no
     longer.
 
-    None means the enrich stage did not reach this MP — the name join failed,
-    or the stage was skipped — and the columns go out as null, which is what
-    the UI's initials fallback is for. That fallback is no longer the common
-    case: §6.5 measured portrait coverage at 36.5 % via Wikimedia Commons, but
-    the Bundestag's own listing publishes one for all 639 WP21 MPs and 635 of
-    them join to the roster (`api.mp_profiles`).
+    ⚠ **An enrichment column this run did not resolve is omitted, not nulled.**
+    The Convex upsert is a `ctx.db.patch` over exactly the keys present
+    (`webapp/convex/lib/ingest.ts:123`), so a key sent as null *clears* the
+    stored value while an absent key leaves it alone. Emitting null for "the
+    enrich stage did not reach this MP" therefore does not describe the MP, it
+    destroys what an earlier run had already learned about them — and stage 1
+    builds its payload from an empty resolver on every single run, so the
+    roster post that opens each sync would blank the whole chamber. That is
+    exactly what happened in production on 2026-07-29: 633 portraits and 623
+    contact blocks went to zero in one batch write at 11:13:56 UTC, leaving the
+    site rendering initials for all 635 members.
+
+    Omission is per column rather than all-or-nothing because the sources
+    arrive at different rates: the portrait listing is cheap and re-read every
+    sync, while the ~280 KB biography pages are gated on a 30-day TTL
+    (`pipeline.state.CONTACT_TTL`). A sync that refreshed only the portraits
+    must not blank the contact block it deliberately did not fetch. `None`
+    means "this run has nothing to say about that column", and the way to say
+    nothing to a patch is to leave the key out.
+
+    Genuinely clearing a column is therefore not expressible here, and that is
+    the right trade: these fields only ever gain values (a portrait is
+    published, an office is listed), and a member who leaves is removed by
+    their mandate row ending, not by their photograph being unset.
     """
     name = mp.current_name
     if name is None:
@@ -235,7 +260,7 @@ def mp_payload(
 
     start = iso(mandate.start_date)
     portrait = enrichment.portrait if enrichment else None
-    return {
+    payload: Payload = {
         "internalId": internal_id,
         "stammdatenId": mp.id,
         "dipPersonId": dip_person_id,
@@ -257,28 +282,50 @@ def mp_payload(
         "constituency": clean_text(mandate.wkr_name),
         "wahlperiode": mandate.wahlperiode,
         "bio": clean_text(mp.vita_kurz),
-        # Hotlinked, never rehosted, and never shown without `photoCredit`:
-        # these are photographer-credited works rather than open-licensed ones
-        # (§6.5), so the two fields are written and read as a pair.
-        "photoUrl": portrait.url if portrait else None,
-        "photoCredit": portrait.credit if portrait else None,
         "birthDate": iso(mp.geburtsdatum),
-        # Stammdaten publishes no education field of its own — `BERUF` is the
-        # occupation and is mapped to `profession` below. This comes from
-        # abgeordnetenwatch instead, which covers 83.4 % of WP21.
-        "education": clean_text(enrichment.education) if enrichment else None,
         "profession": clean_text(mp.beruf),
-        # Deliberately *not* a duplicate of `profession`. Stammdaten's `BERUF`
-        # is the trade an MP practised before the mandate; abgeordnetenwatch's
-        # `occupation` is what they do now, which for a sitting member is often
-        # `MdB`. The two disagree usefully and both are kept.
-        "occupation": clean_text(enrichment.occupation) if enrichment else None,
-        "contact": contact_payload(enrichment.contact) if enrichment else None,
         "electionMethod": mandate.mandatsart,
         # An open `end` means still serving, and must stay distinguishable from
         # a date: that is how §6.2 reconciles 635 mandate rows to 630 seats.
         "datesInOffice": ({"start": start, "end": iso(mandate.end_date)} if start else None),
     }
+
+    # Everything above comes from Stammdaten, which every run reads in full, so
+    # those keys are always present and always authoritative. Everything below
+    # comes from a source this run may not have reached — see the ⚠ above on
+    # why an unresolved column is left out rather than sent as null.
+    #
+    # Hotlinked, never rehosted, and never shown without `photoCredit`: these
+    # are photographer-credited works rather than open-licensed ones (§6.5), so
+    # the two fields are written as a pair and omitted as a pair.
+    if portrait:
+        payload["photoUrl"] = portrait.url
+        payload["photoCredit"] = portrait.credit
+    # Stammdaten publishes no education field of its own — `BERUF` is the
+    # occupation and is mapped to `profession` above. This comes from
+    # abgeordnetenwatch instead, which covers 83.4 % of WP21.
+    education = clean_text(enrichment.education) if enrichment else None
+    if education is not None:
+        payload["education"] = education
+    # Deliberately *not* a duplicate of `profession`. Stammdaten's `BERUF` is
+    # the trade an MP practised before the mandate; abgeordnetenwatch's
+    # `occupation` is what they do now, which for a sitting member is often
+    # `MdB`. The two disagree usefully and both are kept.
+    occupation = clean_text(enrichment.occupation) if enrichment else None
+    if occupation is not None:
+        payload["occupation"] = occupation
+    # Built first and tested afterwards, rather than gated on
+    # `if enrichment.contact:`. An `MPContact` is a pydantic model with no
+    # `__bool__`, so an *empty* one is truthy while `contact_payload` maps it to
+    # None — a guard on the model would therefore have written `contact: None`
+    # for exactly the MPs whose biography page was fetched and published
+    # nothing, which `_load_contacts` counts separately for that reason (10 of
+    # 635 in the WP19 backfill). That is the same erasing write this function
+    # exists to avoid, so the test is on the payload the way it is two lines up.
+    contact = contact_payload(enrichment.contact) if enrichment else None
+    if contact is not None:
+        payload["contact"] = contact
+    return payload
 
 
 def roster_payloads(resolver: MPResolver) -> list[Payload]:

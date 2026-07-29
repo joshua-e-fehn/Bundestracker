@@ -22,6 +22,7 @@ from bundestrack.api.protocols import ProtocolClient
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import parse_sheet
 from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang
+from bundestrack.models.enrichment import MPContact
 from bundestrack.models.votes import Vote
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
@@ -131,11 +132,17 @@ def test_an_unmapped_group_is_passed_through_and_warned_about(
 
 
 def test_the_roster_payload_matches_the_convex_mp_shape(resolver) -> None:
-    """Every nullable field is *present* as null, never omitted.
+    """Every nullable *Stammdaten* field is present as null, never omitted.
 
     The Convex validators require it (webapp/convex/schema.ts): a forgotten key
     is a 400 naming the field, which is the point — but only if the transform
     emits the key at all.
+
+    The enrichment columns are the deliberate exception and are asserted
+    separately below: they come from sources a given run may not have reached,
+    and the same upsert that makes a present key authoritative makes a null one
+    destructive. Stammdaten, by contrast, is re-read in full every run, so
+    these keys are always both present and authoritative.
     """
     payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
     bilger = payloads["bt-11004011"]
@@ -148,8 +155,75 @@ def test_the_roster_payload_matches_the_convex_mp_shape(resolver) -> None:
     # An open `end` means still serving, and must stay distinguishable from a
     # date — that is how §6.2 reconciles 635 mandate rows to 630 seats.
     assert bilger["datesInOffice"] == {"start": "2025-03-25", "end": None}
-    for nullable in ("ortsZusatz", "praefix", "photoUrl", "constituency", "education"):
+    for nullable in ("ortsZusatz", "praefix", "constituency"):
         assert nullable in bilger, nullable
+
+
+def test_an_unenriched_roster_payload_omits_the_enrichment_columns(resolver) -> None:
+    """The inverse of the rule above, and the one that broke production.
+
+    `roster_payloads` is called by stage 1 with a resolver that holds no
+    enrichment yet — every run starts that way. The Convex upsert patches the
+    keys present (`webapp/convex/lib/ingest.ts:123`), so emitting these as null
+    made that opening write erase what earlier runs had learned: on 2026-07-29
+    it took 633 stored portraits to 0 and left the live site rendering initials
+    for the whole chamber.
+    """
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+    bilger = payloads["bt-11004011"]
+
+    for enriched in ("photoUrl", "photoCredit", "education", "occupation", "contact"):
+        assert enriched not in bilger, enriched
+
+
+def test_an_empty_contact_block_is_omitted_rather_than_sent_as_null(resolver) -> None:
+    """A fetched-but-empty page must read as "nothing to say", not as "clear it".
+
+    The trap is that `MPContact` is a pydantic model with no `__bool__`, so an
+    empty one is **truthy** while `contact_payload` maps it to None. Guarding
+    on the model rather than on the built payload therefore emits
+    `contact: None` — which the Convex `patch` applies as an erasure — for the
+    one case where the pipeline knows least.
+
+    Asserted at this boundary as well as in `test_pipeline_sync.py` because
+    this is where the value is built: a sync-level test can only observe the
+    payload the transform chose to emit.
+    """
+    resolver.attach_enrichment(
+        [transform.contact_enrichment("bt-11004011", MPContact())],
+    )
+
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+
+    assert "contact" not in payloads["bt-11004011"]
+
+
+def test_a_contact_block_with_only_a_form_url_is_still_written(resolver) -> None:
+    """Sparse is not empty — the boundary the omission must not swallow.
+
+    Roughly half of MPs list no constituency office and many list no socials,
+    so a block holding nothing but the Bundestag's own contact form is the
+    *typical* answer rather than a degenerate one: 623 of 635 carried one. An
+    omission rule that keyed on "fewer than N fields" would drop the majority
+    case, so it keys on `MPContact.is_empty` alone.
+    """
+    resolver.attach_enrichment(
+        [
+            transform.contact_enrichment(
+                "bt-11004011",
+                MPContact(
+                    form_url="https://www.bundestag.de/services/formular/contactform?mdbId=1"
+                ),
+            )
+        ],
+    )
+
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+    contact = payloads["bt-11004011"]["contact"]
+
+    assert contact["formUrl"].endswith("mdbId=1")
+    assert contact["constituencyOffice"] is None
+    assert contact["socials"] == []
 
 
 def test_the_display_name_carries_the_ortszusatz_because_it_disambiguates(

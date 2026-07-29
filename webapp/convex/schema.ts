@@ -198,8 +198,16 @@ export const mpInput = {
    *
    * ⚠ Never rehost these. §6.5's licensing warning is the one part of it that
    * still holds: they are photographer-credited works, not open-licensed ones.
+   *
+   * ⚠ Optional because the upsert is a patch over the keys present, so an
+   * ingest that omits this leaves the stored portrait alone where one sent as
+   * null would erase it. The pipeline relies on that: it omits every
+   * enrichment column it did not resolve this run, rather than reporting an
+   * unfetched source as an MP with no photograph. See the ⚠ in
+   * `pipeline/.../transform.py:mp_payload`, and `lib/ingest.ts:upsertRow` for
+   * the patch semantics this rests on.
    */
-  photoUrl: v.union(v.null(), v.string()),
+  photoUrl: v.optional(v.union(v.null(), v.string())),
   /** Whose photograph it is, e.g. `Sanae Abdi/SPD-Fraktion`. Written and read
    * as a pair with `photoUrl`: displaying the credit is the licence condition,
    * so a portrait that arrives without one is dropped by the pipeline rather

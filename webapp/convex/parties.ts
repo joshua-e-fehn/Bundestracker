@@ -327,7 +327,10 @@ export const getPartyMembers = query({
         mpInternalId: mp.internalId,
         name: mp.name,
         fraktion: mp.fraktion,
-        photoUrl: mp.photoUrl,
+        // `?? null`: the stored column is optional (convex/schema.ts:202) —
+        // the pipeline omits a portrait it did not resolve rather than nulling
+        // a stored one — while this query's returns validator is not.
+        photoUrl: mp.photoUrl ?? null,
         photoCredit: mp.photoCredit ?? null,
         constituency: mp.constituency,
         totalScore: score?.totalScore ?? null,
