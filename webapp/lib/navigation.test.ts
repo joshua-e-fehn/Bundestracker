@@ -58,7 +58,8 @@ describe("the tree covers the site", () => {
     // `/votes`, which is not navigation.
     //
     // `/sign-in` is the one exemption, and it is deliberate: it is reached from
-    // the `UserMenu` button in the header, and an "anmelden" entry in a
+    // the account control at the foot of the sidebar (and of the mobile
+    // drawer) — see components/sidebar-account.tsx — and an "anmelden" entry in a
     // navigation whose whole premise is that no account is needed would
     // misdescribe the product. Asserted as an exemption rather than skipped, so
     // the list of things not in the nav stays one line long and visible.

@@ -27,20 +27,36 @@ import { cn } from "@/lib/utils"
  * which is why it exists *beside* the trigger there rather than instead of it.
  * Adding an unfocusable second control for a thing this site has one of would
  * be two ways to do one thing, so only the button is here.
+ *
+ * ## Where it lives, and why it stopped being the rail's footer
+ *
+ * At the far left of the header, before the wordmark — Fiscalis's placement
+ * (`frontend/components/atomic/organisms/header.tsx:28`: `<SidebarTrigger
+ * className="-ml-1" />` then a vertical rule, then everything else). It used to
+ * sit at the bottom of the rail, which put the control that reveals the
+ * navigation *inside* the thing it reveals: collapsed to 3.5 rem, the only way
+ * to get the labels back was a 28 px glyph at the bottom of a column of ten
+ * other glyphs, below the fold on a short window. In the header it is at a
+ * fixed screen position in both states and it is the first thing in the tab
+ * order, which is what a control over the whole shell should be.
+ *
+ * The `expanded` prop is now optional for that reason: the header does not
+ * render the rail and has no reason to hold its state, so it reads from
+ * context. Inside the rail the value is still passed down.
  */
 export function SidebarToggle({
-  /** Passed rather than read from context, because the sidebar already has the
-   * value and passing it keeps the button and the rail it sits in rendering
-   * from one read in one pass — a second `useSidebar()` here would be a second
-   * subscription to the same context for no additional information. */
-  expanded,
+  /** Optional. When the caller already has the value — the rail did — passing
+   * it avoids a second subscription to the same context for no additional
+   * information. The header has no such value, so it falls back to context. */
+  expanded: expandedProp,
   className,
 }: {
-  expanded: boolean
+  expanded?: boolean
   className?: string
 }) {
   const { t } = useLocale()
-  const { toggle } = useSidebar()
+  const { expanded: expandedContext, toggle } = useSidebar()
+  const expanded = expandedProp ?? expandedContext
 
   const label = expanded ? t("nav.collapseSidebar") : t("nav.expandSidebar")
   const Icon = expanded ? PanelLeftCloseIcon : PanelLeftOpenIcon
@@ -60,28 +76,21 @@ export function SidebarToggle({
           // announcement is not worth the coupling.
           aria-expanded={expanded}
           aria-label={label}
-          // Full width when expanded so the control reads as the rail's own
-          // footer rather than as a button parked in a corner; square when
-          // collapsed, where the rail is 3.5 rem and there is nothing else to
-          // align to.
-          className={cn(expanded && "w-full justify-start gap-2 px-2.5", className)}
+          className={cn(className)}
         >
           <Icon />
-          {/* The label beside the glyph when there is room for it. The button
-              keeps its `aria-label` regardless — that is what names it in the
-              collapsed state, and repeating the text visibly here does not
-              double the announcement because `aria-label` overrides content
-              rather than adding to it. */}
-          {expanded && <span className="truncate font-normal text-sm">{label}</span>}
         </Button>
       </TooltipTrigger>
-      {/* Only where the button has no visible text of its own. Expanded, the
-          label is already on the button and a tooltip repeating it is noise. */}
-      {!expanded && (
-        <TooltipContent side="right" sideOffset={8}>
-          {label}
-        </TooltipContent>
-      )}
+      {/* The label, in both states now. It used to be suppressed while expanded
+          because the rail's footer button carried the text visibly beside the
+          glyph; in the header there is no room for a 22-character German label
+          in the bar, so the button is icon-only in both states and the tooltip
+          is the only place the label is readable by pointer. `bottom` because
+          the button is against the top edge — `right` would have put the panel
+          over the wordmark. */}
+      <TooltipContent side="bottom" sideOffset={8}>
+        {label}
+      </TooltipContent>
     </Tooltip>
   )
 }

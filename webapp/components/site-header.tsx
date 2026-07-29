@@ -7,8 +7,9 @@ import { LocaleToggle } from "@/components/locale-toggle"
 import { NavMobile } from "@/components/nav-mobile"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
+import { SidebarToggle } from "@/components/sidebar-toggle"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { UserMenu } from "@/components/user-menu"
+import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
 
 /**
@@ -17,8 +18,13 @@ import { api } from "@/convex/_generated/api"
  * **It is no longer the primary navigation.** Destinations live in the sidebar
  * (`components/nav-sidebar.tsx`) at `lg` and up, and in the drawer this bar's
  * menu button opens below it. What is left here is the set of things that are
- * *global utilities* rather than places — the wordmark, the search box, the
- * period chip, language, theme, and the account menu.
+ * *global utilities* rather than places — the shell's collapse control, the
+ * wordmark, the search box, the period chip, language and theme.
+ *
+ * The account is **not** here any more. It is at the foot of the sidebar at
+ * `lg` and up and in the drawer below that — see
+ * `components/sidebar-account.tsx` for why there is one of it rather than one
+ * in each place.
  *
  * ## What this replaced, twice
  *
@@ -105,6 +111,20 @@ export function SiteHeader() {
           the pages' own gutter so the wordmark lines up with the sidebar's
           left edge. */}
       <div className="flex h-14 w-full items-center gap-2 px-4 sm:px-6">
+        {/* The shell's collapse control, first — before the brand, at the far
+            left of the bar. Fiscalis's placement
+            (frontend/components/atomic/organisms/header.tsx:28): the trigger,
+            a vertical rule, then everything else. `-ml-1` pulls it back into
+            the gutter so its optical left edge lines up with the rail's icons
+            below rather than sitting a button's worth of padding inside them.
+
+            `hidden lg:inline-flex` — paired with the rail's own `lg:flex` and
+            the drawer's `lg:hidden` below. Below `lg` there is no sidebar to
+            collapse, and a control that toggles a thing that is not on screen
+            is a button that lies. The rule beside it goes with it. */}
+        <SidebarToggle className="-ml-1 hidden shrink-0 lg:inline-flex" />
+        <Separator orientation="vertical" className="mr-1 hidden h-5 lg:block" />
+
         {/* Truncates rather than `shrink-0`. At 320 px the brand's 112 px plus
             the four controls' 187 px came to 307 px inside a 288 px content
             box, so the header — and with it every page, since the document
@@ -121,10 +141,38 @@ export function SiteHeader() {
             is the one convention every site on the web shares. */}
         <Link
           href="/"
-          className="mr-2 flex min-w-0 items-center gap-2 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="mr-2 flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          <BrandMark />
-          <span className="min-w-0 truncate font-semibold text-base tracking-tight">
+          {/* 28 px, up from 20. The mark is a detailed raster emblem — an eagle
+              inside a ring, with the flag's three colours banded across the
+              feathers — and at 20 px none of that resolved: it read as a gold
+              dot. 28 px is the largest that still clears the 56 px bar with
+              breathing room, and it is what makes the mark legible as itself
+              rather than as a favicon that wandered into the page. */}
+          <BrandMark className="size-7" />
+          {/* The wordmark, and the two changes that make it one:
+
+              — `text-lg`, up from `text-base`. The site's name should out-set
+                the utilities beside it; at 16 px it was the same size as the
+                period chip's neighbours and read as a label rather than as the
+                masthead.
+              — `font-bold` with `tracking-[0.015em]` — *positive* tracking,
+                where every other heading on this site uses `tracking-tight`.
+                That inversion is the whole treatment. Tight tracking is what
+                editorial headlines do; open tracking on a short, bold word is
+                what institutional marks do, and it is the register the federal
+                ministries' own wordmarks sit in. It costs 6 px at this size,
+                and it is the difference between a heading that happens to say
+                "Bundestracker" and a mark that is the site's name.
+
+              Typography only, and no second font: the treatment has to survive
+              being set in a browser that loaded nothing, and it has to read the
+              same in DE and EN — both of which are the *same string* here, so
+              there is no width to trade between locales.
+
+              `truncate` is what keeps a 320 px viewport from scrolling
+              sideways, and it stays on the element carrying the text. */}
+          <span className="min-w-0 truncate font-bold text-lg tracking-[0.015em]">
             {t("app.name")}
           </span>
         </Link>
@@ -151,11 +199,11 @@ export function SiteHeader() {
 
           <LocaleToggle />
           <ThemeToggle />
-          <UserMenu className="ml-1" />
 
           {/* Paired with the sidebar's own `lg:flex` — the two must flip at the
               same width or the site has no navigation at all between 768 and
-              1024 px. */}
+              1024 px. Below `lg` this button is also the only route to the
+              account, which the drawer carries at its foot. */}
           <NavMobile className="ml-1 lg:hidden" />
         </div>
       </div>
