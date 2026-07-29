@@ -163,7 +163,21 @@ function Opening() {
         <p className="font-medium text-gold text-xs uppercase tracking-[0.25em]">
           {t("protokoll.title")}
         </p>
-        <h1 className="font-semibold text-5xl tracking-tight sm:text-6xl">{t("app.name")}</h1>
+        {/* ⚠ Starts at `text-4xl`, not `text-5xl`. "Bundestracker" is one
+            unbreakable word, so its *min-content* width is the whole wordmark
+            and no amount of wrapping can shrink it. Measured in Chromium at
+            `font-semibold` with this tracking: 48px type needs 325px, and the
+            content box at a 320px viewport is 288px (`px-4` a side). The grid
+            track above sizes to that 325px floor, the `<header>` grows with it,
+            and the *document* — which scrolls as one — was 20px wider than the
+            screen on the home page in both locales.
+
+            36px needs 248px and clears the same box by 40px, which also covers
+            the 280px floor real devices bottom out at. `sm:` restores 60px at
+            640px, where 400px of wordmark has 576px to sit in, so the desktop
+            hierarchy is untouched — this only adds the step below the one the
+            ramp already had. */}
+        <h1 className="font-semibold text-4xl tracking-tight sm:text-6xl">{t("app.name")}</h1>
       </div>
 
       <p className="text-balance text-muted-foreground text-xl leading-relaxed">
