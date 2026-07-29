@@ -7,7 +7,14 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { isActivePath, NAV_GROUPS, NAV_PRIMARY, NAV_SEARCH, type NavItem } from "@/lib/navigation"
+import {
+  isActivePath,
+  NAV_GROUPS,
+  NAV_PRIMARY,
+  NAV_SEARCH,
+  type NavItem,
+  navCurrent,
+} from "@/lib/navigation"
 import { useDismissOnNavigate } from "@/lib/use-dismiss-on-navigate"
 import { cn } from "@/lib/utils"
 
@@ -139,7 +146,12 @@ function DrawerLink({
   return (
     <Link
       href={item.href}
-      aria-current={active ? "page" : undefined}
+      // `page` only on the exact destination; an ancestor row such as `/votes`
+      // while the reader is on `/votes/own-resources` announces `true`, which
+      // says "the current item in this set" without claiming to be the page.
+      // The gold rule below still uses the prefix match, so the visual
+      // highlight is unchanged. See `navCurrent`.
+      aria-current={navCurrent(pathname, item.href)}
       className={cn(
         // `min-h-11` — 44 px, the touch-target floor — rather than padding
         // alone, so a one-line row is as tappable as a two-line one.

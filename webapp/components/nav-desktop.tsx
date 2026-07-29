@@ -20,6 +20,7 @@ import {
   NAV_PRIMARY,
   type NavGroup,
   type NavItem,
+  navCurrent,
 } from "@/lib/navigation"
 import { useDismissOnNavigate } from "@/lib/use-dismiss-on-navigate"
 import { cn } from "@/lib/utils"
@@ -87,7 +88,7 @@ export function NavDesktop({ className }: { className?: string }) {
     <nav aria-label={t("nav.primary")} className={cn("items-center gap-0.5", className)}>
       {/* The overview, outside the groups — it is not a category, it is all of
           them at once. See `NAV_PRIMARY`. */}
-      <NavBarLink href={NAV_PRIMARY.href} active={isActivePath(pathname, NAV_PRIMARY.href)}>
+      <NavBarLink href={NAV_PRIMARY.href} current={navCurrent(pathname, NAV_PRIMARY.href)}>
         {t(NAV_PRIMARY.labelKey)}
       </NavBarLink>
 
@@ -122,19 +123,21 @@ const BAR_ITEM_CLASS =
 
 function NavBarLink({
   href,
-  active,
+  current,
   children,
 }: {
   href: string
-  active: boolean
+  current: "page" | true | undefined
   children: React.ReactNode
 }) {
+  const active = current !== undefined
   return (
     <Link
       href={href}
       // Announceable, not merely visible — the underline below is the sighted
-      // half of the same statement.
-      aria-current={active ? "page" : undefined}
+      // half of the same statement. `page` only when this *is* the page;
+      // `true` when it merely contains it. See `navCurrent`.
+      aria-current={current}
       className={cn(
         BAR_ITEM_CLASS,
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
@@ -275,6 +278,11 @@ function NavMenuEntry({
   separated: boolean
 }) {
   const { t } = useLocale()
+  // The marker stays a prefix match — `/votes` is still highlighted while the
+  // reader is on `/votes/own-resources`. What narrows is only what is
+  // *announced*: this row says `page` when it is the page and `true` when it is
+  // the section containing it, so the child below is the single `page` on the
+  // route it owns. See `navCurrent`.
   const active = isActivePath(pathname, item.href)
 
   return (
@@ -283,7 +291,7 @@ function NavMenuEntry({
       <DropdownMenuItem asChild>
         <Link
           href={item.href}
-          aria-current={active ? "page" : undefined}
+          aria-current={navCurrent(pathname, item.href)}
           className={cn(
             "flex-col items-start gap-0.5 rounded-md px-2 py-2",
             // A left rule rather than the bar's underline: these are stacked
@@ -309,7 +317,7 @@ function NavMenuEntry({
         <DropdownMenuItem key={child.href} asChild>
           <Link
             href={child.href}
-            aria-current={isActivePath(pathname, child.href) ? "page" : undefined}
+            aria-current={navCurrent(pathname, child.href)}
             className={cn(
               "ml-3 flex-col items-start gap-0.5 rounded-md px-2 py-1.5 border-l-2",
               isActivePath(pathname, child.href)

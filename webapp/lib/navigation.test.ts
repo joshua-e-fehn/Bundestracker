@@ -10,6 +10,7 @@ import {
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
+  navCurrent,
 } from "./navigation"
 
 /**
@@ -206,6 +207,89 @@ describe("isActivePath", () => {
     // startsWith("//") construction is what prevents it.
     expect(isActivePath("/mps", "/")).toBe(false)
     expect(isActivePath("/", "/")).toBe(true)
+  })
+})
+
+describe("navCurrent", () => {
+  /**
+   * The bug: `aria-current="page"` was derived from `isActivePath`, which is a
+   * *prefix* match. On `/votes/own-resources` that made two rows — the child
+   * and its `/votes` parent — both announce themselves as the current page.
+   * Only one page can be the current page; a screen-reader user was told the
+   * ancestor was their location as emphatically as the destination was.
+   *
+   * Found in production on www.bundestracker.de, where the open Decisions menu
+   * reported `/votes aria-current=page` and `/votes/own-resources
+   * aria-current=page` simultaneously.
+   */
+  test("only the exact destination is the current page", () => {
+    expect(navCurrent("/votes/own-resources", "/votes/own-resources")).toBe("page")
+    expect(navCurrent("/votes", "/votes")).toBe("page")
+    expect(navCurrent("/mps", "/mps")).toBe("page")
+  })
+
+  test("an ancestor of the location is current, but not the page", () => {
+    // `true` — "the current item in this set" — rather than `page`. This is the
+    // whole fix: the ancestor still announces that it is on the reader's path,
+    // it just stops claiming to *be* the page.
+    expect(navCurrent("/votes/own-resources", "/votes")).toBe(true)
+    expect(navCurrent("/mps/bt-0001", "/mps")).toBe(true)
+    expect(navCurrent("/parties/spd", "/parties")).toBe(true)
+  })
+
+  test("an entry off the reader's path carries no aria-current at all", () => {
+    // `undefined`, not `"false"`: the absent attribute is the standard way to
+    // say "not current", and `aria-current="false"` is treated as absent anyway.
+    expect(navCurrent("/mps", "/votes")).toBeUndefined()
+    expect(navCurrent("/mpsecret", "/mps")).toBeUndefined()
+    expect(navCurrent("/votes-archive", "/votes")).toBeUndefined()
+  })
+
+  test("exactly one entry in the whole tree is the current page, on every route", () => {
+    // The property the bug violated, asserted across every destination rather
+    // than only the one that was reported. For any route a reader can be on,
+    // the navigation must contain exactly one `page` — and any additional
+    // marked rows must be ancestors carrying `true`.
+    for (const item of allNavItems()) {
+      const marked = allNavItems()
+        .map((other) => ({ href: other.href, current: navCurrent(item.href, other.href) }))
+        .filter((entry) => entry.current !== undefined)
+      const pages = marked.filter((entry) => entry.current === "page")
+      expect({ on: item.href, pages: pages.map((p) => p.href) }).toEqual({
+        on: item.href,
+        pages: [item.href],
+      })
+      // Everything else that is marked is an ancestor, and says so.
+      for (const entry of marked) {
+        if (entry.href === item.href) continue
+        expect({ on: item.href, href: entry.href, current: entry.current }).toEqual({
+          on: item.href,
+          href: entry.href,
+          current: true,
+        })
+      }
+    }
+  })
+
+  test("the nested route the bug was found on marks its parent, not two pages", () => {
+    // The exact production reproduction, pinned as its own case so a
+    // regression names this route rather than failing in a loop.
+    const onChild = allNavItems()
+      .map((item) => ({ href: item.href, current: navCurrent("/votes/own-resources", item.href) }))
+      .filter((entry) => entry.current !== undefined)
+    expect(onChild).toEqual([
+      { href: "/votes", current: true },
+      { href: "/votes/own-resources", current: "page" },
+    ])
+  })
+
+  test("the visual marker still uses the prefix match", () => {
+    // Guarding the over-correction: narrowing `aria-current` must not narrow
+    // the gold highlight, or navigating into a section would lose the only
+    // indication of which section you are in. The two answer differently on
+    // purpose.
+    expect(isActivePath("/votes/own-resources", "/votes")).toBe(true)
+    expect(navCurrent("/votes/own-resources", "/votes")).not.toBe("page")
   })
 })
 
