@@ -38,39 +38,43 @@ import { type PartyKey, partyFor } from "./parties"
 export const CURRENT_WAHLPERIODE = 21
 
 /**
- * The federal state a constituency name implies, or null.
+ * The federal state a mandate was won in, or null where the source is silent.
  *
- * Not a stored field. §6.2 records `WKR_LAND` in the Stammdaten constituency
- * block, but the roster schema keeps only the constituency *name*, so the state
- * is recoverable only where the pipeline spelled it into that name. It does not
- * today, which is why this returns null far more often than a state — and why
- * every state filter on the site builds its options from the data rather than
- * from a hardcoded list of sixteen Länder that would offer fifteen empty ones.
+ * A stored column now — Stammdaten's `WKR_LAND`, ingested by the pipeline (see
+ * `federalState` in convex/schema.ts). This function is what every surface
+ * reads it through, so "which state is this MP from" has one answer on the
+ * rankings, the roster and anywhere else that grows a state filter.
  *
- * Reading the trailing parenthetical is the one thing that works without a
- * schema change: `Ludwigsburg (BW)` yields `BW`. A name with no parenthetical
- * yields null rather than a guess.
+ * ## It used to parse the constituency name, and that returned null for everyone
  *
- * Here rather than in convex/rankings.ts, where it began, because two surfaces
- * now need it: the rankings' state filter runs server-side over `Doc<"mps">`,
- * and the roster table's runs in the browser over rows already loaded. Two
- * copies would be two answers to "which state is this MP from", and they would
- * disagree the day either one's regex was tightened. It takes the constituency
- * string rather than a document so both can call it — convex/ may import from
- * lib/, but not the other way around.
+ * The previous implementation read a trailing `(BW)` off `constituency`,
+ * because the state was not stored and that was the only thing recoverable
+ * without a schema change. Measured against the real dump afterwards: **0** of
+ * 13 046 `WKR_NAME` values end in a parenthetical, in any period. So it was not
+ * a partial answer that would improve as data landed — it was null for every MP
+ * who has ever sat, which is why the state filters were wired end to end and
+ * never appeared. The lesson worth keeping: a fallback nobody measured reads
+ * exactly like a sparse field.
  *
- * ⚠ This is the honest ceiling on every "by federal state" filter until the
- * pipeline stores `WKR_LAND` as its own field. Each is wired end to end so that
- * adding the field is a one-line change here.
+ * ## Three states, and the middle one is real
+ *
+ * `undefined` — a row written before the column existed. `null` — the source
+ * leaves `WKR_LAND` empty, which is 21 of WP21's 635 mandates: members who
+ * entered on a state list with no constituency block at all. A string — the
+ * code as published. The first two both mean "unknown" and are folded together
+ * here; a roster re-post turns the first into the second.
+ *
+ * ⚠ The returned code is **period-scoped**, not from a stable enum: WP1–17 use
+ * `NDS`/`NRW`/`THÜ` where WP18–21 use `NI`/`NW`/`TH` (§6.2). Never compare one
+ * across periods, and never render a hardcoded list of sixteen Länder — every
+ * filter here builds its options from the period's own rows.
+ *
+ * Takes the field rather than a document so `convex/` and the browser can both
+ * call it: convex/ may import from lib/, but not the other way around, exactly
+ * as `occupationOf` below.
  */
-export function stateOf(constituency: string | null | undefined): string | null {
-  if (!constituency) return null
-  const match = /\(([^)]+)\)\s*$/.exec(constituency)
-  if (!match) return null
-  const code = match[1].trim()
-  // Two-letter Land codes (`BW`, `NW`) and nothing else: the same parenthetical
-  // slot carries a disambiguator in `Brand (Fulda)`, and a town is not a state.
-  return /^[A-ZÄÖÜ]{2}$/.test(code) ? code : null
+export function stateOf(federalState: string | null | undefined): string | null {
+  return federalState?.trim() || null
 }
 
 /**

@@ -42,6 +42,9 @@ const FRAKTIONEN = [
   { fraktion: "Fraktionslos", party: "fraktionslos", seats: 2 },
 ]
 
+/** WP21's own `WKR_LAND` codes, so the seeded state filter offers what a real
+ * roster would. Not all sixteen: the point of a seed is the distribution, and
+ * the smallest Länder send a handful of members each. */
 const STATES = ["BW", "BY", "BE", "HE", "NW", "NI", "SN", "SH"]
 const FORENAMES = [
   "Anna",
@@ -130,9 +133,13 @@ export const seedDev = internalMutation({
           praefix: null,
           party: group.party,
           fraktion: group.fraktion,
-          // The state rides in the constituency's trailing parenthetical,
-          // which is the only place `stateOf` can read it from today.
-          constituency: index % 3 === 0 ? null : `Wahlkreis ${index + 1} (${state})`,
+          constituency: index % 3 === 0 ? null : `Wahlkreis ${index + 1}`,
+          // Stammdaten's own shape, which is not "list MP ⇒ no state": most
+          // list members do carry a `WKR_LAND`, and only those with no
+          // constituency block at all leave it empty — 21 of WP21's 635. Every
+          // ninth row here is that case, so the seeded roster exercises the
+          // unknown arm of the filter rather than only the populated one.
+          federalState: index % 9 === 0 ? null : state,
           wahlperiode: WAHLPERIODE,
           bio: null,
           photoUrl: null,

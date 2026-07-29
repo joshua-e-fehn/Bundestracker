@@ -7,6 +7,7 @@ import {
   occupationFields,
   occupationOf,
   protocolPdfUrl,
+  stateOf,
 } from "./bundestag"
 import { partyColor, partyFor } from "./parties"
 import { foldName } from "./search"
@@ -292,5 +293,69 @@ describe("foldName", () => {
 
   test("is case- and whitespace-insensitive", () => {
     expect(foldName("  MERZ ")).toBe("merz")
+  })
+})
+
+describe("stateOf", () => {
+  /**
+   * The federal state is a stored column now (`mps.federalState`), and this
+   * function is the one place every surface reads it through.
+   *
+   * It replaced a regex over the constituency *name*, which looked like a
+   * partial answer and was not one: measured against the real Stammdaten dump,
+   * **0** of 13 046 `WKR_NAME` values end in a parenthetical, so it returned
+   * null for every MP who has ever sat. Both state filters were wired end to
+   * end and never rendered. That is the bug these tests exist to keep fixed —
+   * and none of them could have caught it, which is why the *shape* of the
+   * unknown case is asserted here and the coverage claim is measured in
+   * `test_pipeline_transform.py` against the source instead.
+   */
+  test("returns the code the source published", () => {
+    expect(stateOf("BW")).toBe("BW")
+    expect(stateOf("NW")).toBe("NW")
+  })
+
+  test("a mandate the source states no Land for is unknown, not a guess", () => {
+    // 21 of WP21's 635 mandates: list members with no constituency block at
+    // all. The pipeline sends this as an explicit null.
+    expect(stateOf(null)).toBeNull()
+  })
+
+  test("a row written before the column existed reads as unknown too", () => {
+    // The stored column is `v.optional`, so a mandate ingested by an older
+    // pipeline has no key and reads back as `undefined`. Folded together with
+    // null: both mean "we cannot say", and a roster re-post converts one into
+    // the other. Distinguishing them in the UI would surface a fact about the
+    // ingest history rather than about the member.
+    expect(stateOf(undefined)).toBeNull()
+  })
+
+  test("an empty or blank code is unknown rather than a filterable value", () => {
+    // Stammdaten emits `<TAG/>` for absent and the parser maps that to None,
+    // so a blank arriving here means something upstream stored whitespace.
+    // Returning it would put an unlabelled option in every state dropdown.
+    expect(stateOf("")).toBeNull()
+    expect(stateOf("   ")).toBeNull()
+  })
+
+  test("a historical period's own vocabulary passes through unchanged", () => {
+    // ⚠ 35 distinct codes across the corpus for 16 Länder: WP1–17 write `NDS`
+    // and `THÜ` where WP18–21 write `NI` and `TH` (§6.2). Normalising here
+    // would need a per-period table and would rename entities that no longer
+    // exist (`WBB`, Württemberg-Baden). Every filter is period-scoped and
+    // builds its options from the data, so the raw code is the right answer.
+    expect(stateOf("NDS")).toBe("NDS")
+    expect(stateOf("THÜ")).toBe("THÜ")
+    expect(stateOf("BWG")).toBe("BWG")
+  })
+
+  test("a constituency name is no longer mistaken for a state", () => {
+    // The old implementation's whole input. `Brand (Fulda)` is the case it
+    // guarded against — a town in the parenthetical slot, not a Land — and
+    // `Ludwigsburg (BW)` is the shape it was written for and the corpus never
+    // contains. Neither is a state code, and passing either here now means a
+    // caller is reading the wrong column.
+    expect(stateOf("Ludwigsburg (BW)")).toBe("Ludwigsburg (BW)")
+    expect(stateOf("Brand (Fulda)")).toBe("Brand (Fulda)")
   })
 })

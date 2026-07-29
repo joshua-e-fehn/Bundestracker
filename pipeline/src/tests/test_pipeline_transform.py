@@ -23,6 +23,7 @@ from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import parse_sheet
 from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang
 from bundestrack.models.enrichment import MPContact
+from bundestrack.models.stammdaten import Mandate
 from bundestrack.models.votes import Vote
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
@@ -155,8 +156,107 @@ def test_the_roster_payload_matches_the_convex_mp_shape(resolver) -> None:
     # An open `end` means still serving, and must stay distinguishable from a
     # date — that is how §6.2 reconciles 635 mandate rows to 630 seats.
     assert bilger["datesInOffice"] == {"start": "2025-03-25", "end": None}
-    for nullable in ("ortsZusatz", "praefix", "constituency"):
+    for nullable in ("ortsZusatz", "praefix", "constituency", "federalState"):
         assert nullable in bilger, nullable
+
+
+# --- the federal state ----------------------------------------------------
+
+
+def test_a_direct_mandate_carries_the_land_the_source_publishes(resolver) -> None:
+    """`WKR_LAND` verbatim, which is the whole of GAP-021.
+
+    The column this replaces was a regex over the constituency *name*, reading a
+    trailing `(BW)`. Measured against the real dump afterwards: **0** of 13 046
+    `WKR_NAME` values end in a parenthetical, so that rule answered null for
+    every MP who has ever sat and every state filter on the site was inert.
+    Bilger's Wahlkreis is `Ludwigsburg` and his Land is `BW`, in two fields —
+    which is exactly why one had to be stored rather than derived.
+    """
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+    bilger = payloads["bt-11004011"]
+
+    assert bilger["federalState"] == "BW"
+    # The name it was previously mined for the state, still carrying none.
+    assert bilger["constituency"] == "Ludwigsburg"
+
+
+def test_a_list_mandate_without_a_constituency_block_has_no_state(resolver) -> None:
+    """Null, not the Land from `LISTE`, and not an inference from the mandate type.
+
+    Peter Bohnhof is a real WP21 record and the discriminating one: `Landesliste`
+    with an empty `WKR_NUMMER`, `WKR_NAME` **and** `WKR_LAND`, but `LISTE` set to
+    `NW`. 21 of WP21's 635 mandates have this shape.
+
+    Merging `LISTE` in would take the period from 96.7 % coverage to 100 %, and
+    is still refused: where both fields are present they disagree on 2 of 2 583
+    rows across the corpus (WP19 `11004728` is `WKR_LAND` SH against `LISTE` BW),
+    because standing on one Land's list and holding a seat counted in another is
+    a real thing that happens. The two fields answer different questions, and
+    `LISTE` additionally carries `*`/`**`/`***` for the Saarland accession, West
+    Berlin and the Volkskammer election (§6.2) — none of them a Land.
+    """
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+    bohnhof = payloads["bt-11005423"]
+
+    assert bohnhof["electionMethod"] == "Landesliste"
+    assert bohnhof["constituency"] is None
+    # The key is present and null — an *absence stated*, which is what lets the
+    # roster upsert overwrite a stale value. See the next test.
+    assert "federalState" in bohnhof
+    assert bohnhof["federalState"] is None
+
+
+def test_the_state_is_sent_as_null_rather_than_omitted(resolver) -> None:
+    """The opposite rule to the enrichment columns, for a reason worth stating.
+
+    Those are omitted when unresolved because the Convex upsert patches the keys
+    present, so a null would erase what an earlier run learned — the 2026-07-29
+    outage. `federalState` comes from Stammdaten, which every run reads in full,
+    so the transform always knows the answer and "the source states none" is a
+    fact worth writing. Omitting it instead would leave a stale value from a
+    previous dump in place forever, which is the failure mode inverted.
+    """
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+
+    assert all("federalState" in payload for payload in payloads.values())
+    # Both arms present in one roster, so neither is a special case.
+    states = {p["internalId"]: p["federalState"] for p in payloads.values()}
+    assert states["bt-11004011"] == "BW"
+    assert states["bt-11005423"] is None
+
+
+def test_the_state_is_never_inferred_from_the_party_or_the_mandate_type() -> None:
+    """A mandate the source says nothing about yields nothing.
+
+    Guarded directly rather than only through the roster, because the tempting
+    wrong implementations are all local to this function: falling back to
+    `LISTE`, or to a Land implied by the party, or treating `Direktwahl` as
+    "must have one". Each would make the field a claim Bundestrack invented.
+    """
+    silent = Mandate(wahlperiode=21, mandatsart="Landesliste", liste="NW")
+    assert transform.federal_state(silent) is None
+
+    # Whitespace is how this source spells absence in practice — every element
+    # is always emitted, empty when unset (§6.2).
+    assert transform.federal_state(Mandate(wahlperiode=21, wkr_land="   ")) is None
+    assert transform.federal_state(Mandate(wahlperiode=21, wkr_land=None)) is None
+
+
+def test_a_historical_period_keeps_its_own_code_vocabulary(dump) -> None:
+    """⚠ The codes are period-scoped, and normalising them here would be a bug.
+
+    The fixture's WP8 mandate carries `BWG`, which is WP1–17's spelling of what
+    WP18–21 call `BW` — 35 distinct values across the corpus for 16 Länder
+    (§6.2). Stored verbatim: a mapping would have to be per-period, and several
+    historical codes name entities that no longer exist (`WBB`, Württemberg-
+    Baden). Every filter reading this is period-scoped and builds its options
+    from the data, so a period offers exactly the codes its own members hold.
+    """
+    resolver = MPResolver(dump, 8)
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+
+    assert payloads["bt-11000019"]["federalState"] == "BWG"
 
 
 def test_an_unenriched_roster_payload_omits_the_enrichment_columns(resolver) -> None:

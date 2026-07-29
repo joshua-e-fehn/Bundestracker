@@ -82,8 +82,9 @@ const rankingRow = v.object({
    * the member table's occupation column is one field rather than two the
    * client has to choose between. */
   occupation: v.union(v.null(), v.string()),
-  /** Federal state, from the constituency (`WKR_LAND`) — null for a list MP
-   * whose record carries no state. See `stateOf`. */
+  /** Federal state (Stammdaten `WKR_LAND`), as published. Null for a mandate
+   * whose record carries none — 21 of WP21's 635, all list members with no
+   * constituency block. Period-scoped codes; see `stateOf`. */
   state: v.union(v.null(), v.string()),
   /** `Direktwahl` or `Landesliste` (Stammdaten `MANDATSART`), stored raw and
    * carried here so a leaderboard can badge the mandate type without a second
@@ -147,7 +148,7 @@ function paged<T>(rows: T[], offset: number, limit: number) {
  * `mpLabel` is the right tool for a handful of rows and the wrong one for 630 —
  * it is an indexed lookup each, so a leaderboard would issue 630 of them where
  * one full scan of a 630-row table does. The extra fields (`party`,
- * `constituency`, `birthDate`) are what the filters need and `mpLabel` does not
+ * `federalState`, `birthDate`) are what the filters need and `mpLabel` does not
  * return.
  */
 async function roster(ctx: QueryCtx, wahlperiode: number): Promise<Map<string, Doc<"mps">>> {
@@ -166,10 +167,27 @@ type Filters = { fraktion?: string; state?: string; ageGroup?: AgeGroup }
  * `nowMs` is threaded in rather than read from `Date.now()` here so every row in
  * one query is bracketed against the same instant — an MP whose birthday falls
  * mid-query should not land in two different brackets.
+ *
+ * Exported for convex/rankings.test.ts, following `peakConcurrentMandates` in
+ * convex/stats.ts: it is a pure predicate rather than a Convex function, so it
+ * costs nothing at the API surface, and every one of its failure modes is a
+ * board that quietly holds the wrong members rather than an error. The federal
+ * state is the case in point — the filter it replaced matched nobody at all,
+ * and looked exactly like a state nobody was from.
+ *
+ * `Pick` rather than the whole document, for the same reason that function
+ * takes one: the parameter then *names* the three columns a filter reads, so a
+ * test constructs exactly those and a fourth filter has to widen this signature
+ * rather than quietly reaching into a row. Both call sites hand it a full
+ * `Doc<"mps">`, which satisfies this.
  */
-function passes(mp: Doc<"mps">, filters: Filters, nowMs: number): boolean {
+export function passes(
+  mp: Pick<Doc<"mps">, "fraktion" | "federalState" | "birthDate">,
+  filters: Filters,
+  nowMs: number,
+): boolean {
   if (filters.fraktion !== undefined && mp.fraktion !== filters.fraktion) return false
-  if (filters.state !== undefined && stateOf(mp.constituency) !== filters.state) return false
+  if (filters.state !== undefined && stateOf(mp.federalState) !== filters.state) return false
   if (filters.ageGroup !== undefined && !inAgeGroup(mp.birthDate, filters.ageGroup, nowMs)) {
     return false
   }
@@ -231,7 +249,7 @@ function toRow(score: Doc<"activityScores">, mp: Doc<"mps">) {
     // these portraits (convex/schema.ts:207).
     photoCredit: mp.photoCredit ?? null,
     occupation: occupationOf(mp),
-    state: stateOf(mp.constituency),
+    state: stateOf(mp.federalState),
     electionMethod: mp.electionMethod,
     birthDate: mp.birthDate,
     totalScore: score.totalScore,
@@ -632,7 +650,7 @@ export const getCrossPartyRankings = query({
         // optional, the wire shape is not.
         photoUrl: mp.photoUrl ?? null,
         photoCredit: mp.photoCredit ?? null,
-        state: stateOf(mp.constituency),
+        state: stateOf(mp.federalState),
         birthDate: mp.birthDate,
         dissents: tally.dissents,
         ballotsCast: tally.ballotsCast,
@@ -757,9 +775,12 @@ async function windowDissent(
  * The values the filters can actually select, for one period.
  *
  * Built from the roster rather than from constants, so the dropdowns never
- * offer a filter that matches nothing: Fraktion names differ by period, and
- * `state` is recoverable for only some MPs (see `stateOf`), so a hardcoded list
- * of sixteen Länder would offer fifteen empty options and read as missing data.
+ * offer a filter that matches nothing. That is not only tidiness: Fraktion
+ * names differ by period, and the `WKR_LAND` codes do too — WP1–17 spell
+ * Lower Saxony `NDS` where WP18–21 say `NI` (§6.2) — so a hardcoded list of
+ * sixteen Länder would offer sixteen empty options on a historical period and
+ * read as missing data. Reading the period's own rows is what makes one
+ * component correct for every period.
  *
  * `months` comes from the score rows, not from a date range, because a month
  * with no scores is a month the ranking has nothing to say about.
@@ -793,7 +814,7 @@ export const getRankingFilterOptions = query({
 
     for (const mp of mps) {
       fraktionen.set(mp.fraktion, (fraktionen.get(mp.fraktion) ?? 0) + 1)
-      const state = stateOf(mp.constituency)
+      const state = stateOf(mp.federalState)
       if (state !== null) states.set(state, (states.get(state) ?? 0) + 1)
       for (const group of AGE_GROUP_KEYS) {
         if (inAgeGroup(mp.birthDate, group, nowMs)) {

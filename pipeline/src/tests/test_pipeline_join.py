@@ -327,4 +327,9 @@ def test_the_resolver_reports_every_internal_id_the_roster_vouches_for(resolver)
         "bt-11002718",
         "bt-11003142",
         "bt-11003639",
+        # The list mandate with no constituency block — see the federal-state
+        # tests in test_pipeline_transform.py. On the roster like any other, and
+        # deliberately so: a member without a Wahlkreis is not a member without
+        # a seat.
+        "bt-11005423",
     }

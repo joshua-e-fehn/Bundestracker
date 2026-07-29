@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select"
 import { formatMonth } from "@/lib/bundestag"
 import type { TranslationKey } from "@/lib/i18n"
+import { landNameFor } from "@/lib/laender"
 import type { AgeGroup } from "@/lib/taxonomy"
 
 /**
@@ -19,11 +20,12 @@ import type { AgeGroup } from "@/lib/taxonomy"
  * ## Options come from the data
  *
  * Every dropdown is populated by `getRankingFilterOptions`, never from a
- * constant. Fraktion names differ between electoral periods, and the federal
- * state is recoverable for only some MPs (see `stateOf` in
- * convex/rankings.ts) — so a hardcoded list of sixteen Länder would offer
- * fifteen filters that select nothing, which reads as broken data rather than
- * as an absent field. A filter that cannot be satisfied is not shown.
+ * constant. Fraktion names differ between electoral periods, and so do the
+ * federal-state codes — `WKR_LAND` says `NDS` before WP18 and `NI` from WP18
+ * (§6.2, and `stateOf` in lib/bundestag.ts) — so a hardcoded list of sixteen
+ * Länder would select nothing at all on a historical period, which reads as
+ * broken data rather than as an absent field. A filter that cannot be
+ * satisfied is not shown.
  *
  * The counts beside each option are part of that: "SPD (122)" tells the reader
  * what they are about to narrow to, and a group with no members never appears.
@@ -176,8 +178,9 @@ export function RankingsFilters({
       />
 
       {/* Hidden entirely when no MP's record yields a state, rather than shown
-          empty. See the header — and `stateOf`, which explains why that is the
-          common case until the pipeline stores WKR_LAND as its own field. */}
+          empty. That is now the uncommon case — `WKR_LAND` is stored, and
+          covers 96.7 % of WP21 — but it stays: a period the pipeline has not
+          re-ingested has the column on no row at all. */}
       {options !== undefined && options.states.length > 0 && (
         <FilterSelect
           id="rankings-filter-state"
@@ -185,11 +188,22 @@ export function RankingsFilters({
           anyLabel={t("rankings.filter.allStates")}
           value={filters.state}
           onValueChange={(value) => set("state", value)}
-          width="w-[11rem]"
-          items={options.states.map((entry) => ({
-            value: entry.value,
-            label: `${entry.value} (${entry.count})`,
-          }))}
+          width="w-[13rem]"
+          // The value stays the raw `WKR_LAND` code; only the label is
+          // translated. A locale-dependent filter value would make the same
+          // selection mean different things in the two languages, and would
+          // break the day a translation was reworded.
+          //
+          // Sorted here rather than trusting the query's order: the server
+          // sorts by code (it has no locale), and "Bayern" belongs under B for
+          // a German reader and "Bavaria" under B for an English one — which
+          // `BY` satisfies for neither.
+          items={options.states
+            .map((entry) => ({
+              value: entry.value,
+              label: `${landNameFor(entry.value, locale)} (${entry.count})`,
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label, locale))}
         />
       )}
 

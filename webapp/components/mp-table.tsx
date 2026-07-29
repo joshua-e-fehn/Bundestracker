@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table"
 import type { api } from "@/convex/_generated/api"
 import { formatNumber, formatPercent, occupationOf, stateOf } from "@/lib/bundestag"
+import { landNameFor } from "@/lib/laender"
 import { scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 import { foldName } from "@/lib/search"
@@ -49,14 +50,19 @@ import { MANDATE_LABEL_KEYS, MANDATE_TYPES, mandateType } from "@/lib/taxonomy"
  * the same reason: a control that offers values nothing matches reads as broken
  * data rather than as an absent field.
  *
- * **Federal state is the case that rule was written for.** `mps.constituency`
- * holds a Wahlkreis *name*, and the Stammdaten field that carries the state —
- * `WKR_LAND` — is neither in `mpInput` (convex/schema.ts) nor ingested by the
- * pipeline. `stateOf` in convex/rankings.ts recovers it only where the pipeline
- * happened to spell it into the name as a trailing `(BW)`, which today is
- * nowhere. So the control is wired end to end and **renders only when at least
- * one MP yields a state** — it appears the day the pipeline stores the field,
- * and until then its absence is honest where sixteen empty Länder would not be.
+ * **Federal state is the case that rule was written for**, and it is now the
+ * case that vindicates it. `WKR_LAND` is a stored column
+ * (`mps.federalState`), so the control renders — but it renders *its period's
+ * own codes*, which is the point: WP1–17 spell Lower Saxony `NDS` where
+ * WP18–21 say `NI` (§6.2), so a hardcoded list of sixteen Länder would select
+ * nothing at all on a historical roster. It still hides itself when no row
+ * yields a state, which is no longer the common case but remains the correct
+ * behaviour for a period the pipeline has not re-ingested.
+ *
+ * The field it replaced parsed a trailing `(BW)` off the constituency name.
+ * That returned null for **every** MP in the corpus — 0 of 13 046 `WKR_NAME`
+ * values carry one — so this filter was invisible for as long as it existed,
+ * and looked like a sparse field rather than a broken one.
  *
  * Committee membership carries its own ambiguity, and it is not the same one:
  * §6.4 records that committees are published for the *current* Wahlperiode
@@ -73,6 +79,10 @@ type Row = {
     vorname: string
     fraktion: string
     constituency: string | null
+    /** Stammdaten `WKR_LAND`, as published. Null where the source carries none
+     * — 21 of WP21's 635 mandates — and `undefined` on a row written before the
+     * column existed. `stateOf` folds the two into "unknown". */
+    federalState?: string | null
     /** `Direktwahl` or `Landesliste` — Stammdaten's `MANDATSART`, stored raw.
      * Nullable: an MP whose mandate type was not ingested is unknown, not a
      * list MP, so the filter must not fold the two together. */
@@ -194,16 +204,23 @@ export function MPTable({
     [rows],
   )
 
-  /** The states the roster can actually be filtered to — usually none. See the
-   * header, and `stateOf`, which this shares so the roster and the rankings
-   * recover a state the same way rather than by two rules. */
-  const states = useMemo(
-    () =>
-      [...new Set(rows.flatMap((row) => stateOf(row.mp.constituency) ?? []))].sort((a, b) =>
-        a.localeCompare(b, "de"),
-      ),
-    [rows],
-  )
+  /** The states this period's roster can be filtered to. Read from the rows
+   * rather than from a list of sixteen Länder, because the codes are
+   * period-scoped — see the header — and because a member whose record carries
+   * none must not invent an option. `stateOf` is shared with the rankings so
+   * the two surfaces answer "which state" by one rule rather than two.
+   *
+   * Carries the code *and* its label: the code is what the filter compares on
+   * and the label is what the reader picks, and they must not be the same
+   * string. Sorted by the label, in the reader's collation — an English reader
+   * scanning for Bavaria looks under B, and sorting by the code would file it
+   * under `BY` between `BW` and `BE`, which is an order neither language reads. */
+  const states = useMemo(() => {
+    const codes = [...new Set(rows.flatMap((row) => stateOf(row.mp.federalState) ?? []))]
+    return codes
+      .map((code) => ({ code, label: landNameFor(code, locale) }))
+      .sort((a, b) => a.label.localeCompare(b.label, locale))
+  }, [rows, locale])
 
   /** Committees anyone on this roster sits on. Empty on a historical period —
    * see the header. */
@@ -232,7 +249,7 @@ export function MPTable({
     const needle = foldName(deferredSearch)
     return rows.filter((row) => {
       if (fraktion !== ALL && row.mp.fraktion !== fraktion) return false
-      if (state !== ALL && stateOf(row.mp.constituency) !== state) return false
+      if (state !== ALL && stateOf(row.mp.federalState) !== state) return false
       if (committee !== ALL && !row.committees.includes(committee)) return false
       // An MP whose mandate type was never ingested matches neither value
       // rather than defaulting into one — see `ELECTION_METHODS`.
@@ -332,7 +349,10 @@ export function MPTable({
               setPage(0)
             }}
             allLabel={t("mps.allStates")}
-            options={states.map((code) => ({ value: code, label: code }))}
+            // The value stays the raw `WKR_LAND` code and only the label is
+            // translated: a locale-dependent filter value would make the same
+            // selection mean different things to a German and an English reader.
+            options={states.map(({ code, label }) => ({ value: code, label }))}
           />
         )}
 
