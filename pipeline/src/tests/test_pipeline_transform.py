@@ -247,7 +247,7 @@ def test_a_historical_period_keeps_its_own_code_vocabulary(dump) -> None:
     """⚠ The codes are period-scoped, and normalising them here would be a bug.
 
     The fixture's WP8 mandate carries `BWG`, which is WP1–17's spelling of what
-    WP18–21 call `BW` — 36 distinct values across the corpus for 16 Länder
+    WP18–21 call `BW` — 35 distinct values across the corpus for 16 Länder
     (§6.2). Stored verbatim: a mapping would have to be per-period, and several
     historical codes name entities that no longer exist (`WBB`, Württemberg-
     Baden). Every filter reading this is period-scoped and builds its options

@@ -339,7 +339,7 @@ describe("stateOf", () => {
   })
 
   test("a historical period's own vocabulary passes through unchanged", () => {
-    // ⚠ 36 distinct codes across the corpus for 16 Länder: WP1–17 write `NDS`
+    // ⚠ 35 distinct codes across the corpus for 16 Länder: WP1–17 write `NDS`
     // and `THÜ` where WP18–21 write `NI` and `TH` (§6.2). Normalising here
     // would need a per-period table and would rename entities that no longer
     // exist (`WBB`, Württemberg-Baden). Every filter is period-scoped and

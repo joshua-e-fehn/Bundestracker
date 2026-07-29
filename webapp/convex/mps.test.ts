@@ -201,7 +201,7 @@ describe("the federal state column", () => {
   })
 
   test("is a nullable string, not a closed union of sixteen Länder", () => {
-    // ⚠ Deliberate. The `WKR_LAND` codes are period-scoped — 36 distinct
+    // ⚠ Deliberate. The `WKR_LAND` codes are period-scoped — 35 distinct
     // values across the corpus for 16 Länder, because WP1–17 write `NDS`/`THÜ`
     // where WP18–21 write `NI`/`TH` (§6.2) — and several historical ones name
     // entities that no longer exist (`WBB`, Württemberg-Baden). A literal

@@ -213,7 +213,7 @@ export const mpInput = {
    *
    * ## ⚠ The codes are period-scoped, not a stable enum
    *
-   * 36 distinct values across the corpus, because WP1–17 use `BWG`/`NDS`/
+   * 35 distinct values across the corpus, because WP1–17 use `BWG`/`NDS`/
    * `NRW`/`THÜ` and WP18–21 the ISO-style `BW`/`NI`/`NW`/`TH` (§6.2). Stored
    * verbatim rather than normalised: mapping them would require a per-period
    * table, and the historical codes name entities that no longer exist as
