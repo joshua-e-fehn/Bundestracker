@@ -419,6 +419,49 @@ const de = {
   "mp.berlinOffice": "Bundestagsbüro",
   "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
   "mp.noContact": "Für diese Abgeordnete oder diesen Abgeordneten sind keine Kontaktdaten erfasst.",
+  // The empty state, spelled out. `mp.noContact` above says *that* nothing is
+  // recorded; these two say *what that means* — which is the whole difference
+  // between a sparse record and a broken page. The card used to render nothing
+  // at all in this state, so a reader could not tell an absent source from a
+  // failed fetch (GAP-003 of docs/implementation-gap-audit-2026-07-29.md).
+  //
+  // The second line is the same fact `mp.contactFormHint` states beside the
+  // form link, said where there is no form link to attach it to — and it is
+  // stated as the Bundestag's practice rather than as this site's shortfall,
+  // because that is what it is.
+  "mp.noContactExplain":
+    "Der Bundestag veröffentlicht weder E-Mail-Adressen noch Telefonnummern von Abgeordneten — auch nicht dort, wo Kontaktdaten vorliegen. Für diese Abgeordnete oder diesen Abgeordneten ist zudem kein Kontaktformular, keine Webseite und kein Wahlkreisbüro hinterlegt.",
+  /** The substitute that always exists: the postal address of the Bundestag
+   * itself, which reaches every member. Says what the address is *for* — the
+   * `mp.berlinOffice` label directly above already names it, so repeating the
+   * name here would print "Bundestagsbüro" twice in three lines. Under a
+   * heading that has just said nothing is recorded, an unlabelled address reads
+   * as a contradiction; this is the sentence that resolves it. */
+  "mp.postalSubstitute": "Schriftlich erreichbar unter der Anschrift des Bundestages:",
+  /** The directory, as the last resort that is always true: the Bundestag's own
+   * MP listing. Not a per-MP URL — the pipeline stores none for a member it
+   * could not match — so it points at the roster rather than guessing a page. */
+  "mp.officialDirectory": "Abgeordnetenverzeichnis des Bundestages",
+  /**
+   * The identity card's jump to the contact card below. A skip link within the
+   * profile, in the same spirit as `protokoll.skipToData` on `/` — and worded
+   * the same way, naming the *destination* rather than repeating a heading.
+   *
+   * It used to be the bare word "Kontakt", which is `mp.contact` verbatim — the
+   * heading of the card it points at. A reader listing the page's links heard
+   * "Kontakt" with nothing to say it was an in-page jump, and a link whose name
+   * matches a heading elsewhere reads as a duplicate of it rather than as a
+   * shortcut to it. The `ArrowDownIcon` beside it is `aria-hidden`, so the
+   * glyph that makes the direction obvious to a sighted reader contributes
+   * nothing to the accessible name.
+   *
+   * Changed here rather than bolted on as an `aria-label` or an `sr-only`
+   * suffix, so the visible text and the accessible name stay the same string.
+   * A visible "Kontakt" under an `aria-label` of "Zu den Kontaktdaten" would
+   * put the two out of step — which breaks WCAG 2.5.3 (Label in Name) and
+   * voice control with it, since "click Kontakt" would no longer match.
+   */
+  "mp.jumpToContact": "Zu den Kontaktdaten",
   "mp.committeeRole": "Funktion",
   "mp.committeePeriod": "Zeitraum",
   "mp.noCommittees": "Keine Ausschussmitgliedschaften erfasst.",
@@ -1934,6 +1977,16 @@ const en: Dictionary = {
   "mp.berlinOffice": "Bundestag office",
   "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
   "mp.noContact": "No contact details are recorded for this member.",
+  /** The empty state, spelled out. See the German entries: the point is that a
+   * reader can tell an absent source from a failed fetch. */
+  "mp.noContactExplain":
+    "The Bundestag publishes neither email addresses nor telephone numbers for members — not even where contact details are available. For this member it also lists no contact form, no website and no constituency office.",
+  "mp.postalSubstitute": "Reachable in writing at the Bundestag's address:",
+  "mp.officialDirectory": "The Bundestag's own directory of members",
+  /** Names the destination rather than repeating `mp.contact`, the heading it
+   * points at. See the German entry for why the visible text carries this
+   * rather than an `aria-label` over the shorter word. */
+  "mp.jumpToContact": "Jump to contact details",
   "mp.committeeRole": "Role",
   "mp.committeePeriod": "Period",
   "mp.noCommittees": "No committee memberships recorded.",
