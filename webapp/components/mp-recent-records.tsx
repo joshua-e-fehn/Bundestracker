@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react"
 import { useLocale } from "@/components/providers/locale-provider"
+import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { VoteResultBadge } from "@/components/vote-result-badge"
 import { api } from "@/convex/_generated/api"
@@ -29,19 +30,31 @@ import { drucksachePdfUrl, formatDate, formatNumber, protocolPdfUrl } from "@/li
 export function MPRecentRecords({
   mpInternalId,
   wahlperiode,
+  current,
 }: {
   mpInternalId: string
   wahlperiode: number
+  /**
+   * The sitting period, so two of these four panels can say why they are empty.
+   *
+   * Speeches and votes are the panels with a source boundary: protocol XML
+   * begins at WP18 and roll-call sheets at 2019-09-26, so an empty list in an
+   * earlier period is "never published" rather than "this member never spoke or
+   * voted" (`docs/historical-coverage.md`). Motions and questions come from
+   * DIP, which covers every tracked period, so their empty states are already
+   * honest as they stand.
+   */
+  current?: number | null
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <RecentSpeeches mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
+      <RecentSpeeches mpInternalId={mpInternalId} wahlperiode={wahlperiode} current={current} />
       <RecentMotions mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
       {/* Between the motions an MP tables and the votes they cast: a written
           question is the same kind of act as a motion — something the member
           initiated — where a vote is a response to someone else's. */}
       <RecentQuestions mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
-      <RecentVotes mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
+      <RecentVotes mpInternalId={mpInternalId} wahlperiode={wahlperiode} current={current} />
     </div>
   )
 }
@@ -51,9 +64,11 @@ const LIMIT = 5
 function RecentSpeeches({
   mpInternalId,
   wahlperiode,
+  current,
 }: {
   mpInternalId: string
   wahlperiode: number
+  current?: number | null
 }) {
   const { t, locale } = useLocale()
   const speeches = useQuery(api.speeches.getSpeechesByMP, {
@@ -65,7 +80,16 @@ function RecentSpeeches({
   return (
     <Panel title={t("mp.latestSpeeches")} loading={speeches === undefined}>
       {speeches?.length === 0 ? (
-        <Empty>{t("mp.noSpeeches")}</Empty>
+        <div className="flex flex-col gap-2">
+          <Empty>{t("mp.noSpeeches")}</Empty>
+          {/* Protocol XML begins at WP18. For WP17 and earlier the sittings
+              happened and the transcripts are PDF-only, so this panel is empty
+              for *every* member of those periods — which is a fact about the
+              publishing format, not about anybody's willingness to speak.
+              Renders nothing from WP18 on, where an empty list really does mean
+              this member has no recorded speech. */}
+          <SourceCoverageNote source="speeches" wahlperiode={wahlperiode} current={current} />
+        </div>
       ) : (
         <ul className="flex flex-col divide-y">
           {speeches?.map((speech) => (
@@ -222,7 +246,15 @@ function RecentQuestions({
   )
 }
 
-function RecentVotes({ mpInternalId, wahlperiode }: { mpInternalId: string; wahlperiode: number }) {
+function RecentVotes({
+  mpInternalId,
+  wahlperiode,
+  current,
+}: {
+  mpInternalId: string
+  wahlperiode: number
+  current?: number | null
+}) {
   const { t, locale } = useLocale()
   const votes = useQuery(api.votes.getVotesByMP, { mpInternalId, wahlperiode, limit: LIMIT })
   const tally = useQuery(api.votes.getDissentTally, { mpInternalId, wahlperiode })
@@ -249,6 +281,14 @@ function RecentVotes({ mpInternalId, wahlperiode }: { mpInternalId: string; wahl
       {votes?.length === 0 ? (
         <div className="flex flex-col gap-2">
           <Empty>{t("mp.noVotes")}</Empty>
+          {/* Two limits, and on a pre-2019 period the second is the bigger one.
+              Roll-call data sheets begin 2019-09-26, so for WP18 and earlier
+              *no* per-member ballot record exists in any format — an emptiness
+              that covers every member of those chambers. Above the standing
+              caveat because it is the stronger claim where it applies, and
+              absent from WP20 on, where the standing caveat is the whole
+              story. */}
+          <SourceCoverageNote source="votes" wahlperiode={wahlperiode} current={current} />
           {/* The caveat belongs on an empty vote list more than anywhere: only
               named ballots exist as per-MP records at all (§4.4), so "no votes"
               never means "did not vote". */}

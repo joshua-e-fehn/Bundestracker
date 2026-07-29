@@ -9,7 +9,9 @@ import { PartyMandateCard } from "@/components/party-mandate-card"
 import { PartyMetricChart } from "@/components/party-metric-chart"
 import { PartyScoreTable } from "@/components/party-score-table"
 import { useLocale } from "@/components/providers/locale-provider"
+import { usePeriod } from "@/components/providers/period-provider"
 import { SectionHeading } from "@/components/section-heading"
+import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
@@ -45,6 +47,8 @@ import { coverageGapKey } from "@/lib/party-comparison"
  */
 export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
   const { t, locale } = useLocale()
+  // The sitting period, for the coverage notes — see the note beside them.
+  const { current } = usePeriod()
   const comparison = useQuery(api.parties.getPartyComparison, { wahlperiode })
 
   if (comparison === undefined) {
@@ -77,6 +81,16 @@ export function PartyComparison({ wahlperiode }: { wahlperiode: number }) {
           they start rather than footnoted after. */}
       <div className="flex flex-col gap-2">
         <CaveatNote>{t("parties.meansNotice")}</CaveatNote>
+        {/* Every metric on this page is a mean over the score's components, so
+            a period that could not measure two of them produces group averages
+            that are lower across the board — and comparably lower, which is the
+            trap: the *ranking* between groups survives while the magnitudes are
+            not comparable to any other period's. Stated with the means notice
+            rather than beside each chart, because it qualifies all of them
+            equally. Renders nothing on the current period. */}
+        <SourceCoverageNote source="committees" wahlperiode={wahlperiode} current={current} />
+        <SourceCoverageNote source="speeches" wahlperiode={wahlperiode} current={current} />
+        <SourceCoverageNote source="votes" wahlperiode={wahlperiode} current={current} />
         <p className="text-muted-foreground text-xs">
           {t("parties.coverage", {
             scored: formatCount(comparison.totalScored, locale),

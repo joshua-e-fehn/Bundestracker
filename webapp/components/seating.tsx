@@ -5,11 +5,13 @@ import { useState } from "react"
 import { CaveatNote } from "@/components/caveat-note"
 import { ColorModeToggle } from "@/components/color-mode-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
+import { usePeriod } from "@/components/providers/period-provider"
 import { SeatingLegend } from "@/components/seating-legend"
 import { SeatingMap, type SeatingMapSeat } from "@/components/seating-map"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
+import { isCurrentPeriod } from "@/lib/period"
 import { DEFAULT_SEATING_MODE, type SeatingColorMode, seatingMode } from "@/lib/seating"
 
 /**
@@ -31,6 +33,9 @@ import { DEFAULT_SEATING_MODE, type SeatingColorMode, seatingMode } from "@/lib/
  */
 export function Seating({ wahlperiode }: { wahlperiode: number }) {
   const { t, locale } = useLocale()
+  // The sitting period, so the historical case can be answered honestly — see
+  // the note beside the caveat below.
+  const { current } = usePeriod()
   const [mode, setMode] = useState<SeatingColorMode>(DEFAULT_SEATING_MODE)
 
   const seats = useQuery(api.seating.getSeatingWithMPs, { wahlperiode })
@@ -112,6 +117,20 @@ export function Seating({ wahlperiode }: { wahlperiode: number }) {
           each is a case where a colour could be read as a finding the sources do
           not support. */}
       {definition?.caveatKey !== undefined && <CaveatNote>{t(definition.caveatKey)}</CaveatNote>}
+
+      {/* The one page where the historical answer is "no worse than today", and
+          saying so is the honest move rather than the reassuring one.
+          `SyntheticSeatingNotice` above already says the individual seats are
+          invented — a reader who has learnt that, and then switches to WP19,
+          would reasonably assume a *closed* chamber is more invented still.
+          It is not: §9 records that no machine-readable seating plan exists for
+          any period including the current one, so WP19's arc is constructed by
+          exactly the same rule from exactly as real a seat count. Shown only on
+          a historical period, because on the current one it would restate the
+          notice at the top of the page. */}
+      {!isCurrentPeriod(wahlperiode, current) && (
+        <CaveatNote>{t("period.source.seating.equal")}</CaveatNote>
+      )}
     </div>
   )
 }
