@@ -169,6 +169,28 @@ class SyncState(BaseModel):
                 pass
         self.watermarks[self._key(wahlperiode, stream)] = seen.isoformat()
 
+    def restore_watermark(self, wahlperiode: int, stream: str, value: str | None) -> None:
+        """Set a stream's watermark to a prior value, moving it backwards if needed.
+
+        Unlike `advance`, this is **not monotonic**: it exists precisely so a
+        maintenance route that has to re-read a window (`backfill_vote_vorgang`
+        is the one caller today) can restore the daily sync's mark after its
+        own walk, rather than advancing past what the sync has actually
+        processed. A caller must snapshot the mark before its walk and restore
+        with the snapshot after — `value=None` removes the key, which is the
+        pre-walk state for a fresh watermark.
+
+        ⚠ Never call this from the normal sync path. The monotonic guarantee
+        `advance` gives — "the mark never moves back over records we know we
+        wrote" — is what makes an interrupted or retried sync safe to resume,
+        and this method deliberately bypasses it.
+        """
+        key = self._key(wahlperiode, stream)
+        if value is None:
+            self.watermarks.pop(key, None)
+        else:
+            self.watermarks[key] = value
+
     def newest_watermark(self, wahlperiode: int) -> str | None:
         """The furthest any stream has reached — for `status` to report.
 

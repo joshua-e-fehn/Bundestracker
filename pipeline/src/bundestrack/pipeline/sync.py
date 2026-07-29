@@ -1313,9 +1313,32 @@ def backfill_vote_vorgang(
     a ballot's stored Vorgang is a migration and needs to be an explicit act,
     not a side effect of running this. The route enforces it at the Convex
     end; this function does not paper over it here.
+
+    ⚠ **`full=True` on the Pipeline is load-bearing** and the reason this
+    route works at all (NEW-H1 in `/tmp/rereview-source-backed-ingestion-gaps.md`).
+    Without it, `load_committee_referrals` would apply the daily sync's
+    `STREAM_REFERRALS` watermark to its DIP fetch — and the whole point of
+    this route is to catch ballots whose referring `Vorgangsposition` is
+    *older* than that watermark, so a windowed fetch is precisely the wrong
+    thing.
+
+    ⚠ **The `STREAM_REFERRALS` watermark is preserved** (snapshot before,
+    restored after — see `SyncState.restore_watermark`). This is a
+    maintenance route that re-reads the whole period; advancing the daily
+    sync's own mark would risk shrinking a future sync's window past a real
+    record if the two ever raced.
     """
     owned = pipeline is None
-    run = pipeline or Pipeline(wahlperiode, settings=settings, dry_run=dry_run)
+    # `full=True` — see the note above. Without it, `load_committee_referrals`
+    # windows its fetch on the daily sync's watermark, and the referral
+    # records that would have populated `_ballot_vorgaenge` for late-arriving
+    # ballots (the exact records this route was written to catch) are the
+    # ones that fall outside that window.
+    run = pipeline or Pipeline(wahlperiode, settings=settings, dry_run=dry_run, full=True)
+    # An injected `pipeline` must also mean "backfill" the same way the CLI
+    # does; a caller reusing a Pipeline for tests should not silently get
+    # different fetch semantics from the CLI path.
+    run.full = True
     report = RunReport(wahlperiode, "backfill-vote-vorgang")
     totals = {
         "sheets_scanned": 0,
@@ -1325,6 +1348,12 @@ def backfill_vote_vorgang(
         "conflicts": 0,
         "unknown": 0,
     }
+    # Snapshot the referral mark BEFORE the walk. `load_committee_referrals`
+    # calls `state.advance(...)`, and `_finish` persists it — but this route
+    # is not the daily sync, and moving that mark forward here would let the
+    # next real sync compute `since = max_seen - OVERLAP`, skipping any
+    # referral added between the two runs that fell outside the OVERLAP.
+    watermark_before = run.state.watermark(wahlperiode, STREAM_REFERRALS)
     try:
         # The roster must exist before anything else runs — this stage does not
         # need it directly, but the referral walk shares `_ballot_vorgaenge`
@@ -1390,6 +1419,12 @@ def backfill_vote_vorgang(
                 wahlperiode,
             )
     finally:
+        # Restore the referral mark to what the daily sync had before this
+        # ran. The referral rows we just re-read have already been upserted
+        # (they are idempotent), so the daily sync losing this "advance" is
+        # exactly the right outcome — the maintenance route is invisible to
+        # the sync's own progress accounting.
+        run.state.restore_watermark(wahlperiode, STREAM_REFERRALS, watermark_before)
         _finish(run, report, owned=owned)
     return totals
 

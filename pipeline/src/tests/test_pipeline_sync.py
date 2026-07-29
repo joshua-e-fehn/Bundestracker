@@ -1981,6 +1981,158 @@ def test_backfill_vote_vorgang_does_nothing_when_the_referral_walk_is_empty(
     assert loader.patch_calls == []
 
 
+def test_backfill_vote_vorgang_reads_the_full_period_not_the_daily_sync_window(
+    tmp_path,
+) -> None:
+    """NEW-H1: a maintenance backfill must not window on the daily sync's
+    referral watermark.
+
+    The whole point of this route is to catch ballots whose referring
+    `Vorgangsposition` surfaced *before* the daily sync's `STREAM_REFERRALS`
+    watermark — those referrals are, by construction, older than the
+    watermark, so a windowed fetch (`updated_since=<watermark>`) filters out
+    the exact records the route was written to catch.
+
+    Before the fix, `backfill_vote_vorgang` built the `Pipeline` without
+    `full=True`; `_window(STREAM_REFERRALS, None)` then returned the
+    stored-watermark-minus-OVERLAP for any non-empty state. The CLI reported
+    success (`scanned N, sent 0`) while patching nothing. Verified here by
+    seeding a real STREAM_REFERRALS watermark and asserting the DIP client
+    received `updated_since=None`.
+
+    Also asserts the watermark is **unchanged** after the run: this route
+    re-reads the whole period, and advancing the daily sync's own mark past
+    what it has actually processed would risk shrinking a future sync's
+    window across the OVERLAP gap.
+    """
+    from bundestrack.pipeline.sync import backfill_vote_vorgang
+
+    dip = StubDIP(positionen=[])
+    loader = VorgangBackfillLoader([])
+    settings = Settings(
+        _env_file=None,
+        BUNDESTAG_API_KEY="test-key",
+        CONVEX_URL="https://example.convex.cloud",
+        PIPELINE_API_KEY="test-key",
+        BUNDESTRACK_STATE_PATH=str(tmp_path / "state.json"),
+    )
+    state = SyncState()
+    # A real, plausible watermark — three days behind the newest referral the
+    # source would return. The prior bug computed the window from this, and
+    # `iter_vorgangspositionen` would only see records with
+    # `aktualisiert >= watermark - OVERLAP` — the class the route exists to
+    # catch is precisely everything before.
+    stored_mark = "2026-07-25T12:00:00+00:00"
+    state.watermarks["21:vorgangsposition"] = stored_mark
+
+    pipeline_run = Pipeline(
+        21,
+        settings=settings,
+        dry_run=True,
+        dip=dip,
+        stammdaten=StubStammdaten(),
+        protocols=StubClient(),
+        votes=StubVotes(),
+        profiles=StubProfiles(),
+        abgeordnetenwatch=StubAbgeordnetenwatch(),
+        loader=loader,
+        state=state,
+    )
+
+    backfill_vote_vorgang(21, settings=settings, pipeline=pipeline_run)
+
+    # The referral walk saw the full period, not a windowed slice.
+    assert dip.referral_since == [None], (
+        f"expected updated_since=None on the referral walk, got {dip.referral_since}. "
+        "A windowed fetch here filters out the exact class of record this "
+        "maintenance route was written to catch."
+    )
+    # The watermark the daily sync depends on is restored to what it was.
+    assert state.watermarks.get("21:vorgangsposition") == stored_mark, (
+        "the maintenance route must not advance the daily sync's referral "
+        "watermark — the two runs have different responsibilities and only "
+        "the daily sync's advance means 'this is where I got to'"
+    )
+
+
+def test_backfill_vote_vorgang_preserves_the_watermark_even_when_referrals_arrive(
+    tmp_path,
+) -> None:
+    """Companion to the test above — same guarantee, non-empty referral stream.
+
+    The `restore_watermark` call must fire on the happy path too, not only
+    when the referral walk returns nothing. Otherwise a `backfill_vote_vorgang`
+    on a period that has current referrals would advance the mark to the
+    newest record's timestamp — the exact side effect the fix exists to
+    prevent.
+    """
+    from bundestrack.models.dip import Vorgangsposition
+    from bundestrack.pipeline.sync import backfill_vote_vorgang
+
+    fresh = Vorgangsposition.model_validate(
+        {
+            "id": "1",
+            "vorgangsposition": "Beratung",
+            "zuordnung": "BT",
+            "gang": True,
+            "fortsetzung": False,
+            "nachtrag": False,
+            "vorgangstyp": "Gesetzgebung",
+            "typ": "Vorgangsposition",
+            "titel": "Fresh referral",
+            "dokumentart": "Plenarprotokoll",
+            "vorgang_id": "V1",
+            "datum": "2026-07-28",
+            # Newer than the stored watermark below — a monotonic `advance`
+            # would happily move the mark to this timestamp; the restore
+            # is what stops it.
+            "aktualisiert": "2026-07-28T09:00:00+00:00",
+            "fundstelle": {
+                "id": "5806",
+                "dokumentnummer": "21/91",
+                "dokumentart": "Plenarprotokoll",
+                "datum": "2026-07-28",
+                "herausgeber": "BT",
+            },
+            "ueberweisung": [
+                {
+                    "ausschuss": "Ausschuss für Sport",
+                    "ausschuss_kuerzel": "AfS",
+                    "federfuehrung": True,
+                }
+            ],
+        }
+    )
+    settings = Settings(
+        _env_file=None,
+        BUNDESTAG_API_KEY="test-key",
+        CONVEX_URL="https://example.convex.cloud",
+        PIPELINE_API_KEY="test-key",
+        BUNDESTRACK_STATE_PATH=str(tmp_path / "state.json"),
+    )
+    state = SyncState()
+    stored_mark = "2026-07-25T12:00:00+00:00"
+    state.watermarks["21:vorgangsposition"] = stored_mark
+
+    pipeline_run = Pipeline(
+        21,
+        settings=settings,
+        dry_run=True,
+        dip=StubDIP(positionen=[fresh]),
+        stammdaten=StubStammdaten(),
+        protocols=StubClient(),
+        votes=StubVotes(),
+        profiles=StubProfiles(),
+        abgeordnetenwatch=StubAbgeordnetenwatch(),
+        loader=VorgangBackfillLoader([]),
+        state=state,
+    )
+
+    backfill_vote_vorgang(21, settings=settings, pipeline=pipeline_run)
+
+    assert state.watermarks.get("21:vorgangsposition") == stored_mark
+
+
 def test_load_votes_with_a_populated_map_carries_the_resolved_procedure(tmp_path) -> None:
     """The happy path, kept as a companion to the M2 test above so a fix that
     accidentally omits the key *always* — even when resolved — fails here."""
