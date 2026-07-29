@@ -13,10 +13,21 @@
  * not import it — with every path public there is nothing for middleware to
  * ask, and a call whose answer is always the same reads as a gate that works.
  *
- * When a genuinely private route arrives (an account settings page, say), it
- * is added by *omission*: drop "/" from this list and enumerate the public
- * ones. The guard starts gating with no change; `proxy.ts` is where the
- * import goes back if the redirect should also happen before render.
+ * When a genuinely private route arrives, it is added by *omission*: drop "/"
+ * from this list and enumerate the public ones. The guard starts gating with no
+ * change; `proxy.ts` is where the import goes back if the redirect should also
+ * happen before render.
+ *
+ * That note used to name "an account settings page, say" as the example. The
+ * settings page now exists and is **public**, which is not a retreat from the
+ * rule — it is what the rule asks for once you look at what the page does. It
+ * renders for a signed-out reader too, saying what an account holds and linking
+ * to the picker (components/settings-page.tsx). Gating it would replace that
+ * explanation with a redirect to `/sign-in` from a link the reader can see in
+ * the navigation: the guard would fire *before* the page could say why, which
+ * is exactly the "silently demands an account" failure the ⚠ below describes,
+ * arriving through the front door instead of by accident. A route that has a
+ * signed-out rendering is not a private route.
  *
  * Note the matcher only treats "/" as an exact match: for path "/" the prefix
  * test becomes startsWith("//"), which never fires for a normal pathname. So
@@ -97,6 +108,19 @@ export const PUBLIC_PATHS = [
   // page is arithmetic over the public roster, and the one figure on it that is
   // not official is marked as ours rather than hidden behind an account.
   "/inquiry-quorum",
+  // The reader's own saved choices — weights, language, follow list. The one
+  // route on this site whose *contents* need an account, and still public,
+  // because the page has a signed-out rendering that explains what an account
+  // is for and links to `/sign-in`. Gating it would send a reader who clicked
+  // "Einstellungen" in the navigation to a sign-in prompt with no explanation,
+  // and the explanation is the whole point of the branch. See the note above,
+  // and components/settings-page.tsx.
+  //
+  // Nothing is leaked by this: every `userPreferences` function takes the user
+  // id from the session and never as an argument (convex/userPreferences.ts),
+  // so a signed-out reader loading this page gets the documented defaults —
+  // no weights, no follows — rather than anyone else's.
+  "/settings",
 ]
 
 export function isPublicPath(pathname: string) {

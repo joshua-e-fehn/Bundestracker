@@ -49,6 +49,20 @@ describe("isPublicPath", () => {
     }
   })
 
+  test("settings is public, because it has a signed-out rendering", () => {
+    // The one route whose *contents* need an account, and still on the list.
+    // Gating it would have `AuthGuard` redirect to /sign-in before the page
+    // could say what an account is for — a bounce from a link visible in the
+    // navigation, which is the same "silently demands an account" failure the
+    // ⚠ in auth-routes.ts describes, arriving through the front door.
+    //
+    // Nothing leaks by this: every `userPreferences` function takes the user id
+    // from the session and never as an argument, so a signed-out reader gets
+    // the documented defaults rather than anyone else's data
+    // (convex/userPreferences.ts, and the API-shape tests beside it).
+    expect(isPublicPath("/settings")).toBe(true)
+  })
+
   test("an id with an encoded character is still public", () => {
     // `internalId` is minted by the pipeline and reaches the guard already
     // decoded by Next. A prefix test on "/mps" covers it either way, but the
@@ -74,7 +88,15 @@ describe("isPublicPath", () => {
   test("an unlisted path is gated, which is the point of the list", () => {
     // The day a genuinely private route arrives it is added by omission — see
     // the note in auth-routes.ts. This asserts omission still means gated.
-    expect(isPublicPath("/settings")).toBe(false)
+    //
+    // `/settings` used to be the example here, on the assumption that a
+    // settings page is by definition private. It is not: the page renders for a
+    // signed-out reader, saying what an account holds and linking to the
+    // picker, so gating it would replace that explanation with a bounce to
+    // /sign-in from a link visible in the navigation. A route with a signed-out
+    // rendering is a public route; a hypothetical id stands in for the example
+    // so the property is still asserted.
+    expect(isPublicPath("/account/export")).toBe(false)
 
     // A URL matching no route at all is *also* false here, and that is correct
     // for this function: it answers "is this path on the public list", and a
@@ -132,7 +154,9 @@ describe("continueWithoutAccountTarget", () => {
     // Same host, different origin. On localhost the dev server and a preview on
     // another port are genuinely different sites to the browser.
     expect(continueWithoutAccountTarget("http://www.bundestracker.de/mps", ORIGIN)).toBe("/")
-    expect(continueWithoutAccountTarget("http://localhost:3001/", "http://localhost:3000")).toBe("/")
+    expect(continueWithoutAccountTarget("http://localhost:3001/", "http://localhost:3000")).toBe(
+      "/",
+    )
     expect(continueWithoutAccountTarget("http://localhost:3000/mps", "http://localhost:3000")).toBe(
       "back",
     )

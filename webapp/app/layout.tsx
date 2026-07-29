@@ -6,6 +6,7 @@ import { NavSidebar } from "@/components/nav-sidebar"
 import { AuthGuard } from "@/components/providers/auth-guard"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
+import { SavedLocaleSync } from "@/components/providers/saved-locale"
 import { SidebarProvider } from "@/components/providers/sidebar-provider"
 import { ThemeColorSync } from "@/components/providers/theme-color"
 import { ThemeProvider } from "@/components/providers/theme-provider"
@@ -162,6 +163,13 @@ export default async function RootLayout({
                   why the media-query entries in `viewport` cannot do this. */}
               <ThemeColorSync />
               <LocaleProvider initialLocale={locale}>
+                {/* Applies a language saved on the reader's account, for a
+                    signed-in reader who has not chosen one in this browser.
+                    Renders nothing; inside `LocaleProvider` because it calls
+                    into it, and inside `AuthProvider` because it subscribes to
+                    Convex. See components/providers/saved-locale.tsx for why it
+                    is not folded into the provider itself. */}
+                <SavedLocaleSync />
                 {/* Radix requires a `Tooltip` to have a provider above it, and
                     throws at *render* if it does not — which the typecheck
                     cannot see, so the page that forgot one blanks to the error

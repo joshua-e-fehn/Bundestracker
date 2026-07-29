@@ -8,6 +8,7 @@ import { SidebarAccount } from "@/components/sidebar-account"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   isActivePath,
+  NAV_ACCOUNT,
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
@@ -182,9 +183,37 @@ export function NavSidebar() {
           foot of the rail free for the thing an app shell conventionally puts
           there and this site had nowhere good for: the reader's own account.
           It is the header's `<UserMenu />` moved rather than copied — see
-          components/sidebar-account.tsx on why there is not one of each. */}
+          components/sidebar-account.tsx on why there is not one of each.
+
+          Settings sits directly above it rather than in one of the three
+          groups: it is the site's only destination whose subject is the reader
+          rather than the Bundestag, so it belongs beside their account and not
+          among the parliamentary sections. See `NAV_ACCOUNT`. Above the account
+          row rather than inside its dropdown, because that menu exists only
+          when signed in and the page's signed-out rendering — the one that
+          explains what an account is for — would then be unreachable by exactly
+          the readers it addresses.
+
+          ⚠ It is inside a `<nav>` of its own rather than a bare `<div>`. The
+          first version put it in this footer directly, which looks identical
+          and is not: a screen-reader user navigating by landmark would find
+          nine destinations in the primary navigation and no settings, because
+          a link outside every `<nav>` is not in any navigation as far as
+          assistive technology is concerned. Found by
+          scripts/verify-settings-follow.py, whose sidebar check is written as
+          `nav a[href="/settings"]` for exactly this reason.
+
+          A second landmark rather than moving the row up into the primary one:
+          the account is pinned to the rail's foot by the primary nav's
+          `flex-1`, and putting settings above that boundary would either
+          unpin the account or separate the two things this slot exists to
+          pair. Named, because a page with several `<nav>`s needs each labelled
+          or they all announce as "navigation". */}
       <div className="border-border/60 border-t p-2">
-        <SidebarAccount expanded={expanded} />
+        <nav aria-label={t("nav.accountArea")} className="grid gap-1">
+          <SidebarLink item={NAV_ACCOUNT} pathname={pathname} expanded={expanded} />
+          <SidebarAccount expanded={expanded} />
+        </nav>
       </div>
     </div>
   )

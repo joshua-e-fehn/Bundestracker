@@ -57,6 +57,31 @@ export function MPScorePanel({
   const [weights, setWeights] = useState<ScoreWeights | null>(null)
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle")
 
+  /**
+   * ⚠ A hydration guard, not a loading flag.
+   *
+   * The `session ?` branch below returns a `<button>` in one arm and an `<a>`
+   * in the other, at the same position. The server has no session, so its HTML
+   * always holds the link; if the client's first render saw a resolved session
+   * it would put a button there, and a differing element *type* at one position
+   * makes React throw #418, regenerate the tree and — in React 19 — detach
+   * `<head>`, after which the reader's next click anywhere on the site dies
+   * with a null `removeChild`. The full account is in
+   * components/sidebar-account.tsx.
+   *
+   * It has been unreachable rather than guarded: the `scores === undefined`
+   * branch above returns first, and `useQuery` resolves after hydration on both
+   * sides, so the session arm is never what hydrates. That is a real defence
+   * and a bad one to rely on — it makes this component's safety a property of
+   * an *unrelated* query's timing, which nothing states and no test holds. Two
+   * lines make it a property of this file instead. Added when
+   * components/sidebar-account.test.ts grew the filesystem check that reads
+   * every component branching on `authClient.useSession()`, which is what
+   * found it.
+   */
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   // Adopts the saved weights once they arrive, and only while the sliders are
   // untouched. Without the null guard a slow preferences query would snap a
   // slider back mid-drag; with it, the user's own adjustment always wins.
@@ -162,7 +187,12 @@ export function MPScorePanel({
             }}
           />
 
-          {session ? (
+          {/* `mounted &&` pins the first client render to the server's branch —
+              see the ⚠ above. It is the same shape components/sign-in-panel.tsx
+              uses, rather than an early return, because only this section
+              depends on the session: the score, the breakdown and the sliders
+              above it render identically either way and must not wait. */}
+          {mounted && session ? (
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"

@@ -7,6 +7,7 @@ import {
   allNavItems,
   isActiveGroup,
   isActivePath,
+  NAV_ACCOUNT,
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
@@ -139,6 +140,21 @@ describe("the tree covers the site", () => {
     const headings = NAV_GROUPS.length
     const estimatedHeight = rows * 36 + headings * 28 + headings * 12
     expect(estimatedHeight).toBeLessThan(640)
+  })
+
+  test("settings is reachable, and from outside the three groups", () => {
+    // The route the 2026-07-29 audit found had never existed (GAP-007), under a
+    // backend that had. It is in the tree — the filesystem check above would
+    // fail otherwise — but *where* is the decision worth pinning: it is the
+    // site's only destination whose subject is the reader rather than the
+    // Bundestag, so it sits in the shell's account slot. Folding it into
+    // "Einordnung" would put a personal setting among the pages that explain
+    // what the figures mean.
+    expect(allNavItems()).toContain(NAV_ACCOUNT)
+    expect(NAV_ACCOUNT.href).toBe("/settings")
+    for (const group of NAV_GROUPS) {
+      expect(group.items.map((item) => item.href)).not.toContain(NAV_ACCOUNT.href)
+    }
   })
 })
 
@@ -341,6 +357,11 @@ describe("isActiveGroup", () => {
   const decisions = NAV_GROUPS.find((group) => group.id === "decisions")
   const people = NAV_GROUPS.find((group) => group.id === "people")
 
+  /** The entries that live outside `NAV_GROUPS`, named once rather than
+   * enumerated inline in each test — the list has grown from two to three, and
+   * a fourth would otherwise be added to one assertion and not the other. */
+  const UNGROUPED = new Set([NAV_PRIMARY.href, NAV_SEARCH.href, NAV_ACCOUNT.href])
+
   test("a group is active when the reader is on one of its entries", () => {
     expect(isActiveGroup("/votes", decisions!)).toBe(true)
     expect(isActiveGroup("/mps", people!)).toBe(true)
@@ -363,7 +384,7 @@ describe("isActiveGroup", () => {
     // which is the ambiguity the "no destination appears twice" test forbids —
     // asserted here from the reader's side rather than the data's.
     for (const item of allNavItems()) {
-      if (item.href === NAV_PRIMARY.href || item.href === NAV_SEARCH.href) continue
+      if (UNGROUPED.has(item.href)) continue
       const active = NAV_GROUPS.filter((group) => isActiveGroup(item.href, group))
       expect({ href: item.href, activeGroups: active.length }).toEqual({
         href: item.href,
@@ -372,12 +393,20 @@ describe("isActiveGroup", () => {
     }
   })
 
-  test("no group claims the overview or the search page", () => {
-    // Both sit outside the groups by design. If a later edit moved one into a
-    // group, the bar would show two active markers at once on that route.
+  test("no group claims an entry that sits outside the groups", () => {
+    // All three sit outside by design, each for its own reason — the overview
+    // is all three groups at once, search is a box in the header, and settings
+    // is about the *reader* rather than about the Bundestag (see
+    // `NAV_ACCOUNT`). If a later edit moved one into a group, the bar would
+    // show two active markers at once on that route.
     for (const group of NAV_GROUPS) {
-      expect(isActiveGroup(NAV_PRIMARY.href, group)).toBe(false)
-      expect(isActiveGroup(NAV_SEARCH.href, group)).toBe(false)
+      for (const href of UNGROUPED) {
+        expect({ href, group: group.id, active: isActiveGroup(href, group) }).toEqual({
+          href,
+          group: group.id,
+          active: false,
+        })
+      }
     }
   })
 })

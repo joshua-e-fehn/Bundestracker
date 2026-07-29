@@ -8,6 +8,7 @@ import {
   LayoutDashboardIcon,
   ScaleIcon,
   SearchIcon,
+  SettingsIcon,
   TrophyIcon,
   UsersIcon,
   VoteIcon,
@@ -210,6 +211,35 @@ export const NAV_SEARCH: NavItem = {
   descriptionKey: "nav.searchHint",
 }
 
+/**
+ * Settings: beside the account, not inside a group.
+ *
+ * The one destination on this site that is about the *reader* rather than about
+ * the Bundestag. Every entry in `NAV_GROUPS` answers a question with a
+ * parliamentary subject — who, what they decided, what it means — and the
+ * grouping rule above says a page that would need a fourth group is a sign the
+ * site has grown a new kind of thing. It has: this is that thing, and there is
+ * exactly one of it, so it sits in the shell's account slot rather than being
+ * given a group of its own for one row.
+ *
+ * Rendered above `SidebarAccount` at the foot of the rail and of the mobile
+ * drawer — the slot the account already owns, so the reader's own two concerns
+ * are adjacent. Not *inside* the account dropdown, which would be the other
+ * convention: that menu only exists once you are signed in, and the page's
+ * signed-out rendering (which explains what an account is for) would then be
+ * reachable only by people who no longer need it.
+ *
+ * `NAV_PRIMARY` and `NAV_SEARCH` sit outside the groups for their own reasons
+ * and this is the third; `isActiveGroup` must keep answering `false` for all
+ * three, or a route outside the groups would light one of them up.
+ */
+export const NAV_ACCOUNT: NavItem = {
+  href: "/settings",
+  labelKey: "settings.title",
+  icon: SettingsIcon,
+  descriptionKey: "nav.settingsHint",
+}
+
 /** Every leaf in the tree, flattened — children included. The order is the
  * reading order of the navigation itself, so a test that walks this walks what
  * a reader sees. */
@@ -222,6 +252,7 @@ export function allNavItems(): NavItem[] {
     }
   }
   out.push(NAV_SEARCH)
+  out.push(NAV_ACCOUNT)
   return out
 }
 

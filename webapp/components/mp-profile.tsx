@@ -3,6 +3,7 @@
 import { ArrowDownIcon, ExternalLinkIcon } from "lucide-react"
 import Link from "next/link"
 import { ActivityHeatmap } from "@/components/activity-heatmap"
+import { FollowButton } from "@/components/follow-button"
 import { FraktionBadge } from "@/components/fraktion-badge"
 import { MPCommittees } from "@/components/mp-committees"
 import { MPPhoto, MPPhotoCredit } from "@/components/mp-photo"
@@ -152,6 +153,27 @@ export function MPProfile({
                   label on a row — and displaying the credit is the condition on
                   which it may be shown at all (convex/schema.ts:207). */}
               <MPPhotoCredit photoUrl={mp.photoUrl} credit={mp.photoCredit} />
+
+              {/* Follow, in the identity card and under the name it is about.
+                  This is the surface the product promise names — an account
+                  "lets you follow individual members" — and it belongs here
+                  rather than in the score panel opposite: following is a
+                  statement about the *person*, and the panel is about the
+                  arithmetic over their record.
+
+                  Self-fetching (`isFollowing`) rather than reading the whole
+                  follow list, because this page shows exactly one MP. A list
+                  passes the answer in instead; see components/follow-button.tsx.
+
+                  `size="default"` — this is the page's one follow control, not
+                  a cell in a row, so it gets the standard target rather than
+                  the compact one the roster uses. */}
+              <FollowButton
+                mpInternalId={mp.internalId}
+                name={mp.name}
+                size="default"
+                className="items-center"
+              />
 
               {/* The jump to the card two hundred pixels below. It is in the
                   identity card rather than beside the name because that is the
