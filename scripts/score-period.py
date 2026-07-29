@@ -115,6 +115,69 @@ def scored_rows(wahlperiode: int, month: str | None) -> int:
     return len(seen)
 
 
+def mandate_rows(wahlperiode: int) -> int:
+    """How many `mps` rows the period has — the number `cursor` indexes into.
+
+    ⚠ Not `getChamberStats().mps.count`, which is the **seat** count: it returns
+    `peakConcurrentMandates`, the most mandates that overlapped on any one day
+    (convex/stats.ts). For WP20 that is 736 against 772 rows, because a seat
+    vacated mid-period and refilled is two mandates and one seat. `cursor` walks
+    `by_wahlperiode_and_fraktion`, which holds a row per *mandate*, so sizing
+    the range by seats stops 36 rows short — and silently, since every slice
+    still answers 200.
+
+    Read off the roster query, which pages, rather than off a count that
+    reconciles rows to seats. `getMPs` is capped at `MAX_PAGE` per call and
+    offers no cursor, so a period past 700 mandates is walked by Fraktion —
+    each is well under the cap and together they partition the roster.
+    """
+    body = post(
+        QUERY_URL,
+        {
+            "path": "mps:getMPs",
+            "args": {"wahlperiode": wahlperiode, "limit": MAX_PAGE},
+            "format": "json",
+        },
+        {"Content-Type": "application/json"},
+        timeout=120,
+    )
+    if body.get("status") != "success":
+        raise RuntimeError(f"getMPs failed: {body.get('errorMessage', body)}")
+    rows = body["value"]
+    if len(rows) < MAX_PAGE:
+        return len(rows)
+
+    # The page filled, so there may be more. Sum the Fraktionen instead: the
+    # same index, sliced by a field that partitions it.
+    fraktionen = {row["fraktion"] for row in rows}
+    seen: set[str] = set()
+    for fraktion in fraktionen:
+        body = post(
+            QUERY_URL,
+            {
+                "path": "mps:getMPs",
+                "args": {
+                    "wahlperiode": wahlperiode,
+                    "fraktion": fraktion,
+                    "limit": MAX_PAGE,
+                },
+                "format": "json",
+            },
+            {"Content-Type": "application/json"},
+            timeout=120,
+        )
+        if body.get("status") != "success":
+            raise RuntimeError(f"getMPs failed: {body.get('errorMessage', body)}")
+        page = body["value"]
+        if len(page) >= MAX_PAGE:
+            raise RuntimeError(
+                f"WP{wahlperiode} Fraktion {fraktion!r} filled a {MAX_PAGE}-row page; "
+                "the roster cannot be counted exactly this way."
+            )
+        seen.update(row["internalId"] for row in page)
+    return len(seen)
+
+
 class Scorer:
     def __init__(self, wahlperiode: int, workers: int) -> None:
         settings = get_settings()
@@ -172,20 +235,7 @@ def main() -> int:
     months = months_in(*PERIOD_WINDOWS[options.wp])
     scorer = Scorer(options.wp, options.workers)
 
-    # The roster size sets the cursor range, and it is read rather than assumed:
-    # a period whose ingest is still running has fewer rows than it will have,
-    # and scoring against a stale count would silently skip the tail.
-    body = post(
-        QUERY_URL,
-        {
-            "path": "stats:getChamberStats",
-            "args": {"wahlperiode": options.wp},
-            "format": "json",
-        },
-        {"Content-Type": "application/json"},
-        timeout=120,
-    )
-    roster = int(body["value"]["mps"]["count"])
+    roster = mandate_rows(options.wp)
     if roster == 0:
         print(
             f"WP{options.wp} has no roster — ingest it before scoring.", file=sys.stderr
