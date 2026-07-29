@@ -377,6 +377,46 @@ class MPResolver:
         )
         return None
 
+    def resolve_listed_name(
+        self, nachname: str, vorname: str, particle: str | None = None, context: str | None = None
+    ) -> str | None:
+        """One bundestag.de listing entry → an internal id, quarantining a miss.
+
+        The enrichment join, and the third call site that both resolves and
+        quarantines — alongside `resolve_vote_record` and `resolve_speaker_id`,
+        and for the same reason each of those does. The listing is the
+        Bundestag's **own** roster of the sitting chamber, so a name in it that
+        resolves to nobody is not a stray: it is a member the Stammdaten
+        snapshot has not caught up with (§7.3), and the next dump is what fixes
+        it. Logging that and moving on left those MPs permanently unenriched,
+        because nothing re-examined them once the dump caught up — the stage
+        note claimed the quarantine retried them and no code put them there.
+
+        Quarantined under `mp-listing` rather than folded into `vote-sheet`:
+        the two carry different consequences. A missing vote row is a lost
+        ballot; a missing listing entry is a missing portrait, which the UI
+        already degrades for. Keeping them apart lets `for_source` answer
+        either question, and stops an enrichment gap inflating the count that
+        signals a vote was dropped.
+        """
+        internal = self.resolve_printed_name(nachname, vorname, particle)
+        if internal is not None:
+            return internal
+        candidates = self._names.candidates(nachname, vorname, particle)
+        self.quarantine.add(
+            QuarantinedName(
+                source="mp-listing",
+                nachname=nachname,
+                vorname=vorname,
+                particle=particle,
+                wahlperiode=self.wahlperiode,
+                context=context,
+                reason="ambiguous" if candidates else "unmatched",
+                candidates=sorted(candidates),
+            )
+        )
+        return None
+
     def link_dip_persons(self, persons: Iterable[Person]) -> DIPLinkReport:
         """Match DIP person records onto the roster by folded name (§7.2).
 
@@ -515,8 +555,13 @@ def _build_person_name_index(population: list[MP]) -> dict[tuple[str, str], set[
     index: dict[tuple[str, str], set[str]] = {}
     for mp in population:
         for name in mp.names:
-            key = (fold_name(name.nachname), fold_name(name.vorname))
-            index.setdefault(key, set()).add(mp.id)
+            # The forename varies here as it does in `NameIndex`, and for the
+            # same reason: Stammdaten stores `Philip M. A.` where DIP may print
+            # `Philip`. The *surname* deliberately does not — see the field
+            # comment on `_dip_name_index` for why this index is narrower.
+            for forename in name.forename_variants():
+                key = (fold_name(name.nachname), fold_name(forename))
+                index.setdefault(key, set()).add(mp.id)
     return index
 
 

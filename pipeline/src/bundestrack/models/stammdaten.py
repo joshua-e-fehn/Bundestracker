@@ -25,6 +25,7 @@ Two structural traps this module exists to absorb:
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from datetime import date
 from typing import Literal
@@ -63,6 +64,17 @@ FULL_MEMBER_ROLES = frozenset(
         "Obfrau",
     }
 )
+
+
+#: Middle initials trailing a forename — the `M. A.` of `Philip M. A.`.
+#:
+#: ⚠ **Both the anchor and the period are load-bearing**, for the reason
+#: `models.enrichment.ACADEMIC_TITLE` states in capitals about its own pattern.
+#: Unanchored, this matches the `A.` beginning `A. Beatrix` and truncates the
+#: forename to nothing; without the required period it matches the `Maria` of
+#: `Anna Maria` and silently merges two distinct given names. Anchored and
+#: period-bound, it matches exactly what the Bundestag prints as an initial.
+TRAILING_INITIALS = re.compile(r"(?:\s+[A-Za-zÄÖÜäöüß]\.)+$")
 
 
 def parse_german_date(value: str | None) -> date | None:
@@ -153,6 +165,30 @@ class MPName(BaseModel):
             return bases
         # `ortszusatz` already carries its parentheses — see the field comment.
         return bases | {f"{base} {self.ortszusatz}".strip() for base in bases}
+
+    def forename_variants(self) -> set[str]:
+        """Every spelling of the forename a join might have to match.
+
+        The forename as stored, plus — when it ends in initials — the same
+        string with them dropped. Stammdaten writes `Philip M. A.` where a
+        source that prints only the first given name writes `Philip`, and the
+        two are the same human.
+
+        The initials are stripped from the *stored* side rather than from the
+        printed one, which is the direction that keeps the strict spelling
+        working: both keys are indexed, so `Philip M. A.` and `Philip` each
+        resolve, where normalising the query alone would break the source that
+        does print them in full.
+
+        Anchored at the end and requiring the period, for the reason
+        `models.enrichment.ACADEMIC_TITLE` carries in capitals: an unanchored
+        single-letter rule eats the `A` of `A. Beatrix`, and a rule not
+        requiring the period truncates `Anna Maria` to `Anna`. Measured across
+        WP18–21: 2 WP21 forenames end in initials, and indexing both spellings
+        adds **no** ambiguous key in any of the four periods.
+        """
+        reduced = TRAILING_INITIALS.sub("", self.vorname).strip()
+        return {self.vorname} if not reduced or reduced == self.vorname else {self.vorname, reduced}
 
 
 class CommitteeMembership(BaseModel):
@@ -400,10 +436,17 @@ class NameIndex:
     def _build(index: dict[tuple[str, str], set[str]], population: list[MP]) -> None:
         for mp in population:
             for name in mp.names:
+                # Both axes vary: the surname across particles and the
+                # Ortszusatz (§7.1), the forename across trailing initials.
+                # Indexing the product means a source that prints either
+                # spelling resolves without the *query* being normalised, which
+                # is what keeps the strict form working for sources that print
+                # it in full.
                 for surname in name.surname_variants():
-                    index.setdefault((fold_name(surname), fold_name(name.vorname)), set()).add(
-                        mp.id
-                    )
+                    for forename in name.forename_variants():
+                        index.setdefault((fold_name(surname), fold_name(forename)), set()).add(
+                            mp.id
+                        )
 
     def lookup(self, nachname: str, vorname: str, particle: str | None = None) -> str | None:
         """The Stammdaten id for a printed name, or None.
