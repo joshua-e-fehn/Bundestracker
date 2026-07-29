@@ -143,13 +143,25 @@ export function SiteHeader() {
           href="/"
           className="mr-2 flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {/* 28 px, up from 20. The mark is a detailed raster emblem — an eagle
-              inside a ring, with the flag's three colours banded across the
-              feathers — and at 20 px none of that resolved: it read as a gold
-              dot. 28 px is the largest that still clears the 56 px bar with
-              breathing room, and it is what makes the mark legible as itself
-              rather than as a favicon that wandered into the page. */}
-          <BrandMark className="size-7" />
+          {/* A ramp — 28 px, 32 px from `sm`, 36 px from `lg` — where this was a
+              flat 28 (itself up from 20, when the mark was a gold dot rather
+              than an eagle inside a ring with the flag's colours banded across
+              the feathers).
+
+              Flat 28 was sized for the narrowest viewport and then left there
+              for every other one. It is the right floor: at 320 px the brand
+              shares the bar with four controls, and the mark is `shrink-0`
+              inside a truncating box, so every pixel it gains is a pixel the
+              wordmark loses. But a desktop bar has room the phone does not, and
+              spending none of it kept the emblem's detail — the ring, the
+              feather bands — at phone resolution on a 1440 px screen.
+
+              36 px is the ceiling, not a preference: the bar is `h-14`, so at
+              36 the mark keeps 10 px of clearance above and below and stays
+              optically centred against the 28 px line-box of the wordmark
+              beside it. Anything larger starts setting the bar's height itself,
+              which would move the search box and the three controls with it. */}
+          <BrandMark className="size-7 sm:size-8 lg:size-9" />
           {/* The wordmark, and the two changes that make it one:
 
               — `text-lg`, up from `text-base`. The site's name should out-set

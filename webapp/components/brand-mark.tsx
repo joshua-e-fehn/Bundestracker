@@ -24,6 +24,22 @@ import { cn } from "@/lib/utils"
  *
  * `aria-hidden` throughout: every call site renders the wordmark as text beside
  * it, so naming the mark too would have a screen reader announce the site twice.
+ *
+ * ## Why there is a `srcSet` and not just a `src`
+ *
+ * The largest call site is the home page's frontispiece, which now runs to 144
+ * px (app/page.tsx). On a 2× display that asks for 288 device pixels from a 256
+ * px source — an upscale, and precisely on the emblem whose fine detail (the
+ * ring, the hairline feather bands) is the reason for rendering it large at
+ * all. `logo-512.webp` already exists beside it for the same artwork, so the
+ * fix is to describe both and let the browser choose by density rather than to
+ * pick one file here and be wrong on half the screens.
+ *
+ * Density descriptors rather than `w` + `sizes`: this is a square mark laid out
+ * by `size-*`, so its CSS width is fixed by class and not by the viewport, and
+ * `sizes` would be restating what the class already says. The cost of the 512
+ * is paid only where a device actually resolves it — a 1× phone still fetches
+ * the 256, which is the file every call site used before.
  */
 export function BrandMark({ className }: { className?: string }) {
   return (
@@ -31,6 +47,7 @@ export function BrandMark({ className }: { className?: string }) {
     // need for the Image component's optimisation pipeline at these sizes.
     <img
       src="/logo-256.webp"
+      srcSet="/logo-256.webp 1x, /logo-512.webp 2x"
       alt=""
       aria-hidden="true"
       className={cn("size-5 shrink-0", className)}

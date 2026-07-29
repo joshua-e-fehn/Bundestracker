@@ -154,14 +154,27 @@ function Opening() {
 
   return (
     <header className="grid max-w-3xl gap-6">
-      {/* 80 px on a phone, 112 px from `sm` up — was a flat 64. This is a title
-          page and the mark is its frontispiece; the emblem's detail (the ring,
-          the banded feathers) only resolves at this size. It is `size-*` on a
-          square image, so it cannot widen the grid track the `<h1>` shares: 112
-          px is well inside even the 288 px content box at 320 px, and the step
-          below keeps the mark from taking a fifth of a small phone's first
-          screen before the title has been read. */}
-      <BrandMark className="size-20 text-gold-brand sm:size-28" />
+      {/* 96 px on a phone, 128 px from `sm`, 144 px from `lg` — was 80/112, and
+          a flat 64 before that. This is a title page and the mark is its
+          frontispiece; the emblem's detail (the ring, the banded feathers) is
+          the reason for every step of that ramp.
+
+          The three-step shape is the point rather than one large number. The
+          `sm` step already existed and is load-bearing — it is what keeps the
+          mark from taking a fifth of a small phone's first screen before the
+          title has been read — so growth on a phone is the smaller share (+16
+          px) and the desktop, which has a whole title page to fill, takes the
+          rest. `lg` is added below the existing hierarchy rather than in place
+          of it, matching the header's own 28/32/36 ramp.
+
+          Overflow is unchanged at every width, and by construction rather than
+          by measurement: it is `size-*` on a square image in a grid track it
+          shares with the `<h1>`, so it can only widen that track by exceeding
+          it, and 144 px is half of even the 288 px content box a 320 px
+          viewport leaves (`px-4` a side) — where the ramp is at 96 px anyway.
+          The `<h1>`'s own 325 px min-content floor at `text-6xl` is what
+          actually governs this column; see its note below. */}
+      <BrandMark className="size-24 text-gold-brand sm:size-32 lg:size-36" />
 
       <div className="grid gap-3">
         {/* The document's own title above the site's name, in the gold ink
