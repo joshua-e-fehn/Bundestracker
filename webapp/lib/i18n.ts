@@ -668,8 +668,6 @@ const de = {
     "Erneute Änderung des Bundeswahlgesetzes — eine Entscheidung darüber, nach welchen Regeln die Mandate vergeben werden, getroffen von den Inhaberinnen und Inhabern dieser Mandate.",
   "votes.ownResources.rationale.wahlpruefung20":
     "Wahlprüfung: Der Bundestag entscheidet über Einsprüche gegen die Gültigkeit der Wahl, aus der er selbst hervorgegangen ist.",
-  "votes.ownResources.rationale.wahlrecht21":
-    "Antrag zur Reform des Wahlrechts: erneut eine Abstimmung über die Regeln, nach denen die Abstimmenden ihr Mandat erhalten haben.",
   "votes.ownResources.rationale.wahlpruefung21":
     "Zurückweisung von Einsprüchen gegen die Bundestagswahl — der Bundestag befindet über die Rechtmäßigkeit seiner eigenen Zusammensetzung.",
 
@@ -2091,8 +2089,6 @@ const en: Dictionary = {
     "A further amendment to the Federal Elections Act — a decision on the rules by which mandates are allocated, taken by the holders of those mandates.",
   "votes.ownResources.rationale.wahlpruefung20":
     "Election scrutiny: the Bundestag ruling on objections to the validity of the election that produced it.",
-  "votes.ownResources.rationale.wahlrecht21":
-    "A motion to reform the electoral law: again a vote on the rules under which those voting obtained their seats.",
   "votes.ownResources.rationale.wahlpruefung21":
     "Rejection of objections to the federal election — the Bundestag ruling on the lawfulness of its own composition.",
 

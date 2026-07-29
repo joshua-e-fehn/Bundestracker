@@ -93,7 +93,6 @@ export type OwnResourceRationaleKey =
   | "votes.ownResources.rationale.wahlrecht20"
   | "votes.ownResources.rationale.wahlrechtBundeswahlgesetz20"
   | "votes.ownResources.rationale.wahlpruefung20"
-  | "votes.ownResources.rationale.wahlrecht21"
   | "votes.ownResources.rationale.wahlpruefung21"
 
 /**
@@ -129,14 +128,23 @@ export type OwnResourceRationaleKey =
  * votes and destroy the only thing it is for.
  */
 export const OWN_RESOURCE_VOTES: readonly OwnResourceVote[] = [
-  {
-    // "Antrag zur Reform des Wahlrechts", 2026-07-02.
-    wahlperiode: 21,
-    sitzungnr: 91,
-    abstimmnr: 2,
-    topic: "electoral-law",
-    rationaleKey: "votes.ownResources.rationale.wahlrecht21",
-  },
+  // ⚠ (21, 91, 2) "Antrag zur Reform des Wahlrechts" was removed on 2026-07-29.
+  // It was never a Bundestag division: `scripts/seed-local.ts` fabricated it,
+  // that script was once run against production, and the row survived the
+  // cleanup in convex/purgeSeed.ts — which deletes the seeder's *records* by
+  // walking its synthetic mandates and deliberately does not touch `voteSheets`
+  // (see the note at purgeSeed.ts on the first seeded ballot colliding with a
+  // real one). The tell is `totalEligible: 12`, the seeder's roster size: it is
+  // the only sheet in the 254-ballot corpus under 100, every real one being 628,
+  // 630 or 736. Its twelve votes were purged, so the card published a tally of
+  // 6/3/1 that nobody cast, above an empty voter table.
+  //
+  // This is the failure mode the header warns about from the other direction:
+  // every entry here "was checked against the ingested corpus by its natural
+  // key", and this one passed that check because the corpus itself held a
+  // fabrication. A natural key proves a row exists; it does not prove the row is
+  // a record of anything. Curating against a deployment that has ever been
+  // seeded needs the stronger test — `sourceUrl`, or a plausible electorate.
   {
     // "Zurückweisung von Einsprüchen gegen die Bundestagswahl", 2025-12-18.
     wahlperiode: 21,

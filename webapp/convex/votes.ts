@@ -981,6 +981,20 @@ export function dissentFlagsFor(
 }
 
 /**
+ * How many ballots a deployment must hold before `getVoteSheetById` will
+ * describe an id it cannot find as "no such division".
+ *
+ * A number rather than a boolean because the failure this guards against is not
+ * an *empty* deployment but a *wrong* one, and the wrong ones are not empty:
+ * the sibling this build has been pointed at holds six `(Testdaten)` sheets.
+ * Twenty sits far above any fixture and far below a real period — production
+ * carries 69 ballots for WP21 and 185 for WP20 — so the guard fires on a test
+ * deployment and never on a real one, including early in a period when the
+ * corpus is still small.
+ */
+const MIN_REAL_CORPUS = 20
+
+/**
  * One ballot by its Convex id, with every record joined to its voter — what
  * `/votes/[id]` renders.
  *
@@ -1032,7 +1046,37 @@ export const getVoteSheetById = query({
   ),
   handler: async (ctx, args) => {
     const sheet = await ctx.db.get(args.id)
-    if (!sheet) return null
+    if (!sheet) {
+      // "No such ballot" and "you are asking the wrong backend" are different
+      // failures wearing the same `null`, and the route turns that null into
+      // "Diese Abstimmung existiert nicht" — a factual claim about the
+      // parliamentary record. Against a deployment that does not hold the
+      // corpus, that claim is false for *every* id, and nothing looks broken:
+      // the shell renders, the nav renders, nothing is logged.
+      //
+      // ⚠ The check is "does this deployment hold the corpus", not "is the table
+      // empty". The sibling deployment this has actually been pointed at is not
+      // empty — it carries six `Namentliche Abstimmung N (Testdaten)` sheets
+      // with an electorate of 125 — so an emptiness test would pass there and
+      // the lie would go on being told. A real period has hundreds of divisions
+      // against a chamber of 600+; `MIN_REAL_CORPUS` is set well below that and
+      // well above any fixture.
+      //
+      // A throw rather than a second return shape: this is a misconfiguration,
+      // not a state the UI should learn to render. It surfaces as the error
+      // boundary, which is what a wrong backend deserves, and leaves
+      // `notFound()` for the case it actually describes. One indexed read.
+      const corpus = await ctx.db.query("voteSheets").withIndex("by_date").take(MIN_REAL_CORPUS)
+      if (corpus.length < MIN_REAL_CORPUS) {
+        throw new Error(
+          `voteSheets holds ${corpus.length} ballots, fewer than the ${MIN_REAL_CORPUS} a real ` +
+            "corpus has — this deployment does not carry the Bundestag record, so no vote id " +
+            "can resolve. Refusing to report a real division as nonexistent. Check " +
+            "NEXT_PUBLIC_CONVEX_URL (see webapp/lib/convex-url.ts).",
+        )
+      }
+      return null
+    }
 
     // Bounded by the chamber: 630-odd rows for one ballot, well inside the
     // read limit, and a page of a ballot is not a useful thing to return.
