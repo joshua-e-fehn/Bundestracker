@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Validator } from "convex/values"
-import { mpDoc } from "./mps"
+import { mpDoc, photoFields } from "./mps"
 import schema, { mpInput } from "./schema"
 
 /**
@@ -112,6 +112,44 @@ describe("the mps read shape", () => {
     // `getMPs` would start rejecting its own response for un-enriched rows.
     expect(isOptional(mpInput, "photoUrl")).toBe(true)
     expect(isOptional(mpDoc, "photoUrl")).toBe(false)
+  })
+
+  test("the other four enrichment columns stay optional on the way out too", () => {
+    // Not an oversight, and asserted so that it reads as a decision rather than
+    // as one column having been normalised and the rest forgotten.
+    //
+    // `photoUrl` is normalised because its consumers are typed `string | null`
+    // and rendering a portrait is the one thing that goes visibly wrong. The
+    // other four are modelled `?:` all the way out to `MPDoc`
+    // (components/mp-profile.tsx) and every use narrows on truthiness, which
+    // handles all three states — so widening them here would buy nothing and
+    // cost a normalisation pass over every row.
+    //
+    // The load-bearing part is that this is checked at all: an optional column
+    // read back yields `undefined`, so any *new* consumer that declares one of
+    // these total in its own `returns` validator 500s the query for exactly the
+    // rows the pipeline chose to stay silent about. `photoFields` below is the
+    // precedent — it declares `photoCredit` total, which is safe only because
+    // its consumers feed it through `mpLabel`.
+    for (const column of ["photoCredit", "education", "occupation", "contact"]) {
+      expect(isOptional(mpDoc, column)).toBe(true)
+    }
+  })
+
+  test("photoFields is total, so its consumers must normalise", () => {
+    // `photoFields` (mps.ts) declares both columns `v.union(v.null(), …)` with
+    // no `v.optional`, and five queries return it. That is a live constraint
+    // rather than a style choice: a query spreading a raw `Doc<"mps">` into
+    // this validator fails at runtime for any row whose key is absent, with a
+    // bare "Server Error" naming neither the field nor the function.
+    //
+    // The rule that keeps it safe is that every consumer resolves the pair
+    // through `mpLabel` (which applies `?? null`) or guards with an explicit
+    // `?? null`. This test pins the premise; if `photoFields` ever becomes
+    // optional, the guards are redundant and this comment is stale.
+    for (const column of ["photoUrl", "photoCredit"]) {
+      expect(isOptional(photoFields, column)).toBe(false)
+    }
   })
 
   test("the schema is the source of truth this is checked against", () => {

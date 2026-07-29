@@ -148,7 +148,19 @@ export async function mpLabel(
 
 /** The pair every portrait is rendered from. Declared once so a query returning
  * a photo cannot omit the credit by leaving a field out of its validator — the
- * type error is the point. */
+ * type error is the point.
+ *
+ * ⚠ **Both are total here while both are `v.optional` in storage**, so a query
+ * answering with this validator must not project a `Doc<"mps">` straight into
+ * it: a row the pipeline left un-enriched has the key *absent*, that reads back
+ * as `undefined`, and `undefined` fails this validator — taking down the whole
+ * query with a bare "Server Error" naming neither field nor function
+ * (convex/schema.ts:210, and cf. `activityEvents.test.ts`). Feed the row through
+ * `mpLabel` above, which applies `?? null` to both, or guard the projection with
+ * an explicit `?? null` as `rankings.ts`, `search.ts`, `parties.ts` and
+ * `userPreferences.ts` do. `tsc` will not catch the omission, because the
+ * generated `Doc` type says `photoUrl?: string | null` and a spread drops the
+ * key silently. */
 export const photoFields = {
   photoUrl: v.union(v.null(), v.string()),
   photoCredit: v.union(v.null(), v.string()),

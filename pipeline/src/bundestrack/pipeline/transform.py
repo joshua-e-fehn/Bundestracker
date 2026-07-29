@@ -314,8 +314,17 @@ def mp_payload(
     occupation = clean_text(enrichment.occupation) if enrichment else None
     if occupation is not None:
         payload["occupation"] = occupation
-    if enrichment and enrichment.contact:
-        payload["contact"] = contact_payload(enrichment.contact)
+    # Built first and tested afterwards, rather than gated on
+    # `if enrichment.contact:`. An `MPContact` is a pydantic model with no
+    # `__bool__`, so an *empty* one is truthy while `contact_payload` maps it to
+    # None — a guard on the model would therefore have written `contact: None`
+    # for exactly the MPs whose biography page was fetched and published
+    # nothing, which `_load_contacts` counts separately for that reason (10 of
+    # 635 in the WP19 backfill). That is the same erasing write this function
+    # exists to avoid, so the test is on the payload the way it is two lines up.
+    contact = contact_payload(enrichment.contact) if enrichment else None
+    if contact is not None:
+        payload["contact"] = contact
     return payload
 
 

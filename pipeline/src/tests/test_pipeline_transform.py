@@ -22,6 +22,7 @@ from bundestrack.api.protocols import ProtocolClient
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import parse_sheet
 from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang
+from bundestrack.models.enrichment import MPContact
 from bundestrack.models.votes import Vote
 from bundestrack.pipeline import transform
 from bundestrack.pipeline.join import MPResolver
@@ -173,6 +174,56 @@ def test_an_unenriched_roster_payload_omits_the_enrichment_columns(resolver) -> 
 
     for enriched in ("photoUrl", "photoCredit", "education", "occupation", "contact"):
         assert enriched not in bilger, enriched
+
+
+def test_an_empty_contact_block_is_omitted_rather_than_sent_as_null(resolver) -> None:
+    """A fetched-but-empty page must read as "nothing to say", not as "clear it".
+
+    The trap is that `MPContact` is a pydantic model with no `__bool__`, so an
+    empty one is **truthy** while `contact_payload` maps it to None. Guarding
+    on the model rather than on the built payload therefore emits
+    `contact: None` — which the Convex `patch` applies as an erasure — for the
+    one case where the pipeline knows least.
+
+    Asserted at this boundary as well as in `test_pipeline_sync.py` because
+    this is where the value is built: a sync-level test can only observe the
+    payload the transform chose to emit.
+    """
+    resolver.attach_enrichment(
+        [transform.contact_enrichment("bt-11004011", MPContact())],
+    )
+
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+
+    assert "contact" not in payloads["bt-11004011"]
+
+
+def test_a_contact_block_with_only_a_form_url_is_still_written(resolver) -> None:
+    """Sparse is not empty — the boundary the omission must not swallow.
+
+    Roughly half of MPs list no constituency office and many list no socials,
+    so a block holding nothing but the Bundestag's own contact form is the
+    *typical* answer rather than a degenerate one: 623 of 635 carried one. An
+    omission rule that keyed on "fewer than N fields" would drop the majority
+    case, so it keys on `MPContact.is_empty` alone.
+    """
+    resolver.attach_enrichment(
+        [
+            transform.contact_enrichment(
+                "bt-11004011",
+                MPContact(
+                    form_url="https://www.bundestag.de/services/formular/contactform?mdbId=1"
+                ),
+            )
+        ],
+    )
+
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+    contact = payloads["bt-11004011"]["contact"]
+
+    assert contact["formUrl"].endswith("mdbId=1")
+    assert contact["constituencyOffice"] is None
+    assert contact["socials"] == []
 
 
 def test_the_display_name_carries_the_ortszusatz_because_it_disambiguates(

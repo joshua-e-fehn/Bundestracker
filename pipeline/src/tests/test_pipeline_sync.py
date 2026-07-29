@@ -373,6 +373,45 @@ def test_a_portrait_only_refresh_leaves_the_contact_block_alone() -> None:
     assert "contact" not in bilger, "a fresh contact block would be cleared"
 
 
+def test_a_biography_page_that_published_nothing_omits_the_contact_block() -> None:
+    """The narrower half of the same erasure, and the one a truthiness guard misses.
+
+    `MPContact` is a pydantic model with no `__bool__`, so an **empty** one is
+    truthy while `contact_payload` maps it to None. A guard written as
+    `if enrichment.contact:` therefore passes the empty case straight through
+    and writes `contact: None` — the destructive payload — for exactly the MPs
+    whose page was fetched and published nothing.
+
+    That is not a hypothetical edge: `_load_contacts` fetches a page for every
+    due MP and counts the empty results separately, and the WP19 backfill log
+    records `635 biography pages fetched, 625 with published details`. Those
+    ten took this path in one real run.
+
+    Asserted across *every* roster post rather than the last, because the
+    erasing write is stage 1's and a later post carrying the right thing does
+    not undo a `patch` that already cleared the column.
+    """
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    # The default `fetch_contact` already returns an empty `MPContact`; naming
+    # it here is the point of the test rather than an implementation detail.
+    profiles.contacts[url] = MPContact()
+    pipeline, loader = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"]
+    assert bilger, "the roster post is what carries enrichment"
+    for row in bilger:
+        assert "contact" not in row, "an empty page would clear the stored block"
+    # The portrait still lands: the two sources are independent, and a blank
+    # biography page says nothing about the listing that published the face.
+    assert bilger[-1]["photoUrl"] == "https://www.bundestag.de/resource/image/1.jpg"
+
+
 def test_occupation_joins_by_stammdaten_id_rather_than_by_name() -> None:
     """abgeordnetenwatch carries the Stammdaten id verbatim, so §7.1 does not
     apply to this source — the join is exact and needs no name at all."""
