@@ -85,7 +85,7 @@ the code asserts it; `roadmap_idea` = aspiration, never committed.
 | **GAP-015** | README claims GitHub OAuth; it is disabled | ~~partially_implemented~~ → **fixed (doc half)** | A | doc_statement | Credentials never registered | ~~Register the app or correct the README~~ — README corrected; **the app is still unregistered and GitHub sign-in still does not work** | — | ✅ |
 | **GAP-016** | README describes the cron in the present tense | **partially_implemented** | A | doc_statement | Doc written ahead of the deployment step | Correct with GAP-005 | GAP-005 | ✅ |
 | **GAP-017** | No `/motions` page though the backend is complete | **planned_but_absent** | B | explicit_plan | Route never created | Build it, or drop it from the nav plan | — | ⚠ i18n |
-| **GAP-018** | Vote explanations (§31 GO-BT) | **planned_but_absent** | B | explicit_plan | Plan hedged it ("where available"); read as optional | Confirm the source exists before committing | — | ✅ |
+| **GAP-018** | Vote explanations (§31 GO-BT) | ~~planned_but_absent~~ → **source confirmed, ingested** | A | explicit_plan | Plan hedged it ("where available"); nobody had checked whether the source existed | ~~Confirm the source exists before committing~~ — it does: DIP publishes each declaration as an `/aktivitaet` with `person_id`, the procedure, and a page-anchored PDF link (api-research §4.5). Ingested into `voteExplanations`; **no text is generated** | — | ✅ |
 | **GAP-019** | Trend suite: 5 of 6 charts | **partially_implemented** | B | explicit_plan | Sixth chart silently dropped | Build it or record the decision | — | ✅ |
 | **GAP-020** | Opposition adjustment + productivity metrics | **planned_but_absent** | B | explicit_plan | "Stats polish" tasks skipped | Treat as new scope; both are editorially loaded | GAP-009 | ✅ |
 | **GAP-021** | Federal-state filter inert on 2 pages | **partially_implemented** | A | explicit_plan | Pipeline never stores Bundesland | Store `WKR_LAND` at ingest | backfill | ✅ |
@@ -96,8 +96,8 @@ the code asserts it; `roadmap_idea` = aspiration, never committed.
 | **GAP-026** | Enrichment TTL is keyed by MP id with no Wahlperiode, so a historical backfill starves the current period | **partially_implemented** | A | code_contract | `contact_fetched_at` is `dict[internalId]` (`state.py:100`); the bundestag.de listing is current-roster-only | Key the TTL by `(internalId, wahlperiode)` | GAP-001 | ✅ |
 | **GAP-027** | Two MPs are permanently unenrichable; the "quarantine retries these" claim is false | **partially_implemented** | A | code_contract | `normalise_printed_name` drops middle initials; `portrait_enrichment` logs the miss but never calls `Quarantine.add` | Handle middle initials; route misses to the quarantine | GAP-001 | ✅ |
 | **GAP-028** | An empty contact fetch is stamped as success, so the 12 null blocks never retry | **partially_implemented** | A | code_contract | `_load_contacts` stamps on any 200, conflating "no office listed" with "no block at all" | Only stamp when a block parsed; else retry | GAP-001 | ✅ |
-| **GAP-029** | abgeordnetenwatch poll/mandate endpoints built, tested, never called | **planned_but_absent** | A | code_contract | Second instance of the `ef687e5` class of bug | Wire `get_mandates` to catch mid-period MPs, or delete | — | ✅ |
-| **GAP-030** | `Ueberweisung` (committee referral) modelled and fetched, never written | **planned_but_absent** | A | doc_statement | §3.3 names it "the committee-work signal"; no transform reads it | Assess as a partial committee substitute for WP14–20 | GAP-009 | ✅ |
+| **GAP-029** | abgeordnetenwatch poll/mandate endpoints built, tested, never called | ~~planned_but_absent~~ → **resolved: one wired, one retired** | A | code_contract | Second instance of the `ef687e5` class of bug | ~~Wire `get_mandates` to catch mid-period MPs, or delete~~ — `get_mandates` is wired as a **read-only** roster-freshness check (628/630 join by id, 11 successions found); `iter_polls`/`get_poll_votes`/`parse_votes`/`tally` **deleted** — curated, editorial, unconsumed (api-research §4.3) | — | ✅ |
+| **GAP-030** | `Ueberweisung` (committee referral) modelled and fetched, never written | ~~planned_but_absent~~ → **stored; the promise it carried is retired** | A | doc_statement | §3.3 named it "the committee-work signal"; no transform read it | ~~Assess as a partial committee substitute for WP14–20~~ — **it is not one and cannot be**: a referral names a committee and a document, never a member. Stored in `committeeReferrals` as motion-level data; §3.3's claim corrected and historical-coverage.md now says the committee gap stands | GAP-009 | ✅ |
 | **GAP-031** | `/rankings` top slots are near-uniformly one Fraktion, with no interpretive note | **partially_implemented** | A | doc_statement | Every other editorial surface carries a caveat; this one does not | Add a caveat note, as `/votes` and `/parties` already do | — | ⚠ i18n |
 
 **Counts — 31 gaps.** By status: implemented_not_populated 1 · buried_in_ui 1 ·
@@ -375,15 +375,36 @@ Landed on branch `engineering-hygiene-gaps`.
   Live proof of the gap: `lawyer` → **0** results, `Rechtsanwalt` → **5**.
 - **E2 · GAP-021** — store `WKR_LAND`; needs a roster backfill.
 - **E3 · GAP-019** — the sixth trend chart.
-- **E4 · GAP-018** — vote explanations; confirm the source first.
+- ~~**E4 · GAP-018**~~ — ✅ the source was confirmed before any code, and it
+  exists: `Erklärung nach § 31 GO-BT` is published as a DIP `/aktivitaet`
+  carrying `person_id`, the procedure, and a page-anchored link into the
+  protocol PDF — 100 % on all three across every sitting sampled. Ingested into
+  `voteExplanations` with provenance. **The declaration's text is not stored and
+  is never generated**: DIP publishes that one exists and where it is printed,
+  not the words, and composing them would put reasoning in a named member's
+  mouth. Sparse by nature (21/90: 3 of 8 ballots; 21/88: none), so the query
+  contract separates "none was filed" from "not ingested".
+  Found in passing: the activity kind this repo matched on was **wrong** —
+  `§ 31 GO BT` matches nothing; DIP returns `§ 31 Geschäftsordnung BT`.
 - **E5 · GAP-020** — opposition adjustment and productivity metrics. Both are
   **editorially loaded** and sit uneasily with the project's "no subjective
   scoring" principle. Recommend an explicit product decision before any code.
-- **E6 · GAP-029** — wire `get_mandates` so mid-period MPs enter the roster
-  before the Stammdaten ZIP catches up, or delete the dead client code.
-- **E7 · GAP-030** — assess `Ueberweisung` as a partial committee signal for
-  WP14–20, where Stammdaten publishes nothing. The coverage doc currently calls
-  this impossible; it may only be unimplemented.
+- ~~**E6 · GAP-029**~~ — ✅ resolved as two opposite decisions, each on evidence.
+  `get_mandates` is **wired**, as a read-only roster-freshness check rather than
+  a writer: it resolves 628/630 WP21 mandates to the roster *by id*
+  (`politician.id` → `ext_id_bundestagsverwaltung`, no name matching) and
+  surfaces the 11 mid-period successions with their published dates and notes.
+  It adds nobody and, deliberately, removes nobody — Stammdaten is the roster.
+  `iter_polls`, `get_poll_votes`, `parse_votes` and `tally` are **deleted**: 63
+  curated polls against ~1 015 official ballots, adding volunteer prose and
+  restatements of DIP fields, consumed by nothing.
+- ~~**E7 · GAP-030**~~ — ✅ assessed, and the answer is **no**. `Ueberweisung`
+  cannot be a committee signal for WP14–20, and not because of coverage: a
+  referral names a committee and a *document*, carries no person, and has no
+  field from which one could be derived. The coverage doc was right that the
+  historical committee metric is impossible; §3.3's "the committee-work signal"
+  was the overstatement. Referrals are now stored as motion-level data in their
+  own table, with the boundary asserted structurally rather than by comment.
 - **E8 · GAP-031** — add a caveat note to `/rankings`, matching `/votes` and
   `/parties`. *⚠ i18n.*
 

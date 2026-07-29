@@ -333,3 +333,105 @@ def test_the_resolver_reports_every_internal_id_the_roster_vouches_for(resolver)
         # a seat.
         "bt-11005423",
     }
+
+
+# --- roster reconciliation against abgeordnetenwatch (§7.3) --------------
+
+
+def mandate(
+    stammdaten_id: str | None,
+    name: str,
+    *,
+    info: str | None = None,
+    start_date: str | None = None,
+) -> dict[str, object]:
+    """One parsed mandate, in the shape `parse_mandates` produces."""
+    return {
+        "mandate_id": 1,
+        "politician_id": "999",
+        "stammdaten_id": stammdaten_id,
+        "name": name,
+        "start_date": start_date,
+        "end_date": None,
+        "info": info,
+        "mandate_won": "moved_up" if info else "won",
+        "entered_mid_period": bool(info),
+    }
+
+
+def test_a_member_on_both_sides_is_simply_counted(resolver) -> None:
+    report = resolver.reconcile_mandates([mandate("11004011", "Steffen Bilger")])
+
+    assert report.mandates == 1
+    assert report.on_roster == 1
+    assert report.missing_from_roster == []
+
+
+def test_a_member_missing_from_the_roster_is_reported_with_its_evidence(resolver) -> None:
+    """§7.3: the Stammdaten ZIP lags mid-term successions.
+
+    The published note and the start date are what say *how far behind* the
+    snapshot is — which is the actionable part, and the reason the gap carries
+    the source's evidence rather than a conclusion.
+    """
+    note = "Katrin Zschau ist am 20.07.2026 für Frank Junge in den Deutschen Bundestag nachgerückt."
+    report = resolver.reconcile_mandates(
+        [mandate("11005268", "Katrin Zschau", info=note, start_date="2026-07-20")]
+    )
+
+    (gap,) = report.missing_from_roster
+    assert gap.stammdaten_id == "11005268"
+    assert gap.start_date == "2026-07-20"
+    assert gap.info == note
+    assert report.mid_period_entrants == [gap]
+
+
+def test_reconciliation_never_removes_an_official_row(resolver) -> None:
+    """The invariant this whole feature turns on.
+
+    MdB-Stammdaten is the roster (§6.1); abgeordnetenwatch is community-run. A
+    member the dump has and this source does not means the *community* source
+    has not caught up — the opposite of a reason to delete an official mandate.
+    So the roster is untouched by a pass, and specifically by an empty one.
+    """
+    before = resolver.internal_ids()
+
+    report = resolver.reconcile_mandates([])
+
+    assert report.mandates == 0
+    assert resolver.internal_ids() == before
+    assert resolver.roster(), "the roster survives a mandate list that names nobody"
+
+
+def test_an_unresolvable_mandate_is_quarantined_rather_than_name_matched(resolver) -> None:
+    """Measured: 2 of 630 WP21 mandates carry no `ext_id_bundestagsverwaltung`.
+
+    This source publishes a display name and nothing to disambiguate with, so a
+    fold-and-match here would have none of §7.1's safeguards and would fail by
+    attaching a mandate to the wrong person rather than to none. Quarantined
+    means visible and retried; a name match would mean silent and wrong.
+    """
+    report = resolver.reconcile_mandates([mandate(None, "Christoph Naser")])
+
+    assert report.unresolved == 1
+    assert report.missing_from_roster == []
+    (entry,) = resolver.quarantine.for_source("aw-mandate")
+    assert entry.nachname == "Christoph Naser"
+    assert entry.reason == "ambiguous"
+
+
+def test_the_summary_names_the_denominator_as_well_as_the_gaps(resolver) -> None:
+    # 2 gaps out of 630 is staleness; 600 out of 630 is a broken filter, and
+    # the two are indistinguishable from a gap count alone.
+    report = resolver.reconcile_mandates(
+        [
+            mandate("11004011", "Steffen Bilger"),
+            mandate("11005268", "Katrin Zschau", info="nachgerückt", start_date="2026-07-20"),
+            mandate(None, "Christoph Naser"),
+        ]
+    )
+
+    assert "3 abgeordnetenwatch mandates" in report.summary()
+    assert "1 on the roster" in report.summary()
+    assert "1 missing from it" in report.summary()
+    assert "1 with no id to join on" in report.summary()

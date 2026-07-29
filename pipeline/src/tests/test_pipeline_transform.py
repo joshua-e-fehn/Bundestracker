@@ -21,7 +21,7 @@ import pytest
 from bundestrack.api.protocols import ProtocolClient
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.api.votes import parse_sheet
-from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang
+from bundestrack.models.dip import Aktivitaet, Drucksache, Person, Vorgang, Vorgangsposition
 from bundestrack.models.enrichment import MPContact
 from bundestrack.models.stammdaten import Mandate
 from bundestrack.models.votes import Vote
@@ -853,3 +853,473 @@ def test_a_vote_event_is_emitted_for_an_absence_too(resolver) -> None:
     assert {event["description"] for event in events} >= {"yes", "absent"}
     assert all(event["referenceId"] == "21/90/8" for event in events)
     assert all(event["eventType"] == "vote" for event in events)
+
+
+# --- committee referrals (§3.3) ------------------------------------------
+
+
+def positions() -> list[Vorgangsposition]:
+    """The recorded `/vorgangsposition` page, which carries real referrals."""
+    return [
+        Vorgangsposition.model_validate(doc)
+        for doc in fixture_json("dip", "vorgangsposition_page.json")["documents"]
+    ]
+
+
+def test_a_referral_is_emitted_once_per_committee() -> None:
+    """§3.3: a step refers a bill to three or four committees at once.
+
+    One row per `(step, committee)` — the natural key. Emitting one row per
+    *step* would keep only whichever committee was read last, and the lead
+    committee is not reliably first in the array.
+    """
+    payloads = list(transform.committee_referral_payloads(positions(), wahlperiode=21))
+    referrals = sum(len(p.ueberweisung) for p in positions())
+
+    assert len(payloads) == referrals
+    assert len({(p["dipVorgangspositionId"], p["committeeName"]) for p in payloads}) == len(
+        payloads
+    )
+
+
+def test_exactly_one_committee_per_step_is_the_lead() -> None:
+    # `federfuehrung` is the only ranking the source supports, and it is what
+    # `getReferralsByMotion` orders on.
+    payloads = list(transform.committee_referral_payloads(positions(), wahlperiode=21))
+    by_step: dict[str, int] = {}
+    for payload in payloads:
+        if payload["leadCommittee"] is True:
+            by_step[payload["dipVorgangspositionId"]] = (
+                by_step.get(payload["dipVorgangspositionId"], 0) + 1
+            )
+
+    assert by_step, "the fixture should carry a lead committee"
+    assert set(by_step.values()) == {1}
+
+
+def test_the_period_comes_from_the_query_not_from_the_record() -> None:
+    """DIP publishes no `wahlperiode` on `/vorgangsposition`.
+
+    Verified against the live API and against this fixture, where every
+    position carries `None`. Reading it off the model would have written null
+    into a required column on every row — a whole table that no period-scoped
+    query could ever select.
+    """
+    assert all(getattr(position, "wahlperiode", None) is None for position in positions())
+
+    payloads = list(transform.committee_referral_payloads(positions(), wahlperiode=18))
+    assert payloads and all(payload["wahlperiode"] == 18 for payload in payloads)
+
+
+def test_an_unstated_referral_type_stays_null_rather_than_becoming_a_default() -> None:
+    """`ueberweisungsart` was empty on all 754 referrals sampled across WP14–21.
+
+    Preserved as null rather than filled with a guess: the column exists so a
+    value appearing later lands somewhere, and inventing one today would make
+    an absent field indistinguishable from a real one.
+    """
+    payloads = list(transform.committee_referral_payloads(positions(), wahlperiode=21))
+
+    assert payloads
+    assert all(payload["referralType"] is None for payload in payloads)
+
+
+def test_an_unstated_lead_flag_stays_null_rather_than_becoming_false() -> None:
+    """ "Not stated" and "not the lead" are different claims.
+
+    Only the source may make either. Coercing null to `False` would have
+    Bundestrack assert that a committee was *not* leading on evidence that says
+    nothing either way — and `getReferralsByMotion` orders on exactly these
+    three states.
+
+    Constructed rather than fixtured: every referral DIP returned carried the
+    flag, so there is no recorded row in which it is absent. What is under test
+    is the handling of a value the schema permits, not one the samples happened
+    to contain.
+    """
+    position = positions()[0].model_copy(
+        update={
+            "ueberweisung": [
+                positions()[0].ueberweisung[0].model_copy(update={"federfuehrung": None})
+            ]
+        }
+    )
+
+    (payload,) = transform.committee_referral_payloads([position], wahlperiode=21)
+    assert payload["leadCommittee"] is None
+
+
+def test_a_step_with_no_referral_emits_nothing() -> None:
+    # Under 10 % of positions refer anything, so the common case is no rows.
+    plain = [p for p in positions() if not p.ueberweisung]
+    assert not list(transform.committee_referral_payloads(plain, wahlperiode=21))
+
+
+def test_the_referred_document_comes_from_the_fundstelle() -> None:
+    """Not from `beschlussfassung[].dokumentnummer`, which is a different paper.
+
+    The fixture's step carries `fundstelle.dokumentnummer = "21/7"` (the
+    protocol) alongside `beschlussfassung[].dokumentnummer = "21/216"` (a
+    Drucksache). Reading the wrong one produces a plausible wrong reference
+    rather than an error — the same trap `bundestag-vote-outcomes` records for
+    the sitting number.
+    """
+    payloads = list(transform.committee_referral_payloads(positions(), wahlperiode=21))
+
+    assert {payload["documentNumber"] for payload in payloads} == {"21/7"}
+
+
+# --- vote explanations, § 31 GO-BT ---------------------------------------
+
+
+def para31_aktivitaeten(*, person_ids: tuple[str, ...] = ("1013", "2222")) -> list[Aktivitaet]:
+    """The recorded page of §31 declarations, re-pointed at the fixture roster."""
+    documents = fixture_json("dip", "aktivitaet_para31_page.json")["documents"]
+    records = [Aktivitaet.model_validate(doc) for doc in documents]
+    for record, person_id in zip(records, person_ids, strict=False):
+        record.person_id = person_id
+    return records
+
+
+def test_the_para31_string_is_the_one_the_api_actually_returns() -> None:
+    """The literal this repo had wrong.
+
+    DIP returns `Schriftliche Erklärung gem. § 31 Geschäftsordnung BT`;
+    `docs/api-research.md` §5.1 and `webapp/lib/scoring.ts` both recorded
+    `§ 31 GO BT`, which matches no record the API has ever returned. An exact
+    comparison against the wrong literal is a filter that silently selects
+    nothing, which is why the predicate keys on `§ 31` alone.
+    """
+    declarations = [a for a in para31_aktivitaeten() if a.is_vote_explanation]
+
+    assert declarations
+    assert all("§ 31 Geschäftsordnung BT" in a.aktivitaetsart for a in declarations)
+    assert not any(a.aktivitaetsart == "§ 31 GO BT" for a in declarations)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        # `§ 31a` is a real Geschäftsordnung paragraph. DIP has already changed
+        # the wording of `aktivitaetsart` once (§5.1), so if it emits a `§ 31a`
+        # kind tomorrow, a bare `"§ 31" in …` filter would mis-attribute those
+        # declarations to §31 — which is the exact drift this predicate exists
+        # to prevent, filed as L1 by the independent review.
+        "Schriftliche Erklärung gem. § 31a Geschäftsordnung BT",
+        "Schriftliche Erklärung gem. § 310 Geschäftsordnung BT",
+        "Schriftliche Erklärung gem. § 311 Geschäftsordnung BT",
+        # Trailing letter without a digit — same trap, different shape.
+        "Schriftliche Erklärung gem. § 31b Geschäftsordnung BT",
+    ],
+)
+def test_a_neighbouring_paragraph_number_does_not_match_para31(kind: str) -> None:
+    aktivitaet = Aktivitaet.model_validate(
+        {
+            "id": "test",
+            "aktivitaetsart": kind,
+            "typ": "Aktivität",
+            "wahlperiode": 21,
+            "aktualisiert": "2026-07-20T10:47:41+02:00",
+            "person_id": "1013",
+            "dokumentart": "Plenarprotokoll",
+            "titel": "Test MP, MdB",
+            "datum": "2026-07-10",
+        }
+    )
+    assert not aktivitaet.is_vote_explanation
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "Schriftliche Erklärung gem. § 31 Geschäftsordnung BT",
+        # The wrong literal this repo carried once. Kept in the predicate's
+        # reach because it is what DIP *used* to look like: the predicate is
+        # a boundary, not a whitelist, and a legitimate wording change should
+        # not silently drop rows.
+        "Schriftliche Erklärung gem. § 31 GO BT",
+        # Spacing variants — DIP's own §5.1 note documents whitespace drift.
+        "Erklärung nach §31 GO",
+        "Erklärung nach § 31  GO",
+    ],
+)
+def test_the_para31_predicate_matches_every_real_wording(kind: str) -> None:
+    aktivitaet = Aktivitaet.model_validate(
+        {
+            "id": "test",
+            "aktivitaetsart": kind,
+            "typ": "Aktivität",
+            "wahlperiode": 21,
+            "aktualisiert": "2026-07-20T10:47:41+02:00",
+            "person_id": "1013",
+            "dokumentart": "Plenarprotokoll",
+            "titel": "Test MP, MdB",
+            "datum": "2026-07-10",
+        }
+    )
+    assert aktivitaet.is_vote_explanation
+
+
+def test_only_declarations_are_selected(linked_resolver) -> None:
+    # The fixture holds three declarations and two ordinary speeches; a filter
+    # that took the speeches too would attribute a reason to a vote nobody
+    # explained.
+    payloads = list(transform.vote_explanation_payloads(para31_aktivitaeten(), linked_resolver))
+    ordinary = [a for a in para31_aktivitaeten() if not a.is_vote_explanation]
+    ordinary_ids = {a.id for a in ordinary}
+
+    assert ordinary, "the fixture should carry non-declaration activities too"
+    assert payloads, "the fixture's resolvable declarations should be emitted"
+    assert all("§ 31" in payload["aktivitaetsart"] for payload in payloads)
+    assert not ordinary_ids & {payload["dipAktivitaetId"] for payload in payloads}
+
+
+def test_a_declaration_links_to_the_procedure_and_to_its_printed_page(
+    linked_resolver,
+) -> None:
+    """The two things that make this authoritative rather than adjacent.
+
+    `dipVorgangId` is the join to the ballot; `sourceUrl` is the page-anchored
+    PDF where the member's actual words are. Both were present on 100 % of the
+    declarations sampled.
+    """
+    (first, *_) = list(transform.vote_explanation_payloads(para31_aktivitaeten(), linked_resolver))
+
+    assert first["dipVorgangId"]
+    assert first["sourceUrl"].startswith("https://dserver.bundestag.de/btp/")
+    assert first["protocolNumber"] == "21/90"
+    assert first["date"] == "2026-07-10"
+
+
+def test_the_subject_is_what_was_voted_on_never_a_reason(linked_resolver) -> None:
+    """`subject` carries the *procedure's* title, and nothing is synthesised.
+
+    A declaration's reasoning is the member's own and DIP publishes it only as
+    prose inside the protocol PDF. Every field written here is copied from the
+    source; none is composed. That is the whole contract of this transform.
+    """
+    (first, *_) = list(transform.vote_explanation_payloads(para31_aktivitaeten(), linked_resolver))
+    titles = {
+        bezug.titel
+        for a in para31_aktivitaeten()
+        if a.is_vote_explanation
+        for bezug in a.vorgangsbezug
+    }
+
+    assert first["subject"] in {" ".join(title.split()) for title in titles}
+    # `titel` on the record is the MP's *name* (§3.5) and must never be the
+    # subject — that is the mistake `_activity_description` exists to avoid.
+    assert first["subject"] != first["aktivitaetsart"]
+    assert "MdB" not in (first["subject"] or "")
+
+
+def test_an_unresolved_person_is_skipped_rather_than_attributed(resolver) -> None:
+    # No DIP crosswalk on this resolver, so nothing resolves. A declaration is
+    # a named person's statement; attaching one to a guessed member is the one
+    # failure mode worse than dropping it, and it re-attaches on a later sync.
+    assert not list(transform.vote_explanation_payloads(para31_aktivitaeten(), resolver))
+
+
+# --- the ballot → Vorgang join -------------------------------------------
+
+
+def named_vote_positions() -> list[Vorgangsposition]:
+    """Two named-vote steps in one sitting, in the shape DIP publishes them.
+
+    Constructed rather than fixtured because the recorded
+    `/vorgangsposition` page holds referrals rather than roll calls. The values
+    are real: both rows are from protocol 21/90, verified live on 2026-07-29,
+    where all 8 named votes indexed uniquely.
+    """
+    base = {
+        "zuordnung": "BT",
+        "gang": True,
+        "fortsetzung": False,
+        "nachtrag": False,
+        "typ": "Vorgangsposition",
+        "dokumentart": "Plenarprotokoll",
+        "aktualisiert": "2026-07-20T10:47:41+02:00",
+        "datum": "2026-07-10",
+        "vorgangsposition": "Beratung",
+    }
+    return [
+        Vorgangsposition.model_validate(
+            {
+                **base,
+                "id": "696823",
+                "vorgangstyp": "Entschließungsantrag BT",
+                "titel": "Entschließungsantrag zum GKV-Beitragssatzstabilisierungsgesetz",
+                "vorgang_id": "337050",
+                "fundstelle": {
+                    "id": "5806",
+                    "dokumentnummer": "21/90",
+                    "dokumentart": "Plenarprotokoll",
+                    "datum": "2026-07-10",
+                    "herausgeber": "BT",
+                },
+                "beschlussfassung": [
+                    {
+                        "beschlusstenor": "Ablehnung der Vorlage",
+                        "abstimmungsart": "Namentliche Abstimmung",
+                        "abstimm_ergebnis_bemerkung": "58:462:80",
+                        # A *Drucksache* number, not the sitting — see below.
+                        "dokumentnummer": "21/7019",
+                    }
+                ],
+            }
+        ),
+        Vorgangsposition.model_validate(
+            {
+                **base,
+                "id": "696800",
+                "vorgangstyp": "Gesetzgebung",
+                "titel": "Sportfördergesetz",
+                "vorgang_id": "333135",
+                "fundstelle": {
+                    "id": "5806",
+                    "dokumentnummer": "21/90",
+                    "dokumentart": "Plenarprotokoll",
+                    "datum": "2026-07-10",
+                    "herausgeber": "BT",
+                },
+                "beschlussfassung": [
+                    {
+                        "beschlusstenor": "Annahme der Vorlage",
+                        "abstimmungsart": "Namentliche Abstimmung",
+                        "abstimm_ergebnis_bemerkung": "519:43:0",
+                        "dokumentnummer": "21/5921",
+                    }
+                ],
+            }
+        ),
+    ]
+
+
+def test_a_named_vote_is_keyed_by_its_sitting_and_tally() -> None:
+    """The XLSX and DIP share no identifier, so the result is the join.
+
+    Verified live on protocol 21/90: all 8 named votes indexed uniquely, and
+    `(90, 519, 43, 0)` is the Sportfördergesetz ballot whose §31 declarations
+    reference Vorgang 333135.
+    """
+    index = transform.ballot_vorgang_index(named_vote_positions())
+
+    assert index == {(90, 58, 462, 80): "337050", (90, 519, 43, 0): "333135"}
+
+
+def test_the_sitting_comes_from_the_protocol_not_from_the_beschluss() -> None:
+    """The trap that produces a plausible wrong join rather than an error.
+
+    `fundstelle.dokumentnummer` is `21/90` — the sitting. Its sibling
+    `beschlussfassung[].dokumentnummer` is `21/7019`, a *Drucksache*, and an
+    unguarded parse of that yields "sitting 7019": a key that matches nothing,
+    or worse, matches the wrong ballot.
+    """
+    index = transform.ballot_vorgang_index(named_vote_positions())
+
+    assert {key[0] for key in index} == {90}
+    assert 7019 not in {key[0] for key in index}
+
+
+def test_a_step_whose_fundstelle_is_a_drucksache_is_not_indexed() -> None:
+    # Only a plenary Fundstelle carries a sitting number. A Drucksache-borne
+    # step has none, and parsing its number as one is the bug above.
+    position = named_vote_positions()[0]
+    drucksache = position.model_copy(
+        update={
+            "fundstelle": position.fundstelle.model_copy(
+                update={"dokumentart": "Drucksache", "dokumentnummer": "21/216"}
+            )
+        }
+    )
+
+    assert transform.ballot_vorgang_index([drucksache]) == {}
+
+
+@pytest.mark.parametrize(
+    ("bemerkung", "expected"),
+    [
+        ("519:43:0", (519, 43, 0)),
+        ("539:56:1 (Annahme der Beschlussempfehlung…)", (539, 56, 1)),
+        ("übrige Teile; 297:130:134", (297, 130, 134)),
+        ("130:441:0 (Berichtigung s. PlPr 21/49, S. 5825B)", (130, 441, 0)),
+        ("Der Antrag wurde zurückgezogen", None),
+        (None, None),
+    ],
+)
+def test_the_tally_is_searched_for_never_split_on(bemerkung, expected) -> None:
+    """`abstimm_ergebnis_bemerkung` is free text with counts somewhere inside.
+
+    All four populated shapes here are real, taken from live WP21 records. A
+    `.split(":")` raises on the third and silently keeps a suffix on the second;
+    anchoring to the start misses the third entirely. Prose with no counts
+    yields None, and the ballot is stored with no procedure rather than a
+    guessed one.
+    """
+    assert transform._tally(bemerkung) == expected
+
+
+def test_a_key_two_procedures_claim_is_dropped_rather_than_guessed() -> None:
+    """An ambiguous join is not a join.
+
+    Attaching the wrong procedure would link a member's §31 declaration to a
+    vote they did not cast it on — undetectable downstream, because every row
+    involved would look well-formed.
+    """
+    first, _ = named_vote_positions()
+    collision = first.model_copy(update={"id": "999999", "vorgang_id": "999999"})
+
+    index = transform.ballot_vorgang_index([first, collision])
+
+    assert (90, 58, 462, 80) not in index
+
+
+def test_a_sheet_and_a_step_agree_on_the_key(resolver) -> None:
+    """Both sides derive the key from what their own source published.
+
+    The sheet's counts come from its own rows — the XLSX carries no totals line
+    — and the step's from DIP's `abstimm_ergebnis_bemerkung`. Neither takes the
+    other on trust, which is what makes an agreement evidence rather than a
+    tautology.
+    """
+    parsed = parse_sheet(fixture_bytes("votes", "vote_21_90_8_excerpt.xlsx"))
+    key = transform.ballot_key(parsed)
+
+    assert key[0] == parsed.sitzungnr
+    counts = parsed.tally()
+    assert key[1:] == (counts[Vote.YES], counts[Vote.NO], counts[Vote.ABSTAIN])
+
+
+def test_a_ballot_with_no_matching_step_omits_dip_vorgang_id() -> None:
+    """65 of 69 WP21 ballots resolve; the rest must not touch what is stored.
+
+    ⚠ The payload **omits `dipVorgangId` entirely** rather than sending `null`.
+    Convex's `db.patch` only touches fields present on the incoming object, so
+    omitting preserves whatever the row previously stored — a resolved link
+    survives a subsequent run where the referrals stage returned nothing (a
+    WAF challenge, an out-of-coverage period, an incremental sync's own quiet
+    slice). Sending `null` was M2 in the independent review: a `--full`
+    backfill after a failed referrals stage silently erased every prior link.
+
+    The three states — absent, `null`, `<id>` — coexist safely because the
+    schema keeps the column `v.optional(v.union(v.null(), v.string()))` and
+    every reader normalises absent to `null` at the boundary (see the `mpDoc`
+    pattern in webapp/convex/votes.ts).
+    """
+    parsed = parse_sheet(fixture_bytes("votes", "vote_21_90_8_excerpt.xlsx"))
+
+    payload = transform.vote_sheet_payload(
+        parsed, title="Ballot", sheet_date=dt.date(2026, 7, 10), dip_vorgang_id=None
+    )
+
+    assert "dipVorgangId" not in payload
+
+
+def test_a_resolved_ballot_carries_its_procedure() -> None:
+    parsed = parse_sheet(fixture_bytes("votes", "vote_21_90_8_excerpt.xlsx"))
+
+    payload = transform.vote_sheet_payload(
+        parsed, title="Ballot", sheet_date=dt.date(2026, 7, 10), dip_vorgang_id="333135"
+    )
+
+    assert payload["dipVorgangId"] == "333135"

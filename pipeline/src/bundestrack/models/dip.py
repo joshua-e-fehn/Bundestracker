@@ -28,6 +28,7 @@ the wrong direction to fail.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
@@ -145,10 +146,21 @@ class AktivitaetAnzeige(DIPModel):
 
 
 class Ueberweisung(DIPModel):
-    """A committee referral — the committee-work signal (§3.3).
+    """A committee referral: which committees a bill was sent to (§3.3).
 
-    `federfuehrung` separates the lead committee from the co-advising ones,
-    which is what lets a metric weight them differently.
+    ⚠ **A fact about the document, not about any member.** There is no person on
+    this record and no field from which one could be derived, so it cannot yield
+    an individual committee metric and is not a substitute for committee
+    *membership* — which §6.4 records as published for the current Wahlperiode
+    alone. §3.3 names this "the committee-work signal", which overstates it; the
+    work it evidences is the chamber's, not a member's.
+
+    `federfuehrung` separates the lead committee from the co-advising ones.
+    Exactly one referral per step carried it in every period sampled.
+
+    ⚠ `ueberweisungsart` is **always null in practice** — 0 of 754 referrals
+    across WP14–21 carried a value (measured 2026-07-29). It is modelled because
+    the field exists in the DIP schema, not because anything can be read off it.
     """
 
     ausschuss: str
@@ -284,6 +296,31 @@ class Aktivitaet(DIPModel):
     vorgangsbezug_anzahl: int = 0
     deskriptor: list[Deskriptor] = Field(default_factory=list)
     abstract: str | None = None
+
+    @property
+    def is_vote_explanation(self) -> bool:
+        """Whether this is an `Erklärung nach § 31 GO-BT` — a member's own
+        declared reason for how they voted.
+
+        The one authoritative, machine-linkable *reason* attached to a named
+        vote: the ballot's title says what was decided, and this says why one
+        member decided it that way. `person_id` and `vorgangsbezug` were present
+        on 100 % of the declarations sampled, which is what makes it linkable to
+        the ballot rather than merely adjacent to it.
+
+        Matched on the *paragraph* rather than the full string because the full
+        string is not what this repo thought it was. DIP returns **`Schriftliche
+        Erklärung gem. § 31 Geschäftsordnung BT`**; `docs/api-research.md` §5.1
+        and webapp/lib/scoring.ts both recorded `§ 31 GO BT`, which matches no
+        record the API has ever returned. `§ 31` is the part fixed by the
+        Geschäftsordnung itself, so it is the part worth keying on — but only
+        with a boundary. A bare substring lets `§ 31a`, `§ 310` and `§ 311`
+        (real Geschäftsordnung paragraphs, all different) file declarations
+        into the wrong bucket, and DIP has already changed the wording of this
+        activity kind once, so tightening the predicate before that happens
+        again matters more than shaving a character off the regex.
+        """
+        return re.search(r"§\s*31(?![0-9a-zA-Z])", self.aktivitaetsart) is not None
 
 
 class Vorgang(DIPModel):

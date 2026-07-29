@@ -12,6 +12,7 @@ import type * as activities from "../activities.js";
 import type * as activityEvents from "../activityEvents.js";
 import type * as activityScores from "../activityScores.js";
 import type * as auth from "../auth.js";
+import type * as committeeReferrals from "../committeeReferrals.js";
 import type * as committees from "../committees.js";
 import type * as crons from "../crons.js";
 import type * as feed from "../feed.js";
@@ -33,6 +34,7 @@ import type * as seedDev from "../seedDev.js";
 import type * as speeches from "../speeches.js";
 import type * as stats from "../stats.js";
 import type * as userPreferences from "../userPreferences.js";
+import type * as voteExplanations from "../voteExplanations.js";
 import type * as votes from "../votes.js";
 
 import type {
@@ -46,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   activityEvents: typeof activityEvents;
   activityScores: typeof activityScores;
   auth: typeof auth;
+  committeeReferrals: typeof committeeReferrals;
   committees: typeof committees;
   crons: typeof crons;
   feed: typeof feed;
@@ -67,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   speeches: typeof speeches;
   stats: typeof stats;
   userPreferences: typeof userPreferences;
+  voteExplanations: typeof voteExplanations;
   votes: typeof votes;
 }>;
 

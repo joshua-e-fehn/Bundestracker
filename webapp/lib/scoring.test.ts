@@ -56,7 +56,11 @@ describe("bucketFor", () => {
     // "Rede (zu Protokoll gegeben)" is a real §5.2 value: a written speech
     // submitted for the record. It is still a speech.
     expect(bucketFor("Rede (zu Protokoll gegeben)")).toBe("speeches")
-    expect(bucketFor("Schriftliche Erklärung gem. § 31 GO BT")).toBe("speeches")
+    // The literal DIP actually returns, per api-research.md §5.1. `bucketFor`
+    // substring-matches on "erklärung", so the previous, wrong `§ 31 GO BT`
+    // literal happened to bucket correctly — but the test asserted on a
+    // string the API has never emitted.
+    expect(bucketFor("Schriftliche Erklärung gem. § 31 Geschäftsordnung BT")).toBe("speeches")
   })
 
   test("is case-insensitive", () => {

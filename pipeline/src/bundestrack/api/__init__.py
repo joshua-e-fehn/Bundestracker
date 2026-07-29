@@ -14,9 +14,10 @@ answer is assembled from:
 - `MPProfileClient` — `bundestag.de/ajax/filterlist/…`: official portraits with
   their photographer credits, and what contact data is published. Supersedes
   §6.5, which predates the listing being reachable.
-- `AbgeordnetenwatchClient` — `abgeordnetenwatch.de/api/v2`: validation,
-  mid-period successions, and the occupation/education enrichment that joins to
-  the roster by Stammdaten id.
+- `AbgeordnetenwatchClient` — `abgeordnetenwatch.de/api/v2`: mid-period
+  successions, and the occupation/education enrichment that joins to the roster
+  by Stammdaten id. Its `/polls` endpoint is deliberately unused — see that
+  module for the three measurements behind that decision.
 
 All extend `BundestagClient`, which fetches **strictly sequentially** and never
 follows redirects — `base` explains why that is load-bearing rather than merely
@@ -30,7 +31,12 @@ Convex is written to over its HTTP API and is not a client here — it is the
 destination, not a source.
 """
 
-from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient, parse_politicians
+from bundestrack.api.abgeordnetenwatch import (
+    AbgeordnetenwatchClient,
+    parse_mandates,
+    parse_politicians,
+    politician_stammdaten_index,
+)
 from bundestrack.api.base import (
     AuthenticationError,
     BundestagAPIError,
@@ -66,7 +72,9 @@ __all__ = [
     "paginate_cursor",
     "parse_biography",
     "parse_listing",
+    "parse_mandates",
     "parse_politicians",
     "parse_sheet",
+    "politician_stammdaten_index",
     "protocol_xml_url",
 ]

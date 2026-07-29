@@ -1,13 +1,22 @@
 import { describe, expect, test } from "bun:test"
+import { recordingCtx } from "./lib/readRecorder.testing"
 import {
+  backfillVoteSheetVorgang,
+  backfillVoteSheetVorgangHandler,
   breakdownRows,
   chunk,
+  classifyVorgangPatch,
+  decideVorgangPage,
   dissentFlagsFor,
   dissentWriteKeys,
   isRebel,
   majorityOf,
   TALLY_SLICE,
   tallyByGroup,
+  type VorgangPageRow,
+  vorgangPageFetchSize,
+  voteSheetsMissingVorgang,
+  voteSheetsMissingVorgangHandler,
 } from "./votes"
 
 /**
@@ -447,5 +456,586 @@ describe("dissent tallies derived from stored flags", () => {
     // stored flags has no such failure mode: the floor is an empty record set.
     expect(tallyOf([]).dissents).toBe(0)
     expect(tallyOf([]).ballotsCast).toBe(0)
+  })
+})
+
+// --- L3 backfill-vote-vorgang — the shape assertions ---------------------
+
+/** The JSON schema Convex builds from the runtime `args:` / `returns:` on a
+ * function. It carries `type`, `value` for objects, and `fieldType` for
+ * arrays — the shape the tests below key on. Convex's `internalMutation` and
+ * `internalQuery` expose these as `exportArgs()` / `exportReturns()` at
+ * runtime. */
+type ConvexSchema = {
+  type: string
+  value?: Record<string, { fieldType: ConvexSchema; optional?: boolean }>
+  values?: ConvexSchema[]
+}
+
+function argsSchema(fn: unknown): ConvexSchema {
+  return JSON.parse((fn as { exportArgs: () => string }).exportArgs())
+}
+
+function returnsSchema(fn: unknown): ConvexSchema {
+  return JSON.parse((fn as { exportReturns: () => string }).exportReturns())
+}
+
+describe("backfillVoteSheetVorgang: the mutation cannot write null", () => {
+  test("each patch's dipVorgangId is a plain string, not nullable", () => {
+    // This is the shape of the M2 invariant, held one level lower. The M2
+    // failure was `dipVorgangId: null` overwriting a resolved link; the L3
+    // route exists precisely so late resolutions can be patched in without
+    // going near that path. Accepting a nullable dipVorgangId here would
+    // let a caller silently erase what M2 protects on the ingest side.
+    const args = argsSchema(backfillVoteSheetVorgang)
+    // args.patches is an array; the element is an object; look up its
+    // `dipVorgangId` field's schema and assert it is exactly `string`.
+    const patchesField = args.value?.patches.fieldType
+    // Convex encodes v.array(...) as { type: "array", value: <element> }.
+    const element = (patchesField as unknown as { value: ConvexSchema }).value
+    const dipVorgangId = element.value?.dipVorgangId.fieldType
+    expect(dipVorgangId?.type).toBe("string")
+    expect(dipVorgangId?.values).toBeUndefined()
+  })
+
+  test("patches are scoped by wahlperiode, so a WP20 sitting cannot alias WP21", () => {
+    // The natural key is only unique within a period, so scoping is the whole
+    // safety of the ballot lookup. A shortcut that took `(sitzungnr,
+    // abstimmnr)` alone would silently patch the wrong ballot in another
+    // period the moment two shared a sitting number.
+    const args = argsSchema(backfillVoteSheetVorgang)
+    expect(args.value?.wahlperiode.fieldType.type).toBe("number")
+  })
+})
+
+describe("voteSheetsMissingVorgang: the read shape only carries the ballot key + tally", () => {
+  test("each returned sheet has the four fields the client-side join needs and nothing else", () => {
+    // The join key is `(sitzungnr, yes, no, abstain)` — that is what
+    // `_ballot_vorgaenge` is indexed by. Returning the whole `voteSheets` row
+    // would drag `title`, `sourceUrl`, `absentCount` and the rest across the
+    // wire on every backfill page; the L3 pipeline needs none of them.
+    const returns = returnsSchema(voteSheetsMissingVorgang)
+    const sheetsField = returns.value?.sheets.fieldType
+    const element = (sheetsField as unknown as { value: ConvexSchema }).value
+    expect(Object.keys(element.value ?? {}).sort()).toEqual([
+      "abstainCount",
+      "abstimmnr",
+      "noCount",
+      "sitzungnr",
+      "yesCount",
+    ])
+  })
+
+  test("nextCursor is nullable, so a caller can page to exhaustion", () => {
+    // The end signal is null, not absent — Convex's optional/undefined
+    // handling is what M2 uses to preserve fields, and reusing that same
+    // convention here would make an empty page indistinguishable from an
+    // exhausted one.
+    const returns = returnsSchema(voteSheetsMissingVorgang)
+    const cursor = returns.value?.nextCursor.fieldType
+    expect(cursor?.type).toBe("union")
+    const kinds = (cursor?.value as unknown as ConvexSchema[] | undefined)?.map((m) => m.type)
+    expect(kinds?.sort()).toEqual(["null", "object"])
+  })
+})
+
+// --- L3 pagination — NEW-H2 / NEW-M3 behavioural tests --------------------
+
+/** Small helper — every row is unresolved by default, so the test stays about
+ * paging rather than boilerplating `dipVorgangId: null` on every input. */
+function unresolved(sitzungnr: number, abstimmnr: number): VorgangPageRow {
+  return { sitzungnr, abstimmnr, yesCount: 0, noCount: 0, abstainCount: 0, dipVorgangId: null }
+}
+
+function resolved(sitzungnr: number, abstimmnr: number): VorgangPageRow {
+  return { sitzungnr, abstimmnr, yesCount: 0, noCount: 0, abstainCount: 0, dipVorgangId: "V" }
+}
+
+/** Emulates the caller-side loop over `decideVorgangPage`, threading the
+ * cursor through and re-computing the `.gte`-scan for each iteration exactly
+ * the way the fixed handler does. The tests below assert on the *complete*
+ * sequence returned, so a page-boundary drop shows up as a missing row in
+ * the concatenated result. */
+function walk(allRows: VorgangPageRow[], limit: number): VorgangPageRow[] {
+  const fetchSize = vorgangPageFetchSize(limit)
+  const seen: VorgangPageRow[] = []
+  let cursor: { sitzungnr: number; abstimmnr: number } | undefined
+  // Safety net — a bug in `decideVorgangPage` can page forever; every test
+  // case below converges well inside 20 pages, so hitting the cap is itself
+  // a regression signal (and produces a readable failure message).
+  for (let step = 0; step < 20; step++) {
+    const scan = cursor
+      ? allRows.filter((row) => row.sitzungnr >= cursor!.sitzungnr)
+      : allRows.slice()
+    const rows = scan.slice(0, fetchSize)
+    const decision = decideVorgangPage(rows, cursor, limit, rows.length >= fetchSize)
+    seen.push(...decision.sheets)
+    if (decision.done || decision.nextCursor === null) return seen
+    cursor = decision.nextCursor
+  }
+  throw new Error("decideVorgangPage did not converge after 20 pages")
+}
+
+describe("decideVorgangPage: unresolved sheets survive page boundaries", () => {
+  test("three unresolved sheets in one sitting are all returned across three pages", () => {
+    // The exact case NEW-H2 named: `(90,1)`, `(90,2)`, `(90,3)`, all
+    // unresolved, `limit: 1`. Before the fix, the third row was lost when
+    // the cursor advanced past sitting 90 with `.gt`. This walk asserts the
+    // fix returns all three.
+    const rows = [unresolved(90, 1), unresolved(90, 2), unresolved(90, 3)]
+    const seen = walk(rows, 1)
+    expect(seen.map((r) => [r.sitzungnr, r.abstimmnr])).toEqual([
+      [90, 1],
+      [90, 2],
+      [90, 3],
+    ])
+  })
+
+  test("a resolved sheet in the middle of a sitting does not evict its unresolved siblings", () => {
+    // NEW-M3: the prior code cursored from `rows[limit]`, which could be a
+    // *resolved* row. Once `.gte` includes the boundary sitting, that
+    // cursor would skip any unresolved sheet in the same sitting between
+    // the returned tail and the resolved boundary row. This walk pins the
+    // rule that the cursor never advances past an unresolved sheet.
+    const rows = [unresolved(90, 1), resolved(90, 2), unresolved(90, 3), unresolved(90, 4)]
+    const seen = walk(rows, 1)
+    expect(seen.map((r) => [r.sitzungnr, r.abstimmnr])).toEqual([
+      [90, 1],
+      [90, 3],
+      [90, 4],
+    ])
+  })
+
+  test("a run of resolved sheets is scanned through without skipping the next unresolved", () => {
+    // The "over-fetch" case: a long run of resolved sheets between two
+    // unresolved ones. The handler's over-fetch factor lets the client
+    // filter drop the resolved tail; if the fetch runs out before the
+    // second unresolved, the cursor must advance from the last raw row
+    // (not a resolved row inside it) so the next page picks up from past
+    // the last thing scanned.
+    const rows = [
+      unresolved(90, 1),
+      resolved(90, 2),
+      resolved(90, 3),
+      resolved(90, 4),
+      resolved(90, 5),
+      resolved(90, 6),
+      resolved(90, 7),
+      resolved(90, 8),
+      unresolved(90, 9),
+      unresolved(91, 1),
+    ]
+    const seen = walk(rows, 1)
+    expect(seen.map((r) => [r.sitzungnr, r.abstimmnr])).toEqual([
+      [90, 1],
+      [90, 9],
+      [91, 1],
+    ])
+  })
+
+  test("a sitting boundary between two returned pages loses no unresolved rows", () => {
+    // Cross-sitting equivalent of the first test: `(90,3)`, `(91,1)`,
+    // `(91,2)`, all unresolved, `limit: 1`. Every row must appear.
+    const rows = [unresolved(90, 3), unresolved(91, 1), unresolved(91, 2)]
+    const seen = walk(rows, 1)
+    expect(seen.map((r) => [r.sitzungnr, r.abstimmnr])).toEqual([
+      [90, 3],
+      [91, 1],
+      [91, 2],
+    ])
+  })
+
+  test("done-on-empty: an empty scan returns nothing and terminates", () => {
+    const decision = decideVorgangPage([], undefined, 5, false)
+    expect(decision.sheets).toEqual([])
+    expect(decision.nextCursor).toBeNull()
+    expect(decision.done).toBe(true)
+  })
+
+  test("a scan of only resolved rows returns nothing and terminates", () => {
+    // The whole page was resolved. `fetchExhausted=false` means the scan
+    // saw them all, so `done=true` — no cursor to advance to, and no
+    // unresolved to return.
+    const decision = decideVorgangPage(
+      [resolved(90, 1), resolved(90, 2), resolved(91, 1)],
+      undefined,
+      5,
+      false,
+    )
+    expect(decision.sheets).toEqual([])
+    expect(decision.done).toBe(true)
+  })
+
+  test("the cursor never lands on a resolved row's key", () => {
+    // Walk every intermediate cursor decideVorgangPage returns across a
+    // mixed set. None of them may equal a resolved sheet's key — that was
+    // the exact NEW-M3 bug, and letting a resolved key become the cursor
+    // opens the door back up.
+    const rows = [
+      unresolved(90, 1),
+      resolved(90, 2),
+      unresolved(90, 3),
+      resolved(91, 1),
+      unresolved(91, 2),
+    ]
+    const resolvedKeys = new Set(
+      rows
+        .filter((row) => row.dipVorgangId != null)
+        .map((row) => `${row.sitzungnr}:${row.abstimmnr}`),
+    )
+    let cursor: { sitzungnr: number; abstimmnr: number } | undefined
+    for (let step = 0; step < 20; step++) {
+      const scan = cursor ? rows.filter((r) => r.sitzungnr >= cursor!.sitzungnr) : rows
+      const decision = decideVorgangPage(scan, cursor, 1, false)
+      if (decision.nextCursor === null) return
+      expect(resolvedKeys).not.toContain(
+        `${decision.nextCursor.sitzungnr}:${decision.nextCursor.abstimmnr}`,
+      )
+      cursor = decision.nextCursor
+    }
+    throw new Error("decideVorgangPage did not converge after 20 pages")
+  })
+})
+
+// --- L3 mutation — NEW-L2 behavioural coverage of the four outcomes -------
+
+describe("classifyVorgangPatch: the four outcomes", () => {
+  test("an unknown sheet returns 'unknown', never a silent write", () => {
+    // The (sitzungnr, abstimmnr) named a sheet the period does not carry.
+    // This counter is what tells an operator the pipeline's map went past
+    // what the deployment holds — a data corruption if it were to write
+    // rather than count.
+    expect(classifyVorgangPatch(null, "V")).toBe("unknown")
+  })
+
+  test("an absent stored dipVorgangId is patched with the incoming value", () => {
+    // The intended write path: a ballot ingested before its referring
+    // Vorgangsposition surfaced — dipVorgangId absent — receives the value
+    // the referral walk just resolved.
+    expect(classifyVorgangPatch({}, "V")).toBe("patched")
+    // `null` and absent must classify identically; the schema keeps the
+    // column `v.optional(v.union(v.null(), v.string()))` and the read
+    // normaliser flattens absent to null. A regression that treats them
+    // differently reintroduces the M2 boundary.
+    expect(classifyVorgangPatch({ dipVorgangId: null }, "V")).toBe("patched")
+  })
+
+  test("a stored value equal to the incoming value is 'unchanged' — idempotent", () => {
+    // Rerunning the L3 CLI on a fully-repaired period must be a no-op. If
+    // this classified as 'patched' instead, a re-run would tick the
+    // counter forever and the operator would never know they were done.
+    expect(classifyVorgangPatch({ dipVorgangId: "V" }, "V")).toBe("unchanged")
+  })
+
+  test("a stored value that differs from the incoming value is 'conflict' — never overwritten", () => {
+    // The re-attribution case. A ballot's stored Vorgang differs from what
+    // this walk resolved. The mutation refuses to overwrite; the counter
+    // signals the operator, and a real re-attribution needs to be a
+    // deliberate migration, not a side effect of running the backfill.
+    expect(classifyVorgangPatch({ dipVorgangId: "V" }, "OTHER")).toBe("conflict")
+  })
+
+  test("the classification is total over the state space — every input is one of the four", () => {
+    // Prevents a fifth outcome sneaking in as `undefined`, which would
+    // crash the counter increment in the mutation. Enumerated rather than
+    // asserted structurally so a rename ("patch" → "created") fails here
+    // rather than at runtime.
+    const outcomes = new Set(["patched", "unchanged", "conflict", "unknown"])
+    for (const input of [
+      null,
+      {},
+      { dipVorgangId: null },
+      { dipVorgangId: "V" },
+      { dipVorgangId: "OTHER" },
+    ]) {
+      expect(outcomes.has(classifyVorgangPatch(input, "V"))).toBe(true)
+    }
+  })
+})
+
+// --- voteSheetsMissingVorgang handler — real ctx wiring assertions --------
+
+/** The subset of `voteSheets` a `recordingCtx` fixture needs. `_id` is
+ * required by the fake DB for `get`; every other field maps to what the
+ * handler and its filter actually read. */
+type SheetFixture = {
+  _id: string
+  wahlperiode: number
+  sitzungnr: number
+  abstimmnr: number
+  yesCount: number
+  noCount: number
+  abstainCount: number
+  dipVorgangId?: string | null
+}
+
+function fixtureSheet(
+  overrides: Partial<SheetFixture> & Pick<SheetFixture, "sitzungnr" | "abstimmnr">,
+): SheetFixture {
+  return {
+    _id: `sheet-${overrides.sitzungnr}-${overrides.abstimmnr}`,
+    wahlperiode: 21,
+    yesCount: 500,
+    noCount: 100,
+    abstainCount: 5,
+    dipVorgangId: null,
+    ...overrides,
+  }
+}
+
+// The extracted handler function — not the internalQuery wrapper — so the
+// tests do not print Convex's "should not directly call other Convex
+// functions" warning. `_generated/server`'s `QueryCtx` is what the handler
+// signature actually asks for; the fake from `recordingCtx` implements the
+// subset it uses.
+const missingVorgangHandler = voteSheetsMissingVorgangHandler as unknown as (
+  ctx: unknown,
+  args: { wahlperiode: number; cursor?: { sitzungnr: number; abstimmnr: number }; limit?: number },
+) => Promise<{
+  sheets: { sitzungnr: number; abstimmnr: number }[]
+  nextCursor: { sitzungnr: number; abstimmnr: number } | null
+  done: boolean
+}>
+
+describe("voteSheetsMissingVorgang: the handler wires .gte and paginates safely", () => {
+  test("first-page scan uses no range bound, so the whole period is in reach", async () => {
+    const { ctx, cost } = recordingCtx({
+      voteSheets: [fixtureSheet({ sitzungnr: 90, abstimmnr: 1 })],
+    })
+
+    const result = await missingVorgangHandler(ctx, { wahlperiode: 21 })
+
+    expect(result.sheets.map((s) => [s.sitzungnr, s.abstimmnr])).toEqual([[90, 1]])
+    // No cursor → the handler should scan on `.eq(wahlperiode)` alone, with
+    // no `.gt`/`.gte` at all — otherwise a cold call would silently skip
+    // rows.
+    const [read] = cost.reads
+    expect(read.eq).toEqual([{ field: "wahlperiode", value: 21 }])
+    expect(read.gt).toBeUndefined()
+    expect(read.gte).toBeUndefined()
+  })
+
+  test("a cursor advances via .gte on sitzungnr — NEW-H2 regression at the handler layer", async () => {
+    // The bug the prior code shipped: `.gt("sitzungnr", cursor.sitzungnr)`
+    // silently dropped every row in the boundary sitting. Asserting the
+    // recorded bound is `.gte` catches a regression that would reintroduce
+    // the drop without needing a real Convex backend.
+    const { ctx, cost } = recordingCtx({
+      voteSheets: [fixtureSheet({ sitzungnr: 91, abstimmnr: 1 })],
+    })
+
+    await missingVorgangHandler(ctx, {
+      wahlperiode: 21,
+      cursor: { sitzungnr: 90, abstimmnr: 5 },
+    })
+
+    const [read] = cost.reads
+    expect(read.gte).toEqual({ field: "sitzungnr", value: 90 })
+    expect(read.gt).toBeUndefined()
+  })
+
+  test("three unresolved sheets in one sitting are all returned across three pages via the real handler", async () => {
+    // The full end-to-end proof of the NEW-H2 fix: three sheets in sitting
+    // 90, paged at `limit: 1`, must all come back. Uses the real handler
+    // and the real cursor round-trip, so a regression in either the range
+    // bound or the pure `decideVorgangPage` fails here.
+    const tables = {
+      voteSheets: [
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 1 }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 2 }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 3 }),
+      ],
+    }
+
+    const seen: [number, number][] = []
+    let cursor: { sitzungnr: number; abstimmnr: number } | undefined
+    for (let step = 0; step < 5; step++) {
+      const { ctx } = recordingCtx(tables)
+      const result = await missingVorgangHandler(ctx, {
+        wahlperiode: 21,
+        cursor,
+        limit: 1,
+      })
+      seen.push(...result.sheets.map((s): [number, number] => [s.sitzungnr, s.abstimmnr]))
+      if (result.done || result.nextCursor === null) break
+      cursor = result.nextCursor
+    }
+
+    expect(seen).toEqual([
+      [90, 1],
+      [90, 2],
+      [90, 3],
+    ])
+  })
+
+  test("a resolved sheet between two unresolved ones does not evict its unresolved siblings via the handler", async () => {
+    // NEW-M3 regression at the handler layer.
+    const tables = {
+      voteSheets: [
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 1 }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 2, dipVorgangId: "V-resolved" }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 3 }),
+        fixtureSheet({ sitzungnr: 91, abstimmnr: 1 }),
+      ],
+    }
+
+    const seen: [number, number][] = []
+    let cursor: { sitzungnr: number; abstimmnr: number } | undefined
+    for (let step = 0; step < 5; step++) {
+      const { ctx } = recordingCtx(tables)
+      const result = await missingVorgangHandler(ctx, {
+        wahlperiode: 21,
+        cursor,
+        limit: 1,
+      })
+      seen.push(...result.sheets.map((s): [number, number] => [s.sitzungnr, s.abstimmnr]))
+      if (result.done || result.nextCursor === null) break
+      cursor = result.nextCursor
+    }
+
+    expect(seen).toEqual([
+      [90, 1],
+      [90, 3],
+      [91, 1],
+    ])
+  })
+
+  test("done-on-empty: an empty period returns no sheets and done=true", async () => {
+    const { ctx } = recordingCtx({ voteSheets: [] })
+    const result = await missingVorgangHandler(ctx, { wahlperiode: 21 })
+    expect(result.sheets).toEqual([])
+    expect(result.nextCursor).toBeNull()
+    expect(result.done).toBe(true)
+  })
+
+  test("only-resolved: a period with every sheet resolved returns nothing and done=true", async () => {
+    const { ctx } = recordingCtx({
+      voteSheets: [
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 1, dipVorgangId: "V1" }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 2, dipVorgangId: "V2" }),
+      ],
+    })
+    const result = await missingVorgangHandler(ctx, { wahlperiode: 21 })
+    expect(result.sheets).toEqual([])
+    expect(result.done).toBe(true)
+  })
+})
+
+// --- backfillVoteSheetVorgang handler — real ctx wiring for the four cases
+
+const backfillHandler = backfillVoteSheetVorgangHandler as unknown as (
+  ctx: unknown,
+  args: {
+    wahlperiode: number
+    patches: { sitzungnr: number; abstimmnr: number; dipVorgangId: string }[]
+  },
+) => Promise<{ patched: number; unchanged: number; conflicts: number; unknown: number }>
+
+describe("backfillVoteSheetVorgang handler: the four outcomes end-to-end", () => {
+  test("idempotency — patching an already-resolved row returns unchanged and writes nothing", async () => {
+    // Rerunning the L3 CLI on a fully-repaired period must be a no-op.
+    // Assert the counter AND that `ctx.db.patch` was never invoked — a
+    // regression that patched instead of skipping would tick idempotent
+    // no-ops as writes forever.
+    let patches = 0
+    const rows = [fixtureSheet({ sitzungnr: 90, abstimmnr: 1, dipVorgangId: "V" })]
+    const { ctx } = recordingCtx({ voteSheets: rows })
+    // The fake ctx does not model `patch`; adding a spy just for this test
+    // keeps the assertion honest without teaching the fake a full write API.
+    ;(ctx as unknown as { db: Record<string, unknown> }).db.patch = async () => {
+      patches++
+    }
+
+    const result = await backfillHandler(ctx, {
+      wahlperiode: 21,
+      patches: [{ sitzungnr: 90, abstimmnr: 1, dipVorgangId: "V" }],
+    })
+
+    expect(result).toEqual({ patched: 0, unchanged: 1, conflicts: 0, unknown: 0 })
+    expect(patches).toBe(0)
+  })
+
+  test("conflict — a different stored value returns conflicts and refuses to overwrite", async () => {
+    let patches = 0
+    const { ctx } = recordingCtx({
+      voteSheets: [fixtureSheet({ sitzungnr: 90, abstimmnr: 1, dipVorgangId: "STORED" })],
+    })
+    ;(ctx as unknown as { db: Record<string, unknown> }).db.patch = async () => {
+      patches++
+    }
+
+    const result = await backfillHandler(ctx, {
+      wahlperiode: 21,
+      patches: [{ sitzungnr: 90, abstimmnr: 1, dipVorgangId: "INCOMING" }],
+    })
+
+    expect(result).toEqual({ patched: 0, unchanged: 0, conflicts: 1, unknown: 0 })
+    expect(patches).toBe(0)
+  })
+
+  test("unknown — a patch naming a sheet that does not exist returns unknown, no write", async () => {
+    let patches = 0
+    const { ctx } = recordingCtx({
+      voteSheets: [fixtureSheet({ sitzungnr: 90, abstimmnr: 1 })],
+    })
+    ;(ctx as unknown as { db: Record<string, unknown> }).db.patch = async () => {
+      patches++
+    }
+
+    const result = await backfillHandler(ctx, {
+      wahlperiode: 21,
+      patches: [{ sitzungnr: 99, abstimmnr: 42, dipVorgangId: "V" }],
+    })
+
+    expect(result).toEqual({ patched: 0, unchanged: 0, conflicts: 0, unknown: 1 })
+    expect(patches).toBe(0)
+  })
+
+  test("patched — an unresolved sheet receives the incoming Vorgang", async () => {
+    const writes: { id: string; fields: Record<string, unknown> }[] = []
+    const { ctx } = recordingCtx({
+      voteSheets: [fixtureSheet({ sitzungnr: 90, abstimmnr: 1, dipVorgangId: null })],
+    })
+    ;(ctx as unknown as { db: Record<string, unknown> }).db.patch = async (
+      id: string,
+      fields: Record<string, unknown>,
+    ) => {
+      writes.push({ id, fields })
+    }
+
+    const result = await backfillHandler(ctx, {
+      wahlperiode: 21,
+      patches: [{ sitzungnr: 90, abstimmnr: 1, dipVorgangId: "V" }],
+    })
+
+    expect(result).toEqual({ patched: 1, unchanged: 0, conflicts: 0, unknown: 0 })
+    expect(writes).toEqual([{ id: "sheet-90-1", fields: { dipVorgangId: "V" } }])
+  })
+
+  test("mixed batch — the counters correctly split across the four outcomes in one call", async () => {
+    let patches = 0
+    const { ctx } = recordingCtx({
+      voteSheets: [
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 1 }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 2, dipVorgangId: "V" }),
+        fixtureSheet({ sitzungnr: 90, abstimmnr: 3, dipVorgangId: "OTHER" }),
+      ],
+    })
+    ;(ctx as unknown as { db: Record<string, unknown> }).db.patch = async () => {
+      patches++
+    }
+
+    const result = await backfillHandler(ctx, {
+      wahlperiode: 21,
+      patches: [
+        { sitzungnr: 90, abstimmnr: 1, dipVorgangId: "V" },
+        { sitzungnr: 90, abstimmnr: 2, dipVorgangId: "V" },
+        { sitzungnr: 90, abstimmnr: 3, dipVorgangId: "V" },
+        { sitzungnr: 91, abstimmnr: 1, dipVorgangId: "V" },
+      ],
+    })
+
+    expect(result).toEqual({ patched: 1, unchanged: 1, conflicts: 1, unknown: 1 })
+    expect(patches).toBe(1) // only the resolvable row was written
   })
 })

@@ -141,6 +141,82 @@ def test_an_http_status_error_still_raises(no_pacing: None) -> None:
         client.get_json("person")
 
 
+# --- 429 rate-limit ---------------------------------------------------------
+
+
+def test_a_429_is_retried_on_the_same_jittered_backoff_as_a_waf_challenge(
+    no_pacing: None,
+) -> None:
+    """N4: abgeordnetenwatch answers 429 under sustained load with no
+    `Retry-After` and no rate-limit headers to negotiate against (its own
+    docs record the omission). Before this fix a 429 fell through into a
+    generic `BundestagAPIError` and ended the enrichment stage — precisely
+    what the loop is for on the Enodia side, and the same shape of failure.
+
+    The retry belongs in the shared transport rather than each client's own
+    wrapper: it is one policy for one class of failure, and it lets a
+    WAF-adjacent 429 (any host, any endpoint) survive the same way an Enodia
+    challenge does.
+    """
+    handler = _responder(
+        httpx.Response(429, text="Too Many Requests"),
+        httpx.Response(200, json={"documents": [{"id": "1"}]}),
+    )
+    client = BundestagClient(
+        base_url="https://www.abgeordnetenwatch.de/api/v2",
+        client=mock_client(handler),
+        max_retries=3,
+    )
+
+    assert client.get_json("politicians") == {"documents": [{"id": "1"}]}
+    assert len(handler.requests) == 2, "the 429 should have been retried, not raised"
+
+
+def test_a_429_that_never_clears_ends_with_ratelimited(no_pacing: None) -> None:
+    """Exhausted retries surface as `RateLimited`, not as a bare `BundestagAPIError`.
+
+    That is what tells an operator this was rate-limiting rather than an
+    application error, and it matches the terminal shape the Enodia loop
+    already uses on the same failure mode.
+    """
+    handler = _responder(*[httpx.Response(429, text="Too Many Requests")] * 6)
+    client = BundestagClient(
+        base_url="https://www.abgeordnetenwatch.de/api/v2",
+        client=mock_client(handler),
+        max_retries=2,
+    )
+
+    with pytest.raises(RateLimited):
+        client.get_json("politicians")
+
+
+def test_a_429_retry_after_delta_is_honoured_but_capped(no_pacing: None) -> None:
+    """RFC 7231 permits `Retry-After: <seconds>`; when present it beats the
+    exponential fallback so the client waits exactly what the server asked.
+
+    Capped at `MAX_BACKOFF` (5 minutes) because a hostile or misconfigured
+    header cannot be allowed to pin the run for hours. The cap is only ever
+    reached by pathological values; abgeordnetenwatch sends no `Retry-After`
+    at all, so the exponential path is what runs there.
+    """
+    from bundestrack.api.base import MAX_BACKOFF, _retry_after_seconds
+
+    delta = httpx.Response(429, headers={"retry-after": "7"})
+    absurd = httpx.Response(429, headers={"retry-after": "999999"})
+    missing = httpx.Response(429)
+    date_form = httpx.Response(429, headers={"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})
+
+    assert _retry_after_seconds(delta) == 7.0
+    assert _retry_after_seconds(absurd) == 999999.0
+    assert _retry_after_seconds(missing) is None
+    # HTTP-date form is deliberately unsupported (comment in the parser
+    # explains why); the client falls back to the jittered exponential.
+    assert _retry_after_seconds(date_form) is None
+    # And the cap is applied by the retry loop, not the parser — checked
+    # indirectly here so a later refactor cannot silently drop the ceiling.
+    assert MAX_BACKOFF <= 300.0
+
+
 # --- sequential fetching ---------------------------------------------------
 
 

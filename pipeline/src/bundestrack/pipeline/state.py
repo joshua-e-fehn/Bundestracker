@@ -71,6 +71,11 @@ OVERLAP = timedelta(hours=1)
 STREAM_ACTIVITIES = "activities"
 STREAM_MOTIONS = "motions"
 STREAM_PROTOCOLS = "protocols"
+#: Committee referrals walk `/vorgangsposition`, which no other stage filters on
+#: `f.aktualisiert.start` — so it gets its own mark rather than sharing the
+#: motions one, for the reason in the module docstring: a shared watermark lets
+#: a stage that succeeded advance past the window a failed stage still needs.
+STREAM_REFERRALS = "committee-referrals"
 
 #: How long a fetched contact block stays fresh.
 #:
@@ -163,6 +168,28 @@ class SyncState(BaseModel):
             except ValueError:
                 pass
         self.watermarks[self._key(wahlperiode, stream)] = seen.isoformat()
+
+    def restore_watermark(self, wahlperiode: int, stream: str, value: str | None) -> None:
+        """Set a stream's watermark to a prior value, moving it backwards if needed.
+
+        Unlike `advance`, this is **not monotonic**: it exists precisely so a
+        maintenance route that has to re-read a window (`backfill_vote_vorgang`
+        is the one caller today) can restore the daily sync's mark after its
+        own walk, rather than advancing past what the sync has actually
+        processed. A caller must snapshot the mark before its walk and restore
+        with the snapshot after — `value=None` removes the key, which is the
+        pre-walk state for a fresh watermark.
+
+        ⚠ Never call this from the normal sync path. The monotonic guarantee
+        `advance` gives — "the mark never moves back over records we know we
+        wrote" — is what makes an interrupted or retried sync safe to resume,
+        and this method deliberately bypasses it.
+        """
+        key = self._key(wahlperiode, stream)
+        if value is None:
+            self.watermarks.pop(key, None)
+        else:
+            self.watermarks[key] = value
 
     def newest_watermark(self, wahlperiode: int) -> str | None:
         """The furthest any stream has reached — for `status` to report.

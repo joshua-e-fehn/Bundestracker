@@ -352,6 +352,23 @@ class ConvexLoader:
                 result.record(self.post("motion-sponsors", {**payload, "sponsors": list(batch)}))
         return result
 
+    def upsert_committee_referrals(self, payloads: Sequence[dict[str, Any]]) -> BatchResult:
+        """Which committees a bill was referred to (§3.3).
+
+        A different route and a different table from `upsert_committees` above,
+        because they are claims about different subjects — a referral names no
+        member. See webapp/convex/committeeReferrals.ts.
+        """
+        return self.post_batches(
+            "committee-referrals", "referrals", payloads, unit="committee referrals"
+        )
+
+    def upsert_vote_explanations(self, payloads: Sequence[dict[str, Any]]) -> BatchResult:
+        """`Erklärung nach § 31 GO-BT` — a member's declared reason for a vote."""
+        return self.post_batches(
+            "vote-explanations", "explanations", payloads, unit="vote explanations"
+        )
+
     def upsert_activities(self, payloads: Sequence[dict[str, Any]]) -> BatchResult:
         return self.post_batches("activities", "activities", payloads, unit="activities")
 
@@ -383,6 +400,45 @@ class ConvexLoader:
         for batch in chunked(records):
             result.record(self.post("vote-records", {**payload, "records": list(batch)}))
         return result
+
+    def missing_vote_vorgang(
+        self,
+        wahlperiode: int,
+        cursor: dict[str, int] | None = None,
+        *,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """One page of ballots in a period whose procedure is not yet known.
+
+        The read half of the L3 backfill. Returns `{sheets, nextCursor, done}`
+        — sheets carry sitting and tally so the caller can join back to the
+        `_ballot_vorgaenge` map without a second Convex round-trip.
+        """
+        if self.dry_run:
+            return {"sheets": [], "nextCursor": None, "done": True}
+        payload: dict[str, Any] = {"wahlperiode": wahlperiode, "limit": limit}
+        if cursor is not None:
+            payload["cursor"] = cursor
+        return self._request("POST", "votes/missing-vorgang", payload)
+
+    def patch_vote_vorgang(
+        self, wahlperiode: int, patches: Sequence[dict[str, Any]]
+    ) -> dict[str, int]:
+        """Batch-patch late `dipVorgangId` links onto ballots (L3).
+
+        Idempotent by design: `backfillVoteSheetVorgang` counts `patched`,
+        `unchanged`, `conflicts`, `unknown`. A conflict — a row already
+        carrying a *different* Vorgang — is left alone; only a bulk migration
+        should reassign one, and this route is deliberately not that.
+        """
+        response = self.post(
+            "votes/backfill-vorgang",
+            {"wahlperiode": wahlperiode, "patches": list(patches)},
+        )
+        return {
+            key: int(response.get(key, 0))
+            for key in ("patched", "unchanged", "conflicts", "unknown")
+        }
 
     def backfill_vote_record_scope(
         self,

@@ -383,7 +383,7 @@ grundlage, dokumentnummer, seite: string
 > Filtering `abstimmungsart == "Namentliche Abstimmung"` is the right way to
 > *discover* roll-call votes in DIP, but the per-MP data must come from §4.
 
-### 3.3 `Ueberweisung` — the committee-work signal
+### 3.3 `Ueberweisung` — which committees a *bill* was sent to
 
 ```yaml
 ausschuss:        string   # "Ausschuss für Gesundheit"
@@ -391,6 +391,48 @@ ausschuss_kuerzel: string
 federfuehrung:    boolean  # true = lead committee
 ueberweisungsart: string
 ```
+
+> **Correction.** This section previously called `Ueberweisung` "the
+> committee-work signal", and §6.4's committee gap made that read as a route to
+> the historical committee metric. It is not one. A referral names a **committee
+> and a document**; there is no person on the record and no field from which one
+> could be derived. It cannot produce a per-MP committee count and it is not a
+> substitute for committee *membership*, which §6.4 correctly records as
+> published for the current Wahlperiode alone.
+>
+> Bundestrack stores referrals in their own table for exactly that reason — see
+> `webapp/convex/committeeReferrals.ts`, which spells out the misreading the
+> separation prevents.
+
+**Coverage and cardinality, measured 2026-07-29** over date-windowed samples of
+300–600 procedure steps per period:
+
+| WP | steps sampled | with a referral | referrals |
+|---|---|---|---|
+| 21 | 600 | 29 (4.8 %) | 111 |
+| 20 | 400 | 26 (6.5 %) | 153 |
+| 19 | 400 | 34 (8.5 %) | 111 |
+| 18 | 300 | 29 (9.7 %) | 114 |
+
+Three to four committees per referring step, exactly one flagged
+`federfuehrung`. Bearing step kinds are `Beratung`, `1. Beratung` and
+`Ausschussüberweisung` on the plenary side, plus `Überweisung gemäß § 93
+Geschäftsordnung BT` on Drucksachen (mostly EU-Vorlagen).
+
+> ⚠ **`ueberweisungsart` is always null.** 0 of 754 referrals sampled across
+> WP14–21 carried a value. The field is in the schema; nothing can be read off
+> it today.
+
+> ⚠ **`/vorgangsposition` publishes no `wahlperiode`.** Unlike `/vorgang` and
+> `/aktivitaet`, the record carries no period at all — so a stored referral must
+> take its period from the query that selected it (`f.wahlperiode=N`). Reading
+> it off the record yields null on every row.
+
+> ⚠ **Cursor order is oldest-first, and it will fool a sample.** Paging
+> `/vorgangsposition?f.wahlperiode=20` from the start returned **0** referrals in
+> 500 rows, which reads as "this period has none" — the first pages are all
+> question-time entries. The same period at `f.datum.start=2024-06-01` returns
+> 26 in 400. Any coverage claim from an unwindowed prefix is unsound.
 
 ### 3.4 Drucksache authorship
 
@@ -453,9 +495,18 @@ Real record (WP21):
 > as a bare `string` with `"Rede"` as the only example — there is no enum, no
 > value list, and no catalogue endpoint to enumerate the possible values. The
 > observed samples in this document (`Rede`, `Kleine Anfrage`, `Zwischenfrage`,
-> `Schriftliche Erklärung gem. § 31 GO BT`, `Rede (zu Protokoll gegeben)`) are
+> `Schriftliche Erklärung gem. § 31 Geschäftsordnung BT`,
+> `Rede (zu Protokoll gegeben)`, `Zur Geschäftsordnung BT`) are
 > **not exhaustive** — they come from at most a few hundred sampled records out
 > of 80 537.
+>
+> ⚠ **The §31 value was recorded wrong here until 2026-07-29.** This document
+> and `webapp/lib/scoring.ts` both said `Schriftliche Erklärung gem. § 31 GO
+> BT`; the API returns `§ 31 Geschäftsordnung BT`. An exact-match filter on the
+> old literal selects **nothing**, silently — which is precisely the failure the
+> paragraph above warns about, arriving through a transcription error rather
+> than through a new value. Match on `§ 31`, which is the part the
+> Geschäftsordnung fixes.
 >
 > Bundestrack's metric taxonomy therefore cannot be a closed mapping. The
 > pipeline must **log and surface unrecognised `aktivitaetsart` values rather
@@ -618,6 +669,24 @@ exactly, *including* absences and the maternity-protection annotation:
 > Being community-run, it should be treated as a convenience/validation source,
 > not the system of record. The official XLSX (route A) is authoritative.
 
+> **Decision, 2026-07-29: Bundestrack does not ingest `/polls`.** The client
+> methods for it were built, tested and never called, and on inspection they
+> should not be. Three reasons, all measured:
+>
+> 1. **Curated, not complete** — 63 WP21 polls against ~1 015 official named
+>    votes. Anything keyed on it silently omits most ballots.
+> 2. **What it adds is editorial, not authoritative** — `field_intro` is
+>    volunteer-written prose summarising a bill; `field_accepted` restates DIP's
+>    `beschlusstenor`; `field_committees` restates DIP's `Ueberweisung`.
+>    Bundestrack takes each from the official source already.
+> 3. **No product surface consumes it**, and the ballot-outcome join it might
+>    have served runs through DIP instead (§3.2).
+>
+> The endpoint stays public and documented, so the cross-validation above
+> remains reproducible as a one-off check. It is simply not pipeline behaviour.
+> What Bundestrack *does* use this source for is §7.3's succession feed and the
+> occupation/education enrichment in §7.
+
 ### 4.4 Non-named votes
 
 Most Bundestag votes are shows of hands and are recorded only as an aggregate
@@ -625,6 +694,53 @@ outcome in `Beschlussfassung.beschlusstenor` / the protocol text. **No per-MP
 data exists for these at all** — only ~1 015 votes in the Bundestag's entire
 history are recorded by name. Any "voting participation" metric must be scoped
 to named votes only, and this should be stated in the UI.
+
+### 4.5 Vote explanations — `Erklärung nach § 31 GO-BT`
+
+A ballot's **subject** is its title. A **reason** is a different claim, and the
+Geschäftsordnung provides for exactly one: under §31 a member may put on the
+record why they voted as they did.
+
+DIP publishes each as an `/aktivitaet`:
+
+```json
+{"id":"1791010","aktivitaetsart":"Schriftliche Erklärung gem. § 31 Geschäftsordnung BT",
+ "person_id":"2072","wahlperiode":21,"datum":"2026-07-10",
+ "titel":"Peter Boehringer, MdB, AfD",
+ "vorgangsbezug":[{"id":"333135","vorgangsposition":"3. Beratung",
+   "titel":"Gesetz zur Regelung der Förderung des Spitzensports …"}],
+ "fundstelle":{"dokumentnummer":"21/90","seite":"11246D",
+   "pdf_url":"https://dserver.bundestag.de/btp/21/21090.pdf#P.11246"}}
+```
+
+That record is **machine-linkable to the ballot**: `person_id` names the member,
+`vorgangsbezug[0].id` names the procedure that was voted on, and `fundstelle`
+deep-links the protocol page. Measured 2026-07-29, `person_id`, `fundstelle` and
+`vorgangsbezug` were present on **100 %** of the declarations sampled.
+
+Coverage is real but sparse — most ballots have none:
+
+| Protocol | declarations | named ballots | ballots carrying one |
+|---|---|---|---|
+| 21/90 | 20 | 8 | 3 |
+| 21/89 | 3 | 1 | 1 |
+| 21/88 | 0 | 1 | 0 |
+| 20/214 | 48 | 2 | 2 |
+| 19/239 | 78 | 1 | 1 |
+| 19/238 | 23 | 2 | 2 |
+
+> **The prose is not a field.** DIP publishes that a declaration exists, whose
+> it is, and where it is printed — not the member's words. The text lives in the
+> protocol XML under `anlagen-typ: Erklärung nach § 31 GO` (§5.2). So a stored
+> row is a pointer plus provenance, and **no explanation may ever be generated,
+> summarised or paraphrased**: a §31 declaration is a named person's own
+> statement about their own vote.
+
+> **What the ballot record itself carries.** `Beschlussfassung` on a named vote
+> has `beschlusstenor`, `abstimm_ergebnis_bemerkung` and `dokumentnummer` at
+> 8/8 in the sitting sampled — an outcome, a tally and the paper voted on.
+> `grundlage` and `mehrheit` were **null on every one**. None of those is a
+> reason; they describe what was decided, not why anyone decided it.
 
 ---
 
@@ -790,8 +906,10 @@ tag them (`zu_protokoll=True`) either way — `root.iter('rede')` catches both.
 ```
 
 Observed `aktivitaetsart` (first 100 of 131): `Rede` 76,
-`Schriftliche Erklärung gem. § 31 GO BT` 15, `Zwischenfrage` 7,
-`Rede (zu Protokoll gegeben)` 2.
+`Schriftliche Erklärung gem. § 31 Geschäftsordnung BT` 15, `Zwischenfrage` 7,
+`Rede (zu Protokoll gegeben)` 2. (§5.1's correction applied — the value that
+originally appeared here as `§ 31 GO BT` is the transcription DIP has never
+actually emitted.)
 
 It has **no text and no word counts**, but it gives DIP `person_id` directly —
 making it both a validation source for XML extraction and a practical way to
@@ -1466,6 +1584,44 @@ than dropping them; use abgeordnetenwatch's `candidacies-mandates` (which
 records successions with `start_date` and an `info` note such as *"ist am
 20.07.2026 für Frank Junge in den Deutschen Bundestag nachgerückt"*) to detect
 new MPs sooner.
+
+#### The mandate feed, as implemented
+
+```bash
+curl "https://www.abgeordnetenwatch.de/api/v2/candidacies-mandates\
+?parliament_period=161&type=mandate&range_start=0&range_end=100"
+```
+
+Both parameters are load-bearing, and both were verified live on 2026-07-29:
+
+- **`parliament_period`**, *not* `field_legislature` — the latter answers **500**
+  here, and is what `/polls` requires. Unfiltered, the collection returns every
+  German parliament the site tracks (its first page carries Rheinland-Pfalz and
+  Nordrhein-Westfalen rows), so a dropped filter does not narrow badly, it mixes
+  chambers.
+- **`type=mandate`** — the collection is *candidacies*-mandates. Without it the
+  response also carries people who merely stood for election.
+
+Filtered, WP21 returns exactly **630** mandates, of which **11** carry a
+succession note.
+
+**The identity join runs `politician.id` → `politicians.ext_id_bundestagsverwaltung`
+→ the 8-digit Stammdaten id.** 628 of 630 resolve (99.7 %).
+
+> ⚠ **Do not join on the mandate's own `id_external_administration`.** It is
+> populated on 629 of 630 and it is numeric, which makes it look like the key —
+> it is a 3–4 digit id from a different space. Steffen Bilger's mandate carries
+> `1566`, while his Stammdaten id is `11004011` and his DIP person id is `1013`.
+> Joining on it matches the *wrong member* rather than failing to match.
+
+**Bundestrack reads this as a report, never as a writer.** MdB-Stammdaten is the
+roster (§6.1); this is community-run. A member here and absent from the dump is a
+dated, evidenced staleness finding an operator can act on. A member in the dump
+and absent here means only that the community source has not caught up — and is
+never grounds for removing an official row. The two WP21 mandates that carry no
+`ext_id_bundestagsverwaltung` are quarantined rather than name-matched: this
+source publishes a display name and nothing to disambiguate with, so a fold-and-
+match here would fail by attaching a mandate to the wrong person.
 
 ### 7.4 Recommendation
 

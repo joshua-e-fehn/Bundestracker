@@ -1,7 +1,13 @@
 import { type Infer, v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { Doc, Id } from "./_generated/dataModel"
-import { internalMutation, type QueryCtx, query } from "./_generated/server"
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+  type QueryCtx,
+  query,
+} from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -35,13 +41,29 @@ import { vote, voteSheetInput } from "./schema"
  * `groupMajority` cannot name a sixth. */
 type Vote = Infer<typeof vote>
 
+/** The ballot as a caller sees it.
+ *
+ * `dipVorgangId` is `v.optional` in storage — it was added to a populated table,
+ * where a required field fails the whole deploy — but **total here**, for the
+ * reason `mpDoc` gives at convex/mps.ts: a `returns` validator that does not
+ * allow `undefined` fails the entire query with a bare "Server Error" naming
+ * neither field nor function, and pushing a third state out to every consumer
+ * would make them handle something that means exactly what `null` already does.
+ * `toVoteSheetDoc` normalises it. */
 const voteSheetDoc = v.object({
   id: v.id("voteSheets"),
   ...voteSheetInput,
+  dipVorgangId: v.union(v.null(), v.string()),
   createdAt: v.number(),
 })
 
-const toVoteSheetDoc = withId<"voteSheets">
+/** Drops the system fields and fills in the read shape's one total column —
+ * see `voteSheetDoc` on why `dipVorgangId` is nullable here but optional in
+ * storage. */
+function toVoteSheetDoc(row: Doc<"voteSheets">) {
+  const doc = withId<"voteSheets">(row)
+  return { ...doc, dipVorgangId: doc.dipVorgangId ?? null }
+}
 
 /** A vote record joined to the voter. The name is denormalised into the
  * response because the ballot view lists 630 rows and doing this per row in the
@@ -902,6 +924,329 @@ export const voteScopeCoverage = query({
       complete: pending.length === 0,
     }
   },
+})
+
+// --- the Vorgang backfill (L3) --------------------------------------------
+
+/** One ballot's natural-key + tally, the shape the read/write halves of the
+ * L3 backfill exchange. Exported so `decideVorgangPage` and its tests can key
+ * on the same type as the mutation. */
+export type VorgangPageRow = {
+  sitzungnr: number
+  abstimmnr: number
+  yesCount: number
+  noCount: number
+  abstainCount: number
+  dipVorgangId?: string | null
+}
+
+/** The `{sitzungnr, abstimmnr}` cursor the L3 read pages with. */
+export type VorgangPageCursor = { sitzungnr: number; abstimmnr: number }
+
+/**
+ * Decide what one page of `voteSheetsMissingVorgang` returns, from the raw
+ * indexed scan and the cursor. Pure, so the cursor arithmetic that carries
+ * the whole safety of the L3 backfill is testable without a database.
+ *
+ * ## The two rules this holds
+ *
+ * 1. **No unresolved sheet is skipped.** The prior code used `.gt` at the
+ *    sitting level (NEW-H2 in `/tmp/rereview-source-backed-ingestion-gaps.md`),
+ *    which lost the tail of any sitting straddling a page boundary. The
+ *    fixed handler uses `.gte`, and this function filters out rows *at or
+ *    before* the cursor with `row.abstimmnr > cursor.abstimmnr` when the
+ *    sitting matches. So `(90,1)/(90,2)/(90,3)` at `limit=1` walks all
+ *    three across three pages.
+ *
+ * 2. **The cursor advances only from safe progress**, never from a resolved
+ *    row (NEW-M3). Two safe positions:
+ *      - The last **returned** filtered row — everything strictly after it
+ *        (per index order) is either unreturned-filtered or resolved, and
+ *        `.gte + filter` handles both.
+ *      - The last **raw** row we scanned, when the scan is filled but we
+ *        did not have enough filtered rows to fill the page. Advancing to
+ *        it moves the cursor strictly forward — the handler guarantees the
+ *        raw scan is large enough that this last raw row is strictly past
+ *        the incoming cursor (see `VORGANG_MIN_FETCH_SIZE`), so the next
+ *        call cannot re-fetch the same window and loop.
+ *
+ *    The prior code took `rows[limit]` — the (limit+1)-th raw row — which
+ *    could be a resolved sheet whose position, once used as a cursor,
+ *    silently skipped any unresolved sheet in the same sitting between the
+ *    returned tail and it. Never allowed here.
+ *
+ * ## Over-fetch factor and minimum fetch size
+ *
+ * The fetch takes `max(limit * OVER_FETCH_FACTOR, MIN_FETCH_SIZE) + 1` raw
+ * rows so the client filter has room to drop resolved sheets without needing
+ * a handler-side loop. Real sittings carry at most a handful of named
+ * ballots (typically 2–8, hard-ceilinged well below `MIN_FETCH_SIZE`), so
+ * the fetch is guaranteed to span at least one sitting boundary — which is
+ * what makes "advance to last raw row" safe: the cursor always moves past
+ * the previous cursor's sitting.
+ *
+ * The `+1` is the "there is more" probe. `fetchExhausted` is set when the
+ * scan filled its ceiling — the sole signal that unreturned rows may exist
+ * past what we saw.
+ */
+export const VORGANG_PAGE_OVER_FETCH = 4
+
+/** Floor for the raw scan size, regardless of `limit`. Guarantees the scan
+ * always spans past the largest possible sitting so `advance to last raw
+ * row` cannot leave the cursor pinned inside a sitting the caller already
+ * exhausted. Sittings hold at most a handful of named ballots (§4.4, and
+ * the 8‑named‑votes protocol 21/90 is the busiest sampled), so 64 is two
+ * orders of magnitude above the real maximum and still trivial to read. */
+export const VORGANG_MIN_FETCH_SIZE = 64
+
+export function vorgangPageFetchSize(limit: number): number {
+  return Math.max(limit * VORGANG_PAGE_OVER_FETCH, VORGANG_MIN_FETCH_SIZE) + 1
+}
+
+export function decideVorgangPage(
+  rows: VorgangPageRow[],
+  cursor: VorgangPageCursor | undefined,
+  limit: number,
+  fetchExhausted: boolean,
+): { sheets: VorgangPageRow[]; nextCursor: VorgangPageCursor | null; done: boolean } {
+  const startingSitting = cursor?.sitzungnr
+  const startingAbstimm = cursor?.abstimmnr
+  const filtered = rows.filter((row) => {
+    if (row.dipVorgangId != null) return false
+    if (startingSitting !== undefined && row.sitzungnr === startingSitting) {
+      // Strictly past the cursor within the boundary sitting; everything
+      // else in later sittings passes unconditionally.
+      return row.abstimmnr > (startingAbstimm ?? -1)
+    }
+    return true
+  })
+
+  const page = filtered.slice(0, limit)
+
+  if (filtered.length > limit) {
+    // More unreturned filtered rows sit in this fetch. Cursor from the last
+    // returned filtered row so the next call re-fetches past it and drops
+    // (via the sitting-boundary filter) the exact rows we just returned.
+    const last = page[page.length - 1]
+    return {
+      sheets: page,
+      nextCursor: { sitzungnr: last.sitzungnr, abstimmnr: last.abstimmnr },
+      done: false,
+    }
+  }
+
+  if (fetchExhausted && rows.length > 0) {
+    // The scan hit its ceiling. Because `vorgangPageFetchSize` is
+    // guaranteed to exceed the biggest sitting, `rows[last]` is strictly
+    // past the incoming cursor — either in a later sitting, or in the same
+    // sitting at a strictly higher abstimmnr. Advancing to it makes
+    // progress; it also cannot skip an unresolved sheet, because
+    // everything between the last returned filtered row and `rows[last]`
+    // was scanned and filtered out (resolved) in this pass.
+    const last = rows[rows.length - 1]
+    return {
+      sheets: page,
+      nextCursor: { sitzungnr: last.sitzungnr, abstimmnr: last.abstimmnr },
+      done: false,
+    }
+  }
+
+  // Fetch drained: no more rows in the period.
+  return { sheets: page, nextCursor: null, done: true }
+}
+
+/**
+ * Sheets in one period that still have no resolved procedure.
+ *
+ * The read half of the `voteSheets.dipVorgangId` backfill (L3 in the
+ * independent review). A ballot ingested *before* its referring
+ * `Vorgangsposition` surfaced in the referrals window lands with
+ * `dipVorgangId` absent, is added to `state.ingested_ballot_keys`, and an
+ * incremental `sync` never revisits it — the sheet is not re-posted and the
+ * ballot page shows no §31 section even when declarations exist. This query
+ * lets the pipeline patch those late arrivals without a full `--full`
+ * backfill (which is separately unsafe on a populated table when the
+ * referrals stage errors — see M2).
+ *
+ * Returns just the fields the pipeline needs to join back to
+ * `_ballot_vorgaenge`: the sitting and tally form the key, and
+ * `(sitzungnr, abstimmnr)` is what the caller sends back on the patch.
+ *
+ * Bounded read: one period has at most a few thousand voteSheets and the
+ * caller pages by `(sitzungnr, abstimmnr)` cursor so a growing table cannot
+ * force this over the read cap.
+ *
+ * ⚠ **Uses `.gte` on the sitting field, not `.gt`** — the boundary sitting's
+ * tail must stay in the scan so `decideVorgangPage`'s filter can walk it.
+ * The prior `.gt` lost every mid-sitting page boundary silently (NEW-H2).
+ */
+/** The `voteSheetsMissingVorgang` handler body, extracted so tests can call
+ * it with a fake `ctx` without going through the internalQuery wrapper —
+ * which prints a "Convex functions should not directly call other Convex
+ * functions" warning at test time even when the wrapping is what we want to
+ * exercise. Convex's own docs recommend exactly this pattern for shared
+ * logic; here the "shared" second caller is the test file. */
+export async function voteSheetsMissingVorgangHandler(
+  ctx: QueryCtx,
+  args: { wahlperiode: number; cursor?: VorgangPageCursor; limit?: number },
+): Promise<{
+  sheets: VorgangPageRow[]
+  nextCursor: VorgangPageCursor | null
+  done: boolean
+}> {
+  const limit = pageLimit(args.limit, 200)
+  const fetchSize = vorgangPageFetchSize(limit)
+
+  const rows = await ctx.db
+    .query("voteSheets")
+    .withIndex("by_wahlperiode_and_sitzungnr_and_abstimmnr", (chain) => {
+      const base = chain.eq("wahlperiode", args.wahlperiode)
+      if (!args.cursor) return base
+      // .gte, not .gt — the cursor's own sitting must stay in the scan so
+      // its tail is walked. `decideVorgangPage`'s filter drops the exact
+      // cursor row and any earlier row in the same sitting.
+      return base.gte("sitzungnr", args.cursor.sitzungnr)
+    })
+    .take(fetchSize)
+
+  const decision = decideVorgangPage(rows, args.cursor, limit, rows.length >= fetchSize)
+  return {
+    sheets: decision.sheets.map((row) => ({
+      sitzungnr: row.sitzungnr,
+      abstimmnr: row.abstimmnr,
+      yesCount: row.yesCount,
+      noCount: row.noCount,
+      abstainCount: row.abstainCount,
+    })),
+    nextCursor: decision.nextCursor,
+    done: decision.done,
+  }
+}
+
+export const voteSheetsMissingVorgang = internalQuery({
+  args: {
+    wahlperiode: v.number(),
+    /** Return sheets whose `(sitzungnr, abstimmnr)` sorts strictly after this
+     * cursor. Absent means "from the beginning". */
+    cursor: v.optional(v.object({ sitzungnr: v.number(), abstimmnr: v.number() })),
+    limit: v.optional(v.number()),
+  },
+  returns: v.object({
+    sheets: v.array(
+      v.object({
+        sitzungnr: v.number(),
+        abstimmnr: v.number(),
+        yesCount: v.number(),
+        noCount: v.number(),
+        abstainCount: v.number(),
+      }),
+    ),
+    /** The last returned sheet's key, or null when `done`. Never a resolved
+     * row's key — see `decideVorgangPage` for why. */
+    nextCursor: v.union(v.null(), v.object({ sitzungnr: v.number(), abstimmnr: v.number() })),
+    done: v.boolean(),
+  }),
+  handler: voteSheetsMissingVorgangHandler,
+})
+
+/**
+ * Patch late `dipVorgangId` links onto already-ingested ballots.
+ *
+ * The write half of the L3 backfill: takes a batch of `(sitzungnr, abstimmnr)
+ * → dipVorgangId` and patches each row whose current value differs. **Never
+ * writes null**, so a patch that fails to name a Vorgang is a no-op rather
+ * than an erasure — the same invariant `vote_sheet_payload` holds (M2).
+ *
+ * Idempotent: a row already carrying the same value is skipped, so a
+ * re-run reports `patched: 0` and reads only the sheets in the batch. A row
+ * whose stored value *differs* is left alone and reported as `conflicts` —
+ * a caller cannot silently reassign a ballot's procedure through this route
+ * (that would require a deliberate migration).
+ *
+ * Scoped by `wahlperiode` because the natural key is only unique within a
+ * period, and taking a shortcut would let a WP20 sitting number clash with
+ * WP21's.
+ */
+
+/** What the L3 mutation should do with one patch, given the row it found
+ * (if any). Extracted from the mutation so idempotency / conflict-refusal /
+ * unknown are testable without a database — the four transitions are the
+ * whole semantic surface of the write, and a regression that reintroduces
+ * `patched` for a differing value or `unchanged` for a null wants a
+ * failing test even in the pure layer. */
+export type VorgangPatchOutcome = "patched" | "unchanged" | "conflict" | "unknown"
+
+export function classifyVorgangPatch(
+  existing: { dipVorgangId?: string | null } | null,
+  incoming: string,
+): VorgangPatchOutcome {
+  if (existing === null) return "unknown"
+  if (existing.dipVorgangId == null) return "patched"
+  if (existing.dipVorgangId === incoming) return "unchanged"
+  return "conflict"
+}
+
+/** The `backfillVoteSheetVorgang` handler body, extracted so tests can call
+ * it with a fake `MutationCtx` without going through the internalMutation
+ * wrapper — Convex prints a "should not directly call other Convex
+ * functions" warning at test time otherwise. Convex's own docs recommend
+ * this pattern for shared logic; here the "shared" second caller is the
+ * test file, and lifting the handler out keeps the wrapper-level assertions
+ * (arg validator, return validator) untouched. */
+export async function backfillVoteSheetVorgangHandler(
+  ctx: MutationCtx,
+  args: {
+    wahlperiode: number
+    patches: { sitzungnr: number; abstimmnr: number; dipVorgangId: string }[]
+  },
+): Promise<{ patched: number; unchanged: number; conflicts: number; unknown: number }> {
+  assertBatchSize(args.patches.length, "vote-sheet vorgang patches")
+  const counters = { patched: 0, unchanged: 0, conflict: 0, unknown: 0 }
+  for (const patch of args.patches) {
+    const sheet = await findSheet(ctx, args.wahlperiode, patch.sitzungnr, patch.abstimmnr)
+    const outcome = classifyVorgangPatch(sheet, patch.dipVorgangId)
+    if (outcome === "patched") {
+      // Non-null asserted because `outcome === "patched"` implies
+      // `sheet !== null` — the classification's own contract. TS cannot
+      // see through the branch, so the assertion is what states the
+      // implication back to it.
+      await ctx.db.patch(sheet!._id, { dipVorgangId: patch.dipVorgangId })
+    }
+    counters[outcome]++
+  }
+  return {
+    patched: counters.patched,
+    unchanged: counters.unchanged,
+    conflicts: counters.conflict,
+    unknown: counters.unknown,
+  }
+}
+
+export const backfillVoteSheetVorgang = internalMutation({
+  args: {
+    wahlperiode: v.number(),
+    patches: v.array(
+      v.object({
+        sitzungnr: v.number(),
+        abstimmnr: v.number(),
+        dipVorgangId: v.string(),
+      }),
+    ),
+  },
+  returns: v.object({
+    /** Rows whose `dipVorgangId` was set for the first time by this call. */
+    patched: v.number(),
+    /** Rows already carrying the same value — the idempotent no-op path. */
+    unchanged: v.number(),
+    /** Rows carrying a *different* value than the patch proposes. Left alone
+     * on purpose: a re-attributing write is a migration and needs to be
+     * explicit. Non-zero here is the signal an operator should act on. */
+    conflicts: v.number(),
+    /** Rows the patch named but this period does not have — either a sitting
+     * number that never existed or a ballot that was purged. */
+    unknown: v.number(),
+  }),
+  handler: backfillVoteSheetVorgangHandler,
 })
 
 // --- participation --------------------------------------------------------

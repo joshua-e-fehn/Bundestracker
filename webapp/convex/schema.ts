@@ -342,6 +342,31 @@ export const voteSheetInput = {
    * reconstructed from the protocol XML instead, which is also the case where
    * `absentCount` cannot be trusted. */
   sourceUrl: v.union(v.null(), v.string()),
+  /**
+   * The DIP procedure this ballot decided — the only route from a ballot to
+   * anything else DIP publishes about it.
+   *
+   * The XLSX sheet carries no id of any kind (§4.1, §7): its identity is
+   * `(wahlperiode, sitzungnr, abstimmnr)` and nothing more. So a ballot cannot
+   * reach the §31 declarations filed on it, because those name a *Vorgang*.
+   * This column is that link, resolved at ingest by whatever discovered the
+   * ballot rather than joined at query time.
+   *
+   * `v.optional` because it was added to a populated table, where a required
+   * field fails the whole deploy (`bundestrack-convex-schema-deploys`) — and
+   * because the three states are genuinely distinct:
+   *
+   * | value | meaning |
+   * |---|---|
+   * | a string | this ballot's procedure is known |
+   * | `null` | the ballot was ingested and no procedure resolved |
+   * | absent | the ballot predates this column |
+   *
+   * The last two both mean "cannot reach declarations", and neither may be
+   * rendered as "none were filed" — see `getExplanationCoverage`, which is what
+   * tells an unlinked ballot from an unexplained one.
+   */
+  dipVorgangId: v.optional(v.union(v.null(), v.string())),
 }
 
 export const voteRecordInput = {
@@ -610,6 +635,134 @@ export const committeeMembershipInput = {
   /** `MDBINS_VON`/`MDBINS_BIS`, day-level. An open `endDate` means serving. */
   startDate: v.union(v.null(), v.string()),
   endDate: v.union(v.null(), v.string()),
+}
+
+/**
+ * A committee referral — DIP `Ueberweisung`, attached to a procedure step
+ * (§3.3).
+ *
+ * ## ⚠ What this is not
+ *
+ * A referral names a **committee and a document**. It carries no person, and
+ * there is no field on it, anywhere, from which one could be derived. So it is
+ * **not** committee membership and **not** an individual MP's committee work —
+ * `committeeMemberships` above is the only source for either, and §6.4 records
+ * that it publishes the current period alone.
+ *
+ * That distinction is the entire reason this table is separate rather than
+ * more rows in `committeeMemberships`. api-research.md §3.3 calls `Ueberweisung`
+ * "the committee-work signal", which overstates it: it is a signal about which
+ * committees a *bill* was sent to, which is a fact about the procedure. Storing
+ * the two in one table would make a historical period look as though its
+ * committee membership had been recovered, when what was recovered is a
+ * different claim about different subjects.
+ *
+ * ## Coverage, measured
+ *
+ * Present on WP18–21 plenary steps at 4.8 %–9.7 % of positions (2026-07-29,
+ * date-windowed samples of 300–600 positions per period). It does **not** rescue
+ * the historical committee gap: it starts where DIP's own coverage does, and it
+ * answers a question about bills either way.
+ *
+ * One row per `(dipVorgangspositionId, committeeName)` — a step refers a bill to
+ * three or four committees at once, exactly one of them leading.
+ */
+export const committeeReferralInput = {
+  /** DIP `/vorgangsposition` id — the step that made the referral, and the
+   * natural key's first half. */
+  dipVorgangspositionId: v.string(),
+  /** The procedure the step belongs to, so a referral can be shown beside the
+   * motion it concerns. Null where DIP omitted it. */
+  dipVorgangId: v.union(v.null(), v.string()),
+  /** `Ausschuss für Gesundheit`. Verbatim, never folded onto
+   * `committeeMemberships.committeeName`: committee names are re-cut between
+   * periods, and matching them would assert a continuity the source does not. */
+  committeeName: v.string(),
+  /** `AfG`. Present on every referral sampled, but nullable — it is the
+   * source's abbreviation, not a key. */
+  committeeAbbreviation: v.union(v.null(), v.string()),
+  /** `federfuehrung` — the lead committee, as opposed to the co-advising ones.
+   * Exactly one per step in every sample. Null is preserved rather than
+   * defaulted to `false`: "not stated" and "not the lead" are different claims
+   * and only the source may make either. */
+  leadCommittee: v.union(v.null(), v.boolean()),
+  /**
+   * `ueberweisungsart`.
+   *
+   * ⚠ **Always null in practice.** Measured across every period sampled on
+   * 2026-07-29: 0 of 754 referrals carried a value. The column exists because
+   * the field exists in the DIP schema and a value appearing later should land
+   * somewhere rather than be dropped — not because anything can be read off it
+   * today.
+   */
+  referralType: v.union(v.null(), v.string()),
+  /** The step's own kind — `Beratung`, `1. Beratung`, `Ausschussüberweisung`,
+   * `Überweisung gemäß § 93 Geschäftsordnung BT`. What distinguishes a plenary
+   * referral from the EU-document route. */
+  positionKind: v.union(v.null(), v.string()),
+  /** The bill or paper referred, as printed — `21/220`. */
+  documentNumber: v.union(v.null(), v.string()),
+  title: v.string(),
+  date: v.string(),
+  wahlperiode: v.number(),
+}
+
+/**
+ * An MP's own declared reason for how they voted — `Erklärung nach § 31 GO-BT`.
+ *
+ * ## Why this exists at all, and what it is not
+ *
+ * A named ballot's *subject* is its title, and Bundestrack already stores that
+ * on `voteSheets`. A **reason** is a different thing, and the Geschäftsordnung
+ * provides for exactly one: under §31 a member may put on the record why they
+ * voted as they did. DIP publishes each one as an `/aktivitaet` whose
+ * `aktivitaetsart` is `Schriftliche Erklärung gem. § 31 Geschäftsordnung BT`,
+ * carrying the member's `person_id` and a `vorgangsbezug` naming the procedure
+ * — which is what makes it linkable to the ballot rather than merely adjacent
+ * to it.
+ *
+ * **The text is not stored, and no text is generated.** DIP publishes the
+ * declaration's *existence*, its author, and a page-anchored PDF link into the
+ * protocol; it does not publish the prose as a field. So a row here says "this
+ * member filed a declaration on this ballot, and here is the official page it
+ * is printed on". Anything more would be Bundestrack asserting a reason on a
+ * named person's behalf, which is the one thing this feature must never do.
+ *
+ * ## Coverage, measured 2026-07-29
+ *
+ * Per protocol: 21/90 → 20 declarations against 8 named ballots, 3 of which
+ * carry one; 21/89 → 3 / 1 of 1; 20/214 → 48 / 2 of 2; 19/239 → 78 / 1 of 1.
+ * `person_id` was present on 100 % in every sample. So this is sparse by nature
+ * — most ballots have none — and the UI must read an absent declaration as
+ * "none was filed", never as "not yet ingested".
+ *
+ * One row per `(dipAktivitaetId)`: DIP emits one record per member per
+ * declaration, which is already the grain.
+ */
+export const voteExplanationInput = {
+  /** DIP activity id — the natural key, and what makes re-ingest an upsert. */
+  dipAktivitaetId: v.string(),
+  mpInternalId: v.string(),
+  /** The procedure the declaration is about, from `vorgangsbezug[0].id`. This is
+   * the join to the ballot: a `voteSheets` row reached through the same Vorgang
+   * is the ballot being explained. */
+  dipVorgangId: v.union(v.null(), v.string()),
+  /** The referenced procedure's title — what was voted on, as DIP prints it.
+   * Not a reason, and the query contract keeps the two apart. */
+  subject: v.union(v.null(), v.string()),
+  /** `Schriftliche Erklärung gem. § 31 Geschäftsordnung BT`, verbatim. Stored
+   * rather than assumed because the string has already drifted once: this repo
+   * and api-research.md both recorded it as `§ 31 GO BT`, which matches nothing
+   * the API returns. */
+  aktivitaetsart: v.string(),
+  /** The protocol page the declaration is printed on, as a deep link —
+   * `…/21090.pdf#P.11246`. The provenance a reader can check, and the only
+   * route to the actual words. */
+  sourceUrl: v.union(v.null(), v.string()),
+  /** Protocol reference, `21/90`. */
+  protocolNumber: v.union(v.null(), v.string()),
+  date: v.string(),
+  wahlperiode: v.number(),
 }
 
 /**
@@ -955,6 +1108,30 @@ const schema = defineSchema({
     ])
     // The other direction: the membership of one committee.
     .index("by_wahlperiode_and_committeeName", ["wahlperiode", "committeeName"]),
+
+  committeeReferrals: defineTable({ ...committeeReferralInput, createdAt: v.number() })
+    // The natural key. A step refers a bill to three or four committees at
+    // once, so the step id alone is not unique — see the note on the input.
+    .index("by_dipVorgangspositionId_and_committeeName", ["dipVorgangspositionId", "committeeName"])
+    // "Which committees was this bill sent to" — the motion-side read, and the
+    // only one a motion page needs.
+    .index("by_dipVorgangId", ["dipVorgangId"])
+    // A period's referrals, and one committee's within it. Period-scoped in the
+    // index rather than filtered afterwards, for the reason `voteSheets` gives:
+    // taking N by date and dropping the wrong period returns short pages that
+    // read as a quieter parliament.
+    .index("by_wahlperiode_and_committeeName_and_date", ["wahlperiode", "committeeName", "date"]),
+
+  voteExplanations: defineTable({ ...voteExplanationInput, createdAt: v.number() })
+    // The natural key — DIP already emits one record per member per
+    // declaration.
+    .index("by_dipAktivitaetId", ["dipAktivitaetId"])
+    // The ballot-page read: every declaration filed on this procedure. Scoped
+    // by period because a Vorgang id is unique but the query that reaches it
+    // knows the ballot's period and should not read outside it.
+    .index("by_wahlperiode_and_dipVorgangId", ["wahlperiode", "dipVorgangId"])
+    // One member's declarations — the profile side.
+    .index("by_mpInternalId_and_wahlperiode_and_date", ["mpInternalId", "wahlperiode", "date"]),
 
   activities: defineTable({ ...activityInput, createdAt: v.number() })
     .index("by_dipAktivitaetId", ["dipAktivitaetId"])
