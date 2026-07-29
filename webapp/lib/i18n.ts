@@ -307,6 +307,19 @@ const de = {
   "rankings.crossPartyPeriod": "Gezählt über alle namentlichen Abstimmungen der Wahlperiode.",
   "rankings.crossPartyWindow": "Gezählt über die letzten {count} namentlichen Abstimmungen.",
 
+  // The interpretive caveat that governs the whole page. Wandert bewusst nach
+  // oben, damit sie eine Leserin liest, bevor sie die Reihenfolge deutet — die
+  // gleiche Platzierung, die `votes.namedOnlyNotice` und `parties.meansNotice`
+  // auf ihren Seiten haben. Vier Sätze, weil weniger keiner der drei
+  // strukturellen Effekte gerecht wird, die Reihenfolge nicht als Verdienst
+  // lesbar machen: die parlamentarische Rolle, die Datenlage der Periode und
+  // die Bemerkung „Zählung, keine Wertung“. Die untenstehende
+  // `rankings.scoreExplainer` steht weiterhin am Fuß und beschreibt die
+  // Rechnung, nicht die Deutung — die beiden ergänzen sich, statt sich zu
+  // wiederholen.
+  "rankings.readingNotice":
+    "Die Reihenfolge hier ist eine Zählung, keine Bewertung. Was zählbar ist, hängt von der Rolle im Bundestag ab: Kabinett und Fraktionsführung bringen wenige eigene Anträge ein, die Opposition dominiert die schriftlichen Anfragen, ein Ausschussvorsitz erzeugt keine namentlich zurechenbare Aktivität. Ältere Wahlperioden bringen weniger maschinenlesbare Quellen mit — die Hinweise unten unter dem jeweiligen Board benennen die genauen Grenzen.",
+
   "rankings.scoreExplainer":
     "Der Aktivitätswert ist eine gewichtete Summe messbarer Vorgänge. Die Gewichtung ist eine Setzung, keine Wertung — jede Komponente ist einzeln ausgewiesen.",
 
@@ -612,6 +625,17 @@ const de = {
   "trends.chart.votes": "Abstimmungen",
   "trends.chart.votes.desc":
     "Namentliche Abstimmungen je Monat, nach abgegebener Stimme. „Nicht abgegeben“ ist eigens ausgewiesen und keine Enthaltung.",
+  // The sixth chart, added when GAP-019 was closed. What the phrase
+  // „Legislative activity timeline“ from Bundestrack-Plan.md §Wave 4 asks for:
+  // the three DIP-Aktivitätsarten, die dem Namen einer/eines Abgeordneten auf
+  // einem Dokument entsprechen — Anträge (Antrag/Entschließungsantrag),
+  // Gesetzentwürfe (Gesetzentwurf) und Berichte (Bericht). Aufeinander
+  // gestapelt, weil die Frage nach der monatlichen Gesamtmenge zusammen mit
+  // ihrer Zusammensetzung nur so beantwortet wird; keiner der anderen fünf
+  // Reiter tut das.
+  "trends.chart.legislative": "Papiere",
+  "trends.chart.legislative.desc":
+    "Von diesem Mandat eingebrachte Dokumente je Monat: Anträge, Gesetzentwürfe und Berichte gestapelt. Die Höhe eines Balkens ist die Gesamtmenge des Monats; die Segmente zeigen, aus welcher Kategorie sie sich zusammensetzt.",
   "trends.cumulative": "Kumuliert",
   "trends.month": "Monat",
 
@@ -629,6 +653,13 @@ const de = {
     "Der Aktivitätswert ist eine gewichtete Summe — die Gewichtung ist eine Setzung, keine Wertung. Ein Monat ohne Sitzungswoche fällt niedrig aus, ohne dass jemand weniger gearbeitet hätte.",
   "trends.caveat.namedVotes":
     "Nur namentliche Abstimmungen. Ein Monat ohne Balken ist fast immer ein Monat ohne namentliche Abstimmung — nicht einer ohne Abstimmungen.",
+  // Not optional on this chart. Berichte sind in der gemessenen Praxis selten
+  // — sechs bestplatzierte Mitglieder in WP21 hatten zusammen zwei über 13
+  // Monate —, und ein fehlendes Segment darf nicht als „hat nichts geschrieben“
+  // gelesen werden. Der Hinweis erklärt zugleich, warum die drei Kategorien
+  // hier gestapelt sind und im „Anträge“-Reiter nebeneinander stehen.
+  "trends.caveat.legislative":
+    "Nicht die Gesamtaktivität, sondern nur Dokumente, die eine/n Abgeordnete/n als Urheber:in nennen. Reden, Anfragen, Abstimmungen und Ausschussarbeit stehen in eigenen Reitern. Berichte sind in der Praxis selten — ein fehlendes Segment heißt „in diesem Monat keiner erfasst“, nicht „nie schreibt“.",
 
   // --- score breakdown ---
   "score.total": "Gesamtwert",
@@ -918,6 +949,67 @@ const de = {
   "votes.rebel": "Abweichung",
   "votes.rebelTooltip": "Hat gegen die Mehrheit der eigenen Fraktion gestimmt.",
 
+  // --- Anträge, Anfragen und Gesetzentwürfe (/motions) ---------------------
+  // Die Seite listet Vorgänge und Drucksachen, wie DIP sie veröffentlicht.
+  // ⚠ Was hier NICHT steht, ist Absicht: kein Ergebnis, kein Status, keine
+  // Zusammenfassung. Der `motions`-Datensatz führt keines dieser Felder — er
+  // trägt Titel, Datum, Vorgangstyp, Drucksachennummer — und ein erfundener
+  // Verfahrensstand wäre genau die Art plausibler falscher Angabe, die dieses
+  // Projekt vermeidet.
+  "motions.title": "Anträge & Drucksachen",
+  "motions.subtitle":
+    "Vorgänge und Drucksachen einer Wahlperiode — Anträge, Anfragen, Gesetzentwürfe und Berichte, wie das Dokumentations- und Informationssystem des Bundestages sie veröffentlicht.",
+  // Der Hinweis, der die ganze Seite regiert: Der Datensatz sagt, dass etwas
+  // eingebracht wurde, nicht was daraus geworden ist. Steht oben, bevor gelesen
+  // wird, aus demselben Grund wie `votes.namedOnlyNotice` auf /votes.
+  "motions.recordOnlyNotice":
+    "Diese Liste zeigt eingebrachte Vorgänge und Drucksachen, nicht deren Ausgang. Ob ein Antrag angenommen, abgelehnt oder zurückgezogen wurde, veröffentlicht die Datenquelle an dieser Stelle nicht — dafür sind die namentlichen Abstimmungen die belastbare Quelle.",
+  "motions.searchLabel": "Titel durchsuchen",
+  "motions.searchPlaceholder": "Titel durchsuchen …",
+  "motions.filterKind": "Vorgangsart",
+  "motions.allKinds": "Alle Vorgangsarten",
+  "motions.filterYear": "Jahr",
+  "motions.allYears": "Alle Jahre",
+  // Die Vorgangsarten stammen aus einer Stichprobe der jüngsten Einträge, weil
+  // ein vollständiger Scan über zehntausende Zeilen bei jedem Seitenaufruf
+  // unvertretbar wäre. Gesagt statt verschwiegen: eine Art, die seit Jahren
+  // nicht vorkam, kann in der Auswahl fehlen.
+  "motions.kindsPartial":
+    "Die Vorgangsarten stammen aus den jüngsten Einträgen dieser Wahlperiode. Ältere, selten genutzte Arten können in der Auswahl fehlen; die Volltextsuche erreicht sie trotzdem.",
+  "motions.kindCountAtLeast": "{value} ({count}+)",
+  "motions.kindCount": "{value} ({count})",
+  "motions.columnDate": "Datum",
+  "motions.columnTitle": "Titel",
+  "motions.columnKind": "Vorgangsart",
+  "motions.columnDrucksache": "Drucksache",
+  // Drei verschiedene Leerzustände, drei verschiedene Aussagen.
+  "motions.empty": "Kein Vorgang passt zu diesen Filtern.",
+  "motions.emptyAll": "Für diese Wahlperiode wurden noch keine Vorgänge geladen.",
+  "motions.loaded": "{count} Vorgänge geladen",
+  "motions.end": "Ende der Liste.",
+  // Die Zeile unter dem Titel. Nur was die Zeile wirklich trägt; fehlende
+  // Felder erscheinen gar nicht, statt als Strich.
+  "motions.sponsors": "Mitzeichnende",
+  "motions.sponsorsLoading": "Mitzeichnende werden geladen …",
+  "motions.sponsorsNone": "Für diesen Vorgang sind keine Mitzeichnenden erfasst.",
+  "motions.sponsorsShow": "Mitzeichnende anzeigen",
+  "motions.sponsorsHide": "Mitzeichnende ausblenden",
+  "motions.sponsorsCount": "{count} erfasst",
+  // ⚠ Der wichtigste Satz dieser Seite nach dem Ergebnis-Hinweis. DIP kappt
+  // `autoren_anzeige` bei vier Einträgen; die tatsächlichen Mitzeichnenden
+  // kommen einzeln über /aktivitaet an. Die Zahl ist deshalb eine Untergrenze
+  // und darf nie als Unterschriftenzahl gelesen werden.
+  "motions.sponsorsCaveat":
+    "Erfasst sind die Mitzeichnenden, die bislang als personenbezogene Aktivität vorliegen. Die Datenquelle veröffentlicht die Urheberliste eines Dokuments nur gekürzt, deshalb ist diese Zahl eine Untergrenze und nicht die Zahl der Unterschriften.",
+  "motions.openDrucksache": "Drucksache (PDF)",
+  // Kein Link auf den Vorgang selbst: dip.bundestag.de beantwortet auch
+  // erfundene Vorgangsnummern mit HTTP 200 und einer leeren Seite, sodass ein
+  // toter Link nicht als toter Link erkennbar wäre. Nur die Drucksachen-PDF,
+  // deren Adresse §8 deterministisch belegt, wird verlinkt.
+  "motions.noDocument": "Kein verlinkbares Dokument",
+  "motions.noDocumentHint":
+    "Für diesen Vorgang ist keine Bundestags-Drucksachennummer erfasst — ohne sie lässt sich keine Adresse bilden, die nachweislich auf dasselbe Dokument zeigt.",
+
   // --- site chrome, homepage and footer ---
   "nav.votes": "Abstimmungen",
   "nav.motions": "Anträge",
@@ -946,6 +1038,7 @@ const de = {
   "nav.seatingHint": "Der Plenarsaal, ein Punkt je Mandat.",
   "nav.votesHint": "Namentliche Abstimmungen und wie jede Fraktion gestimmt hat.",
   "nav.ownResourcesHint": "Wenn der Bundestag über eigene Mittel und das Wahlrecht entscheidet.",
+  "nav.motionsHint": "Anträge, Anfragen und Gesetzentwürfe einer Wahlperiode.",
   "nav.inquiryHint": "Wer das Viertel nach Art. 44 GG erreicht — und wer nicht.",
   "nav.searchHint": "Abgeordnete und Dokumente im Volltext durchsuchen.",
   // The settings entry's gloss. Names the three things the page holds, because
@@ -2048,6 +2141,9 @@ const en: Dictionary = {
   "rankings.crossPartyPeriod": "Counted across every named ballot of the electoral period.",
   "rankings.crossPartyWindow": "Counted across the {count} most recent named ballots.",
 
+  "rankings.readingNotice":
+    "The order here is a tally, not a verdict. What can be counted depends on the role in the Bundestag: cabinet members and group leaders table few motions themselves, the opposition dominates the written questions, and chairing a committee produces no per-member record. Earlier electoral periods carry fewer machine-readable sources — the notes under each board below name the exact limits.",
+
   "rankings.scoreExplainer":
     "The activity score is a weighted sum of measurable records. The weighting is a choice, not a verdict — every component is shown separately.",
 
@@ -2244,6 +2340,9 @@ const en: Dictionary = {
   "trends.chart.votes": "Votes",
   "trends.chart.votes.desc":
     "Named ballots per month, by the vote cast. “Did not vote” is shown separately and is not an abstention.",
+  "trends.chart.legislative": "Papers",
+  "trends.chart.legislative.desc":
+    "Documents this member put their name to per month: motions, bills and reports, stacked. A bar's height is the month's total; the segments show which class it came from.",
   "trends.cumulative": "Cumulative",
   "trends.month": "Month",
 
@@ -2256,6 +2355,8 @@ const en: Dictionary = {
     "The activity score is a weighted sum — the weighting is a choice, not a verdict. A month without a sitting week reads low without anyone having done less.",
   "trends.caveat.namedVotes":
     "Named ballots only. A month with no bar is almost always a month with no named ballot — not one without votes.",
+  "trends.caveat.legislative":
+    "Not total activity — only documents attributed to this member as author. Speeches, questions, votes and committee work each have their own tab. Reports are rare in practice — a missing segment means “none recorded that month”, not “never writes any”.",
 
   // --- score breakdown ---
   "score.total": "Total score",
@@ -2470,6 +2571,43 @@ const en: Dictionary = {
   "votes.rebel": "Rebel vote",
   "votes.rebelTooltip": "Voted against the majority of their own parliamentary group.",
 
+  // --- motions, questions and bills (/motions) ---
+  "motions.title": "Motions & papers",
+  "motions.subtitle":
+    "Procedures and printed papers of one electoral period — motions, questions, bills and reports, as the Bundestag's documentation system publishes them.",
+  "motions.recordOnlyNotice":
+    "This list shows procedures and papers as tabled, not what became of them. Whether a motion was carried, rejected or withdrawn is not published at this endpoint — the recorded votes are the dependable source for that.",
+  "motions.searchLabel": "Search titles",
+  "motions.searchPlaceholder": "Search titles …",
+  "motions.filterKind": "Procedure type",
+  "motions.allKinds": "All procedure types",
+  "motions.filterYear": "Year",
+  "motions.allYears": "All years",
+  "motions.kindsPartial":
+    "The procedure types are drawn from this period's most recent entries. Older, rarely used types may be missing from the list; the title search still reaches them.",
+  "motions.kindCountAtLeast": "{value} ({count}+)",
+  "motions.kindCount": "{value} ({count})",
+  "motions.columnDate": "Date",
+  "motions.columnTitle": "Title",
+  "motions.columnKind": "Procedure type",
+  "motions.columnDrucksache": "Paper",
+  "motions.empty": "No procedure matches these filters.",
+  "motions.emptyAll": "No procedures have been loaded for this electoral period yet.",
+  "motions.loaded": "{count} procedures loaded",
+  "motions.end": "End of the list.",
+  "motions.sponsors": "Co-signatories",
+  "motions.sponsorsLoading": "Loading co-signatories …",
+  "motions.sponsorsNone": "No co-signatories are recorded for this procedure.",
+  "motions.sponsorsShow": "Show co-signatories",
+  "motions.sponsorsHide": "Hide co-signatories",
+  "motions.sponsorsCount": "{count} recorded",
+  "motions.sponsorsCaveat":
+    "These are the co-signatories so far available as per-member activity records. The source publishes a document's author list only in truncated form, so this figure is a lower bound and not the number of signatures.",
+  "motions.openDrucksache": "Paper (PDF)",
+  "motions.noDocument": "No linkable document",
+  "motions.noDocumentHint":
+    "No Bundestag paper number is recorded for this procedure — without one, no address can be built that demonstrably points at the same document.",
+
   // --- site chrome, homepage and footer ---
   "nav.votes": "Votes",
   "nav.motions": "Motions",
@@ -2491,6 +2629,7 @@ const en: Dictionary = {
   "nav.seatingHint": "The chamber floor, one dot per mandate.",
   "nav.votesHint": "Recorded ballots and how each group voted.",
   "nav.ownResourcesHint": "When the Bundestag decides on its own funding and electoral law.",
+  "nav.motionsHint": "Motions, questions and bills of one electoral period.",
   "nav.inquiryHint": "Who reaches the quarter under Art. 44 GG — and who does not.",
   "nav.searchHint": "Full-text search across members and documents.",
   "nav.settingsHint": "Your own weightings, language and followed members.",

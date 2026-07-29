@@ -174,17 +174,74 @@ export function buildTrendSeries(rows: readonly MonthlyScoreRow[]): TrendPoint[]
 // --- the chart tabs -------------------------------------------------------
 
 /**
- * The five charts, as data.
+ * The six charts, as data.
  *
- * A table rather than five components, in the same spirit as `LEADERBOARDS` in
+ * A table rather than six components, in the same spirit as `LEADERBOARDS` in
  * lib/leaderboards.ts and `SEATING_MODES` in lib/seating.ts: they differ in
  * which fields they read, what shape draws them, and which caveat they carry,
- * and are otherwise the same card. Five components is how the caveat ends up on
- * four of them.
+ * and are otherwise the same card. Six components is how the caveat ends up on
+ * five of them.
  *
- * Three of the five carry one, and they are the three where a low bar could be
- * read as a finding the sources do not support — the same three structural
- * limits lib/scoring.ts sets out:
+ * ## The sixth chart, and what the plan actually asked for
+ *
+ * `Bundestrack-Plan.md` §"Wave 4 — Agent M" lists six charts and five shipped;
+ * the missing one is named **"Legislative activity timeline"** and is the only
+ * entry in that list with no parenthesised chart type beside it. The other five
+ * say what they are — *(line chart)*, *(bar chart)*, *(cumulative)*,
+ * *(stacked bar)* — and this one says only what it is *about*, which is why it
+ * was implementable five ways and got built zero. GAP-019 recorded it as
+ * "silently dropped"; it was more precisely *underspecified*, and the entry
+ * below (`id: "legislative"`) is the smallest decision that closes it honestly.
+ *
+ * **What the stored data supports exactly.** Only four `TrendPoint` fields were
+ * unplotted by any chart: `committeeCount`, `questionCount`, `reportCount` and
+ * `voteParticipationRate`. Measured against production for the six
+ * highest-scoring WP21 members, over 13 months each:
+ *
+ * | field | total across those six |
+ * |---|---|
+ * | `motionCount` | 85 |
+ * | `questionCount` | 68 |
+ * | `billSponsorshipCount` | 15 |
+ * | `committeeCount` | 21 (a standing seat count, restated monthly) |
+ * | `reportCount` | **2** |
+ *
+ * That rules three of the four out as the sixth chart's subject.
+ * `committeeCount` is not a monthly event at all — §6.4 publishes committee
+ * membership for the sitting period as a whole, so it is the same number
+ * repeated down the column and a chart of it would draw a flat line that means
+ * "still on three committees" while looking like measured activity.
+ * `voteParticipationRate` is already the votes chart's subject in its honest
+ * form (the five positions, counted), and drawing the derived rate beside it
+ * would be one number twice. `reportCount` at 2 records in six members' careers
+ * is not a series.
+ *
+ * **So the sixth chart is what the phrase says: the legislative work itself, on
+ * one timeline.** `bucketFor` in lib/scoring.ts routes DIP's activity kinds into
+ * exactly three that are *documents an MP put their name to* — `motions`
+ * (`Antrag`, `Entschließungsantrag`), `billSponsorships` (`Gesetzentwurf`) and
+ * `reports` (`Bericht`) — and those three are precisely the legislative record.
+ * Stacked, they answer the question the phrase asks and the other five charts
+ * do not: *how much paper did this member put before the Bundestag, and of what
+ * kind, over time.*
+ *
+ * This is a **new view of stored data, not a new metric.** Every segment is a
+ * column `activityScores` already holds and the score already weights; nothing
+ * is derived, normalised, or compared against anyone else. That distinction is
+ * what keeps it inside the "no subjective scoring" rule and outside GAP-020,
+ * which is deliberately not implemented here.
+ *
+ * **Why it does not repeat the motions chart.** That one draws motions beside
+ * bills, unstacked, because they are two measures a reader compares. This
+ * stacks all three because the question is the *total* and its composition —
+ * the same difference the vote chart's `stackId` note sets out. Reports are the
+ * segment that makes it more than a restacking, and they are also the reason
+ * the caveat below is not optional: at 2 records in six careers, a reader who
+ * sees no report segment must not read that as a member who wrote none.
+ *
+ * Four of the six carry a caveat, and they are the four where a low bar could
+ * be read as a finding the sources do not support — the three structural limits
+ * lib/scoring.ts sets out, plus this one:
  *
  *  - **speeches** — §5.2: a segment is one turn at the floor, so question time
  *    inflates the count. The word count is drawn alongside rather than instead,
@@ -272,6 +329,30 @@ export const TREND_CHARTS: readonly TrendChart[] = [
     series: [
       { field: "questionsCumulative", labelKey: "trends.cumulative", colorVar: "--chart-3" },
     ],
+  },
+  {
+    id: "legislative",
+    labelKey: "trends.chart.legislative",
+    descriptionKey: "trends.chart.legislative.desc",
+    kind: "stackedBar",
+    // Three stacked segments — the three DIP activity kinds `bucketFor` in
+    // lib/scoring.ts routes to *documents an MP put their name to*: motions
+    // (Antrag, Entschließungsantrag) at the base because they are the most
+    // common, bill sponsorships (Gesetzentwurf) above them, and reports
+    // (Bericht) at the top with the emphasis colour because they are the
+    // segment a reader would otherwise miss. Motions and bills carry the same
+    // tokens the unstacked motions chart uses, so a reader who has seen that
+    // one recognises the ramp here.
+    series: [
+      { field: "motionCount", labelKey: "score.component.motions", colorVar: "--chart-4" },
+      {
+        field: "billSponsorshipCount",
+        labelKey: "score.component.billSponsorships",
+        colorVar: "--chart-2",
+      },
+      { field: "reportCount", labelKey: "score.component.reports", colorVar: "--chart-5" },
+    ],
+    caveatKey: "trends.caveat.legislative",
   },
   {
     id: "votes",

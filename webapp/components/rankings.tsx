@@ -220,6 +220,15 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* The interpretive caveat that governs the whole page. Above the tabs,
+          the same placement `votes.namedOnlyNotice` and `parties.meansNotice`
+          take on their pages — a reader who takes the top rows for a merit
+          ranking has been misled by us, so it is said before the first name is
+          read. The per-board `board.caveatKey` below still applies where a
+          board carries its own structural limit; this one qualifies the whole
+          shape of the surface. */}
+      <CaveatNote>{t("rankings.readingNotice")}</CaveatNote>
+
       {/* `min-w-0` is what makes the scrolling below actually work — the same
           fix `ColorModeToggle` documents for the seating page's five tabs,
           applied to the nine here, which are far wider. `Tabs` is a flex

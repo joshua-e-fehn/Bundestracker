@@ -3,6 +3,7 @@ import {
   ActivityIcon,
   ArmchairIcon,
   CoinsIcon,
+  FileTextIcon,
   InfoIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
@@ -174,6 +175,16 @@ export const NAV_GROUPS: readonly NavGroup[] = [
             descriptionKey: "nav.ownResourcesHint",
           },
         ],
+      },
+      // A peer of `/votes` rather than a child of it, by the placement rule
+      // above: a motion is not a narrower cut of a ballot, it is the other half
+      // of what the chamber does. `/votes` answers "how did they decide"; this
+      // answers "what was put before them", and the two lists share no rows.
+      {
+        href: "/motions",
+        labelKey: "nav.motions",
+        icon: FileTextIcon,
+        descriptionKey: "nav.motionsHint",
       },
       {
         href: "/inquiry-quorum",

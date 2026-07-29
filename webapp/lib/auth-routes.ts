@@ -108,6 +108,11 @@ export const PUBLIC_PATHS = [
   // page is arithmetic over the public roster, and the one figure on it that is
   // not official is marked as ours rather than hidden behind an account.
   "/inquiry-quorum",
+  // The motions list. Ninth time the filesystem check has demanded this line —
+  // it fails on the commit that adds `app/motions/page.tsx` without it. Public
+  // like everything else: DIP's procedure records are open data, and the page
+  // links out to the same PDFs anyone can fetch unauthenticated.
+  "/motions",
   // The reader's own saved choices — weights, language, follow list. The one
   // route on this site whose *contents* need an account, and still public,
   // because the page has a signed-out rendering that explains what an account
