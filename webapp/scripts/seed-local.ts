@@ -22,6 +22,9 @@
  *  - **Some MPs have no score row.** The cron has not reached them; the table
  *    must show that as unknown rather than as zero.
  *  - **List MPs have no constituency**, and one MP sits with no Fraktion.
+ *  - **A federal state is not implied by holding a constituency.** Most list
+ *    members carry a `WKR_LAND` too; only the 21 WP21 mandates with no
+ *    constituency block at all leave it empty, so exactly one row here does.
  *
  *   PIPELINE_API_KEY=… bun run scripts/seed-local.ts
  */
@@ -86,6 +89,11 @@ type Seed = {
   fraktion: string
   party: string
   constituency: string | null
+  /** Stammdaten `WKR_LAND`. Omitted means the source carries none — the shape
+   * of the 21 WP21 list members with no constituency block at all, and the
+   * only way the state filter's unknown arm gets exercised locally. It is
+   * *not* implied by `constituency: null`: most list members do carry one. */
+  federalState?: string | null
   photoUrl?: string | null
   /** Required alongside `photoUrl` — the images are credited, not
    * open-licensed, so one without the other is not a shippable state. */
@@ -112,6 +120,7 @@ const MPS: Seed[] = [
     fraktion: "CDU/CSU",
     party: "CDU",
     constituency: "Hochsauerlandkreis",
+    federalState: "NW",
     photoUrl: "https://upload.wikimedia.org/wikipedia/commons/2/2f/Friedrich_Merz_2019.jpg",
     photoCredit: "Tobias Koch/CDU",
     profession: "Rechtsanwalt",
@@ -135,6 +144,7 @@ const MPS: Seed[] = [
     fraktion: "SPD",
     party: "SPD",
     constituency: "Calw",
+    federalState: "BW",
     profession: "Informatikerin",
     occupation: "MdB",
     // No constituency office and no homepage — the shape roughly half the real
@@ -155,6 +165,7 @@ const MPS: Seed[] = [
     fraktion: "BÜNDNIS 90/DIE GRÜNEN",
     party: "BÜNDNIS 90/DIE GRÜNEN",
     constituency: null,
+    federalState: "NW",
     score: { motions: 21, speechWords: 27800, questions: 19, participation: 0.97 },
   },
   {
@@ -164,6 +175,7 @@ const MPS: Seed[] = [
     fraktion: "SPD",
     party: "SPD",
     constituency: null,
+    federalState: "BE",
     score: { motions: 4, speechWords: 9100, questions: 26, participation: 0.71 },
   },
   {
@@ -173,6 +185,7 @@ const MPS: Seed[] = [
     fraktion: "Die Linke",
     party: "Die Linke",
     constituency: "Hamburg-Wandsbek",
+    federalState: "HH",
     // Diacritics, so the search box's folding is exercised against a real name
     // shape (§6.1: the two official sources disagree at character level).
     score: { motions: 2, speechWords: 5400, questions: 41, participation: 0.62 },
@@ -184,6 +197,7 @@ const MPS: Seed[] = [
     fraktion: "CDU/CSU",
     party: "CDU",
     constituency: "Fulda",
+    federalState: "HE",
     // The ortsZusatz disambiguator, inside the name as Stammdaten spells it.
     score: { motions: 7, speechWords: 12600, questions: 5, participation: 0.91 },
   },
@@ -194,6 +208,7 @@ const MPS: Seed[] = [
     fraktion: "BÜNDNIS 90/DIE GRÜNEN",
     party: "BÜNDNIS 90/DIE GRÜNEN",
     constituency: "Herzogtum Lauenburg – Stormarn-Süd",
+    federalState: "SH",
     score: { motions: 11, speechWords: 22300, questions: 8, participation: 0.85 },
   },
   {
@@ -205,6 +220,9 @@ const MPS: Seed[] = [
     fraktion: "fraktionslos",
     party: "",
     constituency: null,
+    // The only row with no `federalState`: the shape of the 21 WP21 mandates
+    // whose constituency block is empty entirely. Every state filter must show
+    // this member under no state rather than under a guessed one.
     score: { motions: 0, speechWords: 1800, questions: 2, participation: 0.44 },
   },
   {
@@ -214,6 +232,7 @@ const MPS: Seed[] = [
     fraktion: "SPD",
     party: "SPD",
     constituency: "Rotenburg I – Heidekreis",
+    federalState: "NI",
     // No score row: the cron has not reached this MP. The table must show "—".
   },
   {
@@ -223,6 +242,7 @@ const MPS: Seed[] = [
     fraktion: "AfD",
     party: "AfD",
     constituency: null,
+    federalState: "BW",
     score: { motions: 6, speechWords: 18900, questions: 14, participation: 0.79 },
   },
   // Two more CDU/CSU members, so the group has a real majority for bt-0006 to
@@ -236,6 +256,7 @@ const MPS: Seed[] = [
     fraktion: "CDU/CSU",
     party: "CDU",
     constituency: "Kreuznach",
+    federalState: "RP",
     score: { motions: 5, speechWords: 14200, questions: 6, participation: 0.9 },
   },
   {
@@ -245,6 +266,7 @@ const MPS: Seed[] = [
     fraktion: "CDU/CSU",
     party: "CSU",
     constituency: "Weilheim",
+    federalState: "BY",
     score: { motions: 8, speechWords: 16700, questions: 4, participation: 0.86 },
   },
 ]
@@ -308,6 +330,10 @@ async function main() {
       party: seed.party,
       fraktion: seed.fraktion,
       constituency: seed.constituency,
+      // Explicit null, never omitted: Stammdaten is read in full every run, so
+      // the pipeline states the absence rather than staying silent about it —
+      // see `federal_state` in the pipeline's transform.py.
+      federalState: seed.federalState ?? null,
       wahlperiode: WP,
       bio: null,
       photoUrl: seed.photoUrl ?? null,

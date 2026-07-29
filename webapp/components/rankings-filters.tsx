@@ -19,11 +19,12 @@ import type { AgeGroup } from "@/lib/taxonomy"
  * ## Options come from the data
  *
  * Every dropdown is populated by `getRankingFilterOptions`, never from a
- * constant. Fraktion names differ between electoral periods, and the federal
- * state is recoverable for only some MPs (see `stateOf` in
- * convex/rankings.ts) — so a hardcoded list of sixteen Länder would offer
- * fifteen filters that select nothing, which reads as broken data rather than
- * as an absent field. A filter that cannot be satisfied is not shown.
+ * constant. Fraktion names differ between electoral periods, and so do the
+ * federal-state codes — `WKR_LAND` says `NDS` before WP18 and `NI` from WP18
+ * (§6.2, and `stateOf` in lib/bundestag.ts) — so a hardcoded list of sixteen
+ * Länder would select nothing at all on a historical period, which reads as
+ * broken data rather than as an absent field. A filter that cannot be
+ * satisfied is not shown.
  *
  * The counts beside each option are part of that: "SPD (122)" tells the reader
  * what they are about to narrow to, and a group with no members never appears.
@@ -176,8 +177,9 @@ export function RankingsFilters({
       />
 
       {/* Hidden entirely when no MP's record yields a state, rather than shown
-          empty. See the header — and `stateOf`, which explains why that is the
-          common case until the pipeline stores WKR_LAND as its own field. */}
+          empty. That is now the uncommon case — `WKR_LAND` is stored, and
+          covers 96.7 % of WP21 — but it stays: a period the pipeline has not
+          re-ingested has the column on no row at all. */}
       {options !== undefined && options.states.length > 0 && (
         <FilterSelect
           id="rankings-filter-state"

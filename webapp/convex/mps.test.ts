@@ -161,3 +161,59 @@ describe("the mps read shape", () => {
     expect(fieldsOf(mpDoc).length).toBeGreaterThan(5)
   })
 })
+
+/**
+ * `federalState` is optional in storage for a *different* reason from the
+ * enrichment columns above, and the distinction is worth pinning because the
+ * two look identical in the validator.
+ *
+ * The enrichment columns are optional so the pipeline can **omit** what a run
+ * did not resolve — a null there would erase a stored value, which is the
+ * 2026-07-29 outage. `federalState` comes from Stammdaten, which every run
+ * reads in full, so the pipeline always sends the key and sends `null` when
+ * the source is empty. Optional here buys exactly one thing: rows written
+ * before the column existed have no key, and a required column would fail
+ * `convex deploy` against a populated `mps` table rather than at typecheck.
+ *
+ * So the three states mean: absent → written by an older pipeline; null → the
+ * source states no Land for this mandate (21 of WP21's 635); a string → the
+ * code as published. The first two both read as unknown, and a roster re-post
+ * converts the first into the second.
+ */
+describe("the federal state column", () => {
+  test("is optional in storage, so a deploy over existing rows succeeds", () => {
+    // The backward-compatibility requirement, and the one thing `tsc --noEmit`
+    // cannot check: a new *required* field on a populated table is rejected at
+    // deploy time by Convex's schema validation, taking every other change in
+    // the same push down with it.
+    expect(isOptional(mpInput, "federalState")).toBe(true)
+  })
+
+  test("is readable, so a query returning it cannot 500 on an older row", () => {
+    // `mpDoc` keeps it optional rather than normalising it the way `photoUrl`
+    // is. That is safe *because* it is optional: an absent key reads back as
+    // `undefined`, and a total validator would reject exactly the rows the
+    // pipeline has not rewritten yet — the failure mode `photoFields` above
+    // documents, with a bare "Server Error" naming neither field nor function.
+    // Every consumer goes through `stateOf` (lib/bundestag.ts), which folds
+    // `undefined` and `null` together.
+    expect(isOptional(mpDoc, "federalState")).toBe(true)
+  })
+
+  test("is a nullable string, not a closed union of sixteen Länder", () => {
+    // ⚠ Deliberate. The `WKR_LAND` codes are period-scoped — 36 distinct
+    // values across the corpus for 16 Länder, because WP1–17 write `NDS`/`THÜ`
+    // where WP18–21 write `NI`/`TH` (§6.2) — and several historical ones name
+    // entities that no longer exist (`WBB`, Württemberg-Baden). A literal
+    // union would reject a valid historical backfill at ingest, one row at a
+    // time, for being correctly spelled.
+    const validator = (
+      schema.tables.mps.validator as unknown as {
+        fields: Record<string, { kind?: string; members?: Array<{ kind?: string }> }>
+      }
+    ).fields.federalState
+    const members = validator.members ?? []
+    expect(validator.kind).toBe("union")
+    expect(members.map((member) => member.kind).sort()).toEqual(["null", "string"])
+  })
+})

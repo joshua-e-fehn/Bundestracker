@@ -184,6 +184,54 @@ export const mpInput = {
   fraktion: v.string(),
   /** Wahlkreis name. Null for list MPs, who have no constituency. */
   constituency: v.union(v.null(), v.string()),
+  /**
+   * The federal state this mandate was won in — Stammdaten's `WKR_LAND`, as
+   * published.
+   *
+   * ## It is not derived from the constituency, and could not be
+   *
+   * This column replaces a regex that read a trailing `(BW)` off
+   * `constituency`. Measured against the real dump (4 614 MDBs, 13 046 mandate
+   * rows): **0** `WKR_NAME` values end in a parenthetical, so that rule
+   * returned null for every MP who has ever sat, and every "by federal state"
+   * filter on the site was inert rather than sparse. Nothing else in the
+   * corpus carries the answer — the party does not (every group stands in
+   * every Land), and neither does the mandate type.
+   *
+   * ## Nullable, because the source leaves it empty for a real reason
+   *
+   * `WKR_LAND` is set on 100 % of `Direktwahl` rows and on most `Landesliste`
+   * ones, but 21 of WP21's 635 mandates leave it empty — members who entered
+   * on a state list and hold no constituency block at all (no `WKR_NUMMER`,
+   * no `WKR_NAME`, no `WKR_LAND`). Those rows carry the Land in `LISTE`
+   * instead, and `LISTE` is **not** merged in here: where both are present the
+   * two disagree on 2 of 2 583 rows (a member elected on one Land's list for a
+   * seat counted in another), so folding them would silently publish a
+   * different claim than the one the field name makes. Null means "the source
+   * does not state it for this mandate", which the UI renders as absent rather
+   * than guessing.
+   *
+   * ## ⚠ The codes are period-scoped, not a stable enum
+   *
+   * 36 distinct values across the corpus, because WP1–17 use `BWG`/`NDS`/
+   * `NRW`/`THÜ` and WP18–21 the ISO-style `BW`/`NI`/`NW`/`TH` (§6.2). Stored
+   * verbatim rather than normalised: mapping them would require a per-period
+   * table, and the historical codes name entities that no longer exist as
+   * such (`WBB` is Württemberg-Baden). Every filter here is period-scoped
+   * already, and builds its options from the data, so a period offers exactly
+   * the codes its own members hold.
+   *
+   * ## Optional in storage, like the enrichment columns above
+   *
+   * `v.optional` because rows written before this field existed have no key at
+   * all, and a required column would fail the deploy against a populated
+   * table. Unlike those columns this one *is* re-read in full every run, so
+   * the pipeline sends it as an explicit null rather than omitting it — see
+   * `mp_payload`. Absent therefore means "written by an older pipeline" and
+   * null means "the source is empty here"; both read as unknown, and a roster
+   * re-post converts the first into the second.
+   */
+  federalState: v.optional(v.union(v.null(), v.string())),
   wahlperiode: v.number(),
   bio: v.optional(v.union(v.null(), v.string())),
   /**

@@ -205,6 +205,45 @@ def contact_payload(contact: MPContact | None) -> Payload | None:
     }
 
 
+def federal_state(mandate: Mandate) -> str | None:
+    """A mandate's `WKR_LAND`, as the source publishes it, or None.
+
+    Deliberately thin, and every line of that is a decision:
+
+    **Never inferred.** The only other things a mandate carries that correlate
+    with a Land are the party (every group stands in every one), the
+    constituency name (measured: **0** of 13 046 `WKR_NAME` values name a Land,
+    which is why the regex this replaces returned null for every MP who has
+    ever sat) and `LISTE`. So a missing `WKR_LAND` is a missing answer, and
+    reporting it as one is the only honest option.
+
+    **`LISTE` is not a fallback.** It is tempting — 21 of WP21's 635 mandates
+    have an empty constituency block and every one of them names a Land in
+    `LISTE`, so merging it would take the period from 96.7 % to 100 % coverage.
+    It is still wrong. Where both fields are present they disagree on 2 of
+    2 583 rows (WP19 `11004728`: `WKR_LAND` SH, `LISTE` BW; WP20 `11005316`:
+    NI vs NW), which is a member standing on one Land's list for a seat counted
+    in another — a real distinction, and the two fields answer different
+    questions. `LISTE` also carries `*`, `**` and `***` for the Saarland
+    accession, West Berlin and the Volkskammer election (§6.2), none of which
+    is a Land at all. Filling a "which state is this member from" column from
+    it would publish a claim the source does not make, in the ~0.08 % of cases
+    where it matters most.
+
+    **Not normalised.** The codes are period-scoped — `BWG`/`NDS`/`NRW` before
+    WP18, `BW`/`NI`/`NW` from WP18 (§6.2) — and a mapping would need to be
+    per-period and would rename entities (`WBB`, Württemberg-Baden) that no
+    longer exist. Stored verbatim; the UI scopes every state filter to one
+    period and builds its options from the data.
+
+    `clean_text` is applied for the same reason every other string field gets
+    it: the source emits `<TAG/>` for absent, `blank_to_none` in the XML layer
+    already maps that to None, and this is the second belt for a value that
+    arrived as whitespace.
+    """
+    return clean_text(mandate.wkr_land)
+
+
 def mp_payload(
     mp: MP,
     mandate: Mandate,
@@ -215,10 +254,18 @@ def mp_payload(
 ) -> Payload:
     """One `(MP, Wahlperiode)` mandate → the `mps` row.
 
-    One row per *mandate*, not per human: `party`, `fraktion`, `constituency`
-    and `datesInOffice` all change between periods, and six WP21 MPs changed
-    Fraktion mid-period (§6.4). `internalId` is what identifies the human
-    across periods.
+    One row per *mandate*, not per human: `party`, `fraktion`, `constituency`,
+    `federalState` and `datesInOffice` all change between periods, and six WP21
+    MPs changed Fraktion mid-period (§6.4). `internalId` is what identifies the
+    human across periods.
+
+    `federalState` is sent as an explicit null when the source leaves it empty,
+    *unlike* the enrichment columns below. The difference is which source it
+    comes from: Stammdaten is re-read in full on every run, so this transform
+    always knows the answer and "the source says nothing here" is a fact worth
+    writing. The enrichment columns come from sources a run may not reach, so
+    for them a null would mean "I did not look" — which the patch below would
+    apply as an erasure.
 
     `enrichment` carries the portrait, occupation, education and contact block,
     resolved by the enrich stage and held on the resolver. It is threaded
@@ -280,6 +327,11 @@ def mp_payload(
         "party": mp.partei_kurz or "",
         "fraktion": normalise_fraktion(mandate.fraktion()),
         "constituency": clean_text(mandate.wkr_name),
+        # `WKR_LAND`, as published — never inferred. Null for the 21 WP21
+        # mandates whose constituency block is empty entirely; those carry a
+        # Land in `LISTE`, which is deliberately not merged in. See
+        # `federal_state` for the measurements behind both decisions.
+        "federalState": federal_state(mandate),
         "wahlperiode": mandate.wahlperiode,
         "bio": clean_text(mp.vita_kurz),
         "birthDate": iso(mp.geburtsdatum),
