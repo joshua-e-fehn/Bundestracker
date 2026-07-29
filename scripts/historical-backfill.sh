@@ -14,6 +14,16 @@
 # period's months stay at zero until something asks for them, and the profile
 # trend graphs read exactly those rows (webapp/components/trend-graphs.tsx).
 #
+# Scoring goes through scripts/score-period.py rather than `cli scores
+# --all-months`, for two reasons that only bite on a historical run. It scores
+# a closed period's months concurrently — 21 s a month against 140 s, since
+# `cursor` is a plain offset and a closed period's index cannot shift mid-run —
+# and it does not download the Stammdaten dump just to enumerate months, which
+# `cli.py::_period_months` does and which is a www.bundestag.de request the
+# pacer above cannot see. It also reads every month back off the score index
+# before reporting success. `cli scores --all-months` stays the ordinary path
+# for a single period run by hand.
+#
 # A period that fails does not stop the sweep. The rest are still worth having,
 # every write is an upsert, and re-running one period is cheap; the summary at
 # the end says which need it.
@@ -54,7 +64,7 @@ for wp in "${periods[@]}"; do
   # period total, and every month of a closed period is one the nightly Convex
   # sweep will never revisit. The profile trend graphs read those monthly rows.
   echo "=== WP$wp scoring $(date -Is)"
-  if ! "$PYTHON" -m bundestrack.cli scores --wp "$wp" --all-months >>"$log" 2>&1; then
+  if ! "$PYTHON" "$REPO_ROOT/scripts/score-period.py" --wp "$wp" >>"$log" 2>&1; then
     echo "=== WP$wp scoring FAILED (see $log)"
     failed+=("$wp:scores")
   fi
