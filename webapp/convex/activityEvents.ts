@@ -40,9 +40,40 @@ import { activityEventInput, eventType } from "./schema"
 
 // --- read models ----------------------------------------------------------
 
-const activityEventDoc = v.object({
+/**
+ * One stored event, as a reader receives it.
+ *
+ * ⚠ `searchText` is declared even though nothing renders it. `withId` returns
+ * the whole stored document minus Convex's system fields, and a `returns`
+ * validator that omits a field the handler actually returns does not drop that
+ * field — it **fails the query**, with a client error naming neither the field
+ * nor the function:
+ *
+ * ```
+ * [CONVEX Q(activityEvents:getChamberFeed)] [Request ID: …] Server Error
+ * ```
+ *
+ * Which is exactly what happened. `activityEventInput` deliberately excludes
+ * `searchText` because the field is derived on write and never posted (see the
+ * header, and the note in convex/schema.ts). Building the read shape by
+ * spreading the *ingestion* shape therefore described a row that stopped
+ * existing the moment `withSearchText` began stamping the field — and
+ * `getActivityFeed`, `getChamberFeed` and `feed.getFeed` all 500ed in
+ * production, for every Wahlperiode, from the day search shipped.
+ *
+ * The ingestion shape and the read shape are **not** the same object, and this
+ * field is the whole of the difference. `v.optional` matches the schema, where
+ * it is optional because rows written before search have never been rewritten
+ * (convex/search.ts backfills them in slices).
+ *
+ * convex/activityEvents.test.ts asserts this against the schema rather than a
+ * field list, so the next column added to the table fails a test instead of
+ * failing production — neither `tsc` nor `convex deploy` catches this.
+ */
+export const activityEventDoc = v.object({
   id: v.id("activityEvents"),
   ...activityEventInput,
+  searchText: v.optional(v.string()),
   createdAt: v.number(),
 })
 

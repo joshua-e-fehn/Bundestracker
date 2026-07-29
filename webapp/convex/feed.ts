@@ -69,9 +69,15 @@ import { activityEventInput, eventType } from "./schema"
  * alternative is one client query per row — a 50-row page would be 50
  * subscriptions. Same reason `voteRecordDoc` and `getChamberFeed` do it.
  */
-const feedItem = v.object({
+export const feedItem = v.object({
   id: v.id("activityEvents"),
   ...activityEventInput,
+  // Declared, though no feed row renders it: `join` spreads `toEventDoc(row)`,
+  // which is the whole stored document, and a `returns` validator missing a
+  // field the handler returns fails the query outright rather than dropping it.
+  // See the longer note on `activityEventDoc` in convex/activityEvents.ts —
+  // same field, same reason, and both 500ed in production together.
+  searchText: v.optional(v.string()),
   createdAt: v.number(),
   name: v.string(),
   fraktion: v.string(),
