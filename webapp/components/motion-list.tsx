@@ -189,18 +189,36 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
     [setParam],
   )
 
+  // Latest `dispatchSync` behind a ref so the URL-observing effect below can
+  // depend on `urlQuery` *by value alone*, not on `dispatchSync`'s identity.
+  //
+  // `dispatchSync` closes over `setParam` closes over `params` — and
+  // `useSearchParams()` returns a new `URLSearchParams` reference on every
+  // URL change, sibling filter clicks included. Including `dispatchSync` in
+  // the effect's dep array would therefore re-fire the effect on every
+  // URL write regardless of `?q=`, and even though the reducer's
+  // `lastSeenUrlQuery` guard now no-ops the state change, an unguarded
+  // `clearTimeout` inside the effect would still erase in-flight typing.
+  // The ref keeps the dep array to `[urlQuery]`, which React compares by
+  // value for a string primitive — the effect runs only when `?q=` itself
+  // changes. This is the wiring half of the re-review's finding; the
+  // reducer's `lastSeenUrlQuery` guard is the data-flow half.
+  const dispatchSyncRef = useRef(dispatchSync)
+  dispatchSyncRef.current = dispatchSync
+
   // Adopt whatever the URL now carries — `?q=…` from Back, Forward, Reset, a
-  // shared link, or a sibling filter's URL write. The reducer guarantees this
-  // never emits a URL write of its own; the pending timer is cleared here to
-  // match the state transition (`pending` becomes `null`), so an old
-  // keystroke's timer cannot commit against the new URL.
+  // shared link. The reducer guarantees this never emits a URL write of its
+  // own; the pending timer is cleared here to match the state transition
+  // (`pending` becomes `null`), so an old keystroke's timer cannot commit
+  // against the new URL. Sibling URL writes (kind/year/wp) do not reach
+  // here at all — see the dep-narrowing note above.
   useEffect(() => {
-    dispatchSync({ type: "urlChanged", urlQuery })
+    dispatchSyncRef.current({ type: "urlChanged", urlQuery })
     if (debounceRef.current !== null) {
       clearTimeout(debounceRef.current)
       debounceRef.current = null
     }
-  }, [urlQuery, dispatchSync])
+  }, [urlQuery])
 
   // On unmount, drop any pending timer so a delayed commit cannot navigate a
   // gone component. Runs once — the effect above handles the mid-life cases.
@@ -382,9 +400,24 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
               the header explains why. Without this cue the reader sees an
               empty box and a "load more" button and has to infer the
               relationship between them; with it, the button reads as an
-              action rather than as a fallback for a broken empty state. */}
+              action rather than as a fallback for a broken empty state.
+              Wrapped in `<div role="status" aria-live="polite">` so a
+              screen reader hears the explanation appear alongside the
+              first-page skeleton clearing. The loading skeleton above
+              carries the same live region (`<output aria-live="polite">`,
+              via the `LoadingFirstPage` branch) and the transition from
+              "loading" to "no visible rows but more behind them" is
+              itself the update worth announcing. Wrapping keeps
+              `CaveatNote` untouched — the same shell is used by many
+              non-live caveats elsewhere on the site. */}
           {searchedNothingYetHasMore ? (
-            <CaveatNote>{t("motions.searchedNothingYetHasMore")}</CaveatNote>
+            // `<output>` gives us `role="status"` implicitly (the same
+            // semantic-element rule Biome enforces elsewhere) and the
+            // `aria-live="polite"` completes the announcement contract.
+            // Same shell the LoadingFirstPage skeleton above uses.
+            <output aria-live="polite" className="contents">
+              <CaveatNote>{t("motions.searchedNothingYetHasMore")}</CaveatNote>
+            </output>
           ) : null}
           <ul className="flex list-none flex-col gap-2 p-0">
             {results.map((motion) => (

@@ -95,8 +95,15 @@ export function MotionSponsors({ motionId }: { motionId: string }) {
           leaves the wrapper untyped and lets its children carry the
           semantics; adding a role here would either promote the panel to a
           landmark (cluttering the page's landmark map with one per motion
-          row) or restate what the child list already conveys. */}
-      <div id={panelId}>
+          row) or restate what the child list already conveys.
+          `hidden` while collapsed rather than an unstyled empty div: the
+          parent above is a `flex flex-col gap-2` so an always-mounted
+          empty child still takes an 8 px gap under the toggle. Across 25
+          rows that would add ~200 px of dead scroll to the list. `hidden`
+          removes the element from layout (display: none) while leaving
+          the `id` resolvable to `aria-controls` — which is what
+          matters. */}
+      <div id={panelId} hidden={!open}>
         {open ? (
           sponsors === undefined ? (
             <output className="text-muted-foreground text-xs" aria-live="polite">

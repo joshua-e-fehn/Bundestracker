@@ -1061,7 +1061,7 @@ const de = {
   "nav.seatingHint": "Der Plenarsaal, ein Punkt je Mandat.",
   "nav.votesHint": "Namentliche Abstimmungen und wie jede Fraktion gestimmt hat.",
   "nav.ownResourcesHint": "Wenn der Bundestag über eigene Mittel und das Wahlrecht entscheidet.",
-  "nav.motionsHint": "Anträge, Anfragen und Gesetzentwürfe einer Wahlperiode.",
+  "nav.motionsHint": "Anträge, Anfragen, Gesetzentwürfe und Berichte einer Wahlperiode.",
   "nav.inquiryHint": "Wer das Viertel nach Art. 44 GG erreicht — und wer nicht.",
   "nav.searchHint": "Abgeordnete und Dokumente im Volltext durchsuchen.",
   // The settings entry's gloss. Names the three things the page holds, because
@@ -2668,7 +2668,7 @@ const en: Dictionary = {
   "nav.seatingHint": "The chamber floor, one dot per mandate.",
   "nav.votesHint": "Recorded ballots and how each group voted.",
   "nav.ownResourcesHint": "When the Bundestag decides on its own funding and electoral law.",
-  "nav.motionsHint": "Motions, questions and bills of one electoral period.",
+  "nav.motionsHint": "Motions, questions, bills and reports of one electoral period.",
   "nav.inquiryHint": "Who reaches the quarter under Art. 44 GG — and who does not.",
   "nav.searchHint": "Full-text search across members and documents.",
   "nav.settingsHint": "Your own weightings, language and followed members.",

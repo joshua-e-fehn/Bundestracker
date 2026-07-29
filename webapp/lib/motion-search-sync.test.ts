@@ -51,10 +51,18 @@ describe("initSearchSync", () => {
     const state = initSearchSync("asyl")
     expect(state.local).toBe("asyl")
     expect(state.pending).toBeNull()
+    // `lastSeenUrlQuery` seeds from the same value so a re-notification
+    // during first render (React strict mode, an early sibling filter
+    // click) is recognised as a no-op rather than as a URL change.
+    expect(state.lastSeenUrlQuery).toBe("asyl")
   })
 
   test("mounts empty when the URL carries no query", () => {
-    expect(initSearchSync("")).toEqual({ local: "", pending: null })
+    expect(initSearchSync("")).toEqual({
+      local: "",
+      pending: null,
+      lastSeenUrlQuery: "",
+    })
   })
 })
 
@@ -68,7 +76,7 @@ describe("userTyped", () => {
       { type: "userTyped", value: "asy" },
       { type: "userTyped", value: "asyl" },
     ])
-    expect(state).toEqual({ local: "asyl", pending: "asyl" })
+    expect(state).toEqual({ local: "asyl", pending: "asyl", lastSeenUrlQuery: "" })
     // The critical property: **no commit fires until `commitFired` arrives**.
     // Typing alone never writes the URL — otherwise every keystroke would be
     // a history entry, which is the exact behaviour this component avoids.
@@ -99,10 +107,17 @@ describe("commitFired", () => {
   })
 
   test("drops a timer that fires after the URL was cleared externally", () => {
-    // A keystroke is in-flight; the reader hits Back. The reducer clears
-    // `pending`, and the pending timer's `commitFired` — if the component
-    // failed to cancel it — arrives with nothing to commit against.
-    const { effects } = drive(initSearchSync(""), [
+    // A keystroke is in-flight; the reader Backs to a page whose `?q=` was
+    // *different*. The reducer clears `pending`, and the pending timer's
+    // `commitFired` — if the component failed to cancel it — arrives with
+    // nothing to commit against.
+    //
+    // The prior version of this test used `urlChanged("")` with the same
+    // value that was already known, which the `lastSeenUrlQuery` guard now
+    // treats as a no-op (see the "sibling URL writes" block below). To
+    // exercise the *real* URL-change case here, the initial URL is
+    // `previous` and Back moves to `""`.
+    const { effects } = drive(initSearchSync("previous"), [
       { type: "userTyped", value: "asyl" },
       { type: "urlChanged", urlQuery: "" },
       { type: "commitFired", value: "asyl" },
@@ -159,10 +174,14 @@ describe("urlChanged — the flap-prevention invariant", () => {
     }
   })
 
-  test("cancels any pending write when the URL changes", () => {
+  test("cancels any pending write when the URL genuinely changes", () => {
     // The invariant restated as a state property. This is what lets the
-    // component clean up its `setTimeout` on `pending === null`.
-    const { state } = drive(initSearchSync(""), [
+    // component clean up its `setTimeout` on `pending === null`. The
+    // qualifier "genuinely" matters: a same-value `urlChanged` is a
+    // no-op under the `lastSeenUrlQuery` guard — asserted separately in
+    // the "sibling URL writes" block below. Here the URL moves from
+    // `previous` to `""`, which the reducer *does* adopt.
+    const { state } = drive(initSearchSync("previous"), [
       { type: "userTyped", value: "asyl" },
       { type: "urlChanged", urlQuery: "" },
     ])
@@ -190,5 +209,84 @@ describe("urlChanged — the flap-prevention invariant", () => {
     // Exactly one commit — the reader's original typing. The two Back-driven
     // `urlChanged`s contributed nothing.
     expect(effects).toEqual(["commit:asyl"])
+  })
+})
+
+describe("sibling URL writes do not erase in-flight typing", () => {
+  /**
+   * The regression the review's re-run pinned. The first fix closed the
+   * Back/Forward flap at the reducer level (`urlChanged` never emits a
+   * URL-write effect), but the component wiring re-introduced the same
+   * class of failure through a different trigger: a user clicking a
+   * *sibling* filter (kind, year, period) while typing rewrote the URL,
+   * and the URL-observing effect re-fired with `?q=` unchanged from
+   * before — clobbering the reader's typing.
+   *
+   * The reducer's `lastSeenUrlQuery` guard is what closes that at the
+   * data-flow level. These tests fail on the pre-fix reducer (which
+   * unconditionally cleared `pending` on every `urlChanged`) and pass
+   * on the fixed one.
+   */
+
+  test("urlChanged with the same value the reducer already saw is a no-op", () => {
+    // The exact scenario the reviewer described:
+    //   1. Reader is on /motions?wp=21 with no ?q= set.
+    //   2. Types "asyl" — pending is now "asyl", debounce timer scheduled.
+    //   3. Before the timer fires, picks a kind → the URL becomes
+    //      /motions?wp=21&kind=Kleine+Anfrage. `?q=` did not change.
+    //   4. The URL-observing effect fires with the same urlQuery ("") the
+    //      reducer already knows about.
+    //   5. Pre-fix: pending cleared to null, local overwritten to "".
+    //      Fixed: no-op; pending remains "asyl".
+    const { state, effects } = drive(initSearchSync(""), [
+      { type: "userTyped", value: "asyl" },
+      { type: "urlChanged", urlQuery: "" },
+    ])
+    expect(state.local).toBe("asyl")
+    expect(state.pending).toBe("asyl")
+    expect(effects).toEqual([])
+  })
+
+  test("a subsequent commit still fires against the preserved pending value", () => {
+    // Belt-and-braces: once the timer fires after the sibling URL write,
+    // the commit lands. That is the round-trip the reader expects — the
+    // filter narrows the list, they finish typing, and their search hits
+    // the URL. On the pre-fix reducer this test also fails because
+    // `pending` had already been cleared to null.
+    const { effects } = drive(initSearchSync(""), [
+      { type: "userTyped", value: "asyl" },
+      { type: "urlChanged", urlQuery: "" }, // sibling filter, ?q= unchanged
+      { type: "commitFired", value: "asyl" },
+    ])
+    expect(effects).toEqual(["commit:asyl"])
+  })
+
+  test("a real ?q= change still adopts the new value and clears pending", () => {
+    // Guard against over-fitting the guard. When ?q= actually changes
+    // (Back, Forward, Reset, shared link), the reducer must still adopt
+    // it and drop stale typing — that is the original flap-prevention
+    // invariant. Only same-value re-notifications are no-ops.
+    const { state } = drive(initSearchSync(""), [
+      { type: "userTyped", value: "asyl" },
+      { type: "urlChanged", urlQuery: "buerokrat" }, // e.g. Back to a saved link
+    ])
+    expect(state.local).toBe("buerokrat")
+    expect(state.pending).toBeNull()
+    expect(state.lastSeenUrlQuery).toBe("buerokrat")
+  })
+
+  test("repeated same-value urlChanged notifications remain no-ops", () => {
+    // Multiple sibling filter clicks in a row (kind, then year, then wp)
+    // each rewrite the URL. Every one of them is a same-value
+    // `urlChanged` from the search's point of view, and none of them
+    // should touch typing.
+    const { state } = drive(initSearchSync(""), [
+      { type: "userTyped", value: "asyl" },
+      { type: "urlChanged", urlQuery: "" },
+      { type: "urlChanged", urlQuery: "" },
+      { type: "urlChanged", urlQuery: "" },
+    ])
+    expect(state.pending).toBe("asyl")
+    expect(state.local).toBe("asyl")
   })
 })

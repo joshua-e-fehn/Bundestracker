@@ -229,7 +229,7 @@ describe("getMotionFilterOptions bounds its reads independently of DIP's vocabul
     return readFileSync(new URL("../convex/motions.ts", import.meta.url).pathname, "utf8")
   }
 
-  test("KIND_FANOUT_LIMIT is declared and small enough to stay under the transaction cap", () => {
+  test("KIND_FANOUT_LIMIT is declared and leaves meaningful headroom under the transaction cap", () => {
     const source = motionsSource()
     const kindLimit = /const KIND_FANOUT_LIMIT = (\d+)/.exec(source)?.[1]
     const optionCeiling = /const OPTION_COUNT_CEILING = (\d+)/.exec(source)?.[1]
@@ -241,13 +241,20 @@ describe("getMotionFilterOptions bounds its reads independently of DIP's vocabul
 
     const worst =
       Number(discoveryScan) + 1 + 1 + Number(kindLimit) * Number(optionCeiling)
-    // Convex hard cap. Well under it, with headroom for the read costs the
-    // caller-side code also accrues in the same transaction.
-    expect(worst).toBeLessThan(16_384)
-    // And the fanout is genuinely bounded — a `> N` grows with DIP and is
-    // the whole problem this constant addresses.
-    expect(Number(kindLimit)).toBeGreaterThan(0)
-    expect(Number(kindLimit)).toBeLessThanOrEqual(30)
+    // Strictly less than 14 000 rather than "under the 16 384 hard cap".
+    // The hard cap is the ceiling this query shares with every other read
+    // in the same transaction; a later edit raising the limit to 30 would
+    // technically pass a `< 16 384` assertion (worst = 15 402) while eating
+    // caller-side budget in the same page-load. 14 000 keeps ~2 400
+    // documents of headroom, matching the docstring's stated intent.
+    expect(worst).toBeLessThan(14_000)
+    // Slightly greater than the highest N ever measured (23 in the WP21
+    // sample), so future DIP additions do not immediately trip the cap.
+    // The upper bound is what the tighter transaction-cap assertion above
+    // enforces indirectly, restated positively here so a mutation that
+    // raised it would report both facts together.
+    expect(Number(kindLimit)).toBeGreaterThanOrEqual(24)
+    expect(Number(kindLimit)).toBeLessThanOrEqual(28)
   })
 
   /**
@@ -269,7 +276,7 @@ describe("getMotionFilterOptions bounds its reads independently of DIP's vocabul
   test("the handler slices the discovered vocabulary before the counting fanout", () => {
     // The property that turns the constant into a guarantee. Without the
     // `.slice(0, KIND_FANOUT_LIMIT)`, the constant is dead configuration:
-    // 20 becomes 500 becomes 32-and-crash. The test asserts the slice is
+    // 26 becomes 500 becomes 32-and-crash. The test asserts the slice is
     // present *before* the loop, which is where the loop's bound comes from.
     const handler = filterOptionsHandler()
     const sliceIdx = handler.indexOf("KIND_FANOUT_LIMIT")
@@ -277,6 +284,26 @@ describe("getMotionFilterOptions bounds its reads independently of DIP's vocabul
     expect(sliceIdx).toBeGreaterThan(-1)
     expect(loopIdx).toBeGreaterThan(-1)
     expect(sliceIdx).toBeLessThan(loopIdx)
+  })
+
+  test("the slice keeps the head of the sample, not the tail", () => {
+    // A future edit that mistyped `.slice(0, KIND_FANOUT_LIMIT)` as
+    // `.slice(-KIND_FANOUT_LIMIT)` would still keep exactly that many
+    // members — and would still satisfy the "sliced-before-loop" test
+    // above — but it would drop the recently-active kinds and keep the
+    // dormant tail of the sample, silently swapping the dropdown's
+    // meaning. Pins the orientation the docstring names.
+    //
+    // Runs the same textual regex the query does and checks the actual
+    // slice, so a change to either the constant or the slice orientation
+    // shows up as a real behavioural failure.
+    const handler = filterOptionsHandler()
+    const sliceMatch = /allDiscovered\.slice\(([^)]+)\)/.exec(handler)
+    if (sliceMatch === null)
+      throw new Error("could not find the slice call in getMotionFilterOptions")
+    const args = sliceMatch[1].replace(/\s+/g, "")
+    // Explicit "starts at 0" — anything else keeps the tail, not the head.
+    expect(args).toBe("0,KIND_FANOUT_LIMIT")
   })
 
   test("the fanout cap contributes to `partial` so the UI can name the truncation", () => {

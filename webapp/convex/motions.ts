@@ -365,18 +365,28 @@ export const getMotionsPage = query({
      *    title, `foldedTextMatches`' rules (umlaut folding, prefix on the
      *    final term, AND-of-terms).
      */
+    const punctuationOnly = askedToSearch && needle === ""
     const page = !askedToSearch
       ? result.page
-      : needle === ""
+      : punctuationOnly
         ? []
         : result.page.filter((row) => foldedTextMatches(indexableText(row.title), needle))
 
     return {
       page: page.map(toMotionDoc),
-      // Untouched — see the header. A page of 25 that yields 2 after the title
-      // filter still reports `isDone: false`, so "load more" stays offered and
-      // reaches the rest.
-      isDone: result.isDone,
+      // Untouched for the normal search — see the header. A page of 25 that
+      // yields 2 after the title filter still reports `isDone: false`, so
+      // "load more" stays offered and reaches the rest.
+      //
+      // Overridden to `true` for a punctuation-only search: every subsequent
+      // page would also filter to zero (the punctuation didn't match once,
+      // it will not match on page 2 or page 378 either), and offering
+      // "load more" against a search that cannot ever match — cheap per
+      // page but ~378 pages over WP19's 37 726 rows — is a treadmill,
+      // not an action. `continueCursor` is left as Convex returned it;
+      // paginators use it only when `isDone` is false, so its value in
+      // this state is inert.
+      isDone: result.isDone || punctuationOnly,
       continueCursor: result.continueCursor,
     }
   },
@@ -400,20 +410,34 @@ const OPTION_COUNT_CEILING = 500
  * because DIP publishes a closed vocabulary for its own event types. This
  * query cannot: `vorgangstyp` is an open string, so `discovered` grows as
  * DIP publishes new procedure kinds. Left unbounded, worst-case reads are
- * `DISCOVERY_SCAN + 1 + oldest_row + N * OPTION_COUNT_CEILING` — at
- * measured WP21 (N = 23) this is 11 902, three quarters of Convex's
+ * `DISCOVERY_SCAN + 1 (oldest_row) + 1 (end_row) + N * OPTION_COUNT_CEILING`
+ * — at measured WP21 (N = 23) this is 11 902, three quarters of Convex's
  * 16 384-doc per-query cap, and at N = 32 the whole page fails to load
  * because the dropdown query throws. The failure is silent from code
  * review: it only appears the day DIP publishes the 32nd kind.
  *
  * So the fanout is bounded and, when it caps, reported as `partial: true`
  * for the same reason the sampled discovery is: the page must not present
- * a truncated dropdown as the period's complete vocabulary. Twenty is
- * comfortably above the highest measured N (23 in the sample, from a
- * 400-row scan — most were the same handful of kinds), and comfortably
- * below the cap-of-a-cap that would put the query at 10 000 reads.
+ * a truncated dropdown as the period's complete vocabulary.
+ *
+ * ## The specific number
+ *
+ * **26** is one above the highest N measured in production (WP21's 23) plus
+ * two spare slots for the *next* two DIP kinds we haven't observed yet. The
+ * resulting worst-case reads land at `400 + 2 + 26 × 500 = 13 402` — about
+ * 3 000 documents of headroom under the 16 384-doc transaction cap. That
+ * headroom is deliberate rather than "spend the whole budget": this query
+ * runs alongside caller-side reads in the same page-load transaction, and
+ * the `motions.test.ts` test that pins this constant enforces the worst
+ * case at strictly less than 14 000 so a later edit cannot creep the cap
+ * back up without also revising the arithmetic here.
+ *
+ * A raise to something like 32 would still fit, but it would trade the
+ * headroom for coverage this query does not need — every period past the
+ * cap is already reported as `partial: true` and the reader is told to
+ * fall back on the full-text search for kinds the dropdown omitted.
  */
-const KIND_FANOUT_LIMIT = 20
+const KIND_FANOUT_LIMIT = 26
 
 /**
  * The filter values this period can actually offer.
