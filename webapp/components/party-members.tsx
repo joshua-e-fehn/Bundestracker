@@ -82,6 +82,11 @@ export function PartyMembers({ party, wahlperiode }: { party: PartyKey; wahlperi
             <TableRow>
               <TableHead className="w-16">{t("rankings.rank")}</TableHead>
               <TableHead>{t("rankings.member")}</TableHead>
+              {/* `lg:` rather than the constituency's `md:`, matching the
+                  roster table: occupations are free text and run to 60
+                  characters, so on a tablet this column and that one together
+                  squeeze the name — which is what the table is read by. */}
+              <TableHead className="hidden lg:table-cell">{t("mp.occupation")}</TableHead>
               <TableHead className="hidden md:table-cell">{t("mp.constituency")}</TableHead>
               <TableHead className="hidden text-right sm:table-cell">
                 {t("rankings.column.participation")}
@@ -131,6 +136,20 @@ export function PartyMembers({ party, wahlperiode }: { party: PartyKey; wahlperi
                   {partyByKey(party).label !== row.fraktion && (
                     <PartyBadge fraktion={row.fraktion} className="mt-1" />
                   )}
+                </TableCell>
+
+                {/* Truncated to one line with the full string in the `title`,
+                    like the roster table's column: these run to 60 characters
+                    and would otherwise set the row height for the whole table.
+
+                    A dash where nothing is recorded — *unknown*, and not a
+                    claim that the member has no trade. Neither source publishes
+                    "unemployed" and neither does this cell. */}
+                <TableCell
+                  className="hidden max-w-56 truncate text-muted-foreground text-sm lg:table-cell"
+                  title={row.occupation ?? undefined}
+                >
+                  {row.occupation ?? <span className="text-muted-foreground/60">—</span>}
                 </TableCell>
 
                 <TableCell className="hidden text-muted-foreground text-sm md:table-cell">

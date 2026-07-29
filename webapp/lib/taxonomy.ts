@@ -35,6 +35,25 @@ export function isEventType(value: string): value is EventType {
   return (EVENT_TYPES as readonly string[]).includes(value)
 }
 
+/**
+ * The `referenceType` a search hit carries when what matched was the MP's
+ * recorded trade rather than anything they did.
+ *
+ * ⚠ **Not an `EventType`, and deliberately not.** That vocabulary is the closed
+ * set of *things that happened*, and being a lawyer is not one — it is a fact
+ * about the person, with no date and no document behind it. Adding it there
+ * would put "occupation" in the feed's filter chips and in the schema's
+ * validator, where no row could ever carry it.
+ *
+ * So the hit reuses the `activity` catch-all kind and names itself through this
+ * constant. It lives here rather than in convex/search.ts, which mints it,
+ * because components/search-results.tsx has to recognise it to label the line —
+ * and a client component may not import from a `convex/` module that pulls in
+ * `_generated/server`. Same constraint, and same resolution, as `EVENT_TYPES`
+ * itself: see the file header.
+ */
+export const OCCUPATION_REFERENCE = "occupation"
+
 // --- mandate types --------------------------------------------------------
 
 /**

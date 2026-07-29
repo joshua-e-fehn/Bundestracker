@@ -4,6 +4,8 @@ import {
   formatDate,
   fraktionClassName,
   initials,
+  occupationFields,
+  occupationOf,
   protocolPdfUrl,
 } from "./bundestag"
 import { partyColor, partyFor } from "./parties"
@@ -160,6 +162,99 @@ describe("fraktionClassName", () => {
     // inventing one would assert a party identity the data does not carry.
     expect(fraktionClassName("fraktionslos")).toContain("muted")
     expect(fraktionClassName("")).toContain("muted")
+  })
+})
+
+/**
+ * The one place that decides what "occupation" means, tested as one rule read
+ * two ways.
+ *
+ * `occupationOf` labels an MP and `occupationFields` gives the search every
+ * answer to match against. They must not be two rules: a search that matched on
+ * `profession` while the page printed `occupation` would put a card on the
+ * screen whose evidence contradicts the line beside it, which is the failure
+ * `7e48f4a` introduced this function to prevent and the one `convex/search.ts`
+ * had until the occupation index landed.
+ *
+ * The missing-data cases are the load-bearing half. All three absences — key
+ * absent, null, and an empty string — mean *unknown*, and every one of them
+ * occurs: the columns are `v.optional` in storage (convex/schema.ts), the
+ * enrichment stage nulls what it did not reach, and both sources emit blanks.
+ * Unknown is not "unemployed", so nothing here may invent a value.
+ */
+describe("occupationFields", () => {
+  test("returns the current answer before the former one", () => {
+    // abgeordnetenwatch's `occupation` is what they do now; Stammdaten's
+    // `BERUF` is the trade practised before the mandate. The order is what
+    // `occupationOf` takes its head from.
+    expect(occupationFields({ occupation: "MdB", profession: "Rechtsanwältin" })).toEqual([
+      "MdB",
+      "Rechtsanwältin",
+    ])
+  })
+
+  test("carries both, so the search can match a trade the label does not show", () => {
+    // The recall case this function exists for. An MP whose `occupation` reads
+    // "MdB" is still a lawyer, and there are enough of them that matching only
+    // the label would make the profession lexicon — lib/thesaurus.ts's largest
+    // section — reach almost nobody.
+    const fields = occupationFields({ occupation: "MdB", profession: "Rechtsanwältin" })
+    expect(fields).toContain("Rechtsanwältin")
+    expect(occupationOf({ occupation: "MdB", profession: "Rechtsanwältin" })).toBe("MdB")
+  })
+
+  test("deduplicates when both sources say the same thing", () => {
+    // The common case: the two columns agree far more often than they differ.
+    // Two copies would count as two matches and print the same line twice.
+    expect(occupationFields({ occupation: "Landwirt", profession: "Landwirt" })).toEqual([
+      "Landwirt",
+    ])
+  })
+
+  test("an absent key, a null and an empty string are all unknown", () => {
+    // Three states, one meaning. `v.optional` in storage makes the first
+    // reachable, the enrichment stage makes the second, and both sources emit
+    // the third.
+    expect(occupationFields({})).toEqual([])
+    expect(occupationFields({ occupation: null, profession: null })).toEqual([])
+    expect(occupationFields({ occupation: "", profession: "   " })).toEqual([])
+  })
+
+  test("falls back past an empty current answer rather than reporting nothing", () => {
+    // An empty `occupation` is not an answer, so it must not shadow a
+    // `profession` that is one.
+    expect(occupationFields({ occupation: "  ", profession: "Ärztin" })).toEqual(["Ärztin"])
+    expect(occupationOf({ occupation: "  ", profession: "Ärztin" })).toBe("Ärztin")
+  })
+
+  test("trims, because the label and the index both take it verbatim", () => {
+    expect(occupationFields({ profession: "  Lehrerin  " })).toEqual(["Lehrerin"])
+  })
+})
+
+describe("occupationOf", () => {
+  test("is the head of the precedence, so the label cannot disagree with it", () => {
+    // Asserting the relationship rather than a literal: a change to the
+    // ordering has to change both or this fails, which is what keeps the search
+    // from matching on a word the page then declines to print.
+    for (const mp of [
+      { occupation: "MdB", profession: "Rechtsanwältin" },
+      { occupation: null, profession: "Landwirt" },
+      { occupation: "Ärztin", profession: null },
+      { occupation: null, profession: null },
+      {},
+    ]) {
+      expect(occupationOf(mp)).toBe(occupationFields(mp)[0] ?? null)
+    }
+  })
+
+  test("is null when nothing is recorded, never an empty string or a dash", () => {
+    // The callers narrow on truthiness and render *nothing* — an omitted line
+    // on the tooltip, a dash in a table cell. An empty string would render as a
+    // present-but-blank value, which reads as data that failed to load.
+    expect(occupationOf({})).toBeNull()
+    expect(occupationOf({ occupation: null, profession: null })).toBeNull()
+    expect(occupationOf({ occupation: "", profession: "" })).toBeNull()
   })
 })
 

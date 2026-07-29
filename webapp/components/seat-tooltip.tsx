@@ -4,6 +4,7 @@ import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { occupationOf } from "@/lib/bundestag"
 import { formatCount, formatPercent, formatScore } from "@/lib/format"
 import type { SeatingColorMode } from "@/lib/seating"
 
@@ -55,6 +56,22 @@ export type SeatTooltipData = {
    */
   profession: string | null | undefined
   /**
+   * abgeordnetenwatch's `occupation` — what the MP does *now*, where
+   * `profession` is Stammdaten's `BERUF` and is what they did before the
+   * mandate.
+   *
+   * Both are carried and `occupationOf` picks between them, rather than the
+   * tooltip reading `profession` alone as it did: that is the one rule
+   * (lib/bundestag.ts) the roster table, the profile and the search card all
+   * resolve through, and without it the same member reads as a lawyer on `/mps`
+   * and an MdB on the seating map. The card has room for one line, so it shows
+   * the head of the precedence and not both.
+   *
+   * `| undefined` as well as `| null` for exactly the deploy-window reason
+   * `profession` above documents at length.
+   */
+  occupation: string | null | undefined
+  /**
    * `Direktwahl` or `Landesliste` — how this seat was won.
    *
    * `| undefined` as well as `| null` for the same deploy-window reason as
@@ -78,6 +95,7 @@ export type SeatTooltipData = {
 
 export function SeatTooltip({ seat, mode }: { seat: SeatTooltipData; mode: SeatingColorMode }) {
   const { t, locale } = useLocale()
+  const occupation = occupationOf(seat)
 
   return (
     <div className="flex min-w-56 max-w-72 flex-col gap-2">
@@ -106,14 +124,19 @@ export function SeatTooltip({ seat, mode }: { seat: SeatTooltipData; mode: Seati
         <MandateBadge electionMethod={seat.electionMethod} locale={locale} />
       </div>
 
-      {/* Omitted entirely when absent, not rendered as an empty row: Stammdaten
-          carries no `BERUF` for a large share of the roster, and a blank line
-          beside a label reads as a value that failed to load.
+      {/* Omitted entirely when absent, not rendered as an empty row: neither
+          source covers the whole roster, and a blank line beside a label reads
+          as a value that failed to load — where an omitted line reads as the
+          unknown it is.
 
-          `?.trim()` rather than a null check — the field can also be *missing*
-          against a backend that predates it. See the type above. */}
-      {seat.profession?.trim() ? (
-        <p className="line-clamp-2 text-muted-foreground text-xs leading-snug">{seat.profession}</p>
+          One line, not two: the tooltip is 224–288 px wide. `occupationOf`
+          picks the current occupation over the former profession and is shared
+          with the table, the profile and the search card, so the same MP does
+          not read as a lawyer there and an MdB here. Its own trimming covers
+          the field being *missing* against a backend that predates it, and the
+          empty strings both sources emit; see the type above. */}
+      {occupation ? (
+        <p className="line-clamp-2 text-muted-foreground text-xs leading-snug">{occupation}</p>
       ) : null}
 
       <dl className="flex flex-col gap-0.5 text-xs">

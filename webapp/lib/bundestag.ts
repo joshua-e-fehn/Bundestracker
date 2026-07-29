@@ -74,27 +74,62 @@ export function stateOf(constituency: string | null | undefined): string | null 
 }
 
 /**
- * What an MP does, from the two sources that answer it differently.
+ * What an MP does, from the two sources that answer it differently — every
+ * non-empty answer, in the order they take precedence.
  *
  * `occupation` is abgeordnetenwatch's answer — what they do *now*, which for a
  * sitting member is often `MdB` — and covers 88.1 % of WP21. `profession` is
  * Stammdaten's `BERUF`, the trade practised *before* the mandate, and covers
- * 94.3 %. Neither is a superset of the other, so this prefers the current
- * answer and falls back to the former one.
+ * 94.3 %. Neither is a superset of the other, which is why the precedence
+ * exists at all and why a caller that needs *recall* rather than a label wants
+ * both.
  *
- * One function rather than the same `??` chain in the table, the tooltip and
- * the profile: they must agree on what "occupation" shows, or the same MP reads
- * as a lawyer in one place and an MdB in another.
+ * This is the one place that ordering is written down. `occupationOf` below
+ * takes the head of it to label an MP; `convex/search.ts` walks the whole list
+ * to decide whether a query for `lawyer` reaches someone whose record says
+ * `Rechtsanwalt`. Two readers, one precedence rule — so the search cannot match
+ * on a word the page then declines to show, which is what a second `??` chain
+ * would eventually produce.
+ *
+ * Empty and whitespace-only values are dropped rather than returned: the
+ * sources emit both, and `""` is not a trade. An MP with neither field yields
+ * an empty array, which is *unknown* — never "unemployed", and never a
+ * fabricated translation of a word that is not there.
+ *
+ * **Deduplicated**, because the two sources agree far more often than they
+ * disagree — `Rechtsanwalt` in both columns is one answer twice, not two
+ * answers. A caller counting these as evidence would otherwise report two
+ * matches for one word and print the same line twice.
  *
  * Takes the two fields rather than a document so that `convex/` and the browser
  * can both call it — convex/ may import from lib/, but not the other way
  * around, exactly as `stateOf` above.
  */
+export function occupationFields(mp: {
+  occupation?: string | null
+  profession?: string | null
+}): string[] {
+  const values = [mp.occupation, mp.profession]
+    .map((value) => value?.trim() ?? "")
+    .filter((value) => value.length > 0)
+  // A `Set` preserves insertion order, so the precedence survives the dedup —
+  // `occupationOf` still reads the current answer first.
+  return [...new Set(values)]
+}
+
+/**
+ * What an MP does, as one line — the current answer, falling back to the former
+ * one. Null when neither source has anything.
+ *
+ * One function rather than the same `??` chain in the table, the tooltip and
+ * the profile: they must agree on what "occupation" shows, or the same MP reads
+ * as a lawyer in one place and an MdB in another.
+ */
 export function occupationOf(mp: {
   occupation?: string | null
   profession?: string | null
 }): string | null {
-  return mp.occupation?.trim() || mp.profession?.trim() || null
+  return occupationFields(mp)[0] ?? null
 }
 
 // --- document URLs --------------------------------------------------------

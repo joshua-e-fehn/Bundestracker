@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 // Relative, not "@/lib/...": convex/tsconfig.json defines no path aliases.
+import { occupationOf } from "../lib/bundestag"
 import { PARTY_KEYS, type PartyKey, partyFor } from "../lib/parties"
 import { competitionRanks } from "../lib/ranking"
 import { mandateType, RANKING_METRICS } from "../lib/taxonomy"
@@ -98,6 +99,16 @@ const partyMemberRow = v.object({
   fraktion: v.string(),
   ...photoFields,
   constituency: v.union(v.null(), v.string()),
+  /**
+   * What the member does — `occupationOf`'s answer, resolved here rather than
+   * in the browser so this table, the roster, the seating tooltip and the
+   * search card all show one line chosen by one rule. `convex/rankings.ts`
+   * carries the same field for the same reason.
+   *
+   * Null where neither source has anything, which is *unknown*: the column
+   * renders a dash, and a dash is not a claim that the member has no trade.
+   */
+  occupation: v.union(v.null(), v.string()),
   /** Null, never 0, for a mandate the nightly sweep has not reached. The
    * distinction `getMPsWithScores` draws for the same reason: an unscored MP
    * and an inactive one are different claims, and a 0 in a ranked column
@@ -333,6 +344,14 @@ export const getPartyMembers = query({
         photoUrl: mp.photoUrl ?? null,
         photoCredit: mp.photoCredit ?? null,
         constituency: mp.constituency,
+        // `occupationOf`, not `mp.occupation`: the precedence between
+        // abgeordnetenwatch's current answer and Stammdaten's `BERUF` lives in
+        // one function (lib/bundestag.ts), and reading one column here would
+        // make this table disagree with the roster about the same member. It
+        // also collapses absent, null and empty to null — the columns are
+        // `v.optional` in storage, so an un-enriched row has no key and an
+        // `undefined` would fail this query's returns validator outright.
+        occupation: occupationOf(mp),
         totalScore: score?.totalScore ?? null,
         voteParticipationRate: score?.voteParticipationRate ?? null,
       }
