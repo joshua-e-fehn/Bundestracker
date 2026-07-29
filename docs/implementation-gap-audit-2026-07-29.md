@@ -86,13 +86,32 @@ the code asserts it; `roadmap_idea` = aspiration, never committed.
 | **GAP-023** | `auth-routes.ts:30` comment says `/sign-in` doesn't exist | **stale_plan_superseded** | A | code_contract | Comment outlived the fix | Delete the stale sentence | — | ✅ |
 | **GAP-024** | `purgeSeed` does not cover `voteSheets` | **partially_implemented** | A | code_contract | Table omitted from the purge list | Add it; no fabricated ballot is live today | — | ✅ |
 | **GAP-025** | "Procedural clock" | **stale_plan_superseded** | A | roadmap_idea | Never in any plan, commit or file | **Do not build.** Not committed scope | — | n/a |
+| **GAP-026** | Enrichment TTL is keyed by MP id with no Wahlperiode, so a historical backfill starves the current period | **partially_implemented** | A | code_contract | `contact_fetched_at` is `dict[internalId]` (`state.py:100`); the bundestag.de listing is current-roster-only | Key the TTL by `(internalId, wahlperiode)` | GAP-001 | ✅ |
+| **GAP-027** | Two MPs are permanently unenrichable; the "quarantine retries these" claim is false | **partially_implemented** | A | code_contract | `normalise_printed_name` drops middle initials; `portrait_enrichment` logs the miss but never calls `Quarantine.add` | Handle middle initials; route misses to the quarantine | GAP-001 | ✅ |
+| **GAP-028** | An empty contact fetch is stamped as success, so the 12 null blocks never retry | **partially_implemented** | A | code_contract | `_load_contacts` stamps on any 200, conflating "no office listed" with "no block at all" | Only stamp when a block parsed; else retry | GAP-001 | ✅ |
+| **GAP-029** | abgeordnetenwatch poll/mandate endpoints built, tested, never called | **planned_but_absent** | A | code_contract | Second instance of the `ef687e5` class of bug | Wire `get_mandates` to catch mid-period MPs, or delete | — | ✅ |
+| **GAP-030** | `Ueberweisung` (committee referral) modelled and fetched, never written | **planned_but_absent** | A | doc_statement | §3.3 names it "the committee-work signal"; no transform reads it | Assess as a partial committee substitute for WP14–20 | GAP-009 | ✅ |
+| **GAP-031** | `/rankings` top slots are near-uniformly one Fraktion, with no interpretive note | **partially_implemented** | A | doc_statement | Every other editorial surface carries a caveat; this one does not | Add a caveat note, as `/votes` and `/parties` already do | — | ⚠ i18n |
 
-**Counts — 25 gaps.** By status: implemented_not_populated 1 · buried_in_ui 1 ·
-implemented_not_deployed 4 · partially_implemented 11 · planned_but_absent 5 ·
+**Counts — 31 gaps.** By status: implemented_not_populated 1 · buried_in_ui 1 ·
+implemented_not_deployed 4 · partially_implemented 16 · planned_but_absent 7 ·
 blocked_by_source 1 · stale_plan_superseded 2.
-By severity: **critical 1** (GAP-001) · **high 6** (002, 003, 005, 006, 009, 013) ·
-medium 12 · low 6.
-By evidence: **A (measured) 18** · B (written plan) 5 · C (inferred) 2.
+By severity: **critical 1** (GAP-001) · **high 8** (002, 003, 005, 006, 009, 013,
+026, 028) · medium 15 · low 7.
+By evidence: **A (measured) 24** · B (written plan) 5 · C (inferred) 2.
+
+**Wahlperiode enrichment coverage** (measured, and the clearest symptom of
+GAP-026):
+
+| Period | rows | `photoUrl` | `contact` |
+|---|---|---|---|
+| WP21 | 635 | 0 (was 633) | 0 (was 623) |
+| WP20 | 700+ | **0** | **0** |
+| WP19 | 700+ | 221 | 215 |
+
+WP20 has no portraits and no contact at all; WP19 is partial and still
+backfilling. So even once GAP-001 is repaired, the historical periods stay
+unenriched until the TTL is period-scoped.
 
 ---
 
@@ -130,6 +149,19 @@ audit's writes:
 Re-measured at **11:21 UTC**: `contact` **0**, `photoUrl` **0**,
 `photoCredit` **0**, `occupation` **0**, `education` **0**. All 635 rows carry
 `updatedAt` between `11:13:54.327Z` and `11:13:56.853Z` — one batch write.
+
+The transition was captured independently by a second investigator working in
+parallel, which fixes the timeline beyond doubt:
+
+| Time (UTC) | Observation |
+|---|---|
+| 11:06:10 | Kontakt card **photographed rendering correctly** in production for Bernd Baumann — form link, hint line, homepage, Berlin office, 6 socials |
+| 11:11:23 | `contact` already 0, `photoCredit` still 633 — the wipe in progress |
+| 11:13:56 | last row written; every enrichment column null |
+| 11:19–11:21 | `contact` 0, `photoUrl` 0, `photoCredit` 0, `occupation` 0 |
+
+So the feature was demonstrably working on the live site **eight minutes** into
+this audit and was gone twelve minutes later.
 
 ### 2.3 Root cause
 
@@ -183,6 +215,16 @@ answer is that neither is available. The schema comment
 (`schema.ts:220-226`) makes the case that an `email` field would "read as one
 the pipeline had failed to fill" — that reasoning is sound and should stand.
 **Recommendation: do not implement GAP-004.**
+
+**But the explanation does not reach the reader who needs it.** The site states
+the fact honestly in two places — `/about` carries *"Private Kontaktdaten sind
+nicht enthalten — der Bundestag veröffentlicht keine."*, and the card's own hint
+line says the same — yet **both are inside the card or on another page**. On the
+12 members with no block (and on all 635 while the wipe stands), the profile is
+simply *silent*: `grep "E-Mail-Adressen"` on Habeck's live page returns **0**.
+A citizen looking for how to write to their MP gets nothing, and cannot tell an
+absent source from a broken pipeline. That is GAP-003's real user impact, and it
+is fixable independently of GAP-001.
 
 ### 2.6 Discoverability (GAP-002), measured
 
@@ -263,8 +305,14 @@ branch touching `webapp/lib/i18n.ts`, `webapp/convex/schema.ts` or
 - **B1 · GAP-002** — promote the Kontakt card (top of sidebar, or its own
   column). *Touches `mp-profile.tsx`.* **Verify:** heading offset < 800 px on
   both viewports.
-- **B2 · GAP-003** — retry/quarantine the 12 missing blocks; render an honest
-  empty state. **Verify:** coverage rises, or the card explains the absence.
+- **B2 · GAP-003 + GAP-027 + GAP-028** — stop stamping an empty fetch as
+  success, route unmatched names to the quarantine, and handle middle initials
+  (`Philip M. A. Hoffmann`, `Alexis L. Giersch` are unenrichable today). Render
+  an honest empty state where the source really has nothing. **Verify:**
+  coverage rises above 623/635, or the card explains the absence.
+- **B4 · GAP-026** — key `contact_fetched_at` by `(internalId, wahlperiode)`.
+  **Verify:** a WP19 backfill no longer marks WP21 members fresh; WP20 gains
+  portraits.
 - **B3 · GAP-011** — cherry-pick `7e48f4a`'s occupation column; fix
   `seat-tooltip.tsx:115` to prefer `occupation`. **Verify:** occupation on
   table, tooltip and profile.
@@ -300,6 +348,13 @@ branch touching `webapp/lib/i18n.ts`, `webapp/convex/schema.ts` or
 - **E5 · GAP-020** — opposition adjustment and productivity metrics. Both are
   **editorially loaded** and sit uneasily with the project's "no subjective
   scoring" principle. Recommend an explicit product decision before any code.
+- **E6 · GAP-029** — wire `get_mandates` so mid-period MPs enter the roster
+  before the Stammdaten ZIP catches up, or delete the dead client code.
+- **E7 · GAP-030** — assess `Ueberweisung` as a partial committee signal for
+  WP14–20, where Stammdaten publishes nothing. The coverage doc currently calls
+  this impossible; it may only be unimplemented.
+- **E8 · GAP-031** — add a caveat note to `/rankings`, matching `/votes` and
+  `/parties`. *⚠ i18n.*
 
 ---
 
