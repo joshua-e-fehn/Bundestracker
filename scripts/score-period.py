@@ -189,17 +189,45 @@ class Scorer:
         self.wahlperiode = wahlperiode
         self.workers = workers
 
-    def slice_at(self, cursor: int, month: str) -> int:
-        body = post(
-            self.url,
-            {
-                "wahlperiode": self.wahlperiode,
-                "month": month,
-                "cursor": cursor,
-                "batchSize": BATCH,
-            },
-            self.headers,
-        )
+    def slice_at(self, cursor: int, month: str, size: int = BATCH) -> int:
+        """Score `size` MPs from `cursor`, splitting the slice if it is too big.
+
+        `MAX_SCORE_BATCH` = 8 is a *measured* bound, not a safe one in
+        perpetuity — webapp/convex/activityScores.ts says so, and says why it
+        will drift: `voteParticipation` (convex/votes.ts) collects **all** of an
+        MP's `voteRecords` with no period filter and does a `db.get` per record,
+        so every historical period that lands raises the per-MP read cost of
+        scoring *every other* period. A backfill is exactly the thing that
+        moves that number.
+
+        So a read-limit 400 is treated as "this slice was too big" and retried
+        as halves rather than as a failed month: the limit is per transaction,
+        and fewer MPs per call is the only lever that helps. A single MP that
+        still will not fit is re-raised — that is a real ceiling breach and
+        must not be silently skipped, because a skipped MP scores as absent
+        rather than as unmeasured.
+        """
+        try:
+            body = post(
+                self.url,
+                {
+                    "wahlperiode": self.wahlperiode,
+                    "month": month,
+                    "cursor": cursor,
+                    "batchSize": size,
+                },
+                self.headers,
+            )
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")
+            if "Too many documents read" not in detail or size <= 1:
+                raise RuntimeError(
+                    f"cursor {cursor} (batch {size}): {detail[:300]}"
+                ) from error
+            half = size // 2
+            return self.slice_at(cursor, month, half) + self.slice_at(
+                cursor + half, month, size - half
+            )
         return int(body.get("scored", 0))
 
     def month(self, month: str, roster: int) -> int:
