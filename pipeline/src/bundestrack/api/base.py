@@ -257,16 +257,30 @@ class BundestagClient:
                         headers=dict(headers) if headers else None,
                         timeout=timeout if timeout is not None else self._client.timeout,
                     )
-                except httpx.TimeoutException as error:
+                except (httpx.TimeoutException, httpx.NetworkError) as error:
                     # §2.6: once escalated, the WAF stops answering rather than
                     # challenging. A timeout here is more likely to be a block
                     # than a slow server, so it backs off on the same schedule.
+                    #
+                    # `NetworkError` — a reset, a dropped connection, a refused
+                    # one — is retried on the same schedule and for the same
+                    # reason. It was previously left to the `HTTPError` clause
+                    # below, which raises: on 2026-07-29 a single
+                    # `[Errno 104] Connection reset by peer`, 234 batches into
+                    # WP19's activities, ended that stage and cost the rest of
+                    # the period's ~115 000-record stream. A reset mid-stream is
+                    # the ordinary hazard of an hours-long sequential fetch
+                    # against a WAF-fronted host, and it is precisely what a
+                    # retry loop is for; the alternative is a stage that fails
+                    # on a hiccup one request from the end.
                     last_error = error
                     logger.warning(
-                        "Timeout on %s (attempt %d/%d) — treating as WAF escalation",
+                        "%s on %s (attempt %d/%d) — backing off %.0fs",
+                        type(error).__name__,
                         target,
                         attempt + 1,
                         self.max_retries + 1,
+                        backoff,
                     )
                     if attempt < self.max_retries:
                         pacer.sleep(_jittered(backoff))

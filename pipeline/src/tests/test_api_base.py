@@ -98,6 +98,49 @@ def test_a_timeout_is_treated_as_the_waf_escalating(no_pacing: None) -> None:
         client.get_json("person")
 
 
+def test_a_connection_reset_is_retried_rather_than_raised(no_pacing: None) -> None:
+    """A reset mid-stream must not end the stage on its first occurrence.
+
+    Regression: `httpx.ReadError` is a `NetworkError`, not a `TimeoutException`,
+    so it fell through to the `HTTPError` clause and raised. On 2026-07-29 one
+    `[Errno 104] Connection reset by peer` — 234 batches into WP19's activities
+    — ended that stage and cost the remainder of a ~115 000-record stream.
+    """
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ReadError("[Errno 104] Connection reset by peer", request=request)
+        return httpx.Response(200, json={"documents": []})
+
+    client = BundestagClient(
+        base_url="https://example.test", client=mock_client(handler), max_retries=2
+    )
+
+    assert client.get_json("aktivitaet") == {"documents": []}
+    assert attempts == 2, "the reset should have been retried, not raised"
+
+
+def test_an_http_status_error_still_raises(no_pacing: None) -> None:
+    """Widening to `NetworkError` must not swallow real HTTP failures.
+
+    `HTTPStatusError` is not a `NetworkError`, so a 500 is still an error the
+    caller sees rather than something retried into a `RateLimited`.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom")
+
+    client = BundestagClient(
+        base_url="https://example.test", client=mock_client(handler), max_retries=1
+    )
+
+    with pytest.raises(BundestagAPIError):
+        client.get_json("person")
+
+
 # --- sequential fetching ---------------------------------------------------
 
 
