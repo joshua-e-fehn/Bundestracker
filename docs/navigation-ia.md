@@ -214,22 +214,32 @@ drawer open/close/navigate, focus handling, and zero horizontal overflow at
 every width. Screenshots are in `docs/screenshots/navigation`
 (`before-prod-*` is current production, `after-local-*` is this branch).
 
-**Re-verified after the rebase onto `main`** (which had advanced by five
-commits), against a production build: 46/47 checks passed at 1440, 390 and
-320 px in both locales — the same properties as above plus the three modal ones
-in the table further up, which is the run that found the modal defect.
+**Re-verified after the rebase onto `main`**, against a production build:
+**47/47** checks passed at 1440, 390 and 320 px in both locales — the same
+properties as above plus the three modal ones in the table further up. The run
+that found the modal defect scored 46/47 before the fix, with the three modal
+rows failing; they pass now.
 
-The one non-passing check is a **known flake in the harness, not a defect**, and
-is recorded here rather than quietly dropped: a *synthetic* Playwright click on
-a menu row fails to navigate roughly 1 time in 10 (45/50 across repeated runs).
-It is specific to menu rows — plain header and footer links were 14/14 in the
-same session — and it reproduces identically with and without the modal fix, so
-it is not caused by it. The click reaches the anchor every time (verified with a
-capture-phase listener, which is itself enough to make it pass 3/3), so the
-suspect is the interaction between Playwright's synthesised pointer sequence and
-Radix's `onPointerUp` → `currentTarget.click()` re-dispatch, not the app's own
-handling. Not reproducible by hand. Worth revisiting if a human ever reports a
-dropped click.
+One check is **intermittent under the harness** and is recorded here rather than
+quietly dropped, because it did not fully fit the "environment artifact" story
+it would have been convenient to file it under. A *synthetic* Playwright click
+on a menu row occasionally fails to navigate — about 1 time in 10 (45/50 across
+repeated runs), though the final run above was 47/47. What rules it out as a
+defect in this change:
+
+- It reproduces **identically with and without** `modal={false}`, so the modal
+  fix neither causes nor hides it.
+- The click **reaches the anchor every time**, verified with a capture-phase
+  listener — which is itself enough to make it pass 3/3, the signature of a
+  timing race in the harness rather than a logic error.
+- It is **not reproducible by hand** at any speed.
+
+What keeps it honest to call a harness issue rather than a proven one: it is
+specific to menu rows. Plain header and footer links were 14/14 in the same
+session, so this is not simply "synthetic clicks are flaky here". The suspect is
+Playwright's synthesised pointer sequence against Radix's `onPointerUp` →
+`currentTarget.click()` re-dispatch, which plain links do not go through. Worth
+revisiting if a human ever reports a dropped click.
 
 ### Three pre-existing bugs found and fixed along the way
 
