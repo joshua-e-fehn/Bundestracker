@@ -755,12 +755,19 @@ const de = {
   "nav.inquiryHint": "Wer das Viertel nach Art. 44 GG erreicht — und wer nicht.",
   "nav.searchHint": "Abgeordnete und Dokumente im Volltext durchsuchen.",
 
-  // The desktop bar's landmark name. `nav.expandGroup` and `nav.overview` were
-  // here too and are gone: the group triggers carry their own label plus Radix's
-  // `aria-expanded`, so a separate "expand" string described a control that does
-  // not exist, and the overview row reuses `nav.dashboard` rather than saying
-  // "Übersicht" in one place and "Dashboard" in every other.
+  // The desktop sidebar's landmark name. `nav.expandGroup` and `nav.overview`
+  // were here too and are gone: the overview row reuses `nav.dashboard` rather
+  // than saying "Übersicht" in one place and "Dashboard" in every other, and
+  // the groups are headings over visible rows rather than controls that expand.
   "nav.primary": "Hauptnavigation",
+
+  // The sidebar's collapse control. Two strings rather than one toggled label,
+  // because the button announces what it will *do* and those are two different
+  // actions — a single "Seitenleiste umschalten" would leave a screen-reader
+  // user unable to tell which state they are in without moving focus into the
+  // rail and counting what is there.
+  "nav.collapseSidebar": "Seitenleiste einklappen",
+  "nav.expandSidebar": "Seitenleiste ausklappen",
 
   "theme.light": "Hell",
   "theme.dark": "Dunkel",
@@ -2193,6 +2200,8 @@ const en: Dictionary = {
   "nav.searchHint": "Full-text search across members and documents.",
 
   "nav.primary": "Main navigation",
+  "nav.collapseSidebar": "Collapse sidebar",
+  "nav.expandSidebar": "Expand sidebar",
 
   "theme.light": "Light",
   "theme.dark": "Dark",

@@ -115,15 +115,58 @@ describe("the tree covers the site", () => {
     // The regression this whole task was about. Eight peers in a bar is the
     // state being left behind, and the way it comes back is one entry at a time
     // — so this pins the shape rather than the contents: destinations live in
-    // groups, and the bar itself carries a small, fixed number of items.
+    // named groups, and there are few enough of them to read as sections rather
+    // than as a second flat list one level down.
     expect(NAV_GROUPS.length).toBeGreaterThanOrEqual(2)
     expect(NAV_GROUPS.length).toBeLessThanOrEqual(4)
-    // What the desktop bar renders: the overview plus one trigger per group.
-    expect(1 + NAV_GROUPS.length).toBeLessThanOrEqual(5)
     // And every group actually holds something.
     for (const group of NAV_GROUPS) {
       expect(group.items.length).toBeGreaterThan(0)
     }
+  })
+
+  test("the expanded sidebar fits on a laptop without scrolling", () => {
+    // The sidebar shows every destination at once — no disclosure — so the
+    // tree's total height is a real constraint rather than a style question.
+    // At the rendered sizes (36 px rows, ~28 px group headings, 12 px group
+    // gaps) the current tree comes to roughly 560 px, inside the ~640 px a
+    // 768 px-tall laptop leaves below the header. This is a budget, not a
+    // measurement: it fails when a future feature would push the list past the
+    // fold, which is the moment the "visible at once" premise needs revisiting
+    // rather than silently becoming "visible after scrolling".
+    const rows = allNavItems().length
+    const headings = NAV_GROUPS.length
+    const estimatedHeight = rows * 36 + headings * 28 + headings * 12
+    expect(estimatedHeight).toBeLessThan(640)
+  })
+})
+
+describe("every destination can be rendered in the collapsed rail", () => {
+  test("each entry carries an icon", () => {
+    // Collapsed, the icon is the only thing left of a row. An entry without one
+    // would render as a blank 16 px square that navigates somewhere — invisible
+    // to a typecheck if `icon` were optional, which is why it is not, and
+    // asserted here anyway because a `LucideIcon`-typed `undefined` slipping
+    // through a cast would produce exactly that blank row.
+    //
+    // "Renderable" rather than `typeof === "function"`: lucide's icons are
+    // `forwardRef` results, which are *objects* carrying `$$typeof` and
+    // `render`. Checking for a function passes on a plain component and fails
+    // on every icon this file actually uses.
+    for (const item of allNavItems()) {
+      const renderable =
+        typeof item.icon === "function" || (typeof item.icon === "object" && item.icon !== null)
+      expect({ href: item.href, renderable }).toEqual({ href: item.href, renderable: true })
+    }
+  })
+
+  test("no two destinations share an icon", () => {
+    // In the collapsed rail the glyph *is* the row, so two entries with the
+    // same one are two rows a reader cannot tell apart — the icon-rail
+    // equivalent of two links with the same label. Not caught by the "no
+    // destination appears twice" test above, which looks at hrefs.
+    const icons = allNavItems().map((item) => item.icon)
+    expect(icons.length).toBe(new Set(icons).size)
   })
 })
 

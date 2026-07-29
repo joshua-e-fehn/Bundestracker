@@ -1,15 +1,29 @@
+import type { LucideIcon } from "lucide-react"
+import {
+  ActivityIcon,
+  ArmchairIcon,
+  CoinsIcon,
+  InfoIcon,
+  LandmarkIcon,
+  LayoutDashboardIcon,
+  ScaleIcon,
+  SearchIcon,
+  TrophyIcon,
+  UsersIcon,
+  VoteIcon,
+} from "lucide-react"
 import type { TranslationKey } from "@/lib/i18n"
 
 /**
  * The site's information architecture: every navigable destination, grouped.
  *
- * One list, consumed by four surfaces — the desktop bar, the mobile drawer, the
- * command-less "more" menus, and the tests. `components/site-header.tsx` used to
- * hold this inline, which is what let the two renderings of it drift: the header
- * carried a hand-written `NAV_SHEET_ONLY` set to keep one long label out of the
- * inline row, and the row itself was a filter over a flat array of eight links.
- * A flat list is exactly what stops scaling, and it is the thing this task was
- * opened about — eight peer links in a 56 px bar, with a ninth
+ * One list, consumed by three surfaces — the desktop sidebar, the mobile
+ * drawer, and the tests. `components/site-header.tsx` used to hold this inline,
+ * which is what let the two renderings of it drift: the header carried a
+ * hand-written `NAV_SHEET_ONLY` set to keep one long label out of the inline
+ * row, and the row itself was a filter over a flat array of eight links. A flat
+ * list is exactly what stops scaling, and it is the thing this task was opened
+ * about — eight peer links in a 56 px bar, with a ninth
  * (`/votes/own-resources`) reachable only from a sentence inside `/votes` and a
  * tenth (`/search`) that changes shape depending on the viewport.
  *
@@ -51,17 +65,40 @@ import type { TranslationKey } from "@/lib/i18n"
  * `app/` with a page is reachable from the navigation — including the two that
  * were not before — and `lib/navigation.test.ts` asserts that against the
  * filesystem, the same way `lib/auth-routes.test.ts` asserts the public list.
- * A group's children are one hover or one tap away, never more.
+ * In the expanded sidebar every destination is visible at once with no
+ * disclosure at all; collapsed, each is one hover away.
+ *
+ * ## Why every entry carries an icon
+ *
+ * Because the sidebar collapses to a 3.5 rem rail, and in that state the icon
+ * is the only thing left of the row. That makes the icon a *requirement* of the
+ * data rather than decoration on the view — `icon` is non-optional on `NavItem`
+ * for exactly that reason, so a new destination cannot be added without
+ * deciding what it looks like at 16 px, and the collapsed rail cannot silently
+ * grow a blank row.
+ *
+ * It does not make the icon carry the meaning on its own. `/seating` is an
+ * armchair and `/inquiry-quorum` is a pair of scales — neither is a convention
+ * a reader could be expected to decode cold — so the collapsed rail pairs every
+ * icon with a tooltip carrying the same label the expanded state shows, and
+ * `aria-label` carries it to assistive technology whether or not a pointer ever
+ * hovers. The icon is a landmark for a reader who already knows the site; the
+ * label is what tells them in the first place, and it is never the icon's job
+ * to replace it.
  */
 
 /** A leaf: something a reader can navigate to. */
 export type NavItem = {
   href: string
   labelKey: TranslationKey
-  /** A one-line gloss, shown under the label where there is room for it — the
-   * desktop group menus and the mobile drawer. The bar itself shows labels
-   * only. These are the pages' own subtitles rather than new strings, so the
-   * menu says what the page says. */
+  /** The glyph for this destination. Not optional — see the note above: the
+   * collapsed rail renders nothing else, so an entry without one would be a
+   * blank 16 px square that navigates somewhere. */
+  icon: LucideIcon
+  /** A one-line gloss, shown where there is room for it — the mobile drawer and
+   * the expanded sidebar's own rows do not use it, but the drawer does, and it
+   * is what the tooltip falls back to. These are the pages' own subtitles
+   * rather than new strings, so the navigation says what the page says. */
   descriptionKey?: TranslationKey
   /** Narrower cuts of this entry's subject. Rendered indented under their
    * parent; the parent stays a link in its own right. */
@@ -85,6 +122,7 @@ export type NavGroup = {
 export const NAV_PRIMARY: NavItem = {
   href: "/dashboard",
   labelKey: "nav.dashboard",
+  icon: LayoutDashboardIcon,
   descriptionKey: "nav.dashboardHint",
 }
 
@@ -93,10 +131,25 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     id: "people",
     labelKey: "nav.groupPeople",
     items: [
-      { href: "/mps", labelKey: "nav.members", descriptionKey: "nav.membersHint" },
-      { href: "/rankings", labelKey: "nav.rankings", descriptionKey: "rankings.subtitle" },
-      { href: "/parties", labelKey: "nav.parties", descriptionKey: "nav.partiesHint" },
-      { href: "/seating", labelKey: "nav.seating", descriptionKey: "nav.seatingHint" },
+      { href: "/mps", labelKey: "nav.members", icon: UsersIcon, descriptionKey: "nav.membersHint" },
+      {
+        href: "/rankings",
+        labelKey: "nav.rankings",
+        icon: TrophyIcon,
+        descriptionKey: "rankings.subtitle",
+      },
+      {
+        href: "/parties",
+        labelKey: "nav.parties",
+        icon: LandmarkIcon,
+        descriptionKey: "nav.partiesHint",
+      },
+      {
+        href: "/seating",
+        labelKey: "nav.seating",
+        icon: ArmchairIcon,
+        descriptionKey: "nav.seatingHint",
+      },
     ],
   },
   {
@@ -106,6 +159,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         href: "/votes",
         labelKey: "nav.votes",
+        icon: VoteIcon,
         descriptionKey: "nav.votesHint",
         // The curated collection. A child rather than a peer because it is a
         // *subset* of the ballots above it, and because it was previously
@@ -115,6 +169,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
           {
             href: "/votes/own-resources",
             labelKey: "votes.ownResources.title",
+            icon: CoinsIcon,
             descriptionKey: "nav.ownResourcesHint",
           },
         ],
@@ -122,6 +177,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         href: "/inquiry-quorum",
         labelKey: "nav.inquiry",
+        icon: ScaleIcon,
         descriptionKey: "nav.inquiryHint",
       },
     ],
@@ -130,23 +186,27 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     id: "context",
     labelKey: "nav.groupContext",
     items: [
-      { href: "/feed", labelKey: "nav.feed", descriptionKey: "feed.subtitle" },
-      { href: "/about", labelKey: "nav.about", descriptionKey: "about.subtitle" },
+      { href: "/feed", labelKey: "nav.feed", icon: ActivityIcon, descriptionKey: "feed.subtitle" },
+      { href: "/about", labelKey: "nav.about", icon: InfoIcon, descriptionKey: "about.subtitle" },
     ],
   },
 ]
 
 /**
- * Search: a destination in the drawer, a *box* in the bar.
+ * Search: a destination in the drawer, a *box* in the header.
  *
  * Kept out of `NAV_GROUPS` deliberately, and for the reason the old header
- * already gave: above the width where the bar carries a search box, a link
+ * already gave: above the width where the header carries a search box, a link
  * beside it pointing at the same feature is a second control for one thing. The
- * drawer, which has no box of its own to compete with, renders it as an entry.
+ * drawer, which has no box of its own to compete with, renders it as an entry —
+ * and so does the collapsed sidebar, where the header's box is still on screen
+ * but the rail has room for the glyph and a reader scanning the rail should not
+ * have to look elsewhere for the one destination missing from it.
  */
 export const NAV_SEARCH: NavItem = {
   href: "/search",
   labelKey: "search.title",
+  icon: SearchIcon,
   descriptionKey: "nav.searchHint",
 }
 

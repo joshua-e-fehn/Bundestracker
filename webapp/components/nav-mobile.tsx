@@ -21,12 +21,17 @@ import { cn } from "@/lib/utils"
 /**
  * The mobile navigation: a drawer carrying the whole tree, flat and open.
  *
- * A deliberately *different* pattern from the desktop bar rather than the same
- * one at a smaller size, which is the point of criterion 4. On desktop the
- * groups are collapsed behind menu triggers because a 56 px bar has room for
- * four items and not for nine. In a drawer that constraint does not exist — it
- * scrolls — so hiding the same entries behind nine taps of disclosure would be
- * ceremony with no width to justify it. Every destination here is visible after
+ * A deliberately *different* pattern from the desktop sidebar rather than the
+ * same one at a smaller size. The requirement is explicit — no permanent rail
+ * consuming viewport width below `lg` — and it is the right call for a reason
+ * beyond the width: a 3.5 rem icon rail on a 320 px screen would be 11 % of the
+ * viewport spent on chrome, and there is no hover on a phone for the tooltips
+ * that make a collapsed rail readable.
+ *
+ * So the drawer shows everything at once instead of collapsing anything. It
+ * scrolls, so the width budget that justifies the sidebar's collapse does not
+ * exist here, and hiding the same nine entries behind taps of disclosure would
+ * be ceremony with nothing to buy with it. Every destination is visible after
  * one tap on the menu button, under a heading that says which group it is in.
  *
  * That is the same conclusion the old sheet reached (it listed everything) with
@@ -34,6 +39,12 @@ import { cn } from "@/lib/utils"
  * both read `lib/navigation.ts`, so a route cannot appear in one and not the
  * other. The old header carried a hand-maintained `NAV_SHEET_ONLY` set for
  * exactly the drift that arrangement invites.
+ *
+ * The icons are the sidebar's, shown here too. Not because the drawer needs
+ * them to be legible — every label is on screen — but because a reader who
+ * moves between a phone and a desktop should meet one site: the glyph beside
+ * "Sitzverteilung" is what makes the collapsed rail learnable, and it only
+ * becomes learnable if it is the same glyph in both places.
  *
  * ## What the sheet primitive already handles
  *
@@ -142,6 +153,7 @@ function DrawerLink({
 }) {
   const { t } = useLocale()
   const active = isActivePath(pathname, item.href)
+  const Icon = item.icon
 
   return (
     <Link
@@ -155,19 +167,27 @@ function DrawerLink({
       className={cn(
         // `min-h-11` — 44 px, the touch-target floor — rather than padding
         // alone, so a one-line row is as tappable as a two-line one.
-        "flex min-h-11 flex-col justify-center gap-0.5 rounded-md border-l-2 px-3 py-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+        "flex min-h-11 items-center gap-3 rounded-md border-l-2 px-3 py-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
         nested && "ml-3",
         active
           ? "border-gold-brand bg-accent text-foreground"
           : "border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
     >
-      <span className={cn("font-medium", nested ? "text-[0.8rem]" : "text-sm")}>
-        {t(item.labelKey)}
+      {/* `self-start mt-0.5` rather than centred: a row with a description is
+          two lines tall and a vertically-centred glyph would float beside the
+          gap between them rather than beside the label it belongs to. */}
+      <Icon aria-hidden className="mt-0.5 size-4 shrink-0 self-start" />
+      <span className="grid min-w-0 gap-0.5">
+        <span className={cn("font-medium", nested ? "text-[0.8rem]" : "text-sm")}>
+          {t(item.labelKey)}
+        </span>
+        {item.descriptionKey && (
+          <span className="text-muted-foreground text-xs leading-snug">
+            {t(item.descriptionKey)}
+          </span>
+        )}
       </span>
-      {item.descriptionKey && (
-        <span className="text-muted-foreground text-xs leading-snug">{t(item.descriptionKey)}</span>
-      )}
     </Link>
   )
 }
