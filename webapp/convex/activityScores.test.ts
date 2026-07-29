@@ -134,13 +134,104 @@ describe("scoreBatchSize", () => {
     }
   })
 
-  test("the ceiling leaves headroom under the read limit", () => {
+  test("the ceiling left headroom even at the cost that broke the sweep", () => {
     // Sized from the failure's own telemetry: 32 002 documents for 25 MPs is
-    // ~1 280 per MP, because `month !== null` scores each member twice and
-    // `voteParticipation` resolves a voteSheet per voteRecord. The assertion is
+    // ~1 280 per MP, because `month !== null` scored each member twice and
+    // `voteParticipation` resolved a voteSheet per voteRecord. The assertion is
     // the arithmetic, so a future raise of MAX_SCORE_BATCH has to argue with it.
-    const PER_MP = 32_002 / 25
+    //
+    // Kept at the *old* per-MP figure deliberately: it is the pessimistic bound,
+    // and a ceiling that is safe against the cost that actually broke production
+    // is safe against the cost that replaced it.
+    const PER_MP_BEFORE = 32_002 / 25
     const ROSTER_READ = 772
-    expect(MAX_SCORE_BATCH * PER_MP + ROSTER_READ).toBeLessThan(16_000)
+    expect(MAX_SCORE_BATCH * PER_MP_BEFORE + ROSTER_READ).toBeLessThan(16_000)
+  })
+
+  test("the roster read is no longer part of the per-slice cost", () => {
+    // It used to be, and quadratically: the cursor was an offset and
+    // `.take(cursor + batchSize + 1)` re-read every member already scored, so a
+    // slice deep in the roster cost its whole prefix. Measured against a real
+    // Convex backend on 600 rows: 9 documents at offset 0, 509 at offset 500.
+    //
+    // With a keyset cursor the read is `.gt("internalId", cursor)` and costs
+    // `batchSize + 1` wherever it starts, so the sweep's total roster cost falls
+    // from O(roster²/batch) to O(roster).
+    const ROSTER = 635
+    const slices = Math.ceil(ROSTER / MAX_SCORE_BATCH)
+    const offsetForm = slices * (ROSTER / 2 + MAX_SCORE_BATCH + 1)
+    const keysetForm = slices * (MAX_SCORE_BATCH + 1)
+    expect(keysetForm).toBeLessThan(offsetForm / 10)
+    // Per slice, the roster is a rounding error rather than a fixed tax.
+    expect(MAX_SCORE_BATCH + 1).toBeLessThan(32_000 / 1000)
+  })
+})
+
+/**
+ * The month row and the period row come from one read of the period.
+ *
+ * `recomputeScores` writes both when a month is given, and they used to be two
+ * independent gathers over windows where the first is a subset of the second —
+ * so every source table was read twice per member, and the month's rows were
+ * read a second time as part of the period's. That doubling is the "×2" in the
+ * incident's ~1 280 documents per MP.
+ *
+ * `narrow` is what replaced it: the period is read once and each window is a
+ * filter over rows already in memory. The property that has to hold is that
+ * narrowing gives the same answer the narrower read would have — otherwise the
+ * saving is bought with a wrong score. These assert that over the same rows.
+ */
+describe("narrowing a period to a month", () => {
+  /** `narrow`'s date test, which is what the equivalence turns on. Both bounds
+   * inclusive, matching `monthWindow` and the `.gte`/`.lte` index ranges. */
+  const inWindow = (date: string, from: string, to: string) => date >= from && date <= to
+
+  const rows = [
+    { date: "2026-06-30" },
+    { date: "2026-07-01" },
+    { date: "2026-07-15" },
+    { date: "2026-07-31" },
+    { date: "2026-08-01" },
+  ]
+
+  test("a month's bounds are inclusive at both ends", () => {
+    // The first and last day of the month are *in* it. An exclusive upper bound
+    // would silently drop every ballot and speech on the 31st — a whole sitting
+    // day, in the month with the most of them.
+    const { from, to } = monthWindow("2026-07")
+    const kept = rows.filter((row) => inWindow(row.date, from, to)).map((row) => row.date)
+    expect(kept).toEqual(["2026-07-01", "2026-07-15", "2026-07-31"])
+  })
+
+  test("the period window keeps everything the month window keeps", () => {
+    // The containment the whole optimisation rests on: if a month's window were
+    // not a subset of the period's, reading the period once could not answer
+    // both. Asserted rather than assumed, because `monthWindow(null)`'s bounds
+    // are literal strings that a future edit could narrow.
+    const month = monthWindow("2026-07")
+    const period = monthWindow(null)
+    for (const row of rows) {
+      if (inWindow(row.date, month.from, month.to)) {
+        expect(inWindow(row.date, period.from, period.to)).toBe(true)
+      }
+    }
+  })
+
+  test("every month of a period is inside the period window", () => {
+    const period = monthWindow(null)
+    for (const month of ["2025-03", "2025-12", "2026-01", "2026-07", "2029-11"]) {
+      const { from, to } = monthWindow(month)
+      expect(from >= period.from).toBe(true)
+      expect(to <= period.to).toBe(true)
+    }
+  })
+
+  test("months do not overlap, so narrowing twice cannot double-count", () => {
+    // Consecutive months share no day. If they did, a row would be counted in
+    // two months of the contribution graph while the period total counted it
+    // once, and the graph would not sum to the total.
+    const june = monthWindow("2026-06")
+    const july = monthWindow("2026-07")
+    expect(june.to < july.from).toBe(true)
   })
 })

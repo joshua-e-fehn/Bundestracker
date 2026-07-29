@@ -96,7 +96,9 @@ export const startNightlySweep = internalMutation({
     await ctx.scheduler.runAfter(0, internal.scoreSweep.sweepSlice, {
       wahlperiode: period.wahlperiode,
       month: monthOf(Date.now()),
-      cursor: 0,
+      // Null, not 0: the cursor is the `internalId` the previous slice ended on,
+      // and there is no previous slice. See `recomputeScores`.
+      cursor: null,
     })
     return null
   },
@@ -115,7 +117,10 @@ export const sweepSlice = internalMutation({
   args: {
     wahlperiode: v.number(),
     month: v.union(v.null(), v.string()),
-    cursor: v.number(),
+    /** The `internalId` the previous slice ended on; null starts the sweep. A
+     * member id rather than an offset because seeking to an offset re-reads
+     * every member already scored — see `recomputeScores`. */
+    cursor: v.union(v.null(), v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {

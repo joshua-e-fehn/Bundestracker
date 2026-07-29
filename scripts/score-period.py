@@ -10,13 +10,22 @@ that path stop being acceptable:
 
 **It is serial.** `ConvexLoader.recompute_scores` walks the cursor one slice at
 a time because it must: the route returns `hasMore` and the loop is how a
-caller discovers the end. But `cursor` is a plain offset into
-`by_wahlperiode_and_fraktion` — `recomputeScores` does `take(cursor + batchSize
-+ 1)` and slices (webapp/convex/activityScores.ts) — so a slice depends on the
-cursor it was handed, not on the slice before it. For a *closed* period the
-index cannot shift underneath the run, so the offsets are known up front and
-the discovery loop is not needed. Measured on WP20 2025-03: 97 slices, 140 s
-serial against 21 s at 8 workers, both writing all 772 rows.
+caller discovers the end. But a slice depends only on the cursor it was handed,
+not on the slice before it — so for a *closed* period, whose roster cannot shift
+underneath the run, every cursor is known up front and the discovery loop is not
+needed. Measured on WP20 2025-03: 97 slices, 140 s serial against 21 s at 8
+workers, both writing all 772 rows.
+
+⚠ **The cursor is a member `internalId`, not an offset** (changed with the
+period-scoped scoring work). `recomputeScores` seeks with
+`.gt("internalId", cursor)` off `by_wahlperiode_and_internalId`, so a slice
+costs `batchSize + 1` rows wherever it starts — where the old offset form
+re-read every member already scored and cost ~25 000 roster reads to page
+through 635. That is *better* for this script, not worse: the boundaries are
+still derivable without a prior response, because they are simply the roster's
+own ids in index order, and `roster_ids` below reads them. An opaque
+`.paginate()` token would have made this script impossible, which is why the
+route does not use one.
 
 **It downloads the Stammdaten dump.** `cli.py::_period_months` fetches a
 ~950 KB zip from `www.bundestag.de` purely to call `wahlperiode_window`. That
@@ -115,16 +124,24 @@ def scored_rows(wahlperiode: int, month: str | None) -> int:
     return len(seen)
 
 
-def mandate_rows(wahlperiode: int) -> int:
-    """How many `mps` rows the period has — the number `cursor` indexes into.
+def roster_ids(wahlperiode: int) -> list[str]:
+    """Every `internalId` the period holds, in the order the score cursor walks.
+
+    The cursor is a member id and the route seeks with `.gt("internalId", …)`
+    off `by_wahlperiode_and_internalId`, so the boundaries between slices are
+    exactly this list read `BATCH` at a time — sorted, because that index is.
+    Sorting here rather than trusting `getMPs`' order is what makes a slice
+    boundary mean the same thing to this script and to the route.
 
     ⚠ Not `getChamberStats().mps.count`, which is the **seat** count: it returns
     `peakConcurrentMandates`, the most mandates that overlapped on any one day
     (convex/stats.ts). For WP20 that is 736 against 772 rows, because a seat
-    vacated mid-period and refilled is two mandates and one seat. `cursor` walks
-    `by_wahlperiode_and_fraktion`, which holds a row per *mandate*, so sizing
-    the range by seats stops 36 rows short — and silently, since every slice
-    still answers 200.
+    vacated mid-period and refilled is two mandates and one seat. The cursor
+    walks a row per *mandate*, so sizing the range by seats stops 36 rows short
+    — and silently, since every slice still answers 200. That is why this
+    returns the ids themselves rather than a count: a count can be wrong in a
+    way that reads as success, and a list of ids cannot be short without the
+    members it omits being visibly absent.
 
     Read off the roster query, which pages, rather than off a count that
     reconciles rows to seats. `getMPs` is capped at `MAX_PAGE` per call and
@@ -145,7 +162,7 @@ def mandate_rows(wahlperiode: int) -> int:
         raise RuntimeError(f"getMPs failed: {body.get('errorMessage', body)}")
     rows = body["value"]
     if len(rows) < MAX_PAGE:
-        return len(rows)
+        return sorted(row["internalId"] for row in rows)
 
     # The page filled, so there may be more. Sum the Fraktionen instead: the
     # same index, sliced by a field that partitions it.
@@ -175,7 +192,7 @@ def mandate_rows(wahlperiode: int) -> int:
                 "the roster cannot be counted exactly this way."
             )
         seen.update(row["internalId"] for row in page)
-    return len(seen)
+    return sorted(seen)
 
 
 class Scorer:
@@ -189,23 +206,35 @@ class Scorer:
         self.wahlperiode = wahlperiode
         self.workers = workers
 
-    def slice_at(self, cursor: int, month: str, size: int = BATCH) -> int:
-        """Score `size` MPs from `cursor`, splitting the slice if it is too big.
+    def slice_at(self, cursor: str | None, month: str, size: int = BATCH) -> int:
+        """Score the `size` MPs after `cursor`, halving the slice if it is too big.
 
-        `MAX_SCORE_BATCH` = 8 is a *measured* bound, not a safe one in
-        perpetuity — webapp/convex/activityScores.ts says so, and says why it
-        will drift: `voteParticipation` (convex/votes.ts) collects **all** of an
-        MP's `voteRecords` with no period filter and does a `db.get` per record,
-        so every historical period that lands raises the per-MP read cost of
-        scoring *every other* period. A backfill is exactly the thing that
-        moves that number.
+        `cursor` is the `internalId` to start *after*, or None for the start of
+        the roster — the route seeks with `.gt("internalId", cursor)`, so a
+        worker handed a boundary id scores exactly the members between it and
+        the next boundary. Boundaries come from `roster_ids`, which reads the
+        same order the route walks.
 
-        So a read-limit 400 is treated as "this slice was too big" and retried
-        as halves rather than as a failed month: the limit is per transaction,
-        and fewer MPs per call is the only lever that helps. A single MP that
-        still will not fit is re-raised — that is a real ceiling breach and
-        must not be silently skipped, because a skipped MP scores as absent
-        rather than as unmeasured.
+        `MAX_SCORE_BATCH` = 8 is a *measured* bound, and the per-MP cost it was
+        measured against has since fallen by roughly 5×: `voteParticipation`
+        used to collect **all** of an MP's `voteRecords` with no period filter
+        and do a `db.get` per record, so every historical period that landed
+        raised the cost of scoring every other one. `voteRecords` now carries
+        its ballot's period and date, so the read is one bounded index range and
+        a backfill no longer moves this number.
+
+        The halving stays anyway. It costs nothing when nothing overflows, and
+        the failure it catches — a read-limit 400 — is per *transaction*, so
+        fewer MPs per call remains the only lever that helps. A single MP that
+        still will not fit is re-raised: that is a real ceiling breach and must
+        not be silently skipped, because a skipped MP scores as absent rather
+        than as unmeasured.
+
+        ⚠ Halving is only exact when the slice's members are known. With an
+        offset cursor the second half was `cursor + half`; with a keyset cursor
+        the route must tell us where the first half ended, so the halves are
+        walked serially off the returned `nextCursor` rather than computed. That
+        is a slower path taken only when a slice overflows, which is now rare.
         """
         try:
             body = post(
@@ -225,20 +254,43 @@ class Scorer:
                     f"cursor {cursor} (batch {size}): {detail[:300]}"
                 ) from error
             half = size // 2
-            return self.slice_at(cursor, month, half) + self.slice_at(
-                cursor + half, month, size - half
+            scored = self.slice_at(cursor, month, half)
+            # Where the first half stopped, asked of the route rather than
+            # guessed: a keyset cursor cannot be advanced by arithmetic.
+            probe = post(
+                self.url,
+                {
+                    "wahlperiode": self.wahlperiode,
+                    "month": month,
+                    "cursor": cursor,
+                    "batchSize": half,
+                },
+                self.headers,
             )
+            resume = probe.get("nextCursor")
+            if resume is None:
+                return scored
+            return scored + self.slice_at(str(resume), month, size - half)
         return int(body.get("scored", 0))
 
-    def month(self, month: str, roster: int) -> int:
+    def month(self, month: str, roster: list[str]) -> int:
         """Every slice of one month, concurrently. Returns rows written.
 
-        One extra batch of headroom past the known roster size: a period that
-        gained a mandate row since `roster` was measured would otherwise leave
-        its last members unscored, and an over-run slice scores nobody and
-        costs one request.
+        The boundaries are the roster's own ids: worker *k* starts after
+        `roster[k * BATCH - 1]` and scores the `BATCH` members that follow. The
+        first slice starts at None, which is the beginning of the period.
+
+        The last boundary is the roster's last id rather than one past the end,
+        and it is deliberately included: a period that gained a mandate row since
+        `roster` was read would otherwise leave its newest members unscored, and
+        a slice that runs past the end scores nobody and costs one request. Same
+        headroom the offset form bought with `roster + BATCH`, expressed in the
+        cursor's own terms.
         """
-        cursors = list(range(0, roster + BATCH, BATCH))
+        cursors: list[str | None] = [None]
+        cursors.extend(roster[index - 1] for index in range(BATCH, len(roster), BATCH))
+        if roster:
+            cursors.append(roster[-1])
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             return sum(pool.map(lambda c: self.slice_at(c, month), cursors))
 
@@ -263,15 +315,15 @@ def main() -> int:
     months = months_in(*PERIOD_WINDOWS[options.wp])
     scorer = Scorer(options.wp, options.workers)
 
-    roster = mandate_rows(options.wp)
-    if roster == 0:
+    roster = roster_ids(options.wp)
+    if not roster:
         print(
             f"WP{options.wp} has no roster — ingest it before scoring.", file=sys.stderr
         )
         return 65
 
     print(
-        f"WP{options.wp}: {len(months)} months × ~{roster // BATCH + 1} slices, "
+        f"WP{options.wp}: {len(months)} months × ~{len(roster) // BATCH + 1} slices, "
         f"{options.workers} workers",
         flush=True,
     )

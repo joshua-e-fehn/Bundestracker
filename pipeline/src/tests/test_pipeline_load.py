@@ -232,10 +232,15 @@ def test_a_dry_run_still_catches_an_unserialisable_payload() -> None:
 def test_score_recomputation_walks_every_slice() -> None:
     """Sliced because scoring one MP reads their activities, speeches, votes
     and committees, so the whole chamber does not fit in one Convex
-    transaction (webapp/convex/scoreSweep.ts)."""
+    transaction (webapp/convex/scoreSweep.ts).
+
+    ⚠ The cursor is the `internalId` the previous slice ended on, not an offset.
+    It starts as `None` — "the beginning of the roster" — because the route seeks
+    with `.gt("internalId", cursor)`, and there is no member to start after.
+    """
     pages = [
-        {"scored": 50, "nextCursor": 50, "hasMore": True},
-        {"scored": 30, "nextCursor": 80, "hasMore": False},
+        {"scored": 50, "nextCursor": "bt-0050", "hasMore": True},
+        {"scored": 30, "nextCursor": "bt-0080", "hasMore": False},
     ]
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -244,19 +249,49 @@ def test_score_recomputation_walks_every_slice() -> None:
     loader, seen = recording_loader(handler)
 
     assert loader.recompute_scores(21) == 80
-    assert [json.loads(request.content)["cursor"] for request in seen] == [0, 50]
+    assert [json.loads(request.content)["cursor"] for request in seen] == [
+        None,
+        "bt-0050",
+    ]
 
 
 def test_a_cursor_that_stops_moving_ends_the_loop() -> None:
     # The loop's termination depends on a remote answer, so a deployment that
     # kept saying `hasMore` with an unchanged cursor would otherwise spin.
     def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"scored": 1, "nextCursor": 0, "hasMore": True})
+        return httpx.Response(200, json={"scored": 1, "nextCursor": "bt-0008", "hasMore": True})
 
     loader, seen = recording_loader(handler)
 
-    assert loader.recompute_scores(21) == 1
-    assert len(seen) == 1
+    # Two, not one: the first slice advances the cursor from None to "bt-0008",
+    # which is real progress. The second is handed the same answer it already
+    # holds, and *that* is what stops the walk.
+    assert loader.recompute_scores(21) == 2
+    assert len(seen) == 2
+
+
+def test_the_stall_guard_survives_a_cursor_of_a_different_type() -> None:
+    """The guard must compare like with like, or it never fires.
+
+    The bug this exists for: coercing the response *after* comparing it against
+    the stored cursor makes `"bt-1" == "bt-1"` the only case that stops the loop
+    and `0 == "0"` slip through — so a deployment answering with an unchanged
+    cursor in the other representation would be walked `max_slices` times. Both
+    sides are stringified before the comparison for exactly this reason.
+    """
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        # A number where a string is expected — what an older deployment, or a
+        # half-rolled-back one, would answer with.
+        return httpx.Response(200, json={"scored": 1, "nextCursor": 8, "hasMore": True})
+
+    loader, seen = recording_loader(handler)
+
+    assert loader.recompute_scores(21) == 2
+    assert len(seen) == 2
+    # The second request carries the *coerced* cursor, so the deployment sees a
+    # string wherever it looks.
+    assert json.loads(seen[1].content)["cursor"] == "8"
 
 
 # --- reporting ------------------------------------------------------------

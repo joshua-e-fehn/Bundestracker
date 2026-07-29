@@ -241,12 +241,13 @@ export const seedDev = internalMutation({
     // --- ballots, so the cross-party board has something to compute over ---
     let ballots = 0
     for (let sitting = 1; sitting <= 6; sitting++) {
+      const sheetDate = `2026-07-${String(sitting * 3).padStart(2, "0")}`
       const sheetId = await ctx.db.insert("voteSheets", {
         wahlperiode: WAHLPERIODE,
         sitzungnr: 80 + sitting,
         abstimmnr: 1,
         title: `Namentliche Abstimmung ${sitting} (Testdaten)`,
-        date: `2026-07-${String(sitting * 3).padStart(2, "0")}`,
+        date: sheetDate,
         result: "Annahme der Vorlage",
         yesCount: 0,
         noCount: 0,
@@ -268,6 +269,12 @@ export const seedDev = internalMutation({
           vote,
           partyAtVote: mp.fraktion,
           remark: null,
+          // The ballot's period and date, as `upsertVoteRecords` writes them.
+          // Omitting them would seed rows that are invisible to every
+          // period-scoped read — a local deployment where votes silently do not
+          // count, which reads as a bug in the query rather than in the seed.
+          wahlperiode: WAHLPERIODE,
+          date: sheetDate,
           createdAt: now,
         })
       }

@@ -129,6 +129,22 @@ export const upsertSpeeches = internalMutation({
  * can be ranked — see the header note. Null word counts are treated as zero: a
  * segment whose text could not be measured should not silently reduce a total,
  * and it is still a speech that happened.
+ *
+ * ## The period is in the index, not in a filter
+ *
+ * `by_mpInternalId_and_wahlperiode_and_protocolDate`, so the read is bounded by
+ * exactly the Bundestag and window asked for. It used to be the MP-and-date
+ * index with `row.wahlperiode !== wahlperiode` applied afterwards, which is a
+ * genuine bound for a *month* and none at all for a period total: that window is
+ * `1949-01-01…2999-12-31` (see `monthWindow(null)`), so the range degenerated to
+ * "this member's entire speaking career" and the period filter threw most of it
+ * away. The sweep measured 2 111 speech documents for 25 members, ~42 per
+ * gather, and this is the scoring input that grows fastest — WP18 alone adds 245
+ * protocols against WP21's 90.
+ *
+ * `wahlperiode` is a required column here, unlike `voteRecords.wahlperiode`, so
+ * this index needs no migration: Convex builds it over the existing rows on
+ * deploy and every read is correct from the first request.
  */
 export async function speechVolume(
   ctx: QueryCtx,
@@ -137,21 +153,47 @@ export async function speechVolume(
   from: string,
   to: string,
 ): Promise<{ speechCount: number; wordCount: number }> {
-  const rows = await ctx.db
-    .query("speeches")
-    .withIndex("by_mpInternalId_and_protocolDate", (q) =>
-      q.eq("mpInternalId", mpInternalId).gte("protocolDate", from).lte("protocolDate", to),
-    )
-    .collect()
-
+  const rows = await speechDates(ctx, mpInternalId, wahlperiode, from, to)
   let speechCount = 0
   let wordCount = 0
   for (const row of rows) {
-    if (row.wahlperiode !== wahlperiode) continue
     speechCount++
-    wordCount += row.wordCount ?? 0
+    wordCount += row.wordCount
   }
   return { speechCount, wordCount }
+}
+
+/**
+ * One MP's speech segments in a window, as (date, words) pairs.
+ *
+ * The read `speechVolume` does, without the aggregation — so a caller covering
+ * several sub-windows of one period reads the period once and counts each window
+ * in memory. See `gatherPeriod` in convex/activityScores.ts.
+ *
+ * The null-to-zero rule stays here rather than at the caller, for the reason
+ * `speechVolume` gives: a segment whose text could not be measured is still a
+ * speech that happened, and it must not silently reduce a total. Returning
+ * `number | null` would push that judgement outward and let one caller subtract
+ * where another does not.
+ */
+export async function speechDates(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  from: string,
+  to: string,
+): Promise<Array<{ protocolDate: string; wordCount: number }>> {
+  const rows = await ctx.db
+    .query("speeches")
+    .withIndex("by_mpInternalId_and_wahlperiode_and_protocolDate", (q) =>
+      q
+        .eq("mpInternalId", mpInternalId)
+        .eq("wahlperiode", wahlperiode)
+        .gte("protocolDate", from)
+        .lte("protocolDate", to),
+    )
+    .collect()
+  return rows.map((row) => ({ protocolDate: row.protocolDate, wordCount: row.wordCount ?? 0 }))
 }
 
 // --- public queries -------------------------------------------------------

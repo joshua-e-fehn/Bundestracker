@@ -1,7 +1,7 @@
 import { type Infer, v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { Doc, Id } from "./_generated/dataModel"
-import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
+import { internalMutation, type QueryCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -180,22 +180,35 @@ export const upsertVoteRecords = internalMutation({
         ctx,
         "voteRecords",
         existing,
-        { ...record, voteSheetId: sheet._id },
+        // The ballot's period and date, copied onto the row — see
+        // `voteRecordScopeFields` in convex/schema.ts for why. Taken from the
+        // sheet this mutation already had to fetch to get `_id`, so it costs no
+        // read; taken from the *sheet* rather than from `args.wahlperiode` so a
+        // record cannot claim a period its ballot does not have, even though
+        // `findSheet` matched on that argument and the two agree by
+        // construction.
+        { ...record, voteSheetId: sheet._id, wahlperiode: sheet.wahlperiode, date: sheet.date },
         now,
       )
       recordBatch(result, created)
     }
 
-    // The dissent flags and the period tally, in their own transaction — see
-    // `refreshBallotDissent`. Scheduled rather than inlined because deciding
-    // dissent needs the *whole* ballot plus the roster, and this mutation has
-    // already spent its read budget resolving 500 mandates.
+    // The dissent flags, in their own transaction — see `refreshBallotDissent`.
+    // Scheduled rather than inlined because deciding dissent needs the *whole*
+    // ballot plus the roster, and this mutation has already spent its read
+    // budget resolving 500 mandates.
     //
     // Once per call, so a 630-row ballot posted in two chunks schedules two
     // refreshes. Both are wanted: the first computes lines from a half-ingested
     // ballot and is therefore wrong, and the second — seeing the complete set —
-    // corrects it. That correction is exact rather than approximate because the
-    // refresh works from the flags already on the rows; see its header.
+    // overwrites it. That correction is exact because the flags are derived from
+    // the records rather than accumulated onto them.
+    //
+    // The refresh in turn schedules the period tallies for the members it
+    // touched. Two hops rather than one because the two writes have different
+    // natural keys — a ballot, and a member — and folding them into one
+    // transaction is precisely what made the tally the deployment's contention
+    // point. See `refreshBallotDissent`.
     await ctx.scheduler.runAfter(0, internal.votes.refreshBallotDissent, {
       voteSheetId: sheet._id,
     })
@@ -206,9 +219,9 @@ export const upsertVoteRecords = internalMutation({
 // --- the dissent tally ----------------------------------------------------
 
 /**
- * The dissent flags for one ballot, and the period tallies they feed.
+ * The dissent flags for one ballot. **Flags only — it writes no tally.**
  *
- * ## Why the tally is maintained here rather than computed on read
+ * ## Why the flags are stored rather than computed on read
  *
  * Dissent is relative: it exists only against how the rest of the group voted in
  * the same division, so answering it for one record costs a scan of that group's
@@ -218,26 +231,43 @@ export const upsertVoteRecords = internalMutation({
  * ballots' worth of budget for a question about four years.
  *
  * A period-wide figure is therefore not a larger version of that read. It is the
- * same answer computed once, at the moment a ballot lands, by the one caller
- * that already holds all 630 of its records — and then summed off an index.
+ * same answer decided once, at the moment a ballot lands, by the one caller that
+ * already holds all 630 of its records — and then rolled up per member.
  *
- * ## The write is a delta, and that is what makes it idempotent
+ * ## ⚠ Why the roll-up is not written here, which is the whole fix
  *
- * Each record's new flags are compared against the flags **already stored on
- * it**, and only the difference is applied to the member's tally. Three
- * consequences, all of them the point:
+ * It used to be. This mutation computed each record's flags, diffed them against
+ * the stored ones, and applied the difference to the member's `dissentTallies`
+ * row — up to 630 tally rows patched in one transaction. That is a correct
+ * algorithm and a pathological write shape, and it is what made this the
+ * deployment's contention point:
  *
- *  - Re-ingesting an unchanged ballot writes nothing at all. The pipeline
- *    re-ingests by design — a daily sync re-reads anything whose `aktualisiert`
- *    moved (§2.5) — so a tally that added `+1` per dissent would drift upward
- *    every night.
- *  - A ballot ingested in two chunks self-corrects. The first refresh derives
- *    group lines from a partial ballot and stores whatever they imply; the
- *    second sees the full set, and the delta it applies is exactly the
- *    difference between the wrong answer and the right one.
- *  - The tally is a running sum of the flags, and both are written in the same
- *    transaction. They cannot disagree, which is why nothing here re-reads a
- *    member's whole voting record to check.
+ *  - **Every ballot wrote the same 630 documents.** A backfill refreshing three
+ *    ballots per slice, or a sync posting a 630-row ballot in two chunks (which
+ *    schedules two refreshes), had transactions whose write sets overlapped
+ *    almost totally. Convex is optimistic: overlapping write sets are retried,
+ *    and a retry re-reads and re-writes the same 630 rows.
+ *  - **Every reader overlapped every writer.** `periodDissent` reads all ~630
+ *    tally rows for the leaderboard in one indexed scan, so a page render
+ *    conflicted with any refresh in flight.
+ *  - **The delta made retries load-bearing.** A delta is only correct applied
+ *    exactly once, so the flags and the tally had to be written together to stay
+ *    consistent — which is precisely what forced the two keys into one
+ *    transaction.
+ *
+ * Now this mutation writes **only the records of its own ballot**. Two ballots
+ * have disjoint records by construction, so two refreshes can never conflict
+ * with each other, and neither conflicts with the leaderboard, which reads a
+ * different table. The roll-up is derived afterwards, keyed by member, by
+ * `recomputeDissentTallies` — which this schedules for exactly the members whose
+ * flags moved.
+ *
+ * That also removes the delta. Deriving a tally from the stored flags is
+ * idempotent by construction rather than by careful bookkeeping: re-running it
+ * arrives at the same number, so an OCC retry, a duplicate schedule and a
+ * re-ingest are all harmless. The old form had to clamp at zero to avoid
+ * printing a negative dissent count on a public leaderboard if the two ever came
+ * apart; the derived form cannot come apart, because there is only one source.
  *
  * ## What the flags mean
  *
@@ -247,20 +277,35 @@ export const upsertVoteRecords = internalMutation({
  * an absence and a vote in an evenly-split group are both "not a dissent" and
  * neither belongs among the ballots on which the member could have dissented.
  *
- * ## Read cost
+ * ## Cost
  *
- * One ballot's records (~630), the roster (~630, for the group fallback), and
- * one tally row per member whose flags moved. Bounded by the chamber, like
- * `getVoteSheetById` — and *unlike* the leaderboard read it replaces, which was
- * bounded by nothing but its own `maxBallots` argument.
+ * Reads one ballot's records (~630) and the roster (~630, for the group
+ * fallback). Writes only the records whose flags actually changed — zero on a
+ * re-ingest that changed nothing, which is the common case.
  */
 export const refreshBallotDissent = internalMutation({
-  args: { voteSheetId: v.id("voteSheets") },
+  args: {
+    voteSheetId: v.id("voteSheets"),
+    /**
+     * Whether to schedule the period roll-up for the members touched.
+     *
+     * True by default, because a ballot landing on its own must leave the tally
+     * correct. `backfillDissent` passes false and rolls up once at the end of
+     * its walk instead: a migration refreshes every ballot in the period, so
+     * per-ballot scheduling would queue the same member's recompute once per
+     * ballot they voted in — ~390 redundant transactions per member, each
+     * arriving at the same answer.
+     */
+    cascade: v.optional(v.boolean()),
+  },
   returns: v.object({
     /** Records whose stored flags changed. Zero on a re-ingest that changed
      * nothing, which is the common case and the cheap one. */
     updated: v.number(),
-    /** Members whose period tally was adjusted as a result. */
+    /** Members whose flags moved, and whose period tally is therefore stale
+     * until the roll-up runs. Named `mpsTouched` as before: the number means the
+     * same thing to a caller, it is simply no longer written in this
+     * transaction. */
     mpsTouched: v.number(),
   }),
   handler: async (ctx, args) => {
@@ -284,9 +329,10 @@ export const refreshBallotDissent = internalMutation({
     const fraktionOf = new Map(roster.map((mp) => [mp.internalId, mp.fraktion]))
     const groups = tallyByGroup(records, (id) => fraktionOf.get(id) ?? "")
 
-    /** How much this ballot moves one member's tally. */
-    const deltas = new Map<string, { dissents: number; ballotsCast: number }>()
-    const now = Date.now()
+    /** Members whose flags moved — the roll-up's work list, and nothing more.
+     * A set rather than a delta map: what the tally should become is read from
+     * the flags, not carried from here. */
+    const touched = new Set<string>()
     let updated = 0
 
     for (const record of records) {
@@ -296,86 +342,199 @@ export const refreshBallotDissent = internalMutation({
       // simply "not a dissent" — see its header.
       const { dissent, counted: dissentCounted } = dissentFlagsFor(record.vote, majority)
 
-      // An unset flag is "not yet computed", not `false` — so the first pass
-      // over an existing row adds its full contribution rather than nothing.
-      const wasDissent = record.dissent ?? false
-      const wasCounted = record.dissentCounted ?? false
-      if (record.dissent === dissent && record.dissentCounted === dissentCounted) {
-        continue
-      }
+      // Unchanged rows are skipped rather than re-patched: a re-ingest is the
+      // common case (§2.5) and this is what makes it free. An *unset* flag is
+      // "not yet computed" rather than `false`, and `undefined !== false`, so a
+      // row the backfill has not reached never matches here and is always
+      // written — which is what fills them in.
+      if (record.dissent === dissent && record.dissentCounted === dissentCounted) continue
 
       await ctx.db.patch(record._id, { dissent, dissentCounted })
       updated++
-
-      const delta = deltas.get(record.mpInternalId) ?? { dissents: 0, ballotsCast: 0 }
-      delta.dissents += Number(dissent) - Number(wasDissent)
-      delta.ballotsCast += Number(dissentCounted) - Number(wasCounted)
-      deltas.set(record.mpInternalId, delta)
+      touched.add(record.mpInternalId)
     }
 
-    let mpsTouched = 0
-    for (const [mpInternalId, delta] of deltas) {
-      if (delta.dissents === 0 && delta.ballotsCast === 0) continue
-      await applyDissentDelta(ctx, mpInternalId, sheet.wahlperiode, delta, now)
-      mpsTouched++
+    if ((args.cascade ?? true) && touched.size > 0) {
+      // Scheduled, not called: a separate transaction per slice is the point,
+      // and `runAfter(0)` gives one that does not inherit this transaction's
+      // read set. Chunked because the schedule's own argument list is bounded
+      // and because a slice is a transaction — see `TALLY_SLICE`.
+      for (const slice of chunk([...touched], TALLY_SLICE)) {
+        await ctx.scheduler.runAfter(0, internal.votes.recomputeDissentTallies, {
+          wahlperiode: sheet.wahlperiode,
+          mpInternalIds: slice,
+        })
+      }
     }
 
-    return { updated, mpsTouched }
+    return { updated, mpsTouched: touched.size }
   },
 })
 
 /**
- * Adds one ballot's contribution to a member's period tally.
+ * Members per tally-recompute transaction.
  *
- * Clamped at zero on both counts. The arithmetic cannot go negative while the
- * flags and the tally are written together, so a negative here means they have
- * already come apart — a row deleted out from under the tally, most plausibly —
- * and the right response is a figure that is merely stale rather than one that
- * reports a negative number of dissents on a public leaderboard. `backfillDissent`
- * is the repair.
+ * Each one reads that member's flagged records for the period — bounded by the
+ * corpus rather than by the chamber (§4.4: ~1 015 named ballots in the
+ * Bundestag's entire history, of which 391 carry a machine-readable sheet), so
+ * ~390 documents at the very worst — and writes exactly one row. 64 of them is
+ * ~25 000 reads worst-case, which is inside Convex's 32 000-document ceiling
+ * with the roster-free margin this needs.
  *
- * `dissentRate` is stored alongside rather than derived on read so the
- * leaderboard can order 630 rows without 630 divisions, and so a future index
- * can carry it. It is 0 when nothing was cast — ambiguous with "never
- * dissented", which is why `lib/dissent.ts` reads `ballotsCast` and returns null
- * for that case rather than trusting this field.
+ * Sized in *members*, not ballots, and that is the structural point: the cost of
+ * a slice scales with the members it names, never with the period's history or
+ * the chamber's size. Adding WP18 adds no vote records at all (no XLSX exists
+ * before 2019-09), so this bound does not erode as the backfill deepens.
  */
-async function applyDissentDelta(
-  ctx: MutationCtx,
-  mpInternalId: string,
-  wahlperiode: number,
-  delta: { dissents: number; ballotsCast: number },
-  now: number,
-): Promise<void> {
-  const existing = await ctx.db
-    .query("dissentTallies")
-    .withIndex("by_mpInternalId_and_wahlperiode", (q) =>
-      q.eq("mpInternalId", mpInternalId).eq("wahlperiode", wahlperiode),
-    )
-    .unique()
+export const TALLY_SLICE = 64
 
-  const dissents = Math.max(0, (existing?.dissents ?? 0) + delta.dissents)
-  const ballotsCast = Math.max(0, (existing?.ballotsCast ?? 0) + delta.ballotsCast)
-
-  await upsertRow(
-    ctx,
-    "dissentTallies",
-    existing,
-    {
-      mpInternalId,
-      wahlperiode,
-      dissents,
-      ballotsCast,
-      dissentRate: ballotsCast === 0 ? 0 : dissents / ballotsCast,
-    },
-    now,
-    { touchUpdatedAt: true },
-  )
+/** Fixed-size chunks of a list, preserving order. Exported for
+ * convex/votes.test.ts, which asserts the partition invariant on it. */
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
 }
 
 /**
+ * The write keys one `recomputeDissentTallies` call will touch.
+ *
+ * Extracted and pure so the partitioning invariant is *asserted* rather than
+ * inspected: two calls with disjoint `mpInternalIds` produce disjoint key sets,
+ * which is exactly the property that makes them non-conflicting transactions.
+ * convex/votes.test.ts checks it, including over the chunking above — a bug that
+ * let one member appear in two slices would reintroduce the contention this
+ * whole design removes, and it would do so silently, since the arithmetic is
+ * idempotent and the final numbers would still be right.
+ */
+export function dissentWriteKeys(wahlperiode: number, mpInternalIds: readonly string[]): string[] {
+  return mpInternalIds.map((id) => `dissentTallies:${id}:${wahlperiode}`)
+}
+
+/**
+ * Derives one slice of members' period dissent tallies from their stored flags.
+ *
+ * ## Derived, not accumulated
+ *
+ * Reads the member's own `voteRecords` for the period and counts the flags
+ * `refreshBallotDissent` put there. Nothing is added to a previous value, so:
+ *
+ *  - **Re-running is a no-op.** The pipeline re-ingests by design (§2.5) and
+ *    Convex retries a conflicted mutation transparently; both arrive at the same
+ *    number rather than at twice it.
+ *  - **It is the repair.** A tally that has drifted for any reason — including
+ *    one written by the delta implementation this replaces — is corrected by
+ *    running this, because the answer does not depend on what was there before.
+ *  - **It cannot go negative**, so it needs no clamp. The old form clamped
+ *    because a delta could outrun its own history; a count of stored flags
+ *    cannot.
+ *
+ * ## Why one member per row, and why that is the partitioning
+ *
+ * `dissentTallies` is keyed `(mpInternalId, wahlperiode)`, so a call naming a set
+ * of members writes exactly that set of documents — see `dissentWriteKeys`. Two
+ * concurrent calls over disjoint member sets have disjoint write sets and cannot
+ * conflict, which is what the ballot-keyed writer could not offer: *its* natural
+ * key was the ballot, but the rows it had to write were keyed by member, so
+ * every ballot wrote every member.
+ *
+ * ## The period scope is an index range, not a filter
+ *
+ * `by_mpInternalId_and_wahlperiode_and_date` bounds the read to this member's
+ * records in this Bundestag. Before that index existed the only per-MP index was
+ * `by_mpInternalId` — the member's whole career — and recovering the period meant
+ * a `ctx.db.get` per record. See `voteRecordScopeFields` in convex/schema.ts.
+ *
+ * ⚠ Records the scope backfill has not reached are **absent from this range**,
+ * so a tally derived before `backfillVoteRecordScope` completes counts only the
+ * migrated ones. That is the honest failure — an undercount that repairs itself
+ * when this is re-run — rather than a mis-attribution, and it is why the
+ * migration order in the report puts the scope backfill first.
+ */
+export const recomputeDissentTallies = internalMutation({
+  args: {
+    wahlperiode: v.number(),
+    /** The members to roll up. Bounded by `TALLY_SLICE`; a longer list is
+     * rejected rather than truncated, matching `assertBatchSize` — a silently
+     * shortened slice would leave tallies stale with nothing to say so. */
+    mpInternalIds: v.array(v.string()),
+  },
+  returns: v.object({
+    /** Rows written. Below `mpInternalIds.length` when a member's numbers were
+     * already correct, since Convex skips a patch that changes nothing. */
+    updated: v.number(),
+    /** Members whose recomputed tally counts no ballot at all. Their row is
+     * still written — a zeroed row is what `purgeSeedData` and the leaderboard
+     * both expect to find rather than a missing one — but the count is worth
+     * reporting: a whole slice of zeroes on a populated period means the flags
+     * have not been computed yet. */
+    empty: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    if (args.mpInternalIds.length > TALLY_SLICE) {
+      throw new Error(
+        `recomputeDissentTallies: ${args.mpInternalIds.length} members exceeds the ` +
+          `${TALLY_SLICE} one transaction will roll up. Slice the list.`,
+      )
+    }
+
+    const now = Date.now()
+    let updated = 0
+    let empty = 0
+
+    for (const mpInternalId of args.mpInternalIds) {
+      const records = await ctx.db
+        .query("voteRecords")
+        .withIndex("by_mpInternalId_and_wahlperiode_and_date", (q) =>
+          q.eq("mpInternalId", mpInternalId).eq("wahlperiode", args.wahlperiode),
+        )
+        .collect()
+
+      let dissents = 0
+      let ballotsCast = 0
+      for (const record of records) {
+        // An unset flag is "not yet computed" and contributes nothing — the same
+        // distinction the schema draws. It is not a loyal vote.
+        if (record.dissentCounted === true) ballotsCast++
+        if (record.dissent === true) dissents++
+      }
+      if (ballotsCast === 0 && dissents === 0) empty++
+
+      const existing = await ctx.db
+        .query("dissentTallies")
+        .withIndex("by_mpInternalId_and_wahlperiode", (q) =>
+          q.eq("mpInternalId", mpInternalId).eq("wahlperiode", args.wahlperiode),
+        )
+        .unique()
+
+      await upsertRow(
+        ctx,
+        "dissentTallies",
+        existing,
+        {
+          mpInternalId,
+          wahlperiode: args.wahlperiode,
+          dissents,
+          ballotsCast,
+          // Stored rather than derived on read so the leaderboard can order 630
+          // rows without 630 divisions. 0 when nothing was cast — ambiguous with
+          // "never dissented", which is why lib/dissent.ts reads `ballotsCast`
+          // and returns null for that case rather than trusting this field.
+          dissentRate: ballotsCast === 0 ? 0 : dissents / ballotsCast,
+        },
+        now,
+        { touchUpdatedAt: true },
+      )
+      updated++
+    }
+
+    return { updated, empty }
+  },
+})
+
+/**
  * Computes the flags and tallies for ballots that predate them — one slice per
- * call, oldest ballot first.
+ * call, oldest ballot first, then the members.
  *
  * The migration half of this feature, in the same shape as `backfillSearchText`
  * in convex/search.ts and for the same reason: the flags are `v.optional` because
@@ -385,20 +544,61 @@ async function applyDissentDelta(
  *
  * A route rather than a cron (`POST /api/pipeline/votes/backfill-dissent`), and
  * a slice rather than a sweep, because one ballot's refresh is already a
- * chamber-sized read: `BALLOT_BACKFILL_BATCH` of them is the most that fits in a
- * transaction. Loop on `cursor` until `done`.
+ * chamber-sized read. Loop on `cursor` until `done`.
  *
- * Safe to re-run and safe to run against a fully-populated deployment: every
- * write is the delta between the stored flags and the recomputed ones, so a
- * second pass over an unchanged ballot writes nothing. That is also what makes
- * it the repair for a tally that has drifted — re-running it does not double
- * anything.
+ * ## Two phases behind one cursor
  *
- * ⚠ It cannot repair a tally row whose *records* were deleted, because a deleted
- * record carries no flag to subtract. `purgeSeedData` is the one thing that
- * deletes vote records, and it deletes the tally row alongside them.
+ * The cursor walks the period's ballots and then keeps going, over the roster:
+ * `cursor < ballots` refreshes flags, `cursor >= ballots` rolls those flags up
+ * into member tallies. One monotonically increasing integer, one `done`, so the
+ * caller's loop is unchanged — `ConvexLoader.backfill_dissent` reads exactly
+ * `records`, `nextCursor` and `done`, and it does `int(next_cursor)`, so the
+ * cursor stays a number by contract and not by accident.
+ *
+ * The phases are ordered and not interleaved because a tally derived mid-refresh
+ * would count a member's flags before all their ballots carried any — an
+ * undercount that looks like a finding. Rolling up only after every ballot in
+ * the period is flagged means each member is derived once, from a complete set,
+ * instead of once per ballot they voted in.
+ *
+ * ## Cost, and why it no longer accumulates
+ *
+ * ⚠ `ctx.runMutation` from a mutation runs in the **same transaction** (verified
+ * against convex 1.42.3's own types: "the mutation runs in a sub-transaction").
+ * So the previous form's three nested `refreshBallotDissent` calls summed into
+ * one transaction's budget — ~1 900 documents each, plus a fresh `.collect()` of
+ * every sheet in the period on *every* slice merely to compute `sheets.length`.
+ *
+ * Both are gone. The sheets are read with `.take()` bounded by the slice, the
+ * period's ballot count comes from a bounded count rather than a full collect,
+ * and each ballot is refreshed in its **own scheduled transaction** rather than
+ * nested into this one. This mutation now reads a slice's worth and schedules;
+ * it is cheap regardless of `batchSize`.
+ *
+ * Safe to re-run and safe to run against a fully-populated deployment: flags are
+ * derived from records and tallies from flags, so a second pass writes nothing
+ * and arrives at the same numbers. That is also what makes it the repair for a
+ * tally that has drifted — including one left behind by the delta implementation
+ * this replaces.
+ *
+ * ⚠ It cannot repair a tally row whose *records* were deleted — the derived count
+ * is then correctly zero, but a member with no records at all is never named by
+ * phase 2's roster walk. `purgeSeedData` is the one thing that deletes vote
+ * records, and it deletes the tally row alongside them.
  */
 const BALLOT_BACKFILL_BATCH = 3
+
+/**
+ * Ceiling on a period's ballots for cursor arithmetic.
+ *
+ * §4.4 puts named ballots at ~1 015 in the Bundestag's *entire history*, of which
+ * 391 carry a machine-readable sheet — so one period is a few hundred. This
+ * bounds the `.take()` that counts them without collecting the table, and a
+ * period that somehow exceeded it would be walked correctly up to this many
+ * ballots rather than silently truncated: `done` is decided by the roster phase,
+ * which always runs.
+ */
+const MAX_PERIOD_BALLOTS = 2_000
 
 export const backfillDissent = internalMutation({
   args: {
@@ -407,8 +607,24 @@ export const backfillDissent = internalMutation({
     batchSize: v.optional(v.number()),
   },
   returns: v.object({
+    /** Ballots whose refresh this slice scheduled. Zero during phase 2. */
     ballots: v.number(),
+    /**
+     * Records re-flagged. **Now always 0**, and deliberately so: the refreshes
+     * run in their own transactions, so this mutation cannot know how many rows
+     * they changed without waiting for them — which would put them back in this
+     * transaction and undo the fix.
+     *
+     * Kept in the shape because `ConvexLoader.backfill_dissent` sums it and the
+     * sync turns the sum into a stage note ("N vote records re-flagged" vs
+     * "already current"). That note now always reads as "already current", which
+     * is a less informative report and not a wrong one; `mpsRolledUp` below is
+     * the signal that replaced it, and the report's verification queries measure
+     * the outcome directly rather than trusting a counter.
+     */
     records: v.number(),
+    /** Members whose tally this slice recomputed. Zero during phase 1. */
+    mpsRolledUp: v.number(),
     nextCursor: v.union(v.null(), v.number()),
     done: v.boolean(),
   }),
@@ -420,23 +636,71 @@ export const backfillDissent = internalMutation({
     // ballots underneath a run in progress — the failure a descending order
     // would produce is a ballot skipped entirely, which reads as a member who
     // never dissented rather than as an unfinished migration.
+    //
+    // `.take()` rather than `.collect()`: the previous form re-read every sheet
+    // in the period on every slice, and used all of them for one `.length`.
     const sheets = await ctx.db
       .query("voteSheets")
       .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .collect()
+      .take(Math.min(MAX_PERIOD_BALLOTS, cursor + batchSize + 1))
 
-    const slice = sheets.slice(cursor, cursor + batchSize)
-    let records = 0
-    for (const sheet of slice) {
-      const { updated } = await ctx.runMutation(internal.votes.refreshBallotDissent, {
-        voteSheetId: sheet._id,
-      })
-      records += updated
+    // --- phase 1: the ballots ---------------------------------------------
+    if (cursor < sheets.length) {
+      const slice = sheets.slice(cursor, cursor + batchSize)
+      for (const sheet of slice) {
+        // Scheduled, not `runMutation`: nesting would run each refresh inside
+        // *this* transaction and sum their read budgets, which is what made a
+        // batch of three ~3 900 documents. `cascade: false` because phase 2
+        // rolls every member up once, rather than once per ballot they voted in.
+        await ctx.scheduler.runAfter(0, internal.votes.refreshBallotDissent, {
+          voteSheetId: sheet._id,
+          cascade: false,
+        })
+      }
+      const nextCursor = cursor + slice.length
+      return {
+        ballots: slice.length,
+        records: 0,
+        mpsRolledUp: 0,
+        nextCursor,
+        // Never done in phase 1: the roster walk still has to run, even for a
+        // period with no ballots at all — a member whose records were deleted
+        // needs their tally zeroed.
+        done: false,
+      }
     }
 
-    const nextCursor = cursor + slice.length
-    const done = nextCursor >= sheets.length
-    return { ballots: slice.length, records, nextCursor: done ? null : nextCursor, done }
+    // --- phase 2: the members ----------------------------------------------
+    //
+    // The roster is walked by the same integer cursor, offset past the ballots.
+    // `mps` is the source rather than `dissentTallies`, because a member with no
+    // tally row yet is exactly who this exists to create one for.
+    const offset = cursor - sheets.length
+    const size = Math.min(TALLY_SLICE, batchSize * TALLY_SLICE)
+    const window = await ctx.db
+      .query("mps")
+      .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .take(offset + size + 1)
+
+    const slice = window.slice(offset, offset + size)
+    if (slice.length > 0) {
+      // Scheduled for the same reason as phase 1, and one call per slice: the
+      // roll-up's write set is the members it names, so this is where the
+      // partitioning is actually established. See `dissentWriteKeys`.
+      await ctx.scheduler.runAfter(0, internal.votes.recomputeDissentTallies, {
+        wahlperiode: args.wahlperiode,
+        mpInternalIds: slice.map((mp) => mp.internalId),
+      })
+    }
+
+    const hasMore = window.length > offset + size
+    return {
+      ballots: 0,
+      records: 0,
+      mpsRolledUp: slice.length,
+      nextCursor: hasMore ? cursor + slice.length : null,
+      done: !hasMore,
+    }
   },
 })
 
@@ -494,6 +758,152 @@ export const getDissentTally = query({
   },
 })
 
+// --- the scope migration --------------------------------------------------
+
+/**
+ * Records per `backfillVoteRecordScope` call.
+ *
+ * Each row costs one read (from the index range) and one write, plus one sheet
+ * fetch per *distinct* ballot in the slice — and a slice drawn from one ballot's
+ * records shares that fetch. 500 matches `MAX_BATCH`, the ceiling the ingestion
+ * mutations already chunk to, and sits an order of magnitude inside the 16 000
+ * documents one transaction may write.
+ */
+const SCOPE_BACKFILL_BATCH = 500
+
+/**
+ * Copies each record's ballot period and date onto the record — the migration
+ * for `voteRecordScopeFields`.
+ *
+ * ## Why this needs no cursor
+ *
+ * The un-migrated rows are exactly those with no `wahlperiode`, and Convex
+ * orders a missing field **below every value** (`values/compare.ts` ranks
+ * `undefined` at 0, beneath `null`). So they occupy a contiguous prefix of
+ * `by_wahlperiode_and_date` — and `.eq("wahlperiode", undefined)` selects them
+ * and nothing else. Verified against a real Convex backend: on a table of 200
+ * migrated and 50 un-migrated rows, the range returned exactly 50 and the
+ * `.eq("wahlperiode", 21)` range returned only migrated ones.
+ *
+ * Each call therefore takes the next un-migrated slice and migrates it, and the
+ * rows it writes leave the range by construction. A caller loops until `done`
+ * without tracking where it got to, and a crashed run resumes by being run
+ * again — there is no cursor to lose. That is stronger than
+ * `backfillSearchText`'s offset walk and is available here only because the
+ * migrated flag is an *indexed* column rather than a payload field.
+ *
+ * That index leads with `wahlperiode` rather than with the member for a reason
+ * an index range makes unavoidable: its fields must be fixed in order, so
+ * selecting on `wahlperiode` through the MP-keyed index would mean naming a
+ * member first — one query per member instead of one for the table.
+ *
+ * ## Idempotent, and safe to run beside live traffic
+ *
+ * A migrated row is skipped by the range, so a second pass writes nothing and
+ * reports `done` immediately. A record ingested while this runs is written with
+ * its scope already set (`upsertVoteRecords`), so the two cannot race to leave a
+ * row behind. Nothing else about the row is touched: the vote, the flags and the
+ * group are read-only here.
+ */
+export const backfillVoteRecordScope = internalMutation({
+  args: { batchSize: v.optional(v.number()) },
+  returns: v.object({
+    /** Rows migrated by this call. */
+    migrated: v.number(),
+    /** Distinct ballots fetched to do it — the cost this call actually paid
+     * beyond the rows themselves. */
+    sheetsRead: v.number(),
+    /** Records whose ballot no longer exists. Left un-migrated deliberately:
+     * there is nothing to copy, and a row invented from nothing would claim a
+     * period the record cannot support. Non-zero means `purgeSeedData` or a
+     * manual deletion removed a sheet without its records. */
+    orphaned: v.number(),
+    /** False while un-migrated rows remain. Loop until true. */
+    done: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(
+      1,
+      Math.min(SCOPE_BACKFILL_BATCH, Math.floor(args.batchSize ?? SCOPE_BACKFILL_BATCH)),
+    )
+
+    // One past the slice, so `done` is answered without a second query.
+    const pending = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", undefined))
+      .take(batchSize + 1)
+
+    const slice = pending.slice(0, batchSize)
+    // One fetch per distinct ballot rather than per record. Convex charges every
+    // `db.get` separately — there is no per-transaction document cache, measured
+    // — so this Map is a real saving, not a stylistic one: a ballot's 630 records
+    // become one sheet read instead of 630.
+    const sheets = new Map<Id<"voteSheets">, Doc<"voteSheets"> | null>()
+    let migrated = 0
+    let orphaned = 0
+
+    for (const record of slice) {
+      let sheet = sheets.get(record.voteSheetId)
+      if (sheet === undefined) {
+        sheet = await ctx.db.get(record.voteSheetId)
+        sheets.set(record.voteSheetId, sheet)
+      }
+      if (!sheet) {
+        orphaned++
+        continue
+      }
+      await ctx.db.patch(record._id, { wahlperiode: sheet.wahlperiode, date: sheet.date })
+      migrated++
+    }
+
+    return {
+      migrated,
+      sheetsRead: sheets.size,
+      orphaned,
+      // Orphans stay in the range forever, so they must not keep `done` false —
+      // a loop on this would never terminate. Progress is what decides: a slice
+      // that migrated nothing has nothing left it can migrate.
+      done: pending.length <= batchSize || migrated === 0,
+    }
+  },
+})
+
+/**
+ * How far the scope migration has got — the read-only post-deploy check.
+ *
+ * `remaining` is capped rather than counted exactly: a count of a whole table is
+ * the shape of read this branch exists to remove, and the question ("is any row
+ * still un-migrated?") is answered by the first one found. A returned
+ * `remaining` equal to `ceiling` means "at least this many", which
+ * `atLeastCeiling` states rather than leaving to the caller to infer.
+ *
+ * A query rather than a mutation so it can be called from `/api/query` against
+ * production without a write path — see the verification section of the branch
+ * report.
+ */
+export const voteScopeCoverage = query({
+  args: { ceiling: v.optional(v.number()) },
+  returns: v.object({
+    remaining: v.number(),
+    atLeastCeiling: v.boolean(),
+    /** True when every record carries its ballot's period. The period-scoped
+     * reads are complete only from this point; before it they undercount. */
+    complete: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const ceiling = pageLimit(args.ceiling, 500)
+    const pending = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", undefined))
+      .take(ceiling)
+    return {
+      remaining: pending.length,
+      atLeastCeiling: pending.length >= ceiling,
+      complete: pending.length === 0,
+    }
+  },
+})
+
 // --- participation --------------------------------------------------------
 
 /**
@@ -520,23 +930,104 @@ export async function voteParticipation(
   from: string,
   to: string,
 ): Promise<{ rate: number | null; cast: number; eligible: number }> {
-  const records = await ctx.db
-    .query("voteRecords")
-    .withIndex("by_mpInternalId", (q) => q.eq("mpInternalId", mpInternalId))
-    .collect()
+  const ballots = await ballotDates(ctx, mpInternalId, wahlperiode, from, to)
 
   let cast = 0
   let eligible = 0
-  for (const record of records) {
-    const sheet = await ctx.db.get(record.voteSheetId)
-    // Scoped by the *sheet's* period and date, not the record's: a record has
-    // neither, and the ballot is what carries when it happened.
-    if (!sheet || sheet.wahlperiode !== wahlperiode) continue
-    if (sheet.date < from || sheet.date > to) continue
+  for (const ballot of ballots) {
     eligible++
-    if (record.vote !== "absent") cast++
+    if (ballot.cast) cast++
   }
   return { rate: eligible === 0 ? null : cast / eligible, cast, eligible }
+}
+
+/**
+ * One MP's ballots in a window, as (date, cast) pairs.
+ *
+ * The read `voteParticipation` does, without the aggregation — so a caller
+ * covering several sub-windows of one period reads the period once and counts
+ * each window in memory. See `gatherPeriod` in convex/activityScores.ts.
+ *
+ * `cast` is decided here rather than at the caller because it is the one
+ * judgement in this read and §4.1 is emphatic about it: an abstention is a vote
+ * — the MP was present and chose — and only `absent` (`nichtabgegeben`) counts
+ * against the rate. Returning the raw position would let a second caller
+ * collapse the two and flatter everyone who stayed away.
+ *
+ * ⚠ A record the scope backfill has not reached is absent from this range
+ * entirely, not mis-dated — see `periodVoteRecords`.
+ */
+export async function ballotDates(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  from: string,
+  to: string,
+): Promise<Array<{ date: string; cast: boolean }>> {
+  const records = await periodVoteRecords(ctx, mpInternalId, wahlperiode, from, to)
+  return records.map((record) => ({
+    // Non-null by the index range: `date` is a bound of the query that returned
+    // this row, so a row with no date cannot be in it. The fallback keeps the
+    // type total without inventing a date — an empty string sorts below every
+    // real one and so falls outside every window a caller narrows to.
+    date: record.date ?? "",
+    cast: record.vote !== "absent",
+  }))
+}
+
+/**
+ * One MP's vote records inside one period and date window — **one index range,
+ * no document fetches**.
+ *
+ * ## The read this replaces, and what it cost
+ *
+ * Every per-MP vote read used to be `by_mpInternalId` — an index with no period
+ * column — followed by `ctx.db.get(record.voteSheetId)` per row to discover
+ * which Bundestag and which month the vote belonged to. Two compounding faults:
+ *
+ *  - `internalId` is stable across periods by construction (convex/schema.ts),
+ *    so the scan returned the member's **whole career**. Three periods are live,
+ *    and one member's records across them are ~391 rows to answer a question
+ *    about the 68 in WP21.
+ *  - The `db.get` doubled it. Convex charges every `get` separately — there is
+ *    no per-transaction document cache (measured against a real backend:
+ *    `documentsRead` 0→1→2→3 for three gets of the same id) — so the sheets
+ *    read almost exactly matched the records read.
+ *
+ * The deployment measured both, and the numbers are in `recomputeScores`'
+ * header: 10 270 `voteRecords` beside 10 245 `voteSheets`, together 64 % of the
+ * transaction that exceeded the read limit. The 1:1 ratio *is* the N+1.
+ *
+ * Now `by_mpInternalId_and_wahlperiode_and_date` carries all three columns, so
+ * the window is the range and the sheet is never touched. Measured on a 250-row
+ * fixture against a real Convex backend: **500 documents read → 100.**
+ *
+ * ## ⚠ Un-migrated rows are absent, not mis-attributed
+ *
+ * A record written before `voteRecordScopeFields` existed has no `wahlperiode`,
+ * and Convex sorts a missing field *below every value* — so it falls outside
+ * `.eq("wahlperiode", N)` rather than inside the wrong period. Until
+ * `backfillVoteRecordScope` has run, participation is computed over the migrated
+ * records only: an undercount that repairs itself, rather than a vote counted
+ * against the wrong Bundestag. `voteScopeCoverage` reports what remains.
+ */
+async function periodVoteRecords(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  from: string,
+  to: string,
+): Promise<Doc<"voteRecords">[]> {
+  return await ctx.db
+    .query("voteRecords")
+    .withIndex("by_mpInternalId_and_wahlperiode_and_date", (q) =>
+      q
+        .eq("mpInternalId", mpInternalId)
+        .eq("wahlperiode", wahlperiode)
+        .gte("date", from)
+        .lte("date", to),
+    )
+    .collect()
 }
 
 /**
@@ -550,41 +1041,50 @@ export async function voteParticipation(
  * gain nothing from a histogram, while a chart asking it 48 times would repeat
  * this whole scan 48 times over.
  *
- * The scoping rule is `voteParticipation`'s, and is why the sheet is fetched at
- * all: a `voteRecords` row carries neither a period nor a date, so the ballot is
- * the only thing that knows when it happened and which Bundestag it belonged to.
+ * The scoping rule is `voteParticipation`'s, and both now read the same index:
+ * `periodVoteRecords` bounds the range by period and date, so neither fetches a
+ * sheet. That is the fix its header describes — the record used to carry neither
+ * column, which is why the ballot had to be fetched to learn when it happened.
  *
  * Absences are tallied, not dropped. §4.1's sheets encode `nichtabgegeben` as
  * its own column and convex/schema.ts keeps it distinct from `Enthaltung`, so a
  * month an MP missed entirely must render as a bar of absences rather than as a
  * month with no ballots — those are opposite claims about the same MP.
  *
- * ⚠ Unbounded by design, and safe for the reason §4.4 gives: named ballots are
- * roughly 1 015 in the Bundestag's *entire history*, so one MP's records plus
- * one sheet lookup each is a few thousand documents at the very worst — an order
- * of magnitude inside Convex's ~16 000 read limit. That bound is a property of
- * the corpus rather than of this query, which is why it is stated here: it does
- * not hold for any other table, and `getCrossPartyRankings` in convex/rankings.ts
- * bounds itself explicitly because it reads *every* MP's records rather than one's.
+ * ⚠ Bounded by the period rather than by a limit, and safe for the reason §4.4
+ * gives: named ballots are roughly 1 015 in the Bundestag's *entire history* and
+ * 391 carry a machine-readable sheet, so one MP's records in one period are a few
+ * hundred documents — with no sheet fetch beside them any more. That bound is a
+ * property of the corpus rather than of this query, which is why it is stated
+ * here: it does not hold for any other table, and `getCrossPartyRankings` in
+ * convex/rankings.ts bounds itself explicitly because it reads *every* MP's
+ * records rather than one's.
  */
 export async function voteTallyByMonth(
   ctx: QueryCtx,
   mpInternalId: string,
   wahlperiode: number,
 ): Promise<Map<string, Record<Vote, number>>> {
-  const records = await ctx.db
-    .query("voteRecords")
-    .withIndex("by_mpInternalId", (q) => q.eq("mpInternalId", mpInternalId))
-    .collect()
+  // The whole period: `PERIOD_WINDOW` is the same pair `monthWindow(null)`
+  // returns, stated here rather than imported to keep convex/votes.ts free of a
+  // dependency on the scoring module that calls it.
+  const records = await periodVoteRecords(
+    ctx,
+    mpInternalId,
+    wahlperiode,
+    "1949-01-01",
+    "2999-12-31",
+  )
 
   const byMonth = new Map<string, Record<Vote, number>>()
   for (const record of records) {
-    const sheet = await ctx.db.get(record.voteSheetId)
-    if (!sheet || sheet.wahlperiode !== wahlperiode) continue
     // Dates are ISO `YYYY-MM-DD` (schema header), so the month is a slice rather
     // than a parse — and the slice is already the zero-padded `YYYY-MM` that
     // `activityScores.month` is keyed on, so the two line up without conversion.
-    const month = sheet.date.slice(0, 7)
+    // Read off the record now that it carries the ballot's date; an un-migrated
+    // row is outside the index range above and never reaches here.
+    const month = (record.date ?? "").slice(0, 7)
+    if (month === "") continue
     const counts = byMonth.get(month) ?? { yes: 0, no: 0, abstain: 0, invalid: 0, absent: 0 }
     counts[record.vote]++
     byMonth.set(month, counts)
@@ -1274,21 +1774,27 @@ export const getVotesByMP = query({
       )
     }
 
+    // Newest first off the index — `date` is its trailing column, so descending
+    // order *is* chronological within the period, and `.take(limit)` stops
+    // there. The previous form collected the member's records across every
+    // period, fetched a sheet per row to find out which period each belonged to,
+    // sorted the lot in memory and then kept 25: ~254 records and ~254 sheet
+    // fetches to return a page of five, on the site's most-visited page type.
     const records = await ctx.db
       .query("voteRecords")
-      .withIndex("by_mpInternalId", (q) => q.eq("mpInternalId", args.mpInternalId))
-      .collect()
-
-    const inPeriod = []
-    for (const record of records) {
-      const sheet = await ctx.db.get(record.voteSheetId)
-      if (!sheet || sheet.wahlperiode !== args.wahlperiode) continue
-      inPeriod.push({ record, sheet })
-    }
-    inPeriod.sort((a, b) => b.sheet.date.localeCompare(a.sheet.date))
+      .withIndex("by_mpInternalId_and_wahlperiode_and_date", (q) =>
+        q.eq("mpInternalId", args.mpInternalId).eq("wahlperiode", args.wahlperiode),
+      )
+      .order("desc")
+      .take(limit)
 
     const joined = []
-    for (const { record, sheet } of inPeriod.slice(0, limit)) {
+    for (const record of records) {
+      // The sheet is fetched for the page's *own* rows only — at most `limit` of
+      // them, and it is the row being rendered rather than a lookup to decide
+      // whether to render it. That is the difference between an N+1 and a join.
+      const sheet = await ctx.db.get(record.voteSheetId)
+      if (!sheet) continue
       joined.push({
         vote: record.vote,
         remark: record.remark,

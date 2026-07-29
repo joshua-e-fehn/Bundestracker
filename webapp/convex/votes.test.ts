@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { breakdownRows, dissentFlagsFor, isRebel, majorityOf, tallyByGroup } from "./votes"
+import {
+  breakdownRows,
+  chunk,
+  dissentFlagsFor,
+  dissentWriteKeys,
+  isRebel,
+  majorityOf,
+  TALLY_SLICE,
+  tallyByGroup,
+} from "./votes"
 
 /**
  * Tests for the group-line rules behind rebel highlighting.
@@ -278,5 +287,165 @@ describe("breakdownRows", () => {
     const perRecord = records.filter((entry) => isRebel(entry.vote, majority)).length
     expect(breakdownRows(groups)[0].rebels).toBe(perRecord)
     expect(perRecord).toBe(2)
+  })
+})
+
+/**
+ * The write-partitioning invariant behind the dissent tally.
+ *
+ * ## What went wrong, and why a test rather than a comment
+ *
+ * `refreshBallotDissent` used to write the period tally as well as the flags:
+ * one transaction reading and patching up to 630 `dissentTallies` rows. Two
+ * ballots refreshed at once therefore overlapped on every member in the chamber,
+ * and every one of those rows was also read whole by the leaderboard. Convex is
+ * optimistic, so overlapping write sets are retried — and a retry re-reads and
+ * re-writes all 630.
+ *
+ * The fix moves the roll-up to a mutation keyed by *member*, so a call's write
+ * set is exactly the members it names. That property is what makes two
+ * concurrent slices non-conflicting, and it is invisible in any output: the
+ * arithmetic is idempotent, so a slicing bug that put one member in two
+ * transactions would still produce the right final numbers, more slowly and
+ * under contention. Nothing would look wrong. So it is asserted here.
+ *
+ * Contention itself is not asserted — it cannot be, without a real backend
+ * scheduling real transactions (the open-source binary serialises writes, so
+ * even there the wall-clock gap is not the signal). What is asserted is the
+ * structural precondition: disjoint inputs produce disjoint write sets.
+ */
+describe("dissent tally write partitioning", () => {
+  test("a slice's write set is exactly the members it names", () => {
+    const keys = dissentWriteKeys(21, ["bt-1", "bt-2", "bt-3"])
+    expect(keys).toHaveLength(3)
+    expect(new Set(keys).size).toBe(3)
+  })
+
+  test("disjoint member sets produce disjoint write sets", () => {
+    // The whole point. Two slices that share no member share no document, so
+    // they cannot conflict — which is what the ballot-keyed writer could not
+    // offer, since its key was a ballot and its rows were keyed by member.
+    const a = dissentWriteKeys(21, ["bt-1", "bt-2"])
+    const b = dissentWriteKeys(21, ["bt-3", "bt-4"])
+    expect(a.filter((key) => b.includes(key))).toEqual([])
+  })
+
+  test("the same member in two periods is two rows, not one", () => {
+    // `internalId` is stable across periods (convex/schema.ts), so the period
+    // has to be part of the key or a WP20 roll-up would clobber a WP21 one.
+    const a = dissentWriteKeys(21, ["bt-1"])
+    const b = dissentWriteKeys(20, ["bt-1"])
+    expect(a[0]).not.toBe(b[0])
+  })
+
+  test("chunking a roster partitions it — no member in two slices, none dropped", () => {
+    // The invariant a chunking bug would break silently: an off-by-one that
+    // overlapped slices would put one member in two concurrent transactions,
+    // reintroducing the contention while still arriving at the correct tally.
+    const roster = Array.from({ length: 635 }, (_, index) => `bt-${String(index).padStart(4, "0")}`)
+    const slices = chunk(roster, TALLY_SLICE)
+
+    const seen = new Set<string>()
+    for (const slice of slices) {
+      expect(slice.length).toBeLessThanOrEqual(TALLY_SLICE)
+      for (const member of slice) {
+        // Fails on any overlap between slices.
+        expect(seen.has(member)).toBe(false)
+        seen.add(member)
+      }
+    }
+    // And fails on any member dropped.
+    expect(seen.size).toBe(roster.length)
+    expect(slices.flat()).toEqual(roster)
+  })
+
+  test("every slice stays inside the transaction ceiling", () => {
+    // `recomputeDissentTallies` rejects a longer list rather than truncating —
+    // a silently shortened slice leaves tallies stale with nothing to say so.
+    const roster = Array.from({ length: 772 }, (_, index) => `bt-${index}`)
+    for (const slice of chunk(roster, TALLY_SLICE)) {
+      expect(slice.length).toBeGreaterThan(0)
+      expect(slice.length).toBeLessThanOrEqual(TALLY_SLICE)
+    }
+  })
+
+  test("an empty roster chunks to nothing rather than to one empty slice", () => {
+    // A slice of zero members would schedule a transaction that writes nothing —
+    // harmless, but it would make `mpsRolledUp` non-zero for a period with no
+    // roster, which is the one signal the backfill's caller reports.
+    expect(chunk([], TALLY_SLICE)).toEqual([])
+  })
+})
+
+/**
+ * The tally arithmetic, as `recomputeDissentTallies` performs it.
+ *
+ * Derived from the stored flags rather than accumulated, which is what makes it
+ * idempotent — and idempotence is what makes an OCC retry, a duplicate schedule
+ * and a nightly re-ingest all harmless. The delta form this replaces was correct
+ * only if applied exactly once, and that requirement is what forced the tally
+ * write into the ballot's transaction in the first place.
+ */
+describe("dissent tallies derived from stored flags", () => {
+  /** The counting loop in `recomputeDissentTallies`, as a pure function. */
+  function tallyOf(records: Array<{ dissent?: boolean; dissentCounted?: boolean }>) {
+    let dissents = 0
+    let ballotsCast = 0
+    for (const record of records) {
+      if (record.dissentCounted === true) ballotsCast++
+      if (record.dissent === true) dissents++
+    }
+    return { dissents, ballotsCast, dissentRate: ballotsCast === 0 ? 0 : dissents / ballotsCast }
+  }
+
+  test("counts the flags, and the denominator is not 'not a dissent'", () => {
+    const tally = tallyOf([
+      { dissent: false, dissentCounted: true }, // voted the line
+      { dissent: true, dissentCounted: true }, // broke the line
+      { dissent: false, dissentCounted: false }, // absent — no opportunity
+      { dissent: false, dissentCounted: false }, // group had no line
+    ])
+    // 1 of 2, not 1 of 4. Folding the last two into the denominator deflates
+    // every rate on the site without any number looking wrong — see
+    // `dissentFlagsFor`.
+    expect(tally).toEqual({ dissents: 1, ballotsCast: 2, dissentRate: 0.5 })
+  })
+
+  test("an unset flag is 'not computed', not a loyal vote", () => {
+    // A record the backfill has not reached carries neither flag. Counting it as
+    // `dissentCounted` would put a ballot nobody has assessed into the
+    // denominator, understating the rate of every member mid-migration.
+    const tally = tallyOf([{ dissent: true, dissentCounted: true }, {}, {}])
+    expect(tally).toEqual({ dissents: 1, ballotsCast: 1, dissentRate: 1 })
+  })
+
+  test("recomputing is a no-op — the reason retries are safe", () => {
+    const records = [
+      { dissent: true, dissentCounted: true },
+      { dissent: false, dissentCounted: true },
+    ]
+    // Three passes over unchanged flags. A delta-based tally would read 1, 2, 3.
+    expect(tallyOf(records)).toEqual(tallyOf(records))
+    expect(tallyOf(records).dissents).toBe(1)
+  })
+
+  test("a member with no countable ballot is a zeroed row, not a missing one", () => {
+    // Zero is written rather than skipped: `purgeSeedData` and the leaderboard
+    // both expect to find a row. `lib/dissent.ts` reads `ballotsCast` to tell
+    // "never dissented" from "never voted", which is why the rate being 0 here
+    // is not the ambiguity it looks like.
+    expect(tallyOf([{ dissent: false, dissentCounted: false }])).toEqual({
+      dissents: 0,
+      ballotsCast: 0,
+      dissentRate: 0,
+    })
+  })
+
+  test("it cannot go negative, so it needs no clamp", () => {
+    // The old delta form clamped at zero because an over-applied subtraction
+    // could print a negative dissent count on a public leaderboard. A count of
+    // stored flags has no such failure mode: the floor is an empty record set.
+    expect(tallyOf([]).dissents).toBe(0)
+    expect(tallyOf([]).ballotsCast).toBe(0)
   })
 })

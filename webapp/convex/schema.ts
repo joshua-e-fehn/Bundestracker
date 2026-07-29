@@ -358,6 +358,67 @@ export const voteRecordInput = {
 }
 
 /**
+ * The ballot's period and date, copied onto the record — the one denormalisation
+ * in this schema, and the fix for its single largest read cost.
+ *
+ * ## Why a copy rather than a join
+ *
+ * A `voteRecords` row carried neither, so *every* per-MP question about votes
+ * had to recover them from the sheet: `.withIndex("by_mpInternalId")` — an index
+ * with no period column — collected the member's records across **all**
+ * Wahlperioden, then resolved each one through `ctx.db.get(record.voteSheetId)`
+ * to find out which period and month it belonged to, and discarded most of them.
+ *
+ * That is an unbounded scan and an N+1 on top of it, and the deployment measured
+ * both: the sweep of 2026-07-27 read 10 270 `voteRecords` **and** 10 245
+ * `voteSheets` for 25 members — a 1:1 ratio, which is one `db.get` per record
+ * made visible, and 64 % of the whole transaction. `internalId` is stable across
+ * periods by construction (see `mpInput`), so this is not a corner case: the
+ * cost is the member's whole career every time anyone asks about one month of it.
+ *
+ * With these two columns the same question is one index range —
+ * `by_mpInternalId_and_wahlperiode_and_date` — bounded by exactly the period and
+ * window asked for, and the sheet is never fetched. Measured against a real
+ * Convex backend on a 250-record fixture: **500 documents read → 100.**
+ *
+ * ## Why it cannot go stale
+ *
+ * The pair is *derived at write time* from the sheet the record is being
+ * attached to, and `upsertVoteRecords` already holds that sheet — it looks it up
+ * by natural key to get the `voteSheetId` in the first place, so this costs no
+ * additional read. A record cannot be written without its sheet (the mutation
+ * throws), and a sheet's `wahlperiode`/`sitzungnr`/`abstimmnr` are its natural
+ * key, so the period cannot change under an existing record without becoming a
+ * different ballot. The date can be corrected by a re-ingest, and a re-ingest
+ * rewrites the records too, through the same code path.
+ *
+ * Deliberately **not** part of `voteRecordInput`: the pipeline must not be able
+ * to assert that a vote happened in a period other than its ballot's. Same
+ * construction, and the same reasoning, as `dissentFields` below and
+ * `searchText` on `activityEvents`.
+ *
+ * ## ⚠ `v.optional`, and the deploy ordering that depends on it
+ *
+ * Required fields on a populated table fail the whole deploy
+ * (`bundestrack-convex-schema-deploys`). Absent means "written before this
+ * branch", which is exactly what `backfillVoteRecordScope` selects on: an index
+ * range with `.eq("wahlperiode", undefined)` matches the un-migrated rows and
+ * nothing else — verified against a real backend, and it is why the migration
+ * needs no cursor over the whole table.
+ *
+ * Until that backfill has run, an un-migrated row is **missing** from every
+ * period-scoped read rather than mis-attributed. `voteScopeCoverage` reports the
+ * remaining count so the gap is measured rather than assumed.
+ */
+const voteRecordScopeFields = {
+  /** The ballot's `wahlperiode`. See the note above: derived, never posted. */
+  wahlperiode: v.optional(v.number()),
+  /** The ballot's ISO `YYYY-MM-DD` date, so a month window is an index range
+   * rather than a fetch of every sheet the member ever voted in. */
+  date: v.optional(v.string()),
+}
+
+/**
  * Whether this record went against its group's line — decided at ingest, stored
  * on the row.
  *
@@ -372,13 +433,19 @@ export const voteRecordInput = {
  * that query; it is the same answer computed once, when the ballot lands, by the
  * one caller that already holds all 630 of its records.
  *
- * **Derived, never posted.** `recomputeBallotDissent` in convex/votes.ts writes
+ * **Derived, never posted.** `refreshBallotDissent` in convex/votes.ts writes
  * these from `tallyByGroup`/`isRebel`, the same functions the ballot page and the
  * profile page apply — so the stored flag cannot disagree with the rendered one.
  * They are deliberately absent from `voteRecordInput` for that reason: a payload
  * carrying `dissent: true` would let the pipeline assert a claim about a named
  * person's conduct that no group tally supports. Same construction, and same
  * reasoning, as `searchText` on `activityEvents`.
+ *
+ * These flags are the **only** thing a ballot refresh writes, and that is the
+ * whole of the write-partitioning fix: a ballot's records are disjoint from
+ * every other ballot's, so two refreshes running at once cannot conflict. The
+ * period roll-up is derived from these flags afterwards, keyed by member — see
+ * `dissentTallyInput`.
  *
  * `v.optional` because they were added to a populated table — a required field
  * there fails the whole deploy (`bundestrack-convex-schema-deploys`). Absent
@@ -409,17 +476,32 @@ const dissentFields = {
  * `getCrossPartyRankings` reads instead of re-tallying every ballot.
  *
  * One row per `(mpInternalId, wahlperiode)`, maintained by
- * `recomputeMPDissent` in convex/votes.ts from that member's own
- * `voteRecords` — which is a per-MP scan bounded by the corpus (§4.4: ~1 015
- * named ballots in the Bundestag's entire history), not by the chamber. That is
- * the asymmetry the whole table turns on: reading *one* member's record set is
- * cheap and reading *every* member's is not, so the expensive direction is paid
- * once per ballot at ingest and the leaderboard becomes a 630-row index scan.
+ * `recomputeDissentTallies` in convex/votes.ts from that member's own
+ * `voteRecords` — a per-MP scan bounded by the corpus (§4.4: ~1 015 named
+ * ballots in the Bundestag's entire history), not by the chamber. That is the
+ * asymmetry the whole table turns on: reading *one* member's record set is
+ * cheap and reading *every* member's is not, so the leaderboard becomes a
+ * 630-row index scan.
  *
- * Recomputed from the flags rather than incremented. A tally that added `+1` per
- * dissent would double-count every re-ingest — and the pipeline re-ingests by
- * design, since a daily sync re-reads anything whose `aktualisiert` moved (§2.5).
- * Idempotence is what makes a half-finished sync a no-op instead of a corruption.
+ * ## ⚠ Recomputed from the flags, never incremented — and one member per
+ * transaction
+ *
+ * A tally that added `+1` per dissent would double-count every re-ingest, and
+ * the pipeline re-ingests by design (a daily sync re-reads anything whose
+ * `aktualisiert` moved, §2.5). So each row is *derived*: read this member's
+ * flagged records for the period, count them, write the answer. Re-running is a
+ * no-op rather than a corruption, and a retry after a conflict cannot
+ * double-apply, because there is nothing to apply — only a value to arrive at.
+ *
+ * That is also what removes the contention. The delta form had to be applied by
+ * whoever computed it, which meant the *ballot* refresh wrote here: one
+ * transaction reading and patching up to 630 rows, so two ballots refreshed
+ * concurrently overlapped on every member in the chamber and every one of them
+ * overlapped with the leaderboard's 630-row read. Deriving instead means the
+ * writer is keyed by member: `recomputeDissentTallies` takes a slice of MPs and
+ * writes only those rows, so two concurrent slices touch **disjoint** documents
+ * by construction. `dissentWriteKeys` in convex/votes.ts is that invariant,
+ * asserted in convex/votes.test.ts rather than left to hold by inspection.
  */
 export const dissentTallyInput = {
   mpInternalId: v.string(),
@@ -677,7 +759,32 @@ const schema = defineSchema({
     .index("by_dipPersonId_and_wahlperiode", ["dipPersonId", "wahlperiode"])
     // The roster, whole or by group. No separate `by_fraktion`: group names
     // repeat across periods, so a Fraktion only means something inside one.
-    .index("by_wahlperiode_and_fraktion", ["wahlperiode", "fraktion"]),
+    .index("by_wahlperiode_and_fraktion", ["wahlperiode", "fraktion"])
+    /**
+     * The roster in a **stable, seekable order** — what a sweep walks.
+     *
+     * `recomputeScores` slices the roster by offset, and an offset must be
+     * scanned to: `.take(cursor + batchSize + 1)` re-reads every member already
+     * scored, so the reads a whole sweep spends on paging grow with the square
+     * of the roster. Measured against a real backend on 600 rows: a slice of 8
+     * at offset 0 costs 9 documents and the same slice at offset 500 costs
+     * **509**. Across a 635-member sweep at 8 per slice that is ~25 000 `mps`
+     * rows read to page through 635.
+     *
+     * Keyed on `internalId` because the seek needs a column that is unique
+     * within the period and totally ordered, which `fraktion` is neither —
+     * `.gt("fraktion", x)` would skip every remaining member of a group
+     * mid-slice. With this index a slice is `.gt("internalId", last)` and costs
+     * `batchSize + 1` documents wherever it starts.
+     *
+     * `internalId` is also what a caller can *compute*: `scripts/score-period.py`
+     * shards a period across workers, and it can only do that if slice
+     * boundaries are derivable from the roster it already reads rather than
+     * discovered one response at a time. That is why the sweep's cursor is a
+     * member id and not an opaque `.paginate()` token, which is O(page) too but
+     * cannot be synthesised.
+     */
+    .index("by_wahlperiode_and_internalId", ["wahlperiode", "internalId"]),
 
   voteSheets: defineTable({ ...voteSheetInput, createdAt: v.number() })
     .index("by_wahlperiode_and_sitzungnr_and_abstimmnr", ["wahlperiode", "sitzungnr", "abstimmnr"])
@@ -688,12 +795,60 @@ const schema = defineSchema({
     // Chamber-wide recency across periods — the home page, not an archive.
     .index("by_date", ["date"]),
 
-  voteRecords: defineTable({ ...voteRecordInput, ...dissentFields, createdAt: v.number() })
+  voteRecords: defineTable({
+    ...voteRecordInput,
+    ...voteRecordScopeFields,
+    ...dissentFields,
+    createdAt: v.number(),
+  })
     // One MP votes once per ballot, so this is both the natural key and, by its
     // `voteSheetId` prefix, the "everyone who voted on this" read.
     .index("by_voteSheetId_and_mpInternalId", ["voteSheetId", "mpInternalId"])
-    // The other direction: one MP's record, which participation is computed on.
+    /**
+     * One MP's votes **inside one period, inside one date window** — the read
+     * every scoring and profile query actually wants, and the one this table
+     * could not previously express.
+     *
+     * The three columns are the three questions asked together: whose vote, in
+     * which Bundestag, when. Its `(mpInternalId, wahlperiode)` prefix answers
+     * the period-total form and its `(mpInternalId)` prefix the career form, so
+     * this one index replaces `by_mpInternalId` for every caller rather than
+     * sitting beside it — see `voteRecordScopeFields` for why the columns exist
+     * and what a missing one means.
+     *
+     * ⚠ The un-migrated rows sort **first**, not last: Convex orders `undefined`
+     * below every other value (`values/compare.ts` ranks it 0, beneath `null`).
+     * So a range with `.eq("wahlperiode", N)` excludes them cleanly, and a range
+     * with `.eq("wahlperiode", undefined)` selects exactly them — which is what
+     * makes the backfill a bounded index read rather than a table scan.
+     */
+    .index("by_mpInternalId_and_wahlperiode_and_date", ["mpInternalId", "wahlperiode", "date"])
+    // The other direction: one MP's whole record across every period. Kept for
+    // `purgeSeedData`, which deletes a synthetic member's rows and must see the
+    // ones the backfill has not reached — an un-migrated row is invisible to a
+    // period-scoped range by design, and a purge that missed it would leave a
+    // vote behind while reporting the member gone.
     .index("by_mpInternalId", ["mpInternalId"])
+    /**
+     * The migration's own cursor, and the only reason it needs no cursor.
+     *
+     * `wahlperiode` leads, so `.eq("wahlperiode", undefined)` is a range over
+     * *exactly* the rows the scope backfill has not reached — Convex sorts a
+     * missing field below every value, so they are a contiguous prefix — and a
+     * migrated row leaves the range by being written. `backfillVoteRecordScope`
+     * therefore just asks for the next slice until there is none, and a crashed
+     * run resumes by being run again. `voteScopeCoverage` reads the same range
+     * to report what remains.
+     *
+     * The MP-keyed index above cannot serve this: an index range must fix its
+     * fields in order, so selecting on `wahlperiode` there would mean naming a
+     * member first — one query per member rather than one for the table.
+     *
+     * ⚠ Not an alternative to `voteSheets.by_wahlperiode_and_date`. This one is
+     * over *records*, which is ~630 rows per ballot; nothing reads a period's
+     * records in bulk through it, and nothing should.
+     */
+    .index("by_wahlperiode_and_date", ["wahlperiode", "date"])
     // "How did this MP's own group vote on this ballot" — see `groupMajority`
     // in convex/votes.ts. Keyed on `partyAtVote` rather than on the roster's
     // current `fraktion` because that is the question: §6.4 records six WP21
@@ -737,7 +892,32 @@ const schema = defineSchema({
       "speechIndex",
     ])
     // One MP's speeches over time — the profile page.
-    .index("by_mpInternalId_and_protocolDate", ["mpInternalId", "protocolDate"]),
+    .index("by_mpInternalId_and_protocolDate", ["mpInternalId", "protocolDate"])
+    /**
+     * The same read, scoped to one Bundestag — what `speechVolume` needs.
+     *
+     * `wahlperiode` is a *required* column on this table, so unlike
+     * `voteRecords` above this index needs no migration: every existing row
+     * already carries the value, and Convex backfills the index itself on
+     * deploy.
+     *
+     * The index above cannot answer this. It is keyed by date alone after the
+     * MP, so scoring had to collect the member's speeches and drop the wrong
+     * period in JS (`speechVolume`) — which is bounded by a date window for a
+     * *month* and by nothing at all for a period total, whose window is
+     * `1949-01-01…2999-12-31`. That read is the member's entire career, and it
+     * is the one scoring input that keeps growing: WP18 alone adds 245
+     * protocols against WP21's 90.
+     *
+     * Both indexes stay. This one serves scoring; `by_mpInternalId_and_protocolDate`
+     * serves `getSpeechesByMP`, which wants the newest page across periods and
+     * explains at its call site why filtering after the take is safe there.
+     */
+    .index("by_mpInternalId_and_wahlperiode_and_protocolDate", [
+      "mpInternalId",
+      "wahlperiode",
+      "protocolDate",
+    ]),
 
   questions: defineTable({ ...questionInput, createdAt: v.number() })
     // No external id exists for a question, so the key is behavioural: this

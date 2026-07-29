@@ -209,6 +209,24 @@ ingestionRoute("vote-records", internal.votes.upsertVoteRecords)
  * that has drifted rather than doubling it. See convex/votes.ts.
  */
 ingestionRoute("votes/backfill-dissent", internal.votes.backfillDissent)
+
+/**
+ * Copies each vote record's ballot period and date onto the record — the
+ * migration for the period-scoped vote index. Loop until `done`.
+ *
+ * A migration rather than routine work: `upsertVoteRecords` writes both columns
+ * on every record from now on, so this exists only for the rows that predate
+ * them. Needs no cursor — the un-migrated rows are exactly those the index
+ * selects, and a migrated row leaves that range by being written — so a crashed
+ * run resumes by being run again.
+ *
+ * ⚠ **Run this before `votes/backfill-dissent`, and before the next score
+ * recomputation.** Both now read votes through the period-scoped index, and a
+ * record this has not reached is absent from that range: the failure is an
+ * undercount that repairs itself, not a wrong attribution, but it is a real one.
+ * `votes:voteScopeCoverage` reports what remains, read-only. See convex/votes.ts.
+ */
+ingestionRoute("votes/backfill-scope", internal.votes.backfillVoteRecordScope)
 ingestionRoute("motions", internal.motions.upsertMotions)
 ingestionRoute("motion-sponsors", internal.motions.upsertMotionSponsors)
 ingestionRoute("speeches", internal.speeches.upsertSpeeches)

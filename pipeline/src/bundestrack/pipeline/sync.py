@@ -796,7 +796,32 @@ class Pipeline:
             )
         )
 
-    # -- stage 8b: the dissent tally ---------------------------------------
+    # -- stage 8b: the vote-record scope migration -------------------------
+
+    def backfill_vote_scope(self, report: RunReport) -> None:
+        """Copy each vote record's ballot period and date onto the record.
+
+        The migration for the period-scoped vote index — see
+        `ConvexLoader.backfill_vote_record_scope`. Runs here, immediately after
+        the ballots and immediately *before* the dissent roll-up, because that
+        roll-up and the score recomputation both read votes through the new
+        index: a record this has not reached is absent from those reads, which
+        undercounts rather than mis-attributes, but undercounts silently.
+
+        ⚠ Deployment-wide rather than period-scoped, so on a steady-state sync it
+        finds nothing and costs one request. It stays in the run anyway: the rows
+        it repairs are the ones nobody knows are there, and the alternative is a
+        one-off command somebody has to remember after every historical backfill.
+        """
+        stage = report.stage("vote-scope")
+        migrated = self.loader.backfill_vote_record_scope()
+        stage.notes.append(
+            f"{migrated} vote record(s) given their ballot's period and date"
+            if migrated
+            else "every vote record already carries its ballot's period"
+        )
+
+    # -- stage 8c: the dissent tally ---------------------------------------
 
     def backfill_dissent(self, report: RunReport) -> None:
         """Fill in the dissent flags for ballots that predate them.
@@ -814,13 +839,22 @@ class Pipeline:
         changes nothing, which is cheap and is the point: it is also the repair
         for a tally that has drifted, and there is no way to know it has without
         recomputing it.
+
+        ⚠ The work is **scheduled, not completed**, by the time this returns. The
+        route hands each ballot's refresh and each roster slice's roll-up to
+        Convex's scheduler so that neither shares a transaction with the walk —
+        which is what stopped the old form accumulating three ballots' reads into
+        one transaction, and what stopped every ballot writing all ~630 tally
+        rows. So the count below is what was *dispatched*; verify the outcome by
+        reading `votes:voteScopeCoverage` and the tallies rather than by trusting
+        this note.
         """
         stage = report.stage("dissent")
-        records = self.loader.backfill_dissent(self.wahlperiode)
+        rolled_up = self.loader.backfill_dissent(self.wahlperiode)
         stage.notes.append(
-            f"{records} vote records re-flagged against their group's line"
-            if records
-            else "dissent tally already current — no record changed"
+            f"dissent roll-up scheduled for {rolled_up} members"
+            if rolled_up
+            else "no members to roll up — the period has no roster"
         )
 
     # -- stage 9: seating --------------------------------------------------
@@ -1099,6 +1133,9 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     _guard(report, "motions", lambda: run.load_motions(report, since=since))
     _guard(report, "speeches", lambda: run.load_speeches(report, since=since))
     _guard(report, "votes", lambda: run.load_votes(report, incremental=incremental))
+    # After the votes, because it reads the ballots that stage writes, and
+    # before the dissent roll-up, which reads votes through the index this fills.
+    _guard(report, "vote-scope", lambda: run.backfill_vote_scope(report))
     # After the votes, because it reads the ballots that stage writes. Guarded
     # like the rest: a failed tally leaves the dissent figure stale, which the
     # UI can state, where an aborted run would leave every later stage undone.

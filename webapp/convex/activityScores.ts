@@ -10,13 +10,13 @@ import {
 } from "../lib/scoring"
 import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
-import { activityTallies } from "./activities"
+import { activityDates } from "./activities"
 import { committeeCount } from "./committees"
 import { pageLimit, upsertRow, withId } from "./lib/ingest"
 import { mpLabel, photoFields, requireMandate } from "./mps"
 import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
-import { speechVolume } from "./speeches"
-import { voteParticipation, voteTallyByMonth } from "./votes"
+import { speechDates } from "./speeches"
+import { ballotDates, voteTallyByMonth } from "./votes"
 
 /**
  * Computed activity scores and the rankings over them.
@@ -93,68 +93,140 @@ export function monthWindow(month: string | null): { from: string; to: string } 
 // --- computation ----------------------------------------------------------
 
 /**
- * Gathers one MP's measured activity for a window.
+ * The measured activity behind one score row, before weights are applied.
  *
- * Each source contributes through its own module's helper rather than through a
- * query re-written here, so "how many speeches" has one definition wherever it
- * is asked. The counts come from the source tables, not from `activityEvents`:
- * the feed is derived and may lag, and a score built on derived data would
- * compound any gap in it.
+ * Named because two things now produce one: a window read from the database, and
+ * the same window narrowed in memory from a wider one already read. Keeping them
+ * one type is what makes `gatherWindow` and `narrow` interchangeable at the call
+ * site, and therefore what makes the month row and the period row provably the
+ * same computation over different date bounds.
  */
-async function gatherInputs(
-  ctx: QueryCtx,
-  mpInternalId: string,
-  wahlperiode: number,
-  month: string | null,
-): Promise<{
+type Gathered = {
   inputs: ScoreInputs
   speechCount: number
   participation: { cast: number; eligible: number }
-}> {
-  const { from, to } = monthWindow(month)
+}
 
-  const [tallies, speech, votes, committees] = await Promise.all([
-    activityTallies(ctx, mpInternalId, wahlperiode, from, to),
-    speechVolume(ctx, mpInternalId, wahlperiode, from, to),
-    voteParticipation(ctx, mpInternalId, wahlperiode, from, to),
+/**
+ * One MP's raw rows for a whole period — read **once**, then narrowed per window.
+ *
+ * ## Why the period rather than the window
+ *
+ * `recomputeScores` writes two rows per member when a month is given: the month,
+ * and the period total. Those were two independent gathers over windows where
+ * one strictly contains the other, so every source table was read twice and the
+ * month's rows were read a second time as part of the period's. The period read
+ * is the larger of the two and contains the smaller, so reading it once and
+ * slicing costs exactly what the total alone used to.
+ *
+ * That is the structural half of the fix. The other half is that each of these
+ * reads is now genuinely period-scoped — see `voteRecordScopeFields` in
+ * convex/schema.ts and `speechVolume` — so "the period" is a bounded quantity
+ * rather than a euphemism for the member's whole career.
+ *
+ * ## What is not read here
+ *
+ * `committeeCount` is per period and carries no date at all (§6.4: committee
+ * membership is published for the current period only), so it is fetched once
+ * and used by both rows unchanged — as it always was, since `gatherInputs` never
+ * passed it a window either.
+ *
+ * The counts come from the source tables, not from `activityEvents`: the feed is
+ * derived and may lag, and a score built on derived data would compound any gap
+ * in it.
+ */
+async function gatherPeriod(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+): Promise<{
+  activities: Array<{ date: string; bucket: string }>
+  speeches: Array<{ protocolDate: string; wordCount: number }>
+  ballots: Array<{ date: string; cast: boolean }>
+  committees: number
+}> {
+  const { from, to } = monthWindow(null)
+  const [activities, speeches, ballots, committees] = await Promise.all([
+    activityDates(ctx, mpInternalId, wahlperiode, from, to),
+    speechDates(ctx, mpInternalId, wahlperiode, from, to),
+    ballotDates(ctx, mpInternalId, wahlperiode, from, to),
     committeeCount(ctx, mpInternalId, wahlperiode),
   ])
+  return { activities, speeches, ballots, committees }
+}
+
+/**
+ * The gathered inputs for one window, sliced out of a period already read.
+ *
+ * ⚠ The arithmetic here must match what the per-source helpers do, because it
+ * *is* what they do — `activityTallies` buckets and counts, `speechVolume` sums
+ * `wordCount ?? 0`, `voteParticipation` counts everything but `absent` as cast.
+ * The rules stay in those modules and this only re-applies them over rows they
+ * returned, which is why each helper now has a `*Dates` sibling returning the
+ * rows rather than the tally: one definition of "how many speeches", read from
+ * one place, aggregated in two.
+ *
+ * Bounds are inclusive on both ends, matching `monthWindow` and the `.gte`/`.lte`
+ * ranges the helpers use — a month's last day is *in* the month.
+ */
+function narrow(
+  period: Awaited<ReturnType<typeof gatherPeriod>>,
+  from: string,
+  to: string,
+): Gathered {
+  const tallies: Record<string, number> = {}
+  for (const row of period.activities) {
+    if (row.date < from || row.date > to) continue
+    tallies[row.bucket] = (tallies[row.bucket] ?? 0) + 1
+  }
+
+  let speechCount = 0
+  let wordCount = 0
+  for (const row of period.speeches) {
+    if (row.protocolDate < from || row.protocolDate > to) continue
+    speechCount++
+    wordCount += row.wordCount
+  }
+
+  let cast = 0
+  let eligible = 0
+  for (const row of period.ballots) {
+    if (row.date < from || row.date > to) continue
+    eligible++
+    if (row.cast) cast++
+  }
 
   return {
     inputs: {
       motions: tallies.motions ?? 0,
       // Words, not segments — see the header note.
-      speeches: speech.wordCount,
+      speeches: wordCount,
       questions: tallies.questions ?? 0,
       reports: tallies.reports ?? 0,
-      // Null (no ballot fell in the window) scores as 0 rather than as a
-      // penalty for a month the Bundestag held no named vote. The distinction
-      // survives in `voteParticipationRate`, which the UI reads to decide
-      // between "0 %" and "no votes".
-      voteParticipation: votes.rate ?? 0,
-      committees,
+      // No ballot in the window scores as 0 rather than as a penalty for a month
+      // the Bundestag held no named vote. The distinction survives in
+      // `voteParticipationRate`, which the UI reads to decide between "0 %" and
+      // "no votes" — and which is computed from `eligible` below, not from this.
+      voteParticipation: eligible === 0 ? 0 : cast / eligible,
+      committees: period.committees,
       billSponsorships: tallies.billSponsorships ?? 0,
     },
-    speechCount: speech.speechCount,
-    participation: { cast: votes.cast, eligible: votes.eligible },
+    speechCount,
+    participation: { cast, eligible },
   }
 }
 
-/** Computes and writes one (MP, period, month) score. */
-async function computeAndStore(
+/** Writes one (MP, period, month) score from inputs already gathered. */
+async function storeScore(
   ctx: MutationCtx,
   mpInternalId: string,
   wahlperiode: number,
   month: string | null,
+  gathered: Gathered,
   weights: ScoreWeights,
   now: number,
 ): Promise<{ totalScore: number; created: boolean }> {
-  const { inputs, speechCount, participation } = await gatherInputs(
-    ctx,
-    mpInternalId,
-    wahlperiode,
-    month,
-  )
+  const { inputs, speechCount, participation } = gathered
   const { totalScore, breakdown } = applyWeights(inputs, weights)
 
   const existing = await ctx.db
@@ -191,6 +263,50 @@ async function computeAndStore(
 }
 
 /**
+ * Computes and writes one member's score rows: the period total, and optionally
+ * one month — from a single read of their period.
+ *
+ * Both rows come from the same `gatherPeriod`, so they cannot disagree the way
+ * two independent gathers could if a row landed between them. That was already
+ * the intent (convex/schema.ts: "recomputed together, so neither is ever a stale
+ * sum of the other"); it is now true of the *read* and not only of the write.
+ */
+async function computeAndStore(
+  ctx: MutationCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  month: string | null,
+  weights: ScoreWeights,
+  now: number,
+): Promise<{ totalScore: number; created: boolean }> {
+  const period = await gatherPeriod(ctx, mpInternalId, wahlperiode)
+
+  if (month !== null) {
+    const window = monthWindow(month)
+    await storeScore(
+      ctx,
+      mpInternalId,
+      wahlperiode,
+      month,
+      narrow(period, window.from, window.to),
+      weights,
+      now,
+    )
+  }
+
+  const whole = monthWindow(null)
+  return await storeScore(
+    ctx,
+    mpInternalId,
+    wahlperiode,
+    null,
+    narrow(period, whole.from, whole.to),
+    weights,
+    now,
+  )
+}
+
+/**
  * Recomputes one MP's scores: the period total, and one month.
  *
  * Idempotent, which is what makes it safe as a cron target — a run that dies
@@ -218,28 +334,44 @@ export const computeScore = internalMutation({
 /**
  * Ceiling on how many MPs one `recomputeScores` call may score.
  *
- * ## The number this is derived from
+ * ## The number this was derived from
  *
- * A slice's cost is *not* bounded by anything in this file — it is the sum of
- * four per-MP reads in four other modules, and each one grows with the corpus.
- * The nightly sweep of 2026-07-27 crossed the limit and the deployment recorded
- * what it had touched: 32 002 documents for **25** MPs, against Convex's
- * ~16 000 per transaction.
+ * A slice's cost is the sum of four per-MP reads in four other modules. The
+ * nightly sweep of 2026-07-27 crossed the limit and the deployment recorded what
+ * it had touched: 32 002 documents for **25** MPs.
  *
- * | table       | documents |
- * |-------------|-----------|
- * | voteRecords |    10 270 |
- * | voteSheets  |    10 245 |
- * | activities  |     8 604 |
- * | speeches    |     2 111 |
- * | mps         |       772 |
+ * | table       | documents | after this branch |
+ * |-------------|-----------|-------------------|
+ * | voteRecords |    10 270 | ~1 700 |
+ * | voteSheets  |    10 245 | **0** |
+ * | activities  |     8 604 | ~4 300 |
+ * | speeches    |     2 111 | ~800 |
+ * | mps         |       772 | ~25 |
  *
- * That is ~1 280 documents per MP, because `month !== null` scores each member
- * twice — once for the month, once for the period total — and `voteParticipation`
- * resolves every one of their ballots through `ctx.db.get` (which is why
- * `voteSheets` almost exactly matches `voteRecords`). Eight MPs is ~10 200 plus
- * the roster read, which leaves real headroom under 16 000 rather than sitting
- * just below it.
+ * ~1 280 documents per MP, and three separate causes, all of them now fixed:
+ *
+ *  - **`voteParticipation` read the member's whole career and fetched a sheet
+ *    per record** to find out which period each vote belonged to. That is the
+ *    10 270 + 10 245 pair — a 1:1 ratio, which is the N+1 made visible — and
+ *    64 % of the transaction. `voteRecords` now carries its ballot's period and
+ *    date, so the read is one index range and no sheet is touched.
+ *  - **Every input was gathered twice**, once for the month and once for the
+ *    period total, over windows where the first is a subset of the second.
+ *    `gatherPeriod` now reads the period once and derives both.
+ *  - **The roster read was quadratic.** `.take(cursor + batchSize + 1)` re-reads
+ *    every member the sweep has already scored, so a 635-member sweep at 8 per
+ *    slice read ~25 000 `mps` rows in total. The cursor is now an `internalId`,
+ *    so a slice reads its own members and no others.
+ *
+ * ## Why the ceiling stays at 8 anyway
+ *
+ * It is no longer load-bearing, and that is the point of leaving it alone: the
+ * per-MP cost is now ~230 documents rather than ~1 280, so 8 members is ~1 800
+ * against Convex's 32 000 — a 17× margin where it used to be 2×. Raising it
+ * would spend that margin on wall-clock the sweep does not need (it runs
+ * unattended at 03:15) and would re-couple the batch size to a corpus that keeps
+ * growing. `scripts/score-period.py` parallelises across cursors instead, which
+ * is where throughput actually comes from.
  *
  * ## Why a dedicated ceiling rather than `pageLimit`
  *
@@ -279,72 +411,77 @@ export function scoreBatchSize(requested: number | undefined): number {
  * `hasMore` is how it knows where it got to.
  *
  * `month` null recomputes only the period total; passing a month recomputes
- * both it and the total, because a month's data changing changes the total too
- * — and it is why a slice costs twice what its MP count suggests.
+ * both it and the total, because a month's data changing changes the total too.
+ * It no longer costs twice what its MP count suggests: both rows come from one
+ * `gatherPeriod` per member — see `computeAndStore`.
  *
- * ⚠ `MAX_SCORE_BATCH` is a measured bound, not a safe one in perpetuity. It is
- * sized against the per-MP cost this deployment recorded, and that cost rises
- * as the period accumulates ballots and speeches. The read limit is per
- * *transaction*, so batching a single source inside one call cannot help;
- * only fewer MPs per call, or a cheaper per-MP read, can. The cheaper read is
- * available and not taken here: `voteParticipation` in convex/votes.ts fetches
- * one `voteSheets` row per `voteRecords` row, re-reading the same few hundred
- * ballots for every member, and is called twice per MP over windows that share
- * every row. That is ~64 % of the cost above and the next thing to fix if this
- * ceiling has to fall again.
+ * ## ⚠ The cursor is a member id, not an offset
+ *
+ * It used to be an integer offset, which meant seeking to it:
+ * `.take(cursor + batchSize + 1)` re-read every member already scored, so the
+ * paging cost grew with the square of the roster — measured at 509 documents to
+ * fetch 8 members at offset 500, against 9 at offset 0. A whole 635-member sweep
+ * spent ~25 000 `mps` reads paging through 635 rows.
+ *
+ * Now it is the `internalId` the previous slice ended on, and the read is
+ * `.gt("internalId", cursor)` off `by_wahlperiode_and_internalId` — `batchSize + 1`
+ * documents wherever the slice starts. Deliberately a member id rather than a
+ * `.paginate()` token, which is also O(page) but opaque:
+ * `scripts/score-period.py` shards a period across workers and can only do that
+ * if slice boundaries are derivable from the roster it already reads. An id it
+ * can compute; a token it cannot.
+ *
+ * Callers pass the `nextCursor` they were given and nothing else, which is what
+ * they already did. `null`/absent means "start at the beginning".
  */
 export const recomputeScores = internalMutation({
   args: {
     wahlperiode: v.number(),
     month: v.union(v.null(), v.string()),
-    cursor: v.optional(v.number()),
+    /** The `internalId` the previous slice ended on; absent or null starts at
+     * the beginning of the period's roster. */
+    cursor: v.optional(v.union(v.null(), v.string())),
     batchSize: v.optional(v.number()),
   },
   returns: v.object({
     scored: v.number(),
-    nextCursor: v.union(v.null(), v.number()),
+    nextCursor: v.union(v.null(), v.string()),
     hasMore: v.boolean(),
   }),
   handler: async (ctx, args) => {
     const batchSize = scoreBatchSize(args.batchSize)
-    const cursor = Math.max(0, Math.floor(args.cursor ?? 0))
+    const after = args.cursor ?? null
 
-    // One past the end of the slice, rather than the whole roster: the extra row
-    // is what answers `hasMore` without reading the 700-odd members this call
-    // will not score. `.collect()` here cost 772 documents *per slice*, which
-    // was affordable at 25 MPs a slice and is 5 % of the budget at 8 — the
-    // paging got finer, so the fixed cost of paging had to stop being paid in
-    // full each time.
-    //
-    // Index order is the same one `.collect()` returned, so a cursor from a
-    // previous slice still means what it meant.
+    // One past the end of the slice: the extra row is what answers `hasMore`
+    // without reading the members this call will not score. The seek is part of
+    // the range rather than a slice of a larger read, which is what makes the
+    // cost independent of how far into the roster this slice sits.
     const window = await ctx.db
       .query("mps")
-      .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .take(cursor + batchSize + 1)
+      .withIndex("by_wahlperiode_and_internalId", (q) =>
+        after === null
+          ? q.eq("wahlperiode", args.wahlperiode)
+          : q.eq("wahlperiode", args.wahlperiode).gt("internalId", after),
+      )
+      .take(batchSize + 1)
 
-    const slice = window.slice(cursor, cursor + batchSize)
+    const slice = window.slice(0, batchSize)
     const now = Date.now()
     for (const mp of slice) {
-      if (args.month !== null) {
-        await computeAndStore(
-          ctx,
-          mp.internalId,
-          args.wahlperiode,
-          args.month,
-          DEFAULT_WEIGHTS,
-          now,
-        )
-      }
-      await computeAndStore(ctx, mp.internalId, args.wahlperiode, null, DEFAULT_WEIGHTS, now)
+      // One call, both rows: `computeAndStore` writes the month (when asked) and
+      // the period total from a single read of the member's period.
+      await computeAndStore(ctx, mp.internalId, args.wahlperiode, args.month, DEFAULT_WEIGHTS, now)
     }
 
     // Strictly more than the slice means a member the `take` saw and this call
     // did not score. An exhausted roster returns a null cursor, which is what
     // stops the sweep rescheduling itself.
-    const hasMore = window.length > cursor + batchSize
-    const nextCursor = cursor + slice.length
-    return { scored: slice.length, nextCursor: hasMore ? nextCursor : null, hasMore }
+    const hasMore = window.length > batchSize
+    return {
+      scored: slice.length,
+      nextCursor: hasMore ? (slice.at(-1)?.internalId ?? null) : null,
+      hasMore,
+    }
   },
 })
 
