@@ -34,3 +34,5 @@ dist/
 
 # os
 .DS_Store
+.vibe/TASK.md
+.vibe/tasks/
