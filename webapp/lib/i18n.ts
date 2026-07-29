@@ -646,8 +646,22 @@ const de = {
   // The signed-out state of the whole page. It is not an error and not a gate:
   // the page renders, says what an account holds, and links to the picker.
   "settings.signedOutTitle": "Ohne Konto gibt es hier nichts zu speichern",
+  // ⚠ Three, and each one named. This said "genau zwei Dinge" and listed the
+  // weights and the follow list — written before this same branch gave
+  // `preferredLocale` a writer, and left behind when `/about`'s privacy note was
+  // corrected to three. "Genau" makes it an enumeration rather than a summary,
+  // and the item it omitted was the language: the one value here that can leave
+  // the device, in a sentence a signed-out reader is using to decide whether to
+  // create an account. The subtitle two lines up already named all three, so the
+  // page contradicted itself.
+  //
+  // Kept in step with `about.privacy.account.body`, which makes the same claim
+  // on another page — including the "sofern Sie das wählen", because the
+  // language is the one of the three that is optional: clearing the preference
+  // stores nothing. Two pages stating the same privacy fact must not drift, and
+  // lib/i18n.test.ts asserts that both name all three.
   "settings.signedOutBody":
-    "Alle Daten dieser Seite sind ohne Anmeldung einsehbar. Ein Konto speichert genau zwei Dinge: eigene Gewichtungen des Aktivitätswerts und die Liste der Abgeordneten, denen Sie folgen.",
+    "Alle Daten dieser Seite sind ohne Anmeldung einsehbar. Ein Konto speichert drei Dinge: eigene Gewichtungen des Aktivitätswerts, die Liste der Abgeordneten, denen Sie folgen, und — sofern Sie das wählen — Ihre Sprache.",
   "settings.weights.title": "Gewichtungen des Aktivitätswerts",
   "settings.weights.description":
     "Diese Gewichtungen gelten überall auf der Seite — im Profil, im Aktivitätsfeed und in jeder Rangliste, die Sie ansehen.",
@@ -2201,7 +2215,7 @@ const en: Dictionary = {
   "settings.subtitle": "Your weightings, your language, and the members you follow.",
   "settings.signedOutTitle": "Without an account there is nothing to save here",
   "settings.signedOutBody":
-    "Everything on this site is viewable without signing in. An account stores exactly two things: your own activity-score weightings and the list of members you follow.",
+    "Everything on this site is viewable without signing in. An account stores three things: your own activity-score weightings, the list of members you follow, and — if you choose — your language.",
   "settings.weights.title": "Activity-score weightings",
   "settings.weights.description":
     "These weightings apply across the site — on profiles, in the activity feed, and in every ranking you look at.",
