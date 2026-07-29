@@ -2,15 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 
 /**
- * A guard on the hydration contract of the header's session-dependent slot.
+ * A guard on the hydration contract of the shell's session-dependent slot.
  *
  * ## The bug
  *
- * `UserMenu` branched straight off `authClient.useSession()`: `<Skeleton>` — a
- * `<div>` — while `isPending`, and the signed-out `<Button asChild><Link>` — an
- * `<a>` — once it was not. The server has no session, so the server HTML always
- * held the `<div>`; on the client the session can resolve before React
- * hydrates, and the first client render then put an `<a>` in that slot.
+ * `UserMenu` — this component, when it was the header's — branched straight off
+ * `authClient.useSession()`: `<Skeleton>` — a `<div>` — while `isPending`, and
+ * the signed-out `<Button asChild><Link>` — an `<a>` — once it was not. The
+ * server has no session, so the server HTML always held the `<div>`; on the
+ * client the session can resolve before React hydrates, and the first client
+ * render then put an `<a>` in that slot.
  *
  * A differing element *type* at the same position throws:
  *
@@ -38,13 +39,21 @@ import { readFileSync } from "node:fs"
  * end-to-end under CPU throttling and is what proved the fix. This buys the
  * cheap half: the tempting "the `mounted` flag is redundant, `isPending`
  * already covers it" cleanup fails here, in CI, rather than on a reader's phone.
+ *
+ * ## Why the file is named for the sidebar now
+ *
+ * The component moved: the account left the header for the foot of the sidebar
+ * (and of the mobile drawer). It is the same component and the same contract —
+ * the guard travels with the code it guards rather than staying behind under
+ * the name of the place it used to live, which is how a test ends up pointing
+ * at a file nobody has.
  */
 
-const source = readFileSync(new URL("./user-menu.tsx", import.meta.url).pathname, "utf8")
+const source = readFileSync(new URL("./sidebar-account.tsx", import.meta.url).pathname, "utf8")
 
 const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
 
-describe("UserMenu cannot change element type on hydration", () => {
+describe("SidebarAccount cannot change element type on hydration", () => {
   test("it gates the first render on a mount flag, not only on isPending", () => {
     // The flag has to exist and be set from an effect — effects run only after
     // hydration commits, which is the whole mechanism.
@@ -61,8 +70,9 @@ describe("UserMenu cannot change element type on hydration", () => {
 
   test("the signed-out branch still renders a link to /sign-in", () => {
     // Guarding the opposite over-correction: a version that renders the
-    // skeleton forever would pass the checks above and leave the header with no
-    // way to sign in at all.
+    // skeleton forever would pass the checks above and leave the site with no
+    // way to sign in at all — and since the header no longer carries an account
+    // control, there would be no second one to fall back to.
     expect(withoutComments).toMatch(/href="\/sign-in"/)
   })
 })

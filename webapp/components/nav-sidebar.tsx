@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useLocale } from "@/components/providers/locale-provider"
 import { useSidebar } from "@/components/providers/sidebar-provider"
-import { SidebarToggle } from "@/components/sidebar-toggle"
+import { SidebarAccount } from "@/components/sidebar-account"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   isActivePath,
@@ -30,8 +30,9 @@ import { cn } from "@/lib/utils"
  * Taken: the shell shape (a fixed rail beside a content column that reflows
  * around it, rather than an overlay that covers it), `collapsible="icon"`
  * semantics, a persisted collapse state, `Ctrl/⌘+B`, tooltips standing in for
- * the labels the collapsed state hides, and grouped sections with a label over
- * each.
+ * the labels the collapsed state hides, grouped sections with a label over
+ * each, the trigger at the far left of the header rather than inside the rail,
+ * and the account at the rail's foot.
  *
  * Not taken: shadcn's `sidebar.tsx` itself, all 773 lines of it. That file
  * carries a mobile `Sheet` branch driven by a `useIsMobile` media-query hook, a
@@ -173,14 +174,17 @@ export function NavSidebar() {
         </div>
       </nav>
 
-      {/* The collapse control, at the bottom edge and pinned there by the
-          nav's `flex-1` above it. Bottom rather than top because the top of
-          the rail is where the reader's eye starts on the *navigation*, and a
-          control that changes the chrome should not be the first thing in a
-          list of destinations. `mt-auto` is not needed — the nav already
-          absorbs the slack. */}
+      {/* The account, at the bottom edge and pinned there by the nav's `flex-1`
+          above it. `mt-auto` is not needed — the nav already absorbs the slack.
+
+          This slot used to hold the collapse control. That moved to the far
+          left of the header (components/sidebar-toggle.tsx), which left the
+          foot of the rail free for the thing an app shell conventionally puts
+          there and this site had nowhere good for: the reader's own account.
+          It is the header's `<UserMenu />` moved rather than copied — see
+          components/sidebar-account.tsx on why there is not one of each. */}
       <div className="border-border/60 border-t p-2">
-        <SidebarToggle expanded={expanded} />
+        <SidebarAccount expanded={expanded} />
       </div>
     </div>
   )

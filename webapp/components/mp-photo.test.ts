@@ -20,15 +20,18 @@ import { join } from "node:path"
  * pipeline honours that on the way in by dropping any portrait that arrives
  * without one.
  *
- * `components/user-menu.tsx` is the one legitimate exception: that avatar is the
- * signed-in reader's own OAuth picture from Google, not a Bundestag portrait,
- * and it carries no such condition.
+ * `components/sidebar-account.tsx` is the one legitimate exception: that avatar
+ * is the signed-in reader's own OAuth picture from Google, not a Bundestag
+ * portrait, and it carries no such condition. It was `components/user-menu.tsx`
+ * until the account moved from the header to the foot of the sidebar; the
+ * exemption moved with it rather than being added beside it, because there is
+ * still exactly one avatar on this site that is not an MP.
  */
 
 const COMPONENTS_DIR = join(import.meta.dir)
 
 /** The reader's own OAuth avatar — not an MP portrait. See the header. */
-const ALLOWED = new Set(["user-menu.tsx", "mp-photo.tsx"])
+const ALLOWED = new Set(["sidebar-account.tsx", "mp-photo.tsx"])
 
 function componentFiles(): string[] {
   return readdirSync(COMPONENTS_DIR)

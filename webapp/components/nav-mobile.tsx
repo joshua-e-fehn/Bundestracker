@@ -5,6 +5,7 @@ import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
+import { SidebarAccount } from "@/components/sidebar-account"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import {
@@ -137,6 +138,32 @@ export function NavMobile({ className }: { className?: string }) {
             <DrawerLink item={NAV_SEARCH} pathname={pathname} />
           </div>
         </nav>
+
+        {/* The account, at the foot of the drawer — the same slot the sidebar
+            gives it at `lg` and up, for the same reason. It is here because the
+            header no longer carries `<UserMenu />`: with the account moved into
+            the rail, a phone would otherwise have no way to sign in or out at
+            all, since the rail is `hidden` below `lg`.
+
+            `mt-auto` rather than simply last in flow: the drawer is a column
+            and the nav above it does not grow, so on a *short* list this would
+            float mid-panel under the last group instead of at the bottom edge.
+
+            `sticky bottom-0` for the opposite case, which is the one that
+            actually happens: the tree is 1168 px tall and a 390×844 phone shows
+            about two thirds of it, so a footer merely last in flow is below the
+            fold and a reader who opened the menu to sign in finds no account at
+            all without scrolling past every destination. Sticky pins it to the
+            panel's bottom edge in both cases. The background is opaque rather
+            than the sheet's own — rows scroll *under* this, and a translucent
+            strip would show them through it.
+
+            `expanded` is unconditionally true — the drawer is 320 px wide and
+            shows every label already, so the collapsed icon-only variant, which
+            exists for a 3.5 rem rail, has nothing to solve here. */}
+        <div className="sticky bottom-0 mt-auto border-border/60 border-t bg-background p-3">
+          <SidebarAccount expanded />
+        </div>
       </SheetContent>
     </Sheet>
   )

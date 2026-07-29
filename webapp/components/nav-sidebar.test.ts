@@ -125,6 +125,67 @@ describe("the collapsed rail stays readable", () => {
   })
 })
 
+describe("the shell's controls are each in one place", () => {
+  const toggle = strip(read("./sidebar-toggle.tsx"))
+  const account = strip(read("./sidebar-account.tsx"))
+  const drawer = strip(read("./nav-mobile.tsx"))
+
+  test("the collapse control is in the header, before the brand", () => {
+    // Fiscalis's placement (frontend/components/atomic/organisms/header.tsx:28)
+    // and the point of moving it: collapsed to 3.5 rem, the only way back to
+    // the labels used to be a 28 px glyph at the bottom of a column of ten
+    // other glyphs, below the fold on a short window. The control over the
+    // shell now sits at a fixed screen position in both states.
+    expect(header).toMatch(/<SidebarToggle/)
+    const toggleAt = header.indexOf("<SidebarToggle")
+    const brandAt = header.indexOf("<BrandMark")
+    expect({ toggleBeforeBrand: toggleAt !== -1 && toggleAt < brandAt }).toEqual({
+      toggleBeforeBrand: true,
+    })
+  })
+
+  test("there is no second collapse control in the rail", () => {
+    // The duplicate is the failure mode a move invites: two buttons wired to
+    // the same `toggle()`, one of which a reader has to discover. The rail
+    // renders the account in that slot now and nothing else.
+    expect(sidebar).not.toMatch(/<SidebarToggle/)
+    expect(sidebar).toMatch(/<SidebarAccount expanded=\{expanded\} \/>/)
+  })
+
+  test("the toggle is hidden where there is no sidebar to collapse", () => {
+    // Below `lg` the rail is `hidden`, so an enabled trigger would be a button
+    // that toggles a thing that is not on screen. Paired with the rail's own
+    // `lg:flex` and the drawer's `lg:hidden`, like every other breakpoint here.
+    expect(header).toMatch(/<SidebarToggle className="[^"]*\blg:inline-flex\b/)
+    expect(header).toMatch(/<SidebarToggle className="[^"]*\bhidden\b/)
+  })
+
+  test("the toggle works without being handed the state", () => {
+    // The header does not render the rail and has no reason to hold its state,
+    // so the prop is optional and context is the fallback. A required prop here
+    // is what would push the header into subscribing on the rail's behalf.
+    expect(toggle).toMatch(/expanded\?: boolean/)
+    expect(toggle).toMatch(/expandedProp \?\? expandedContext/)
+  })
+
+  test("the account is in the rail and the drawer, and not in the header", () => {
+    // One account control per surface, and never two on one screen. The header
+    // had `<UserMenu />`; that component is deleted rather than left beside
+    // this, because two avatars wired to the same session is the "second way to
+    // do something that already exists" the protocol rules out.
+    expect(header).not.toMatch(/UserMenu|SidebarAccount/)
+    expect(drawer).toMatch(/<SidebarAccount expanded \/>/)
+  })
+
+  test("the account routes to the real sign-in page rather than a new one", () => {
+    // No invented settings route: `/sign-in` exists and owns the OAuth call
+    // (components/sign-in-panel.tsx), and signing out goes through the same
+    // `authClient` the header's menu used.
+    expect(account).toMatch(/href="\/sign-in"/)
+    expect(account).toMatch(/authClient\.signOut\(\)/)
+  })
+})
+
 describe("the active state keeps the PR #41 correction", () => {
   test("aria-current comes from navCurrent, not from the prefix match", () => {
     // `isActivePath` is a *prefix* match and drives the gold rule — that is

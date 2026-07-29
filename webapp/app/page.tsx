@@ -154,7 +154,14 @@ function Opening() {
 
   return (
     <header className="grid max-w-3xl gap-6">
-      <BrandMark className="size-16 text-gold-brand" />
+      {/* 80 px on a phone, 112 px from `sm` up — was a flat 64. This is a title
+          page and the mark is its frontispiece; the emblem's detail (the ring,
+          the banded feathers) only resolves at this size. It is `size-*` on a
+          square image, so it cannot widen the grid track the `<h1>` shares: 112
+          px is well inside even the 288 px content box at 320 px, and the step
+          below keeps the mark from taking a fifth of a small phone's first
+          screen before the title has been read. */}
+      <BrandMark className="size-20 text-gold-brand sm:size-28" />
 
       <div className="grid gap-3">
         {/* The document's own title above the site's name, in the gold ink
