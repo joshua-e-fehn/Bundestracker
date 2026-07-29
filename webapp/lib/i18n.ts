@@ -633,7 +633,13 @@ const de = {
   // gestapelt, weil die Frage nach der monatlichen Gesamtmenge zusammen mit
   // ihrer Zusammensetzung nur so beantwortet wird; keiner der anderen fünf
   // Reiter tut das.
-  "trends.chart.legislative": "Papiere",
+  //
+  // Beschriftung „Papiere gesamt" statt nur „Papiere": der Reiter sitzt neben
+  // „Anträge", der nur zwei der drei Segmente zeigt (Anträge und
+  // Gesetzentwürfe nebeneinander, nicht summiert). Ohne das Adjektiv liest
+  // eine Leserin die zwei Reiter als denselben Inhalt in zwei Darstellungen;
+  // mit ihm wird sichtbar, dass dieser die Summe aller Papierarten ist.
+  "trends.chart.legislative": "Papiere gesamt",
   "trends.chart.legislative.desc":
     "Von diesem Mandat eingebrachte Dokumente je Monat: Anträge, Gesetzentwürfe und Berichte gestapelt. Die Höhe eines Balkens ist die Gesamtmenge des Monats; die Segmente zeigen, aus welcher Kategorie sie sich zusammensetzt.",
   "trends.cumulative": "Kumuliert",
@@ -956,7 +962,14 @@ const de = {
   // trägt Titel, Datum, Vorgangstyp, Drucksachennummer — und ein erfundener
   // Verfahrensstand wäre genau die Art plausibler falscher Angabe, die dieses
   // Projekt vermeidet.
-  "motions.title": "Anträge & Drucksachen",
+  // Der Titel deckt sich bewusst mit dem Sidebar-Eintrag. Ein Reader, der
+  // nach „Anfragen“ sucht, fand den früheren, engeren Titel „Anträge“ nicht
+  // — die Seite listet Kleine und Große Anfragen genauso wie Anträge und
+  // Gesetzentwürfe. „Drucksachen“ ist der einzige Begriff der DIP-Praxis,
+  // der alle diese Dokumentklassen genau einmal umfasst, deshalb steht er
+  // sowohl im Sidebar als auch als H1. Der Untertitel schlüsselt die vier
+  // Klassen darunter auf.
+  "motions.title": "Drucksachen",
   "motions.subtitle":
     "Vorgänge und Drucksachen einer Wahlperiode — Anträge, Anfragen, Gesetzentwürfe und Berichte, wie das Dokumentations- und Informationssystem des Bundestages sie veröffentlicht.",
   // Der Hinweis, der die ganze Seite regiert: Der Datensatz sagt, dass etwas
@@ -978,15 +991,19 @@ const de = {
     "Die Vorgangsarten stammen aus den jüngsten Einträgen dieser Wahlperiode. Ältere, selten genutzte Arten können in der Auswahl fehlen; die Volltextsuche erreicht sie trotzdem.",
   "motions.kindCountAtLeast": "{value} ({count}+)",
   "motions.kindCount": "{value} ({count})",
-  "motions.columnDate": "Datum",
-  "motions.columnTitle": "Titel",
-  "motions.columnKind": "Vorgangsart",
-  "motions.columnDrucksache": "Drucksache",
   // Drei verschiedene Leerzustände, drei verschiedene Aussagen.
   "motions.empty": "Kein Vorgang passt zu diesen Filtern.",
   "motions.emptyAll": "Für diese Wahlperiode wurden noch keine Vorgänge geladen.",
   "motions.loaded": "{count} Vorgänge geladen",
   "motions.end": "Ende der Liste.",
+  // Der Zwischenzustand, der aus zwei richtigen Antworten der Datenbank
+  // entsteht und ohne Erklärung wie eine dritte, falsche liest: die Suche
+  // hat auf der geladenen Seite nichts gefunden, das Werk der Suche über
+  // spätere Seiten geht aber weiter. Der Hinweis ergänzt den „Weitere
+  // laden"-Knopf darunter — ohne ihn liest sich das leere `<ul>` als
+  // Endzustand.
+  "motions.searchedNothingYetHasMore":
+    "Auf dieser geladenen Seite passt kein Titel zu Ihrer Suche. Weitere Seiten sind noch nicht durchsucht — mit „Weitere laden“ reichen Sie die Suche in den restlichen Bestand hinein.",
   // Die Zeile unter dem Titel. Nur was die Zeile wirklich trägt; fehlende
   // Felder erscheinen gar nicht, statt als Strich.
   "motions.sponsors": "Mitzeichnende",
@@ -1002,17 +1019,23 @@ const de = {
   "motions.sponsorsCaveat":
     "Erfasst sind die Mitzeichnenden, die bislang als personenbezogene Aktivität vorliegen. Die Datenquelle veröffentlicht die Urheberliste eines Dokuments nur gekürzt, deshalb ist diese Zahl eine Untergrenze und nicht die Zahl der Unterschriften.",
   "motions.openDrucksache": "Drucksache (PDF)",
-  // Kein Link auf den Vorgang selbst: dip.bundestag.de beantwortet auch
-  // erfundene Vorgangsnummern mit HTTP 200 und einer leeren Seite, sodass ein
-  // toter Link nicht als toter Link erkennbar wäre. Nur die Drucksachen-PDF,
-  // deren Adresse §8 deterministisch belegt, wird verlinkt.
+  // Kein Link auf den Vorgang selbst. Für die Drucksachen-PDF steht in §8
+  // der API-Recherche eine deterministische Adressform, die aus der
+  // Drucksachennummer allein rekonstruierbar ist — ohne so eine Zusicherung
+  // für Vorgang-Landing-Seiten wollen wir keinen Link auf eine URL
+  // konstruieren, die im Zweifel eine leere Seite mit HTTP 200 wäre. Also
+  // nur die verifizierbare PDF.
   "motions.noDocument": "Kein verlinkbares Dokument",
   "motions.noDocumentHint":
     "Für diesen Vorgang ist keine Bundestags-Drucksachennummer erfasst — ohne sie lässt sich keine Adresse bilden, die nachweislich auf dasselbe Dokument zeigt.",
 
   // --- site chrome, homepage and footer ---
   "nav.votes": "Abstimmungen",
-  "nav.motions": "Anträge",
+  // „Drucksachen" statt „Anträge": die Seite listet Anträge, Anfragen,
+  // Gesetzentwürfe und Berichte — der frühere, engere Titel ließ eine
+  // Leserin, die nach Anfragen suchte, den Eintrag übersehen. Der Untertitel
+  // `nav.motionsHint` schlüsselt die vier Klassen weiterhin auf.
+  "nav.motions": "Drucksachen",
   "nav.menu": "Menü",
   "nav.openMenu": "Menü öffnen",
   "nav.closeMenu": "Menü schließen",
@@ -2340,7 +2363,11 @@ const en: Dictionary = {
   "trends.chart.votes": "Votes",
   "trends.chart.votes.desc":
     "Named ballots per month, by the vote cast. “Did not vote” is shown separately and is not an abstention.",
-  "trends.chart.legislative": "Papers",
+  // "All papers", not just "Papers": this tab sits next to "Motions",
+  // which draws two of the three segments side by side rather than summed.
+  // Without the qualifier the two labels read as the same content in two
+  // shapes; with it, this reads as the total.
+  "trends.chart.legislative": "All papers",
   "trends.chart.legislative.desc":
     "Documents this member put their name to per month: motions, bills and reports, stacked. A bar's height is the month's total; the segments show which class it came from.",
   "trends.cumulative": "Cumulative",
@@ -2572,7 +2599,12 @@ const en: Dictionary = {
   "votes.rebelTooltip": "Voted against the majority of their own parliamentary group.",
 
   // --- motions, questions and bills (/motions) ---
-  "motions.title": "Motions & papers",
+  // Title matches the sidebar label deliberately. The earlier, narrower
+  // "Motions & papers" competed with the /motions trend chart's "Motions"
+  // tab and undersold the four document classes (motions, questions, bills,
+  // reports) the page covers; "Papers" is the single English term that
+  // covers all four exactly once. The subtitle enumerates them.
+  "motions.title": "Papers",
   "motions.subtitle":
     "Procedures and printed papers of one electoral period — motions, questions, bills and reports, as the Bundestag's documentation system publishes them.",
   "motions.recordOnlyNotice":
@@ -2587,14 +2619,17 @@ const en: Dictionary = {
     "The procedure types are drawn from this period's most recent entries. Older, rarely used types may be missing from the list; the title search still reaches them.",
   "motions.kindCountAtLeast": "{value} ({count}+)",
   "motions.kindCount": "{value} ({count})",
-  "motions.columnDate": "Date",
-  "motions.columnTitle": "Title",
-  "motions.columnKind": "Procedure type",
-  "motions.columnDrucksache": "Paper",
   "motions.empty": "No procedure matches these filters.",
   "motions.emptyAll": "No procedures have been loaded for this electoral period yet.",
   "motions.loaded": "{count} procedures loaded",
   "motions.end": "End of the list.",
+  // The middle state that sums two correct answers from the database and,
+  // without an explanation, reads as a third and wrong one: the search
+  // found nothing on the loaded page, but the search across the remaining
+  // pages has not been run. The hint annotates the "Load more" button
+  // below — without it, the empty `<ul>` reads as an end state.
+  "motions.searchedNothingYetHasMore":
+    "No titles on this loaded page match your search. Further pages have not yet been searched — “Load more” carries the search into the rest of the corpus.",
   "motions.sponsors": "Co-signatories",
   "motions.sponsorsLoading": "Loading co-signatories …",
   "motions.sponsorsNone": "No co-signatories are recorded for this procedure.",
@@ -2610,7 +2645,11 @@ const en: Dictionary = {
 
   // --- site chrome, homepage and footer ---
   "nav.votes": "Votes",
-  "nav.motions": "Motions",
+  // "Papers", not "Motions": see the note on the German counterpart. The
+  // page's four document classes — motions, questions, bills, reports —
+  // are all Drucksachen / papers, and the earlier label made a reader
+  // scanning for "Questions" look elsewhere.
+  "nav.motions": "Papers",
   "nav.menu": "Menu",
   "nav.openMenu": "Open menu",
   "nav.closeMenu": "Close menu",

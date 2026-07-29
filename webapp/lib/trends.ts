@@ -241,7 +241,9 @@ export function buildTrendSeries(rows: readonly MonthlyScoreRow[]): TrendPoint[]
  *
  * Four of the six carry a caveat, and they are the four where a low bar could
  * be read as a finding the sources do not support — the three structural limits
- * lib/scoring.ts sets out, plus this one:
+ * lib/scoring.ts sets out (speeches, votes, activity), plus the new one on the
+ * sixth chart (legislative), added because reports are rare enough that a
+ * missing top segment must not be read as "never writes any":
  *
  *  - **speeches** — §5.2: a segment is one turn at the floor, so question time
  *    inflates the count. The word count is drawn alongside rather than instead,
@@ -251,6 +253,11 @@ export function buildTrendSeries(rows: readonly MonthlyScoreRow[]): TrendPoint[]
  *  - **activity** — the score is a weighted sum whose weighting is a choice
  *    (lib/scoring.ts), and a line going up is worth less if the reader cannot
  *    see that.
+ *  - **legislative** — the third structural fact this chart makes visible:
+ *    reports (Bericht) are rare on the record and a stacked bar without one
+ *    is the normal case rather than an absence to interpret. See the tab's
+ *    own caveat and the header of `id: "legislative"` below for the measured
+ *    numbers.
  */
 export type TrendChartKind = "line" | "bar" | "stackedBar" | "area"
 

@@ -2,7 +2,7 @@
 
 import { usePaginatedQuery, useQuery } from "convex/react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useDeferredValue, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { CaveatNote } from "@/components/caveat-note"
 import { ALL, FilterSelect } from "@/components/filter-select"
 import { MotionSponsors } from "@/components/motion-sponsors"
@@ -14,7 +14,18 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { drucksachePdfUrl } from "@/lib/bundestag"
 import { formatCount, formatDateShort } from "@/lib/format"
-import { MOTION_KIND_PARAM, MOTION_QUERY_PARAM, MOTION_YEAR_PARAM } from "@/lib/motions"
+import {
+  MOTION_KIND_PARAM,
+  MOTION_QUERY_PARAM,
+  MOTION_YEAR_PARAM,
+  normalizeMotionKind,
+  normalizeMotionYear,
+} from "@/lib/motions"
+import {
+  initSearchSync,
+  reduceSearchSync,
+  type SearchSyncAction,
+} from "@/lib/motion-search-sync"
 
 /**
  * The motions list — `/motions`.
@@ -40,10 +51,13 @@ import { MOTION_KIND_PARAM, MOTION_QUERY_PARAM, MOTION_YEAR_PARAM } from "@/lib/
  * `components/search-page.tsx`: a colleague opening `?kind=Kleine+Anfrage&year=2026`
  * sees the same page, and the back button undoes a filter rather than leaving
  * the site. The reader's *typing* is different in kind — every keystroke would
- * be a history entry — so the box holds local state and commits to the URL when
- * the deferred value settles. `replace`, not `push`, for the reason
- * `search-page.tsx` gives: adjusting a filter refines one query rather than
- * starting a new one.
+ * be a history entry — so the box holds local state and commits to the URL
+ * through a debounced *event-handler write*, never through a URL-observing
+ * effect. That distinction is what stops the browser Back button flapping the
+ * URL back to its post-Reset form on a return to a shared-link entry — see
+ * lib/motion-search-sync.ts for the full reducer and the regression test.
+ * `replace`, not `push`, for the reason `search-page.tsx` gives: adjusting a
+ * filter refines one query rather than starting a new one.
  *
  * ## Short pages are honest here, and the count is what says so
  *
@@ -54,6 +68,14 @@ import { MOTION_KIND_PARAM, MOTION_QUERY_PARAM, MOTION_YEAR_PARAM } from "@/lib/
  * empty state is therefore only shown once the source is `Exhausted`; until then
  * a page with no visible rows still has more behind it.
  */
+
+/** Milliseconds between the last keystroke and the URL write. Long enough
+ * that a typist crosses "asyl" in one commit instead of four; short enough
+ * that a paused hand sees the shared-linkable URL update. Same order of
+ * magnitude as `useDeferredValue`'s effective delay, restated as a timer
+ * because the debounce has to be *cancellable* from a URL-observing effect
+ * — see lib/motion-search-sync.ts. */
+const SEARCH_DEBOUNCE_MS = 300
 
 /** Rows per fetch. Matches `/votes`' page size so the two lists feel alike. */
 const PAGE_SIZE = 25
@@ -80,19 +102,38 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
   const router = useRouter()
   const params = useSearchParams()
 
-  const kind = params.get(MOTION_KIND_PARAM) ?? ALL
-  const year = params.get(MOTION_YEAR_PARAM) ?? ALL
+  // Normalised at the boundary — the URL can carry anything a reader typed
+  // into the address bar, and `?year=abc` or `?kind=` would otherwise reach
+  // Convex as an index-selects-nothing query that renders as "no match" for
+  // a period that has matches. See lib/motions.ts for the rules.
+  const kind = normalizeMotionKind(params.get(MOTION_KIND_PARAM)) ?? ALL
+  const year = normalizeMotionYear(params.get(MOTION_YEAR_PARAM)) ?? ALL
   const urlQuery = params.get(MOTION_QUERY_PARAM) ?? ""
 
-  // The box's own state, so typing does not write a history entry per keystroke.
-  // Seeded from the URL and resynced when the URL changes from elsewhere — the
-  // reset button, the back button, a shared link.
-  const [search, setSearch] = useState(urlQuery)
-  const deferredSearch = useDeferredValue(search)
+  // The search box's state machine — see lib/motion-search-sync.ts for the
+  // full reducer, the invariants and the test that pins them. The short of
+  // it: local state so typing does not write per-keystroke history entries,
+  // a debounced commit on user input, and — crucially — no URL-observing
+  // effect that writes back, so browser Back/Forward cannot flap.
+  //
+  // `useState` rather than `useReducer` because the reducer returns both a
+  // new state and an effect and React's `useReducer` signature is
+  // state-only. The dispatch wrapper below applies the reducer, commits
+  // the state, and runs the emitted effect against the current `setParam`.
+  //
+  // A ref mirrors the committed state so the debounce timer, which fires
+  // outside React's render cycle, sees whatever landed last. Reading
+  // `syncState` in a closure would freeze the state at whichever render
+  // created the handler, and Strict Mode's double-invocation of pure
+  // updaters would run the reducer twice against a live outer capture —
+  // the reason an earlier attempt at capturing the effect inside the
+  // functional updater ate every commit on the second pass.
+  const [syncState, setSyncState] = useState(() => initSearchSync(urlQuery))
+  const syncStateRef = useRef(syncState)
+  syncStateRef.current = syncState
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    setSearch(urlQuery)
-  }, [urlQuery])
+  const search = syncState.local
 
   /**
    * Rewrites one parameter, preserving the rest.
@@ -112,13 +153,78 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
     [params, router],
   )
 
-  // The typed query reaches the URL once it settles, so a shared link carries
-  // what the reader was looking at without the address bar flickering per key.
+  /**
+   * The one point where the reducer's effect is turned into a real URL
+   * write. Every branch here goes through it, so the invariants in
+   * lib/motion-search-sync.ts hold at runtime as well as on paper.
+   *
+   * `setSyncState`'s functional form runs the reducer against the *latest*
+   * committed state — necessary because two rapid transitions (a keystroke
+   * plus a debounce fire) can both touch state before React re-renders, and
+   * a closure over the stale value would decide the second one wrongly.
+   *
+   * The URL write lives *outside* the updater. Calling `router.replace`
+   * inside a `setState` updater triggers Next's own state update while
+   * MotionList is rendering, which React logs as *"Cannot update a
+   * component while rendering a different component"*. Capturing the
+   * emitted effect and applying it once the updater returns keeps the
+   * update within one render and no more.
+   */
+  const dispatchSync = useCallback(
+    (action: SearchSyncAction) => {
+      // Reduce once, against the latest committed state via the ref. Not
+      // inside a functional `setState` updater: Strict Mode double-invokes
+      // those, which would run the reducer twice on the second pass see
+      // `pending` already cleared and drop the emitted effect. This
+      // pattern reduces exactly once, so the effect is captured exactly
+      // once and the URL write is emitted exactly once.
+      const { next, effect } = reduceSearchSync(syncStateRef.current, action)
+      syncStateRef.current = next
+      setSyncState(next)
+      if (effect !== null && effect.type === "commit") {
+        const trimmed = effect.value.trim()
+        setParam(MOTION_QUERY_PARAM, trimmed === "" ? null : trimmed)
+      }
+    },
+    [setParam],
+  )
+
+  // Adopt whatever the URL now carries — `?q=…` from Back, Forward, Reset, a
+  // shared link, or a sibling filter's URL write. The reducer guarantees this
+  // never emits a URL write of its own; the pending timer is cleared here to
+  // match the state transition (`pending` becomes `null`), so an old
+  // keystroke's timer cannot commit against the new URL.
   useEffect(() => {
-    const trimmed = deferredSearch.trim()
-    if (trimmed === urlQuery) return
-    setParam(MOTION_QUERY_PARAM, trimmed === "" ? null : trimmed)
-  }, [deferredSearch, urlQuery, setParam])
+    dispatchSync({ type: "urlChanged", urlQuery })
+    if (debounceRef.current !== null) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+  }, [urlQuery, dispatchSync])
+
+  // On unmount, drop any pending timer so a delayed commit cannot navigate a
+  // gone component. Runs once — the effect above handles the mid-life cases.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current !== null) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  const handleSearchInput = useCallback(
+    (value: string) => {
+      dispatchSync({ type: "userTyped", value })
+      if (debounceRef.current !== null) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        debounceRef.current = null
+        // The `commitFired` transition is the one that emits the URL-write
+        // effect. The reducer inspects the current `pending` value against
+        // the value the timer carried and drops itself if they diverged
+        // (a newer keystroke replaced it, or a `urlChanged` cleared it).
+        dispatchSync({ type: "commitFired", value })
+      }, SEARCH_DEBOUNCE_MS)
+    },
+    [dispatchSync],
+  )
 
   const options = useQuery(api.motions.getMotionFilterOptions, { wahlperiode })
 
@@ -138,6 +244,16 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
 
   const filtersActive = kind !== ALL || year !== ALL || search !== ""
   const isLoadingFirstPage = status === "LoadingFirstPage"
+  // The searched-but-empty-with-more-behind case: the pager still has pages
+  // to yield, and this one filtered every visible row away. The list below
+  // otherwise renders an empty `<ul>` with no explanation of why the "load
+  // more" button underneath might still find matches — see the caveat that
+  // consumes this.
+  const searchedNothingYetHasMore =
+    searching &&
+    results.length === 0 &&
+    !isLoadingFirstPage &&
+    (status === "CanLoadMore" || status === "LoadingMore")
 
   /**
    * Clears this page's three filters and nothing else.
@@ -154,7 +270,16 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
    * press rather than walking back through two half-cleared states.
    */
   function reset() {
-    setSearch("")
+    // The visible state clears immediately; the URL follows below. The
+    // reducer's `urlChanged` will land on the next render once the
+    // `router.replace` propagates through `useSearchParams`, so this is
+    // belt-and-braces — the box is empty in the same frame the click fired
+    // rather than waiting on the round-trip.
+    dispatchSync({ type: "urlChanged", urlQuery: "" })
+    if (debounceRef.current !== null) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
     const next = new URLSearchParams(params.toString())
     for (const key of [MOTION_KIND_PARAM, MOTION_YEAR_PARAM, MOTION_QUERY_PARAM]) {
       next.delete(key)
@@ -177,8 +302,14 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
           <Label htmlFor="motion-search">{t("motions.searchLabel")}</Label>
           <Input
             id="motion-search"
+            // `type="search"` is the site-wide contract set by
+            // components/search-bar.tsx and components/mp-table.tsx: it
+            // surfaces the mobile keyboard's "Search" key and the browser's
+            // native ✕-clear affordance, both of which a plain text input
+            // hides. Same benefit here, no cost.
+            type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => handleSearchInput(event.target.value)}
             placeholder={t("motions.searchPlaceholder")}
           />
         </div>
@@ -246,11 +377,21 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
               : t("motions.emptyAll")}
         </p>
       ) : (
-        <ul className="flex list-none flex-col gap-2 p-0">
-          {results.map((motion) => (
-            <MotionRow key={motion.id} motion={motion} />
-          ))}
-        </ul>
+        <>
+          {/* An empty page during a title search does not mean "no matches" —
+              the header explains why. Without this cue the reader sees an
+              empty box and a "load more" button and has to infer the
+              relationship between them; with it, the button reads as an
+              action rather than as a fallback for a broken empty state. */}
+          {searchedNothingYetHasMore ? (
+            <CaveatNote>{t("motions.searchedNothingYetHasMore")}</CaveatNote>
+          ) : null}
+          <ul className="flex list-none flex-col gap-2 p-0">
+            {results.map((motion) => (
+              <MotionRow key={motion.id} motion={motion} />
+            ))}
+          </ul>
+        </>
       )}
 
       <div className="flex flex-col items-center gap-3">

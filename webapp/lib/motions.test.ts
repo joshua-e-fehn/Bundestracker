@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import { normalizeMotionKind, normalizeMotionYear } from "./motions"
 import { foldedTextMatches, foldSearchQuery, indexableText } from "./search"
 
 /**
@@ -157,5 +158,145 @@ describe("the title filter matches on the search index's rules", () => {
     // whole period" — which is what a `.includes("")` would have done.
     expect(matches("Antrag: Bürokratieabbau", "???")).toBe(false)
     expect(matches("Antrag: Bürokratieabbau", "   ")).toBe(false)
+  })
+})
+
+describe("URL normalisation at the /motions boundary", () => {
+  /**
+   * The URL is the untrusted input to this page — a bookmark, a hand-edit,
+   * a shared link from an older revision. `normalizeMotion*` are the guards
+   * that stop a malformed value reaching the Convex query as "an
+   * index-selects-nothing filter", which renders as "no match" for a
+   * period that has matches. The alternative to normalising here would be
+   * silently lying to the reader with a chrome-driven empty state.
+   */
+
+  test("a four-digit year passes through unchanged", () => {
+    expect(normalizeMotionYear("2026")).toBe("2026")
+    expect(normalizeMotionYear("2019")).toBe("2019")
+  })
+
+  test("a malformed year is dropped rather than reaching the date bound", () => {
+    // `abc-01-01`..`abc-12-31` sits lexicographically *above* every stored
+    // ISO date, so the query would answer zero and the UI would render "no
+    // match" for a period with matches. Same for a non-integer, an empty
+    // string, or a value from a client that forgot to normalise.
+    for (const bogus of ["abc", "", "20abc", "2026-01", "12345", " 2026", "2026 "]) {
+      expect(normalizeMotionYear(bogus)).toBeNull()
+    }
+    expect(normalizeMotionYear(null)).toBeNull()
+    expect(normalizeMotionYear(undefined)).toBeNull()
+  })
+
+  test("a non-empty kind passes through, trimmed", () => {
+    // `vorgangstyp` is an open string on DIP so this cannot validate against
+    // a vocabulary. The one guarantee it can offer is that the value is not
+    // the empty string, which Radix's Select reserves for "no selection" and
+    // which no motion actually carries.
+    expect(normalizeMotionKind("Kleine Anfrage")).toBe("Kleine Anfrage")
+    expect(normalizeMotionKind("  Antrag  ")).toBe("Antrag")
+  })
+
+  test("an empty kind is dropped rather than reaching the query as `''`", () => {
+    // `?kind=` is reachable — a bookmark of a partly-cleared filter state,
+    // or a hand-edited URL. `getMotionsPage(vorgangstyp: "")` would select
+    // rows whose kind is literally the empty string (none), reading as "no
+    // match" for a period whose motions all have a real kind.
+    for (const bogus of ["", "  ", "\t"]) {
+      expect(normalizeMotionKind(bogus)).toBeNull()
+    }
+    expect(normalizeMotionKind(null)).toBeNull()
+    expect(normalizeMotionKind(undefined)).toBeNull()
+  })
+})
+
+describe("getMotionFilterOptions bounds its reads independently of DIP's vocabulary", () => {
+  /**
+   * The read-cost story. `vorgangstyp` is an open string, so the count of
+   * distinct kinds a period holds is not bounded by the schema — it grows
+   * whenever DIP publishes a new procedure kind. Left unbounded, this
+   * query's worst-case reads are
+   *   DISCOVERY_SCAN + 1 + 1 + N * OPTION_COUNT_CEILING
+   * where N is the discovered vocabulary size. Convex's 16 384-doc
+   * transaction cap is reached at N = 32.
+   *
+   * `KIND_FANOUT_LIMIT` is what stops that. Read from the source so the two
+   * constants — the limit and the reasoning about the cap — cannot drift
+   * silently apart; the schema-index tests above use the same instrument
+   * for the same reason.
+   */
+  function motionsSource() {
+    return readFileSync(new URL("../convex/motions.ts", import.meta.url).pathname, "utf8")
+  }
+
+  test("KIND_FANOUT_LIMIT is declared and small enough to stay under the transaction cap", () => {
+    const source = motionsSource()
+    const kindLimit = /const KIND_FANOUT_LIMIT = (\d+)/.exec(source)?.[1]
+    const optionCeiling = /const OPTION_COUNT_CEILING = (\d+)/.exec(source)?.[1]
+    const discoveryScan = /const DISCOVERY_SCAN = (\d+)/.exec(source)?.[1]
+
+    if (kindLimit === undefined) throw new Error("KIND_FANOUT_LIMIT not found in motions.ts")
+    if (optionCeiling === undefined) throw new Error("OPTION_COUNT_CEILING not found in motions.ts")
+    if (discoveryScan === undefined) throw new Error("DISCOVERY_SCAN not found in motions.ts")
+
+    const worst =
+      Number(discoveryScan) + 1 + 1 + Number(kindLimit) * Number(optionCeiling)
+    // Convex hard cap. Well under it, with headroom for the read costs the
+    // caller-side code also accrues in the same transaction.
+    expect(worst).toBeLessThan(16_384)
+    // And the fanout is genuinely bounded — a `> N` grows with DIP and is
+    // the whole problem this constant addresses.
+    expect(Number(kindLimit)).toBeGreaterThan(0)
+    expect(Number(kindLimit)).toBeLessThanOrEqual(30)
+  })
+
+  /**
+   * The handler body of `getMotionFilterOptions`, isolated by anchoring on
+   * the `export const getMotionFilterOptions` declaration and taking
+   * everything up to (but not including) the *next* `export const` in the
+   * file. That is stricter than "the next `})`" — nested closing braces
+   * inside the object-form validator would otherwise terminate the match
+   * before the real handler body was reached.
+   */
+  function filterOptionsHandler() {
+    const source = motionsSource()
+    const match = /export const getMotionFilterOptions[\s\S]*?(?=\nexport const )/.exec(source)
+    if (match === null)
+      throw new Error("could not isolate the getMotionFilterOptions handler in motions.ts")
+    return match[0]
+  }
+
+  test("the handler slices the discovered vocabulary before the counting fanout", () => {
+    // The property that turns the constant into a guarantee. Without the
+    // `.slice(0, KIND_FANOUT_LIMIT)`, the constant is dead configuration:
+    // 20 becomes 500 becomes 32-and-crash. The test asserts the slice is
+    // present *before* the loop, which is where the loop's bound comes from.
+    const handler = filterOptionsHandler()
+    const sliceIdx = handler.indexOf("KIND_FANOUT_LIMIT")
+    const loopIdx = handler.indexOf("for (const value of discovered)")
+    expect(sliceIdx).toBeGreaterThan(-1)
+    expect(loopIdx).toBeGreaterThan(-1)
+    expect(sliceIdx).toBeLessThan(loopIdx)
+  })
+
+  test("the fanout cap contributes to `partial` so the UI can name the truncation", () => {
+    // `partial: true` is the honest report the caller uses to render the
+    // "kinds are drawn from a sample" caveat. If it flipped to `false` when
+    // the vocabulary was capped rather than sampled, a reader whose kind
+    // was silently dropped would see a complete-looking dropdown that
+    // isn't. The test asserts both truncation modes contribute.
+    const handler = filterOptionsHandler()
+    // The last `partial:` occurrence in the handler is the returned one; the
+    // earlier ones belong to the arguments validator and the returns
+    // validator. Split-and-take-last is more robust to those than a regex
+    // that tries to skip them.
+    const partialLines = handler.split("\n").filter((line) => /partial:/.test(line))
+    const returned = partialLines[partialLines.length - 1] ?? ""
+    // The exact expression the handler evaluates is
+    //   `recent.length > DISCOVERY_SCAN || fanoutCapped`.
+    // Both operands must be present — the `||` is what turns the two
+    // truncation modes into one honest report.
+    expect(returned).toContain("DISCOVERY_SCAN")
+    expect(returned).toContain("fanoutCapped")
   })
 })

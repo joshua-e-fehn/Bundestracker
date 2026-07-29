@@ -39,3 +39,57 @@ export const MOTION_YEAR_PARAM = "year"
  * people, this filters a page of documents by title.
  */
 export const MOTION_QUERY_PARAM = "q"
+
+// --- input normalisation --------------------------------------------------
+//
+// Everything below runs on values that came in through the address bar, so
+// each helper's job is the same: turn "something the URL might carry" into
+// either "a value the query recognises" or `null` (drop the parameter). The
+// alternative — trusting the URL — is what makes `?year=abc` render the
+// empty state for a period with matches, because Convex takes `abc-01-01`
+// as a lexicographic bound above every stored date and returns nothing.
+
+/** `YYYY` — a four-digit year the query accepts as a date bound. Rejects
+ * everything else. */
+const YEAR_PATTERN = /^\d{4}$/
+
+/**
+ * A URL year, or `null` if it isn't one.
+ *
+ * The query treats the value as an ISO-date prefix (`${year}-01-01` /
+ * `-12-31`), so anything other than four digits sits either lexicographically
+ * above every stored date (`abc-…`) or below the first year of the period
+ * (`0`-…) and returns an empty page. That empty page then renders the
+ * "no matches" state on a period that has matches — a lie by chrome.
+ *
+ * Normalising here means the *component* never sees a malformed year and
+ * therefore never asks the query for one; the year filter reads as
+ * "unselected" instead. The query also validates for a defence in depth
+ * (an old bookmark, another client), but this is where the URL becomes
+ * data.
+ */
+export function normalizeMotionYear(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null
+  return YEAR_PATTERN.test(raw) ? raw : null
+}
+
+/**
+ * A URL kind, or `null` if it isn't a filterable one.
+ *
+ * The empty string is what Radix's `Select` reserves for "no selection", so
+ * `?kind=` — reachable by hand-editing the URL or by a bookmark of a
+ * filter-then-reset state — must not reach the query as
+ * `vorgangstyp: ""`, which would index-select rows whose `vorgangstyp` is
+ * literally the empty string (none) and render a "no matches" state that
+ * is really "you asked for a value nothing has".
+ *
+ * Beyond emptiness there is nothing to check: `vorgangstyp` is an open
+ * string on DIP and `getMotionFilterOptions` reports which values this
+ * period offers. A kind that is not in the dropdown will simply return no
+ * rows, which is the truthful answer for that kind.
+ */
+export function normalizeMotionKind(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null
+  const trimmed = raw.trim()
+  return trimmed === "" ? null : trimmed
+}

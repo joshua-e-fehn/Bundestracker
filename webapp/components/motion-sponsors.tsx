@@ -53,6 +53,14 @@ export function MotionSponsors({ motionId }: { motionId: string }) {
   const { t, locale } = useLocale()
   const mpHref = useMPHref()
   const [open, setOpen] = useState(false)
+  // Derived from the motion id rather than `useId`, on the pattern
+  // components/activity-feed-item.tsx:192 sets: the id is already unique and
+  // stable across renders, and using it directly means the `aria-controls`
+  // relationship is self-documenting rather than opaque. The `aria-expanded`
+  // alone is what /components/activity-feed-item.tsx: 260-269 warns against —
+  // a screen reader hears "expanded" with no way to know what was expanded
+  // or where to look.
+  const panelId = `motion-sponsors-${motionId}`
 
   // `"skip"` while closed: no subscription, no read. See the header.
   const sponsors = useQuery(
@@ -67,51 +75,67 @@ export function MotionSponsors({ motionId }: { motionId: string }) {
         onClick={() => setOpen((current) => !current)}
         // `aria-expanded` rather than only a caret: the control's state is the
         // whole of what it communicates, and a glyph carries none of it to a
-        // screen reader.
+        // screen reader. `aria-controls` points at the panel the state is
+        // *about*, matching the pattern components/activity-feed-item.tsx
+        // uses for its actors disclosure — a button that says "expanded"
+        // without saying what is expanded is what fails on JAWS/NVDA.
         aria-expanded={open}
+        aria-controls={panelId}
         className="w-fit rounded-md text-muted-foreground text-xs underline decoration-border underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         {open ? t("motions.sponsorsHide") : t("motions.sponsorsShow")}
       </button>
 
-      {open ? (
-        sponsors === undefined ? (
-          <output className="text-muted-foreground text-xs" aria-live="polite">
-            {t("motions.sponsorsLoading")}
-          </output>
-        ) : sponsors.length === 0 ? (
-          <p className="text-muted-foreground text-xs">{t("motions.sponsorsNone")}</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-muted-foreground text-xs">
-              {t("motions.sponsors")} — {""}
-              {t("motions.sponsorsCount", { count: formatCount(sponsors.length, locale) })}
-            </p>
-            <ul className="flex list-none flex-wrap gap-x-3 gap-y-1.5 p-0">
-              {sponsors.map((sponsor) => (
-                <li key={sponsor.mpInternalId} className="flex items-center gap-1.5 text-xs">
-                  <Link
-                    href={mpHref(sponsor.mpInternalId)}
-                    className="rounded-md underline decoration-border underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-                  >
-                    {sponsor.name}
-                  </Link>
-                  {/* Only where the roster resolved one. `mpLabel` falls back to
-                      an empty string for a mandate it could not find (§7.3's
-                      Stammdaten lag), and a badge with no group in it would read
-                      as a member with no group. */}
-                  {sponsor.fraktion ? <FraktionBadge fraktion={sponsor.fraktion} /> : null}
-                </li>
-              ))}
-            </ul>
-            {/* Never without this. The number above is a lower bound by
-                construction — see the header, and convex/motions.ts. */}
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              {t("motions.sponsorsCaveat")}
-            </p>
-          </div>
-        )
-      ) : null}
+      {/* The panel the toggle names, whether or not it is open. Keeping the
+          element mounted with an id — even collapsed to nothing — is what
+          keeps `aria-controls` valid at every state: an id that resolves to
+          nothing tells a screen reader the association is broken, which is
+          worse than no association at all. No `role`: the pattern
+          components/activity-feed-item.tsx uses for its actors disclosure
+          leaves the wrapper untyped and lets its children carry the
+          semantics; adding a role here would either promote the panel to a
+          landmark (cluttering the page's landmark map with one per motion
+          row) or restate what the child list already conveys. */}
+      <div id={panelId}>
+        {open ? (
+          sponsors === undefined ? (
+            <output className="text-muted-foreground text-xs" aria-live="polite">
+              {t("motions.sponsorsLoading")}
+            </output>
+          ) : sponsors.length === 0 ? (
+            <p className="text-muted-foreground text-xs">{t("motions.sponsorsNone")}</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-muted-foreground text-xs">
+                {t("motions.sponsors")} — {""}
+                {t("motions.sponsorsCount", { count: formatCount(sponsors.length, locale) })}
+              </p>
+              <ul className="flex list-none flex-wrap gap-x-3 gap-y-1.5 p-0">
+                {sponsors.map((sponsor) => (
+                  <li key={sponsor.mpInternalId} className="flex items-center gap-1.5 text-xs">
+                    <Link
+                      href={mpHref(sponsor.mpInternalId)}
+                      className="rounded-md underline decoration-border underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      {sponsor.name}
+                    </Link>
+                    {/* Only where the roster resolved one. `mpLabel` falls back to
+                        an empty string for a mandate it could not find (§7.3's
+                        Stammdaten lag), and a badge with no group in it would read
+                        as a member with no group. */}
+                    {sponsor.fraktion ? <FraktionBadge fraktion={sponsor.fraktion} /> : null}
+                  </li>
+                ))}
+              </ul>
+              {/* Never without this. The number above is a lower bound by
+                  construction — see the header, and convex/motions.ts. */}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("motions.sponsorsCaveat")}
+              </p>
+            </div>
+          )
+        ) : null}
+      </div>
     </div>
   )
 }

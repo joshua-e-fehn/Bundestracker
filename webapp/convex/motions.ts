@@ -269,8 +269,21 @@ export const getMotionsPage = query({
     // index callback, where `args.vorgangstyp` is optional again — the shape
     // convex/feed.ts uses, for the same reason.
     const kind = args.vorgangstyp
-    const year = args.year
-    const needle = args.search === undefined ? "" : foldSearchQuery(args.search)
+    /**
+     * The caller's intent, before folding turns intent into a needle.
+     *
+     * Kept separate from the folded `needle` because the two answer different
+     * questions. `askedToSearch` says "did the reader type something in the
+     * box"; `needle` says "did that survive folding into a matchable term".
+     * A reader who typed `???` gets `needle === ""` — which used to be
+     * indistinguishable from "no search was set", and therefore returned the
+     * whole period. lib/motions.test.ts pinned exactly that trap on
+     * `foldedTextMatches`; the server side had the same trap and this is the
+     * fix. An intentional empty search means "no matches" rather than "all
+     * matches" — that is what the box asked for.
+     */
+    const askedToSearch = args.search !== undefined && args.search.trim() !== ""
+    const needle = askedToSearch ? foldSearchQuery(args.search ?? "") : ""
 
     /**
      * The year as a date range on whichever index is in play.
@@ -280,7 +293,14 @@ export const getMotionsPage = query({
      * order on a fixed-width date is chronological order. Applied *inside* the
      * index rather than as a `.filter()` because a filter would read the whole
      * period to return one year of it.
+     *
+     * Only well-formed years reach the bound. lib/motions.ts normalises the
+     * URL before it reaches this argument; the check here is defence in depth
+     * — an old bookmark or a script hitting the raw endpoint must not turn a
+     * malformed year into "no match" for a period that has matches, because
+     * `abc-01-01` sits lexicographically above every stored date.
      */
+    const year = args.year !== undefined && /^\d{4}$/.test(args.year) ? args.year : undefined
     const from = year === undefined ? null : `${year}-01-01`
     const to = year === undefined ? null : `${year}-12-31`
 
@@ -333,9 +353,22 @@ export const getMotionsPage = query({
      * this backend — `massnahmen` and `fuer` find `Maßnahmen` and `für`, which a
      * substring test would not.
      */
-    const page =
-      needle === ""
-        ? result.page
+    /**
+     * Three cases, and they diverge deliberately at the second one.
+     *
+     *  - No search set at all → the page as-read, no post-filter.
+     *  - Search set but folded away to nothing (`?q=???`) → empty page,
+     *    because that is what the reader asked for. Returning the whole
+     *    period here is the trap lib/motions.test.ts warns against on the
+     *    matcher side, and it is exactly as wrong on the query side.
+     *  - Search set with a needle → the page filtered against the folded
+     *    title, `foldedTextMatches`' rules (umlaut folding, prefix on the
+     *    final term, AND-of-terms).
+     */
+    const page = !askedToSearch
+      ? result.page
+      : needle === ""
+        ? []
         : result.page.filter((row) => foldedTextMatches(indexableText(row.title), needle))
 
     return {
@@ -359,6 +392,28 @@ export const getMotionsPage = query({
  * whole module is arranged to avoid.
  */
 const OPTION_COUNT_CEILING = 500
+
+/**
+ * How many kinds this query is allowed to count in one call.
+ *
+ * `getFeedFilterOptions` (convex/feed.ts) can iterate a fixed 7-value enum
+ * because DIP publishes a closed vocabulary for its own event types. This
+ * query cannot: `vorgangstyp` is an open string, so `discovered` grows as
+ * DIP publishes new procedure kinds. Left unbounded, worst-case reads are
+ * `DISCOVERY_SCAN + 1 + oldest_row + N * OPTION_COUNT_CEILING` — at
+ * measured WP21 (N = 23) this is 11 902, three quarters of Convex's
+ * 16 384-doc per-query cap, and at N = 32 the whole page fails to load
+ * because the dropdown query throws. The failure is silent from code
+ * review: it only appears the day DIP publishes the 32nd kind.
+ *
+ * So the fanout is bounded and, when it caps, reported as `partial: true`
+ * for the same reason the sampled discovery is: the page must not present
+ * a truncated dropdown as the period's complete vocabulary. Twenty is
+ * comfortably above the highest measured N (23 in the sample, from a
+ * 400-row scan — most were the same handful of kinds), and comfortably
+ * below the cap-of-a-cap that would put the query at 10 000 reads.
+ */
+const KIND_FANOUT_LIMIT = 20
 
 /**
  * The filter values this period can actually offer.
@@ -422,7 +477,17 @@ export const getMotionFilterOptions = query({
     // reference — and it is not a filterable value: the empty string is what
     // Radix reserves and a "kind: none" option would select rows whose kind is
     // merely unrecorded. Dropped from the vocabulary rather than offered.
-    const discovered = [...new Set(recent.map((row) => row.vorgangstyp).filter((k) => k !== null))]
+    const allDiscovered = [
+      ...new Set(recent.map((row) => row.vorgangstyp).filter((k) => k !== null)),
+    ]
+    // Sample-order so a period with more than `KIND_FANOUT_LIMIT` kinds still
+    // shows the ones that appeared most recently in the sample first — a rare
+    // kind used four years ago and one dropped for size are indistinguishable
+    // to the reader, but the recent-first ordering matches the sample scan and
+    // is the least surprising rule to state. `partial` below tells the reader
+    // when this happened, so the truncation is visible rather than hidden.
+    const discovered = allDiscovered.slice(0, KIND_FANOUT_LIMIT)
+    const fanoutCapped = allDiscovered.length > KIND_FANOUT_LIMIT
 
     const kinds = []
     for (const value of discovered) {
@@ -452,7 +517,13 @@ export const getMotionFilterOptions = query({
     return {
       kinds: kinds.sort((a, b) => b.count - a.count || a.value.localeCompare(b.value, "de")),
       years,
-      partial: recent.length > DISCOVERY_SCAN,
+      // Two orthogonal reasons the vocabulary can be incomplete: the discovery
+      // scan hit its cap (so a rarely-used kind may not have been seen), and
+      // the fanout cap trimmed the seen set (so a kind was seen but not
+      // counted). Either way, `partial: true` is the honest report — the
+      // dropdown is a subset of the period's kinds, and the reader deserves
+      // to know a filter that returns nothing may still be spelled correctly.
+      partial: recent.length > DISCOVERY_SCAN || fanoutCapped,
       empty: false,
     }
   },
