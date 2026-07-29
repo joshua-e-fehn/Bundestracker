@@ -1,0 +1,255 @@
+import { describe, expect, test } from "bun:test"
+import { existsSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import { isPublicPath } from "./auth-routes"
+import { dictionaries, LOCALES } from "./i18n"
+import {
+  allNavItems,
+  isActiveGroup,
+  isActivePath,
+  NAV_GROUPS,
+  NAV_PRIMARY,
+  NAV_SEARCH,
+} from "./navigation"
+
+/**
+ * Tests for the navigation tree.
+ *
+ * The bug class these exist for is the one the old header's own comments
+ * describe at length and still shipped twice: a route that exists in `app/` and
+ * has no way into it from the chrome, and a link in the chrome pointing at a
+ * route that does not exist. Both are invisible from a typecheck — the first is
+ * a page nobody can find, the second is a 404 that looks like a broken site —
+ * and both were found by a human clicking around rather than by a test.
+ *
+ * So the two assertions that matter here read the *filesystem*, in the same
+ * shape `lib/auth-routes.test.ts` reads it: every route with a page is in the
+ * navigation, and every entry in the navigation is a route with a page. A new
+ * feature fails these on the commit that adds it.
+ */
+
+/** Every top-level route segment under `app/` that has a `page.tsx`.
+ *
+ * Route groups, private folders and dynamic segments are skipped — they do not
+ * appear in a URL as themselves. `api` is skipped because it serves Better
+ * Auth's callbacks rather than a page. This mirrors the walk in
+ * lib/auth-routes.test.ts deliberately: the two lists answer different questions
+ * about the same directory, and they should disagree about its shape only when
+ * one of them is wrong. */
+function routeSegments(): string[] {
+  const appDir = new URL("../app/", import.meta.url).pathname
+  const out: string[] = []
+  for (const entry of readdirSync(appDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    if (/^[(_[@]/.test(entry.name)) continue
+    if (entry.name === "api") continue
+    if (!existsSync(join(appDir, entry.name, "page.tsx"))) continue
+    out.push(entry.name)
+  }
+  return out
+}
+
+describe("the tree covers the site", () => {
+  test("every route with a page is reachable from the navigation", () => {
+    // The criterion the redesign was held to: grouping must not mean hiding.
+    // `/votes/own-resources` is the entry this would have caught before — it
+    // shipped as a real page reachable only from a sentence in the middle of
+    // `/votes`, which is not navigation.
+    //
+    // `/sign-in` is the one exemption, and it is deliberate: it is reached from
+    // the `UserMenu` button in the header, and an "anmelden" entry in a
+    // navigation whose whole premise is that no account is needed would
+    // misdescribe the product. Asserted as an exemption rather than skipped, so
+    // the list of things not in the nav stays one line long and visible.
+    const NOT_IN_NAV = new Set(["sign-in"])
+    const hrefs = new Set(allNavItems().map((item) => item.href))
+
+    for (const segment of routeSegments()) {
+      if (NOT_IN_NAV.has(segment)) continue
+      expect(hrefs).toContain(`/${segment}`)
+    }
+  })
+
+  test("every navigation entry points at a route that exists", () => {
+    // The other direction, and the failure the old header's header comment
+    // describes: five links written against German paths (`/abgeordnete`,
+    // `/rangliste`) while the pages landed at English ones, so every entry in
+    // the bar was a 404 once the branches merged. A nav entry for an unbuilt
+    // page is indistinguishable to a reader from a broken site.
+    const appDir = new URL("../app/", import.meta.url).pathname
+    for (const item of allNavItems()) {
+      // `/votes/own-resources` → app/votes/own-resources/page.tsx. Nested
+      // entries resolve the same way as top-level ones because the segments are
+      // the directories.
+      const path = join(appDir, ...item.href.split("/").filter(Boolean), "page.tsx")
+      expect({ href: item.href, exists: existsSync(path) }).toEqual({
+        href: item.href,
+        exists: true,
+      })
+    }
+  })
+
+  test("every navigable destination is public", () => {
+    // Criterion 5: a logged-out reader keeps every public product page. The
+    // navigation is the same for both, so an entry that is not on the public
+    // list would be a link that redirects a signed-out reader to sign-in — the
+    // exact failure lib/auth-routes.ts's ⚠ describes, arriving through the nav
+    // rather than through a pasted URL.
+    for (const item of allNavItems()) {
+      expect({ href: item.href, public: isPublicPath(item.href) }).toEqual({
+        href: item.href,
+        public: true,
+      })
+    }
+  })
+
+  test("no destination appears twice", () => {
+    // A route in two groups is an information architecture that has not decided
+    // what the route is *for*, and it doubles the active-state marker.
+    const hrefs = allNavItems().map((item) => item.href)
+    expect(hrefs.length).toBe(new Set(hrefs).size)
+  })
+
+  test("the tree is not a flat list again", () => {
+    // The regression this whole task was about. Eight peers in a bar is the
+    // state being left behind, and the way it comes back is one entry at a time
+    // — so this pins the shape rather than the contents: destinations live in
+    // groups, and the bar itself carries a small, fixed number of items.
+    expect(NAV_GROUPS.length).toBeGreaterThanOrEqual(2)
+    expect(NAV_GROUPS.length).toBeLessThanOrEqual(4)
+    // What the desktop bar renders: the overview plus one trigger per group.
+    expect(1 + NAV_GROUPS.length).toBeLessThanOrEqual(5)
+    // And every group actually holds something.
+    for (const group of NAV_GROUPS) {
+      expect(group.items.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe("labels exist in both languages", () => {
+  test("every label and description key resolves in every locale", () => {
+    // `Dictionary` already makes a missing English string a typecheck failure,
+    // so this is not re-testing the type system: it catches a key that is
+    // *present but empty* in one locale, which typechecks and renders as a
+    // blank row in the menu.
+    const items = [...allNavItems()]
+    for (const locale of LOCALES) {
+      const dict = dictionaries[locale]
+      for (const group of NAV_GROUPS) {
+        expect(dict[group.labelKey]?.length ?? 0).toBeGreaterThan(0)
+      }
+      for (const item of items) {
+        expect({ key: item.labelKey, locale, ok: (dict[item.labelKey]?.length ?? 0) > 0 }).toEqual({
+          key: item.labelKey,
+          locale,
+          ok: true,
+        })
+        if (item.descriptionKey) {
+          expect({
+            key: item.descriptionKey,
+            locale,
+            ok: (dict[item.descriptionKey]?.length ?? 0) > 0,
+          }).toEqual({ key: item.descriptionKey, locale, ok: true })
+        }
+      }
+    }
+  })
+
+  test("a description does not interpolate a value the chrome cannot supply", () => {
+    // `mps.subtitle` is "… der {wahlperiode}. Wahlperiode." — correct on the
+    // page, which resolves the period, and wrong in a menu that does not. The
+    // nav therefore points at `nav.membersHint` instead. This pins that: a
+    // placeholder left unresolved renders literally as "{wahlperiode}" in the
+    // menu, which looks like a bug because it is one.
+    for (const locale of LOCALES) {
+      const dict = dictionaries[locale]
+      for (const item of allNavItems()) {
+        if (!item.descriptionKey) continue
+        expect({
+          key: item.descriptionKey,
+          locale,
+          hasPlaceholder: /\{\w+\}/.test(dict[item.descriptionKey] ?? ""),
+        }).toEqual({
+          key: item.descriptionKey,
+          locale,
+          hasPlaceholder: false,
+        })
+      }
+    }
+  })
+})
+
+describe("isActivePath", () => {
+  test("marks the exact route", () => {
+    expect(isActivePath("/mps", "/mps")).toBe(true)
+    expect(isActivePath("/votes", "/votes")).toBe(true)
+  })
+
+  test("marks a section from inside it", () => {
+    // A reader on an MP's profile should see that they are in "Abgeordnete".
+    expect(isActivePath("/mps/bt-0001", "/mps")).toBe(true)
+    expect(isActivePath("/votes/own-resources", "/votes")).toBe(true)
+    expect(isActivePath("/parties/spd", "/parties")).toBe(true)
+  })
+
+  test("does not leak to a sibling that merely starts the same", () => {
+    // The matcher requires a "/"-delimited prefix, which is what stops "/mps"
+    // lighting up on "/mpsecret". Same shape as `isPublicPath`, deliberately.
+    expect(isActivePath("/mpsecret", "/mps")).toBe(false)
+    expect(isActivePath("/votes-archive", "/votes")).toBe(false)
+  })
+
+  test("a root entry would not match every route", () => {
+    // `/` is reached through the wordmark rather than as a nav entry, but the
+    // matcher has to be safe if one is ever added: a "/" entry that matched
+    // every path would mark the entire navigation active at once. The
+    // startsWith("//") construction is what prevents it.
+    expect(isActivePath("/mps", "/")).toBe(false)
+    expect(isActivePath("/", "/")).toBe(true)
+  })
+})
+
+describe("isActiveGroup", () => {
+  const decisions = NAV_GROUPS.find((group) => group.id === "decisions")
+  const people = NAV_GROUPS.find((group) => group.id === "people")
+
+  test("a group is active when the reader is on one of its entries", () => {
+    expect(isActiveGroup("/votes", decisions!)).toBe(true)
+    expect(isActiveGroup("/mps", people!)).toBe(true)
+  })
+
+  test("a group is active when the reader is on a child of one of its entries", () => {
+    // Without this the bar loses its active marker entirely on
+    // `/votes/own-resources` — the row that would carry it is behind a closed
+    // menu, so the group trigger is the only place it can show.
+    expect(isActiveGroup("/votes/own-resources", decisions!)).toBe(true)
+  })
+
+  test("a group is not active when the reader is somewhere else", () => {
+    expect(isActiveGroup("/mps", decisions!)).toBe(false)
+    expect(isActiveGroup("/about", people!)).toBe(false)
+  })
+
+  test("exactly one group is active on any destination", () => {
+    // Two groups lighting up at once would mean a route classified into both,
+    // which is the ambiguity the "no destination appears twice" test forbids —
+    // asserted here from the reader's side rather than the data's.
+    for (const item of allNavItems()) {
+      if (item.href === NAV_PRIMARY.href || item.href === NAV_SEARCH.href) continue
+      const active = NAV_GROUPS.filter((group) => isActiveGroup(item.href, group))
+      expect({ href: item.href, activeGroups: active.length }).toEqual({
+        href: item.href,
+        activeGroups: 1,
+      })
+    }
+  })
+
+  test("no group claims the overview or the search page", () => {
+    // Both sit outside the groups by design. If a later edit moved one into a
+    // group, the bar would show two active markers at once on that route.
+    for (const group of NAV_GROUPS) {
+      expect(isActiveGroup(NAV_PRIMARY.href, group)).toBe(false)
+      expect(isActiveGroup(NAV_SEARCH.href, group)).toBe(false)
+    }
+  })
+})

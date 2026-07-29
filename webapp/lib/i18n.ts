@@ -731,6 +731,37 @@ const de = {
   "nav.openMenu": "Menü öffnen",
   "nav.closeMenu": "Menü schließen",
 
+  // The three groups of the navigation (lib/navigation.ts). Each names the
+  // *question* its entries answer rather than the kind of data behind them —
+  // "Wer" would be terser but reads as a fragment in a menu heading, so each is
+  // the noun the question is about. `nav.groupContext` is "Einordnung" rather
+  // than "Kontext": the feed and the methodology are what let a reader place a
+  // figure, and Einordnung is the German word for exactly that.
+  "nav.groupPeople": "Abgeordnete & Fraktionen",
+  "nav.groupDecisions": "Entscheidungen",
+  "nav.groupContext": "Einordnung",
+
+  // One-line glosses under the labels in the group menus and the drawer. Where
+  // a page already has a subtitle that does this job, lib/navigation.ts points
+  // at that key instead of adding a second wording — these are only the entries
+  // whose own subtitle is too long for a menu row or interpolates a value the
+  // chrome does not have.
+  "nav.dashboardHint": "Alle Kennzahlen auf einen Blick.",
+  "nav.membersHint": "Alle Mitglieder des Bundestages, filterbar nach Fraktion und Land.",
+  "nav.partiesHint": "Fraktionen im Vergleich — Größe, Aktivität, Geschlossenheit.",
+  "nav.seatingHint": "Der Plenarsaal, ein Punkt je Mandat.",
+  "nav.votesHint": "Namentliche Abstimmungen und wie jede Fraktion gestimmt hat.",
+  "nav.ownResourcesHint": "Wenn der Bundestag über eigene Mittel und das Wahlrecht entscheidet.",
+  "nav.inquiryHint": "Wer das Viertel nach Art. 44 GG erreicht — und wer nicht.",
+  "nav.searchHint": "Abgeordnete und Dokumente im Volltext durchsuchen.",
+
+  // The desktop bar's landmark name. `nav.expandGroup` and `nav.overview` were
+  // here too and are gone: the group triggers carry their own label plus Radix's
+  // `aria-expanded`, so a separate "expand" string described a control that does
+  // not exist, and the overview row reuses `nav.dashboard` rather than saying
+  // "Übersicht" in one place and "Dashboard" in every other.
+  "nav.primary": "Hauptnavigation",
+
   "theme.light": "Hell",
   "theme.dark": "Dunkel",
   "theme.system": "System",
@@ -2143,6 +2174,25 @@ const en: Dictionary = {
   "nav.menu": "Menu",
   "nav.openMenu": "Open menu",
   "nav.closeMenu": "Close menu",
+
+  // "Members & groups", not "parties": Fraktion is the parliamentary group, and
+  // the site keeps that distinction everywhere else (`parties.title` is "Group
+  // comparison"). A menu heading that said "parties" would be the one place the
+  // English translation flattened it.
+  "nav.groupPeople": "Members & groups",
+  "nav.groupDecisions": "Decisions",
+  "nav.groupContext": "Context",
+
+  "nav.dashboardHint": "Every figure on one screen.",
+  "nav.membersHint": "Every member of the Bundestag, filterable by group and state.",
+  "nav.partiesHint": "Parliamentary groups compared — size, activity, cohesion.",
+  "nav.seatingHint": "The chamber floor, one dot per mandate.",
+  "nav.votesHint": "Recorded ballots and how each group voted.",
+  "nav.ownResourcesHint": "When the Bundestag decides on its own funding and electoral law.",
+  "nav.inquiryHint": "Who reaches the quarter under Art. 44 GG — and who does not.",
+  "nav.searchHint": "Full-text search across members and documents.",
+
+  "nav.primary": "Main navigation",
 
   "theme.light": "Light",
   "theme.dark": "Dark",
