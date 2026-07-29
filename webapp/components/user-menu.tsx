@@ -3,6 +3,7 @@
 import { LogOutIcon } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -39,15 +40,53 @@ import { initials } from "@/lib/format"
  * owns the OAuth call. One sign-in flow rather than two: a second `signIn`
  * call here is how the header ends up offering a provider the picker has
  * disabled (see lib/auth-providers.ts).
+ *
+ * ## ⚠ The first client render must be the skeleton, whatever the session says
+ *
+ * The server has no session, so `isPending` is always true there and the server
+ * HTML always holds the `Skeleton` — a `<div>`. On the client the session can
+ * resolve from Better Auth's own store *before* React hydrates, and then the
+ * first client render returned the signed-out `Button` — an `<a>` — into the
+ * same slot. A different **element type** at the same position is not a
+ * recoverable difference: React throws
+ *
+ *   Hydration failed because the server rendered HTML didn't match the client
+ *   (minified #418, args[]=HTML)
+ *
+ * and regenerates the tree from scratch, which in React 19 means detaching and
+ * rebuilding the whole of `<head>`. Every hoisted `<meta>`/`<link>` React owns
+ * is then a node whose `parentNode` is null, so the *next* commit — the first
+ * client-side navigation the reader attempts — dies in the tag-26 unmount path:
+ *
+ *   Uncaught TypeError: Cannot read properties of null (reading 'removeChild')
+ *
+ * That is the production symptom this guard exists to prevent: on a cold load
+ * the first click on any link did nothing at all. It is a race, so it only
+ * appears when hydration is slow relative to the session resolving — measured
+ * on www.bundestracker.de at 6× and 10× CPU throttling on every route, and
+ * never at 1× or 4×, which is why it reads as "only on real phones" and never
+ * reproduced on the machine it was written on.
+ *
+ * `mounted` is what makes the first client render unconditionally match the
+ * server's: the skeleton renders until an effect has run, and effects do not
+ * run until after hydration has committed. The same guard, for the same reason,
+ * is in components/theme-toggle.tsx:42 — that one covers a differing *icon*,
+ * this one a differing *element*, and only the latter is fatal.
  */
 export function UserMenu({ className }: { className?: string }) {
   const { t } = useLocale()
   const router = useRouter()
   const { data: session, isPending } = authClient.useSession()
 
+  // See the ⚠ above: this is a hydration guard, not a loading flag. Effects run
+  // only after hydration commits, so gating on it pins the first client render
+  // to the branch the server took.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   // A placeholder the same size as the button that replaces it, so the header
   // does not reflow when the session resolves.
-  if (isPending) {
+  if (!mounted || isPending) {
     return <Skeleton className={`size-7 rounded-full ${className ?? ""}`} />
   }
 
