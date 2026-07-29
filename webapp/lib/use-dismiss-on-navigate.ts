@@ -7,15 +7,20 @@ import { useState } from "react"
  * Open/closed state for a navigation overlay that dismisses itself on a route
  * change.
  *
- * Both navigation surfaces need exactly this and nothing more: the desktop
- * group menus (components/nav-desktop.tsx) and the mobile drawer
- * (components/nav-mobile.tsx). Neither Radix primitive closes on navigation on
- * its own — following a `<Link>` inside an open menu or dialog changes the
- * route and leaves the panel sitting over the page it just opened — and it is
- * not something either primitive *could* know about, since neither has any idea
- * what a route is.
+ * The mobile drawer (components/nav-mobile.tsx) needs exactly this and nothing
+ * more. Radix's `Dialog` does not close on navigation on its own — following a
+ * `<Link>` inside an open dialog changes the route and leaves the panel sitting
+ * over the page it just opened — and it is not something the primitive *could*
+ * know about, since it has no idea what a route is.
  *
- * ## Why the panels are not wired to each link's `onClick`
+ * The desktop side no longer has an overlay to dismiss: navigation there is a
+ * sidebar that is simply always on screen, so there is nothing to close when
+ * the reader arrives somewhere. This was shared with the grouped header menus
+ * that the sidebar replaced; it stays a module rather than folding back into
+ * its one caller because the behaviour is subtle, the reasoning below is worth
+ * keeping, and the next overlay that navigates will want it.
+ *
+ * ## Why the panel is not wired to each link's `onClick`
  *
  * That was the old header's approach (`onClick={() => setMenuOpen(false)}` on
  * every row) and it has two holes. It covers only the links someone remembered

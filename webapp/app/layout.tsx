@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
-import { headers } from "next/headers"
+import { cookies, headers } from "next/headers"
+import { AppShell } from "@/components/app-shell"
+import { NavSidebar } from "@/components/nav-sidebar"
 import { AuthGuard } from "@/components/providers/auth-guard"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
+import { SidebarProvider } from "@/components/providers/sidebar-provider"
 import { ThemeColorSync } from "@/components/providers/theme-color"
 import { ThemeProvider } from "@/components/providers/theme-provider"
 import { SiteFooter } from "@/components/site-footer"
@@ -12,6 +15,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { getToken } from "@/lib/auth-server"
 import { DEFAULT_LOCALE, localeFromAcceptLanguage, t } from "@/lib/i18n"
+import { SIDEBAR_COOKIE, sidebarExpanded } from "@/lib/sidebar-state"
 import { cn } from "@/lib/utils"
 import { AuthProvider } from "@/providers/auth-provider"
 import "./globals.css"
@@ -126,12 +130,18 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  // Both are per-request, so this stays a server component and awaits them.
-  // `getToken` returns null for the signed-out majority — expected, not a
+  // All three are per-request, so this stays a server component and awaits
+  // them. `getToken` returns null for the signed-out majority — expected, not a
   // failure. Negotiating the locale here means the first paint is already in
   // the reader's language rather than flashing German at an English reader.
-  const [token, requestHeaders] = await Promise.all([getToken(), headers()])
+  const [token, requestHeaders, cookieStore] = await Promise.all([getToken(), headers(), cookies()])
   const locale = localeFromAcceptLanguage(requestHeaders.get("accept-language"))
+  // Read on the server so the shell's first paint is already the width the
+  // reader chose. Doing this on the client instead would render the expanded
+  // 16 rem shell, paint it, and snap to the 3.5 rem rail on hydration — with
+  // every page's content column jumping 200 px as it did. See
+  // lib/sidebar-state.ts for why this is a cookie and not localStorage.
+  const expanded = sidebarExpanded(cookieStore.get(SIDEBAR_COOKIE)?.value)
 
   return (
     <html
@@ -162,12 +172,30 @@ export default async function RootLayout({
                     itself and a nest of providers whose `delayDuration` would
                     drift apart. */}
                 <TooltipProvider>
-                  {/* Header and footer sit inside LocaleProvider — they are
-                      translated — but outside AuthGuard, so the chrome stays on
-                      screen if a future private route redirects. */}
-                  <SiteHeader />
-                  <AuthGuard>{children}</AuthGuard>
-                  <SiteFooter />
+                  {/* The app shell. `SidebarProvider` holds one boolean and
+                      wraps everything because all three of its consumers are
+                      here: the sidebar itself, the padded content column, and
+                      the header's mobile drawer trigger.
+
+                      Header, sidebar and footer sit inside LocaleProvider —
+                      they are translated — but outside AuthGuard, so the chrome
+                      stays on screen if a future private route redirects. */}
+                  <SidebarProvider defaultExpanded={expanded}>
+                    {/* Full-width, above the sidebar rather than beside it —
+                        see the note in components/app-shell.tsx. */}
+                    <SiteHeader />
+
+                    {/* The sidebar is a sibling of the column it makes room
+                        for, not a child of it: it is `fixed` to the viewport's
+                        left edge, and nesting it inside the element whose
+                        padding exists to avoid it would be circular. */}
+                    <NavSidebar />
+
+                    <AppShell>
+                      <AuthGuard>{children}</AuthGuard>
+                      <SiteFooter />
+                    </AppShell>
+                  </SidebarProvider>
                   <Toaster />
                 </TooltipProvider>
               </LocaleProvider>

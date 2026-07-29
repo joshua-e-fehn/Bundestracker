@@ -150,19 +150,37 @@ async function coldLoadAndClick(browser, { width, height, label, selector }) {
 
 const browser = await chromium.launch()
 
-// Desktop and mobile, and both an MP link and a header link: the report named
+// Desktop and mobile, and both an MP link and a chrome link: the report named
 // MP links, but the cause is in the shared chrome, so every link on every route
 // is affected and the test should say so.
-// The header link is the "Dashboard" entry rather than the wordmark: the
+// The chrome link is the "Dashboard" entry rather than the wordmark: the
 // wordmark points at `/`, which is the page under test, so a working click
 // would leave the URL unchanged and be indistinguishable from a swallowed one.
+//
+// It is matched in the *sidebar* rather than in the header. This check was
+// written when the header carried the destinations; they now live in the rail
+// (components/nav-sidebar.tsx), so `header a[href="/dashboard"]` matches
+// nothing — Playwright would time out on a build that is working and report
+// "the first click did not navigate", which is a false red in the one direction
+// this test cannot afford, since it exists to be believed when it goes red.
+//
+// `nav[aria-label]` rather than the label's text: the rail's name is
+// translated ("Hauptnavigation" / "Main navigation"), and matching the string
+// would make the check pass in one locale and time out in the other. The rail
+// is the first labelled `<nav>` in the document and the only one carrying this
+// href — the footer's copy sits in an unlabelled `<nav>`, and picking that one
+// would test the footer twice and the primary navigation never.
+//
+// The rail is in the server HTML in both states, so this does not depend on the
+// `bt_sidebar` cookie: collapsed it is a 3.5rem icon row whose anchor is still
+// present, visible and clickable, only without its label.
 const scenarios = [
   { label: "desktop 1440 — MP link", width: 1440, height: 900, selector: 'a[href^="/mps/"]' },
   {
-    label: "desktop 1440 — header link",
+    label: "desktop 1440 — sidebar link",
     width: 1440,
     height: 900,
-    selector: 'header a[href="/dashboard"]',
+    selector: 'nav[aria-label] a[href="/dashboard"]',
   },
   { label: "mobile 390 — MP link", width: 390, height: 844, selector: 'a[href^="/mps/"]' },
   { label: "mobile 390 — footer link", width: 390, height: 844, selector: 'footer a[href^="/"]' },

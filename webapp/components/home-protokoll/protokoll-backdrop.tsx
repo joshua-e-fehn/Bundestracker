@@ -104,10 +104,23 @@ export function ProtokollBackdrop({
 
       {/* The gutter rule. `fixed` rather than absolute inside the article: it is
           a viewport-level indicator and should not scroll away with the
-          section it started beside. */}
+          section it started beside.
+
+          ⚠ The offset is computed against the *content column*, not the
+          viewport, and `--shell-inset` is what makes those two different. The
+          expression finds the column's left edge — its centre is inset by half
+          the sidebar's width, so `50vw` has to be corrected by half of it
+          before subtracting the 40 rem half-width — and then keeps the rail at
+          least 1.5 rem clear of the rail itself rather than of the screen.
+          Without the correction the indicator drifted left over the text as
+          soon as a 16 rem sidebar appeared beside it, which is the failure a
+          `fixed` element sitting outside the padded shell will always have:
+          padding does not affect a fixed descendant's containing block, so the
+          variable is the only thing it can consult. See
+          components/app-shell.tsx. */}
       <nav
         aria-label={t("protokoll.progressLabel")}
-        className="pointer-events-none fixed inset-y-0 left-[max(1.5rem,calc(50vw-40rem))] z-40 hidden items-center xl:flex"
+        className="pointer-events-none fixed inset-y-0 left-[max(calc(var(--shell-inset,0px)+1.5rem),calc(50vw+var(--shell-inset,0px)/2-40rem))] z-40 hidden items-center xl:flex"
       >
         <div className="relative h-[60svh] w-px bg-border">
           {/* The filled portion. `scaleY` from the top, so it *grows* rather

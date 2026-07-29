@@ -4,7 +4,6 @@ import { useQuery } from "convex/react"
 import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
 import { LocaleToggle } from "@/components/locale-toggle"
-import { NavDesktop } from "@/components/nav-desktop"
 import { NavMobile } from "@/components/nav-mobile"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
@@ -13,34 +12,39 @@ import { UserMenu } from "@/components/user-menu"
 import { api } from "@/convex/_generated/api"
 
 /**
- * The site header: brand, navigation, search, and the reader's own controls.
+ * The site header: brand, search, and the reader's own controls.
  *
- * The navigation itself lives in two components — `NavDesktop` (grouped menus,
- * `lg` and up) and `NavMobile` (a drawer, below `lg`) — over one tree in
- * `lib/navigation.ts`. This file is the bar they sit in.
+ * **It is no longer the primary navigation.** Destinations live in the sidebar
+ * (`components/nav-sidebar.tsx`) at `lg` and up, and in the drawer this bar's
+ * menu button opens below it. What is left here is the set of things that are
+ * *global utilities* rather than places — the wordmark, the search box, the
+ * period chip, language, theme, and the account menu.
  *
- * ## Why the list moved out
+ * ## What this replaced, twice
  *
- * It used to be here: a flat `NAV_LINKS` array of eight entries, an
- * `INLINE_NAV_LINKS` filter over it, and a hand-written `NAV_SHEET_ONLY` set
- * naming the one label too wide for the row. That arrangement had run out — the
- * bar was a width budget with eight peers in it, a ninth route
- * (`/votes/own-resources`) had no entry at all, and the next feature would have
- * had nowhere to go. lib/navigation.ts now holds the tree and the rule for
- * where a new page belongs; both renderings read it, so neither can drift from
- * the other the way two hand-written lists did.
+ * First a flat row of eight links, whose own comments recorded the arithmetic
+ * of running out of room: five labels measured 564 px, the row could not appear
+ * below `lg`, the search box had to wait for `xl`, and a ninth route lived only
+ * in the mobile sheet because the tenth label would not fit.
  *
- * ## The bar's width budget, revisited
+ * Then — briefly — three hover-opening group menus in the same bar. That
+ * grouped the links honestly but kept navigation in a 56 px strip, which was
+ * the wrong structure rather than the wrong grouping. The sidebar is the
+ * correction; `components/nav-desktop.tsx` and its test are deleted rather than
+ * left beside it, because two desktop navigation systems is the failure the
+ * `NAV_SHEET_ONLY` set was already an instance of.
  *
- * The old comments recorded the measurements that forced the old layout: five
- * labels came to 564 px, which is why the inline row waited for `lg`, and the
- * search box waited for `xl` because five links plus a 208 px box exceeded a
- * `max-w-6xl` container at 1024 px. Grouping changes those numbers. The bar now
- * carries four items — "Dashboard" plus three group names — measuring roughly
- * 340 px in German, which is what buys the search box its place at `lg` instead
- * of `xl`: the case the old code called out as impossible is the one grouping
- * bought back. The nav still waits for `lg` because below it the drawer is the
- * better pattern regardless of whether the labels would fit.
+ * ## Why the header spans the full width, above the sidebar
+ *
+ * The rail starts below this bar rather than beside it. Two reasons, both
+ * properties of this site rather than preferences:
+ *
+ *  - The `federal-rule` hairline is the site's top edge and has to reach both
+ *    corners. Inset by 256 px it would read as a decoration on a panel.
+ *  - The brand, the search box and the three controls keep the position they
+ *    have had since the site launched. Putting them inside the content column
+ *    would move all five of them 200 px sideways every time a reader collapsed
+ *    a rail they were not looking at.
  */
 
 /**
@@ -52,11 +56,11 @@ import { api } from "@/convex/_generated/api"
  * decoration; and `null` for an unloaded roster keeps the header from asserting
  * a period that has no data behind it.
  *
- * Now `lg` rather than `sm`. It used to appear at 640 px, where it sat between
- * the search box and the three controls and squeezed the box to about the width
- * of its own magnifier glyph — visible in the before/after screenshots as a bare
- * `Q` against the chip. It is the least important thing in the bar, so it is the
- * thing that waits for room.
+ * `sm` rather than the `lg` it briefly waited for. It went to `lg` when eight
+ * links and a search box were competing for the same bar and the chip squeezed
+ * the box down to its own magnifier glyph. With the destinations gone to the
+ * sidebar the bar has room again, so the one fact every page is scoped to comes
+ * back at the width it fits.
  */
 function CurrentPeriodBadge() {
   const { t } = useLocale()
@@ -67,7 +71,7 @@ function CurrentPeriodBadge() {
   return (
     <span
       title={t("nav.periodLabel", { wahlperiode })}
-      className="mr-1 hidden rounded-full border border-border/60 px-2.5 py-1 font-medium text-muted-foreground text-xs tabular-nums lg:inline-block"
+      className="mr-1 hidden rounded-full border border-border/60 px-2.5 py-1 font-medium text-muted-foreground text-xs tabular-nums sm:inline-block"
     >
       {t("nav.period", { wahlperiode })}
     </span>
@@ -94,7 +98,13 @@ export function SiteHeader() {
           site. */}
       <div aria-hidden className="federal-rule h-[3px] w-full" />
 
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
+      {/* Full-bleed rather than the `max-w-6xl` this used to centre. The bar now
+          sits above a sidebar and a content column rather than above one
+          centred page, so a centred inner box would have floated the brand out
+          in the middle of the rail's width instead of over it. `px-4` matches
+          the pages' own gutter so the wordmark lines up with the sidebar's
+          left edge. */}
+      <div className="flex h-14 w-full items-center gap-2 px-4 sm:px-6">
         {/* Truncates rather than `shrink-0`. At 320 px the brand's 112 px plus
             the four controls' 187 px came to 307 px inside a 288 px content
             box, so the header — and with it every page, since the document
@@ -119,22 +129,16 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        {/* Four items rather than the old five links — see the width note in the
-            header comment. Below `lg` the drawer carries the whole tree. */}
-        <NavDesktop className="hidden lg:flex" />
-
-        {/* Pushes the controls right and absorbs the slack, so the nav stays
-            left-aligned next to the brand at every width. The search box sits
+        {/* Pushes the controls right and absorbs the slack. The search box sits
             inside it rather than in the control cluster: the slack is exactly
             the space a box wants, and `justify-end` keeps it against the
             controls instead of floating mid-bar. */}
         <div className="flex min-w-0 flex-1 justify-end px-2">
-          {/* `lg`, matching the nav rather than waiting a step past it as it
-              used to. Grouping the eight links into four items freed the width
-              that forced the box to `xl`; `max-w-[13rem]` keeps it from
-              crowding the group labels at exactly 1024 px, where the container
-              is tightest. Below this the drawer carries a full-width box. */}
-          <SearchBar className="hidden max-w-[13rem] lg:flex" />
+          {/* `md` rather than the `lg` it needed while this bar also carried the
+              navigation. The box is the header's main job now, so it appears as
+              soon as there is room for it — and below that the drawer carries a
+              full-width one, so no width is ever without search. */}
+          <SearchBar className="hidden max-w-[16rem] md:flex" />
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
@@ -149,9 +153,9 @@ export function SiteHeader() {
           <ThemeToggle />
           <UserMenu className="ml-1" />
 
-          {/* Paired with `NavDesktop`'s `lg:flex` above — the two must flip at
-              the same width or the site has no navigation at all between 768
-              and 1024 px. */}
+          {/* Paired with the sidebar's own `lg:flex` — the two must flip at the
+              same width or the site has no navigation at all between 768 and
+              1024 px. */}
           <NavMobile className="ml-1 lg:hidden" />
         </div>
       </div>
