@@ -39,31 +39,39 @@
  */
 
 /**
- * A Convex deployment URL, as Convex itself formats them.
+ * A Convex origin, capturing the deployment name and which of the two suffixes
+ * it carries — `whimsical-bandicoot-307` and `cloud` from
+ * `https://whimsical-bandicoot-307.convex.cloud`.
+ *
+ * One pattern for both suffixes, because every question this module answers is
+ * about the *pair*: is this the cloud origin, is that the site origin, and do
+ * they name the same deployment. Three near-identical regexes would be three
+ * places to keep in step, and the one that drifted would be the one that let a
+ * wrong value through.
  *
  * Deliberately a shape check rather than an allowlist of deployment names: the
- * name changes when the project is recreated, and a test that hard-codes today's
- * name is one that has to be edited to stay true. What is worth asserting is
- * that the value is a Convex cloud URL at all — the misconfiguration this has
- * actually seen is a *different Convex deployment*, and no regex can catch that.
- * `assertSameDeployment` is the part that can.
+ * name changes when the project is recreated, and a check that hard-codes
+ * today's name is one that has to be edited to stay true. What is worth
+ * asserting is that the value is a Convex origin at all — the misconfiguration
+ * this has actually seen is a *different Convex deployment*, which no pattern
+ * can catch. `isSameDeployment` is the part that can.
  */
-const CONVEX_CLOUD_URL = /^https:\/\/[a-z0-9-]+\.convex\.cloud$/
+const CONVEX_ORIGIN = /^https:\/\/([a-z0-9-]+)\.convex\.(cloud|site)$/
 
-/** The `.site` origin, which Better Auth is served from. Same host, different
- * suffix — that pairing is what `assertSameDeployment` checks. */
-const CONVEX_SITE_URL = /^https:\/\/[a-z0-9-]+\.convex\.site$/
+/** The deployment name and suffix, or null for anything that is not a Convex
+ * origin — so callers can say which variable was wrong. */
+function parseOrigin(url: string): { name: string; suffix: "cloud" | "site" } | null {
+  const match = CONVEX_ORIGIN.exec(url)
+  if (!match) return null
+  return { name: match[1], suffix: match[2] as "cloud" | "site" }
+}
 
 /**
  * The deployment name out of either origin — `whimsical-bandicoot-307` from
  * `https://whimsical-bandicoot-307.convex.cloud`.
- *
- * Returns null rather than throwing for anything that is not one of the two
- * shapes, so the callers can say which variable was wrong.
  */
 export function deploymentName(url: string): string | null {
-  const match = /^https:\/\/([a-z0-9-]+)\.convex\.(cloud|site)$/.exec(url)
-  return match?.[1] ?? null
+  return parseOrigin(url)?.name ?? null
 }
 
 /**
@@ -95,14 +103,14 @@ export function requireConvexUrls(env: {
   const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL
   const siteUrl = env.NEXT_PUBLIC_CONVEX_SITE_URL
 
-  if (!cloudUrl || !CONVEX_CLOUD_URL.test(cloudUrl)) {
+  if (!cloudUrl || parseOrigin(cloudUrl)?.suffix !== "cloud") {
     throw new Error(
       `NEXT_PUBLIC_CONVEX_URL must be a Convex deployment URL like ` +
         `https://example-animal-123.convex.cloud — received ${JSON.stringify(cloudUrl)}. ` +
         `Without it every query returns null and the site renders "not found" for real data.`,
     )
   }
-  if (!siteUrl || !CONVEX_SITE_URL.test(siteUrl)) {
+  if (!siteUrl || parseOrigin(siteUrl)?.suffix !== "site") {
     throw new Error(
       `NEXT_PUBLIC_CONVEX_SITE_URL must be a Convex site URL like ` +
         `https://example-animal-123.convex.site — received ${JSON.stringify(siteUrl)}.`,
