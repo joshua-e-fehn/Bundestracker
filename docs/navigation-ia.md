@@ -150,6 +150,25 @@ Menus open on **click, keyboard, and hover** (mouse pointers only — a
 hover-open menu on a touch screen fires on the tap meant to follow the link).
 Without hover, every destination that used to be one click away would be two.
 
+They are also **non-modal** (`modal={false}`), which hover makes mandatory
+rather than optional. Radix defaults `DropdownMenu` to modal, and a modal menu
+`aria-hidden`s everything outside it — `<main>` included — and sets
+`pointer-events: none` on `<body>`. Correct for a menu you click open;
+three defects for one you *hover* open, all measured in Chromium:
+
+| | modal (default) | non-modal (shipped) |
+|---|---|---|
+| Hover a sibling group | **nothing happens** | menu swaps |
+| Page under the menu | **unclickable** | interactive |
+| `<main>` for a screen reader | **`aria-hidden="true"`** | readable |
+
+The sibling case is the one a reader meets first: moving the pointer along the
+bar, the most ordinary gesture there is for a grouped nav, did nothing until you
+clicked away. Escape, click-outside and the roving-focus keyboard behaviour are
+unaffected — they live in Radix's content impl, not in its modality.
+`components/nav-desktop.test.ts` pins the prop so the tempting deletion of a
+"redundant" `false` fails in CI rather than in a browser.
+
 ## Mobile: a drawer, everything visible
 
 Below `lg`, a right-side sheet carrying the **whole tree, expanded**, under group
@@ -194,6 +213,23 @@ English: group disclosure, keyboard operation, active state on nested routes,
 drawer open/close/navigate, focus handling, and zero horizontal overflow at
 every width. Screenshots are in `docs/screenshots/navigation`
 (`before-prod-*` is current production, `after-local-*` is this branch).
+
+**Re-verified after the rebase onto `main`** (which had advanced by five
+commits), against a production build: 46/47 checks passed at 1440, 390 and
+320 px in both locales — the same properties as above plus the three modal ones
+in the table further up, which is the run that found the modal defect.
+
+The one non-passing check is a **known flake in the harness, not a defect**, and
+is recorded here rather than quietly dropped: a *synthetic* Playwright click on
+a menu row fails to navigate roughly 1 time in 10 (45/50 across repeated runs).
+It is specific to menu rows — plain header and footer links were 14/14 in the
+same session — and it reproduces identically with and without the modal fix, so
+it is not caused by it. The click reaches the anchor every time (verified with a
+capture-phase listener, which is itself enough to make it pass 3/3), so the
+suspect is the interaction between Playwright's synthesised pointer sequence and
+Radix's `onPointerUp` → `currentTarget.click()` re-dispatch, not the app's own
+handling. Not reproducible by hand. Worth revisiting if a human ever reports a
+dropped click.
 
 ### Three pre-existing bugs found and fixed along the way
 

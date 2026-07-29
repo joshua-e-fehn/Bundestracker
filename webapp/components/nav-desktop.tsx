@@ -176,7 +176,28 @@ function NavGroupMenu({ group }: { group: NavGroup }) {
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    // ⚠ `modal={false}` is load-bearing, not a preference. Radix's default
+    // (`modal`) treats an open menu as a modal layer: it calls `hideOthers`,
+    // which sets `aria-hidden="true"` on everything outside the panel including
+    // `<main>`, and `disableOutsidePointerEvents`, which sets
+    // `pointer-events: none` on `<body>`. For a click-opened action menu that is
+    // right. For a bar that opens on *hover* it is three bugs at once, all
+    // measured in a browser rather than reasoned about:
+    //
+    //  - Hovering a sibling group did not swap the menu. The pointer never
+    //    reached the next trigger, because the body it sits in had pointer
+    //    events switched off — so moving along the bar, the single most ordinary
+    //    thing to do with a grouped nav, did nothing until you clicked away
+    //    first.
+    //  - The whole page under the menu became unclickable, on a panel the reader
+    //    opened by *moving the mouse*. A modal is something you choose to enter.
+    //  - `<main>` was hidden from assistive technology for as long as a menu was
+    //    open, so a screen-reader user hovering the bar lost the page.
+    //
+    // Non-modal keeps what this actually needs — Escape, click-outside, and the
+    // roving-focus keyboard behaviour are all in `MenuContentImpl` and are
+    // unaffected — and drops only the modality the bar never wanted.
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger
         // A real `<button>` — the trigger opens a menu, it does not navigate,
         // and `aria-expanded` / `aria-haspopup` come from Radix on it.

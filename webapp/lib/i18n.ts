@@ -755,10 +755,12 @@ const de = {
   "nav.inquiryHint": "Wer das Viertel nach Art. 44 GG erreicht — und wer nicht.",
   "nav.searchHint": "Abgeordnete und Dokumente im Volltext durchsuchen.",
 
-  // The desktop bar's own controls.
+  // The desktop bar's landmark name. `nav.expandGroup` and `nav.overview` were
+  // here too and are gone: the group triggers carry their own label plus Radix's
+  // `aria-expanded`, so a separate "expand" string described a control that does
+  // not exist, and the overview row reuses `nav.dashboard` rather than saying
+  // "Übersicht" in one place and "Dashboard" in every other.
   "nav.primary": "Hauptnavigation",
-  "nav.expandGroup": "{group} aufklappen",
-  "nav.overview": "Übersicht",
 
   "theme.light": "Hell",
   "theme.dark": "Dunkel",
@@ -2191,8 +2193,6 @@ const en: Dictionary = {
   "nav.searchHint": "Full-text search across members and documents.",
 
   "nav.primary": "Main navigation",
-  "nav.expandGroup": "Expand {group}",
-  "nav.overview": "Overview",
 
   "theme.light": "Light",
   "theme.dark": "Dark",
