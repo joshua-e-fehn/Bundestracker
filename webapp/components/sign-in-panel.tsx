@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,23 @@ export function SignInPanel() {
   const [pendingProvider, setPendingProvider] = useState<"google" | "github" | null>(null)
   const [failed, setFailed] = useState(false)
 
+  // ⚠ A hydration guard, not a loading flag — the same one, for the same
+  // reason, as components/user-menu.tsx:84. The server has no session, so it
+  // always renders the provider buttons below; on the client Better Auth can
+  // resolve a session before React hydrates, and the `session ?` branch would
+  // then put a `<p>` where the server put a `<div>`. A differing element type
+  // at the same position makes React throw a hydration mismatch and regenerate
+  // the tree, which in React 19 detaches the whole of `<head>` and leaves the
+  // reader's next click dying in the tag-26 unmount path with
+  // "Cannot read properties of null (reading 'removeChild')".
+  //
+  // The blast radius is not this page: the root re-render tears out `<head>`
+  // wherever in the tree the mismatch happened, so a signed-in reader cold
+  // loading /sign-in — from a bookmark, a pasted link or a reload — would find
+  // the *rest of the site's* first click swallowed afterwards.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   async function signIn(provider: "google") {
     setFailed(false)
     setPendingProvider(provider)
@@ -76,7 +93,7 @@ export function SignInPanel() {
           would replace the session with an identical one. The menu in the
           header is where signing out lives, so this only needs to state the
           fact and get out of the way. */}
-      {session ? (
+      {mounted && session ? (
         <p className="rounded-md border border-border bg-muted/40 p-3 text-sm">
           {t("auth.alreadySignedIn")}
         </p>
@@ -142,7 +159,9 @@ export function SignInPanel() {
           size="sm"
           className="w-fit"
           onClick={() => {
-            if (continueWithoutAccountTarget(document.referrer, window.location.origin) === "back") {
+            if (
+              continueWithoutAccountTarget(document.referrer, window.location.origin) === "back"
+            ) {
               router.back()
             } else {
               router.push("/")

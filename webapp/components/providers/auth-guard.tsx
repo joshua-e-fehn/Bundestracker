@@ -1,7 +1,7 @@
 "use client"
 
 import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { authClient } from "@/lib/auth-client"
 import { isPublicPath } from "@/lib/auth-routes"
 
@@ -46,6 +46,30 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
    */
   const isPublic = isNotFound || isPublicPath(pathname)
 
+  /**
+   * ⚠ A hydration guard, not a loading flag.
+   *
+   * The three branches below return structurally different trees — a fragment
+   * of `children`, a `<div>` spinner, and `null` — around the *whole page*. The
+   * server has no session, so it always takes the `isPending` branch; on the
+   * client Better Auth can resolve before React hydrates, and the first client
+   * render would then take `!session` and return `null` where the server put a
+   * `<div>`. React throws a hydration mismatch, regenerates the tree, and in
+   * React 19 that detaches the whole of `<head>` — after which the reader's
+   * next click dies with "Cannot read properties of null (reading
+   * 'removeChild')" and appears to do nothing. Same failure as
+   * components/user-menu.tsx and components/sign-in-panel.tsx, one level up,
+   * so with the largest blast radius of the three.
+   *
+   * It is unreachable today: every path is in `PUBLIC_PATHS`, so line 57 wins
+   * on both sides. That is exactly why the guard belongs here now — this is
+   * dead code that comes alive the day someone adds a private route, and
+   * lib/auth-routes.ts is gated by omission by design. Costing nothing while
+   * unreachable is the point.
+   */
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   useEffect(() => {
     if (!isPublic && !isPending && !session) {
       router.replace("/sign-in")
@@ -57,7 +81,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <>{children}</>
   }
 
-  if (isPending) {
+  if (!mounted || isPending) {
     return (
       <div className="flex min-h-svh items-center justify-center">
         <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
