@@ -41,12 +41,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
 from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 CONVEX = "https://whimsical-bandicoot-307.convex.cloud/api/query"
 DEFAULT_BASE = "https://www.bundestracker.de"
@@ -92,6 +92,12 @@ def settle(page: Page) -> None:
     actually has: `networkidle` can fire while a late query's skeleton is still
     up, so the pulse class is polled afterwards with a short cap — an empty
     state legitimately has none.
+
+    Only the *timeout* is tolerated. A skeleton that never clears means a query
+    is slow or a state has none, and both are things the checks below should go
+    on to measure. Anything else — a crashed page, a closed context, a bad
+    selector — is a real failure, and swallowing it here would let the run
+    verify a broken page as though it had merely been slow.
     """
     page.wait_for_load_state("networkidle", timeout=45_000)
     try:
@@ -99,7 +105,7 @@ def settle(page: Page) -> None:
             "() => document.querySelectorAll('.animate-pulse').length === 0",
             timeout=12_000,
         )
-    except Exception:
+    except PlaywrightTimeoutError:
         pass
     page.wait_for_timeout(800)
 
@@ -122,14 +128,15 @@ def visible_period(page: Page) -> int | None:
 
 def count_rows(page: Page) -> int:
     """Ranking/table rows currently rendered, by their link to an MP."""
-    return page.evaluate(
-        "() => document.querySelectorAll('a[href^=\"/mps/\"]').length"
-    )
+    return page.evaluate("() => document.querySelectorAll('a[href^=\"/mps/\"]').length")
 
 
 def run(base: str, report: Report) -> None:
     periods: list[int] = [
-        int(p) for p in convex("search:getSearchFilterOptions", {"wahlperiode": 21})["wahlperioden"]
+        int(p)
+        for p in convex("search:getSearchFilterOptions", {"wahlperiode": 21})[
+            "wahlperioden"
+        ]
     ]
     current = int(convex("mps:getCurrentWahlperiode", {}))
     print(f"Convex holds rosters for: {periods}; current = WP{current}\n", flush=True)
@@ -141,16 +148,22 @@ def run(base: str, report: Report) -> None:
 
         page.on(
             "console",
-            lambda m: report.errors.append(f"console.{m.type}: {m.text[:200]}")
-            if m.type == "error"
-            else None,
+            lambda m: (
+                report.errors.append(f"console.{m.type}: {m.text[:200]}")
+                if m.type == "error"
+                else None
+            ),
         )
-        page.on("pageerror", lambda e: report.errors.append(f"pageerror: {str(e)[:200]}"))
+        page.on(
+            "pageerror", lambda e: report.errors.append(f"pageerror: {str(e)[:200]}")
+        )
         page.on(
             "response",
-            lambda r: report.errors.append(f"{r.status} {r.url[:120]}")
-            if r.status >= 500
-            else None,
+            lambda r: (
+                report.errors.append(f"{r.status} {r.url[:120]}")
+                if r.status >= 500
+                else None
+            ),
         )
 
         # --- 1. period selection via /search -----------------------------
@@ -186,7 +199,10 @@ def run(base: str, report: Report) -> None:
             f"{expected} scored rows in the first page of that period",
         )
         for period in [p for p in periods if p != current]:
-            reachable = page.locator(f"text=/Wahlperiode\\s*{period}|WP\\s*{period}/").count() > 0
+            reachable = (
+                page.locator(f"text=/Wahlperiode\\s*{period}|WP\\s*{period}/").count()
+                > 0
+            )
             if not reachable:
                 report.finding(
                     f"/rankings offers no way to reach WP{period} — it renders "
@@ -205,7 +221,10 @@ def run(base: str, report: Report) -> None:
             )
             settle(page)
             status = response.status if response else 0
-            if status == 404 or page.locator("text=/nicht gefunden|not found/i").count() > 0:
+            if (
+                status == 404
+                or page.locator("text=/nicht gefunden|not found/i").count() > 0
+            ):
                 report.finding(
                     f"/mps/{mp['internalId']} (WP{period} member {mp['name']!r}) is a 404 — "
                     "the profile route pins the period to CURRENT_WAHLPERIODE "
