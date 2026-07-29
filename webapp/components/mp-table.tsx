@@ -1,10 +1,11 @@
 "use client"
 
-import { type Preloaded, usePreloadedQuery } from "convex/react"
+import { type Preloaded, usePreloadedQuery, useQuery } from "convex/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useDeferredValue, useMemo, useState } from "react"
 import { ALL, FilterSelect } from "@/components/filter-select"
+import { FollowButton } from "@/components/follow-button"
 import { FraktionBadge } from "@/components/fraktion-badge"
 import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
@@ -28,11 +29,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { api } from "@/convex/_generated/api"
+// A value import now, not only a type: the preloaded roster still arrives as a
+// `Preloaded<typeof api.mps.getMPsWithScores>`, but the follow set is read live
+// from `api.userPreferences.getPreferences` — see `followedIds`.
+import { api } from "@/convex/_generated/api"
 import { formatNumber, formatPercent, occupationOf, stateOf } from "@/lib/bundestag"
-import { landNameFor } from "@/lib/laender"
 import { scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
+import { landNameFor } from "@/lib/laender"
 import { foldName } from "@/lib/search"
 import { MANDATE_LABEL_KEYS, MANDATE_TYPES, mandateType } from "@/lib/taxonomy"
 
@@ -178,6 +182,28 @@ export function MPTable({
 }) {
   const rows = usePreloadedQuery(preloaded)
   const { t, locale } = useLocale()
+
+  /**
+   * Which MPs this reader follows, as one lookup for the whole page.
+   *
+   * `getPreferences` rather than 25 `isFollowing` subscriptions — the same
+   * prop-not-query rule this file's cards already follow for `dissent` and
+   * `electionMethod`, and the reason components/follow-button.tsx accepts the
+   * answer as a prop at all. It also survives paging: the set covers the whole
+   * roster, so turning a page does not fire 25 more queries.
+   *
+   * Signed out it resolves to the documented defaults — an empty list — and the
+   * buttons render their sign-in link instead, never reading it.
+   *
+   * `undefined` while in flight, and that distinction is passed through rather
+   * than collapsed to `false`: a `Set` that is merely *not loaded yet* would
+   * make every row claim "not followed" for a beat and then flip.
+   */
+  const preferences = useQuery(api.userPreferences.getPreferences, {})
+  const followedIds = useMemo(
+    () => (preferences ? new Set(preferences.followedMpIds) : undefined),
+    [preferences],
+  )
 
   const [search, setSearch] = useState("")
   const [fraktion, setFraktion] = useState<string>(ALL)
@@ -518,17 +544,47 @@ export function MPTable({
                 align="end"
                 className="hidden sm:table-cell"
               />
+              {/* The follow column. Not sortable — it is a control, not a
+                  figure, and there is nothing to order 630 rows by here. The
+                  header is `sr-only` because the cells are icon buttons whose
+                  own accessible names already say what they do and who for; a
+                  visible word over a 28 px column would be wider than the
+                  column it labels. */}
+              <TableHead className="w-10">
+                <span className="sr-only">{t("follow.follow")}</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                {/* Seven: name, party, occupation, constituency, score,
+                    participation, follow. Two branches each added a column to a
+                    five-column table — the occupation column (#52) and the
+                    follow column — and a textual merge of the two took one `+1`
+                    rather than both, leaving this at 6. An under-spanning
+                    `colSpan` does not throw or warn: the empty-state sentence
+                    simply stops short of the last column and the table's right
+                    edge grows a notch, which reads as a rendering fault on the
+                    one row a reader sees when their filter matched nothing. */}
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                   {rows.length === 0 ? t("mps.emptyRoster") : t("mps.empty")}
                 </TableCell>
               </TableRow>
             ) : (
-              visible.map((row) => <MPRow key={row.mp.internalId} row={row} />)
+              visible.map((row) => (
+                <MPRow
+                  key={row.mp.internalId}
+                  row={row}
+                  // Resolved once for the page rather than per row — see
+                  // `followedIds`. `?.` rather than `&&` so an unresolved set
+                  // yields `undefined` rather than `undefined | false`: the
+                  // button holds its skeleton on `undefined` and would claim
+                  // "not followed" on `false`, which is the distinction the
+                  // whole three-state arrangement exists for.
+                  following={followedIds?.has(row.mp.internalId)}
+                />
+              ))
             )}
           </TableBody>
         </Table>
@@ -597,7 +653,7 @@ export function MPTable({
  * like `w-screen`; that box is scrollable overflow inside `table-container`'s
  * `overflow-x-auto`, so it would put a horizontal scrollbar under every table.
  */
-function MPRow({ row }: { row: Row }) {
+function MPRow({ row, following }: { row: Row; following: boolean | undefined }) {
   const { t, locale } = useLocale()
   const router = useRouter()
   const href = `/mps/${encodeURIComponent(row.mp.internalId)}`
@@ -635,11 +691,12 @@ function MPRow({ row }: { row: Row }) {
         </div>
       </TableCell>
       <TableCell>
-        {/* The mandate type shares the group's cell rather than taking a
-            seventh column: this table already gives four columns to the two
-            score figures and the constituency, and the roster is the widest
-            table on the site. Compact, matching components/rankings-table.tsx,
-            so the two tables badge the same field the same way.
+        {/* The mandate type shares the group's cell rather than taking a column
+            of its own: this table is already seven columns wide — name, party,
+            occupation, constituency, score, participation, follow — and the
+            roster is the widest table on the site. Compact, matching
+            components/rankings-table.tsx, so the two tables badge the same
+            field the same way.
 
             In *this* cell rather than the constituency one because that column
             is `hidden md:table-cell` — a phone would lose the badge entirely,
@@ -698,6 +755,21 @@ function MPRow({ row }: { row: Row }) {
         ) : (
           formatPercent(row.score.voteParticipationRate, locale)
         )}
+      </TableCell>
+      <TableCell className="w-10 py-1">
+        {/* Icon-only: the roster is the widest table on the site and a worded
+            button would take a column of its own. The name goes into the
+            button's `aria-label` instead, so 25 rows of one glyph are still 25
+            distinguishable controls rather than 25 identical "Folgen"s.
+
+            `handleRowClick` above already ignores clicks that land on a
+            `button`, so pressing this does not also navigate to the profile. */}
+        <FollowButton
+          mpInternalId={row.mp.internalId}
+          name={row.mp.name}
+          following={following}
+          iconOnly
+        />
       </TableCell>
     </TableRow>
   )

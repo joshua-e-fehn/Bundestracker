@@ -98,8 +98,17 @@ const de = {
   // Says what an account buys, in the two concrete things it buys. Vaguer
   // wording ("personalisierte Funktionen") would be a reason to sign in that
   // names nothing the reader can weigh.
+  //
+  // ⚠ This sentence shipped *ahead of* the feature it describes and stayed
+  // wrong for months: the follow backend existed, the button did not, and the
+  // 2026-07-29 audit recorded the site advertising following in both languages
+  // with no UI anywhere (GAP-006/GAP-008). It is true now —
+  // components/follow-button.tsx is on the profile and on the roster, and
+  // `/settings` is where the list lands. The lesson is the one the audit drew:
+  // copy is a claim, and a claim without a control is a promise the reader
+  // cannot cash. Do not add a third item here for something not yet built.
   "auth.benefits":
-    "Mit einem Konto speichern Sie eigene Gewichtungen des Aktivitätswerts und folgen einzelnen Abgeordneten.",
+    "Mit einem Konto speichern Sie eigene Gewichtungen des Aktivitätswerts und folgen einzelnen Abgeordneten. Beides finden Sie unter „Einstellungen“.",
   "auth.continueWithoutAccount": "Ohne Konto weiterlesen",
   "auth.signingIn": "Weiterleitung …",
   // The GitHub button is disabled rather than hidden: the provider is
@@ -604,6 +613,90 @@ const de = {
   "weights.saveFailed": "Speichern fehlgeschlagen.",
   "weights.resetToDefault": "Standardwerte",
 
+  // --- follow / watchlist -------------------------------------------------
+  //
+  // The verb is "folgen", matching `auth.benefits`, which has promised this
+  // since before there was a button: "…und folgen einzelnen Abgeordneten."
+  // Two vocabularies for one feature — "folgen" in the pitch, "merken" on the
+  // control — would read as two features, so the pitch's word wins.
+  //
+  // Two labels naming the *action*, rather than one label plus `aria-pressed`.
+  // A toggle button announcing "Folgen, gedrückt" states the action and the
+  // state in one breath and reads as a contradiction; "Nicht mehr folgen" says
+  // both unambiguously — what pressing does, and therefore where you stand.
+  // The label changes on a focused button, which is what a screen reader
+  // announces after the press.
+  "follow.follow": "Folgen",
+  "follow.unfollow": "Nicht mehr folgen",
+  "follow.saving": "Wird gespeichert …",
+  // The failure has to name the member: the button can appear on a list of
+  // 630 rows, and "Speichern fehlgeschlagen" beside one of them says nothing
+  // about which follow did not stick.
+  "follow.failed": "{name} konnte nicht gespeichert werden. Bitte erneut versuchen.",
+  // Signed out. Not "Sie müssen sich anmelden" — the site's premise is that an
+  // account is optional, so this says what an account *adds* rather than what
+  // the reader lacks.
+  "follow.signInCta": "Anmelden, um zu folgen",
+  "follow.signInHint":
+    "Gefolgte Abgeordnete werden im Konto gespeichert und erscheinen in Ihren Einstellungen.",
+
+  // --- settings -----------------------------------------------------------
+  "settings.title": "Einstellungen",
+  "settings.subtitle": "Ihre Gewichtungen, Ihre Sprache und die Abgeordneten, denen Sie folgen.",
+  // The signed-out state of the whole page. It is not an error and not a gate:
+  // the page renders, says what an account holds, and links to the picker.
+  "settings.signedOutTitle": "Ohne Konto gibt es hier nichts zu speichern",
+  // ⚠ Three, and each one named. This said "genau zwei Dinge" and listed the
+  // weights and the follow list — written before this same branch gave
+  // `preferredLocale` a writer, and left behind when `/about`'s privacy note was
+  // corrected to three. "Genau" makes it an enumeration rather than a summary,
+  // and the item it omitted was the language: the one value here that can leave
+  // the device, in a sentence a signed-out reader is using to decide whether to
+  // create an account. The subtitle two lines up already named all three, so the
+  // page contradicted itself.
+  //
+  // Kept in step with `about.privacy.account.body`, which makes the same claim
+  // on another page — including the "sofern Sie das wählen", because the
+  // language is the one of the three that is optional: clearing the preference
+  // stores nothing. Two pages stating the same privacy fact must not drift, and
+  // lib/i18n.test.ts asserts that both name all three.
+  "settings.signedOutBody":
+    "Alle Daten dieser Seite sind ohne Anmeldung einsehbar. Ein Konto speichert drei Dinge: eigene Gewichtungen des Aktivitätswerts, die Liste der Abgeordneten, denen Sie folgen, und — sofern Sie das wählen — Ihre Sprache.",
+  "settings.weights.title": "Gewichtungen des Aktivitätswerts",
+  "settings.weights.description":
+    "Diese Gewichtungen gelten überall auf der Seite — im Profil, im Aktivitätsfeed und in jeder Rangliste, die Sie ansehen.",
+  // Says which set is in force, because "no saved weights" and "a saved set
+  // that happens to equal the defaults" are different states
+  // (convex/userPreferences.ts) and only the second survives a change to those
+  // defaults.
+  "settings.weights.usingDefaults": "Es sind die Standardgewichtungen gespeichert.",
+  "settings.weights.usingCustom": "Es sind eigene Gewichtungen gespeichert.",
+  "settings.weights.clear": "Gespeicherte Gewichtungen löschen",
+  "settings.weights.cleared": "Gelöscht — es gelten wieder die Standardwerte.",
+  "settings.language.title": "Sprache",
+  "settings.language.description":
+    "Die Sprache dieser Seite. Sie wird im Browser gespeichert und mit einem Konto zusätzlich dort — so folgt sie Ihnen auf ein anderes Gerät.",
+  "settings.language.followBrowser": "Keine Vorgabe (Browsersprache verwenden)",
+  "settings.language.saved": "Sprache gespeichert.",
+  "settings.watchlist.title": "Gefolgte Abgeordnete",
+  "settings.watchlist.description":
+    "Abgeordnete, denen Sie folgen — als Karte, mit Aktivitätswert und Verlauf.",
+  "settings.watchlist.empty": "Sie folgen noch niemandem.",
+  // The empty state has to say *how*, because the control is on another page.
+  "settings.watchlist.emptyHint":
+    "Auf jedem Abgeordnetenprofil steht ein „Folgen“-Knopf. Wer dort gefolgt wird, erscheint hier.",
+  "settings.watchlist.browse": "Abgeordnete durchsuchen",
+  // Someone followed in an earlier period who is not sitting in this one. The
+  // query skips them (convex/userPreferences.ts:getFollowedMPs), so the count
+  // and the list can disagree — and a list silently shorter than the number of
+  // people you follow is the kind of gap this codebase renders rather than
+  // hides.
+  "settings.watchlist.notSittingOne":
+    "Eine gefolgte Person sitzt nicht in der {wahlperiode}. Wahlperiode und wird hier nicht angezeigt.",
+  "settings.watchlist.notSitting":
+    "{count} gefolgte Personen sitzen nicht in der {wahlperiode}. Wahlperiode und werden hier nicht angezeigt.",
+  "settings.error": "Ihre Einstellungen konnten nicht geladen werden.",
+
   // --- activity heatmap ---
   "heatmap.title": "Aktivitätsverlauf",
   "heatmap.legendLess": "weniger",
@@ -797,12 +890,21 @@ const de = {
   "nav.ownResourcesHint": "Wenn der Bundestag über eigene Mittel und das Wahlrecht entscheidet.",
   "nav.inquiryHint": "Wer das Viertel nach Art. 44 GG erreicht — und wer nicht.",
   "nav.searchHint": "Abgeordnete und Dokumente im Volltext durchsuchen.",
+  // The settings entry's gloss. Names the three things the page holds, because
+  // "Einstellungen" on a site with no account requirement does not say what
+  // there could be to set.
+  "nav.settingsHint": "Eigene Gewichtungen, Sprache und gefolgte Abgeordnete.",
 
   // The desktop sidebar's landmark name. `nav.expandGroup` and `nav.overview`
   // were here too and are gone: the overview row reuses `nav.dashboard` rather
   // than saying "Übersicht" in one place and "Dashboard" in every other, and
   // the groups are headings over visible rows rather than controls that expand.
   "nav.primary": "Hauptnavigation",
+  // The rail's and the drawer's second landmark — settings plus the account
+  // row. Named because a page with several `<nav>` elements needs each labelled
+  // or a screen reader announces "Navigation" three times with no way to tell
+  // them apart, which is the note `nav.primary` already carries.
+  "nav.accountArea": "Konto und Einstellungen",
 
   // The sidebar's collapse control. Two strings rather than one toggled label,
   // because the button announces what it will *do* and those are two different
@@ -1485,11 +1587,20 @@ const de = {
   "about.privacy.noTracking.body":
     "Bundestracker bindet keine Analyse-, Werbe- oder Trackingdienste ein. Es gibt keine Zählpixel und keine Profilbildung, und es werden keine Daten an Dritte übermittelt.",
   "about.privacy.cookies.title": "Nur ein Cookie, und nur nach Anmeldung",
+  // Corrected when /settings shipped, because half of it stopped being true.
+  // Design bleibt rein lokal; die Sprache ist es nur, solange sie nicht
+  // ausdrücklich im Konto gespeichert wird. Ein Datenschutzhinweis, der eine
+  // Übertragung verschweigt, die die Seite selbst anbietet, ist genau die
+  // Behauptung, die nicht stehen bleiben darf.
   "about.privacy.cookies.body":
-    "Ohne Konto setzt die Seite kein Cookie. Sprache und Design werden lokal im Browser gespeichert (localStorage) und verlassen das Gerät nicht. Wer sich anmeldet, erhält ein Sitzungscookie — mehr nicht.",
+    "Ohne Konto setzt die Seite kein Cookie. Sprache und Design werden lokal im Browser gespeichert (localStorage). Das Design verlässt das Gerät nie; die Sprache nur dann, wenn Sie sie in den Einstellungen ausdrücklich im Konto speichern — damit sie auf ein anderes Gerät mitkommt. Wer sich anmeldet, erhält ein Sitzungscookie — mehr nicht.",
   "about.privacy.account.title": "Ein Konto ist freiwillig",
+  // "Zwei Dinge" war richtig, solange `preferredLocale` zwar in der Tabelle
+  // stand, aber von nichts geschrieben wurde. Mit den Einstellungen sind es
+  // drei — und die dritte ist freiwillig, weil sie ohne Konto ohnehin lokal
+  // funktioniert.
   "about.privacy.account.body":
-    "Alle Daten sind ohne Anmeldung vollständig einsehbar. Ein Konto speichert zwei Dinge: eigene Gewichtungen des Aktivitätswerts und die Liste der gefolgten Abgeordneten.",
+    "Alle Daten sind ohne Anmeldung vollständig einsehbar. Ein Konto speichert drei Dinge: eigene Gewichtungen des Aktivitätswerts, die Liste der gefolgten Abgeordneten und — sofern Sie das wählen — Ihre Sprache.",
   "about.privacy.mpData.title": "Zu den Abgeordneten selbst",
   "about.privacy.mpData.body":
     "Über Abgeordnete werden ausschließlich Angaben angezeigt, die der Bundestag oder abgeordnetenwatch selbst veröffentlichen und die ihr Mandat betreffen. Private Kontaktdaten sind nicht enthalten — der Bundestag veröffentlicht keine.",
@@ -1726,7 +1837,7 @@ const en: Dictionary = {
   "auth.signInTitle": "Sign in to Bundestracker",
   "auth.chooseProvider": "Choose a provider.",
   "auth.benefits":
-    "An account saves your own activity-score weightings and lets you follow individual members.",
+    "An account saves your own activity-score weightings and lets you follow individual members. Both live under “Settings”.",
   "auth.continueWithoutAccount": "Continue without an account",
   "auth.signingIn": "Redirecting …",
   "auth.githubUnavailable": "Signing in with GitHub is not enabled yet.",
@@ -2091,6 +2202,45 @@ const en: Dictionary = {
   "weights.saveFailed": "Could not save.",
   "weights.resetToDefault": "Defaults",
 
+  // --- follow / watchlist ---
+  "follow.follow": "Follow",
+  "follow.unfollow": "Unfollow",
+  "follow.saving": "Saving …",
+  "follow.failed": "Could not save {name}. Please try again.",
+  "follow.signInCta": "Sign in to follow",
+  "follow.signInHint": "Followed members are saved to your account and appear in your settings.",
+
+  // --- settings ---
+  "settings.title": "Settings",
+  "settings.subtitle": "Your weightings, your language, and the members you follow.",
+  "settings.signedOutTitle": "Without an account there is nothing to save here",
+  "settings.signedOutBody":
+    "Everything on this site is viewable without signing in. An account stores three things: your own activity-score weightings, the list of members you follow, and — if you choose — your language.",
+  "settings.weights.title": "Activity-score weightings",
+  "settings.weights.description":
+    "These weightings apply across the site — on profiles, in the activity feed, and in every ranking you look at.",
+  "settings.weights.usingDefaults": "The default weightings are saved.",
+  "settings.weights.usingCustom": "Custom weightings are saved.",
+  "settings.weights.clear": "Delete saved weightings",
+  "settings.weights.cleared": "Deleted — the defaults apply again.",
+  "settings.language.title": "Language",
+  "settings.language.description":
+    "The language of this site. It is stored in your browser and, with an account, alongside it — so it follows you to another device.",
+  "settings.language.followBrowser": "No preference (use the browser's language)",
+  "settings.language.saved": "Language saved.",
+  "settings.watchlist.title": "Followed members",
+  "settings.watchlist.description":
+    "Members you follow — as cards, with activity score and recent activity.",
+  "settings.watchlist.empty": "You are not following anyone yet.",
+  "settings.watchlist.emptyHint":
+    "Every member's profile carries a “Follow” button. Whoever you follow there appears here.",
+  "settings.watchlist.browse": "Browse members",
+  "settings.watchlist.notSittingOne":
+    "One followed person does not sit in the {wahlperiode}th electoral period and is not shown here.",
+  "settings.watchlist.notSitting":
+    "{count} followed people do not sit in the {wahlperiode}th electoral period and are not shown here.",
+  "settings.error": "Your settings could not be loaded.",
+
   // --- activity heatmap ---
   "heatmap.title": "Activity over time",
   "heatmap.legendLess": "less",
@@ -2251,8 +2401,10 @@ const en: Dictionary = {
   "nav.ownResourcesHint": "When the Bundestag decides on its own funding and electoral law.",
   "nav.inquiryHint": "Who reaches the quarter under Art. 44 GG — and who does not.",
   "nav.searchHint": "Full-text search across members and documents.",
+  "nav.settingsHint": "Your own weightings, language and followed members.",
 
   "nav.primary": "Main navigation",
+  "nav.accountArea": "Account and settings",
   "nav.collapseSidebar": "Collapse sidebar",
   "nav.expandSidebar": "Expand sidebar",
 
@@ -2732,10 +2884,10 @@ const en: Dictionary = {
     "Bundestracker embeds no analytics, advertising or tracking services. There are no counting pixels and no profiling, and no data is passed to third parties.",
   "about.privacy.cookies.title": "One cookie, and only once you sign in",
   "about.privacy.cookies.body":
-    "Without an account the site sets no cookie. Language and theme are stored locally in the browser (localStorage) and never leave the device. Signing in adds a session cookie — and nothing else.",
+    "Without an account the site sets no cookie. Language and theme are stored locally in the browser (localStorage). The theme never leaves the device; the language does so only if you explicitly save it to your account in settings — so that it follows you to another device. Signing in adds a session cookie — and nothing else.",
   "about.privacy.account.title": "An account is optional",
   "about.privacy.account.body":
-    "All the data is fully viewable without signing in. An account stores two things: your own activity-score weightings and the list of members you follow.",
+    "All the data is fully viewable without signing in. An account stores three things: your own activity-score weightings, the list of members you follow, and — if you choose — your language.",
   "about.privacy.mpData.title": "About the members themselves",
   "about.privacy.mpData.body":
     "Only information the Bundestag or abgeordnetenwatch publish themselves, and that concerns the mandate, is shown about a member. No private contact details are included — the Bundestag publishes none.",

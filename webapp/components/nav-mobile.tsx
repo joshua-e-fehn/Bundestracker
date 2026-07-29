@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import {
   isActivePath,
+  NAV_ACCOUNT,
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
@@ -161,8 +162,23 @@ export function NavMobile({ className }: { className?: string }) {
             `expanded` is unconditionally true — the drawer is 320 px wide and
             shows every label already, so the collapsed icon-only variant, which
             exists for a 3.5 rem rail, has nothing to solve here. */}
+        {/* Settings above the account, the same pairing the rail uses — see
+            `NAV_ACCOUNT`. Inside the sticky footer rather than as a last row of
+            the nav above it, so it stays reachable on a phone where the tree is
+            taller than the panel: the same reason the account itself is pinned
+            here, and a reader who opened the drawer to change a setting should
+            not have to scroll past nine destinations to find it.
+
+            Its own labelled `<nav>`, matching the rail: a link outside every
+            `<nav>` is in no navigation as far as assistive technology is
+            concerned, so a reader browsing this panel by landmark would find
+            nine destinations and no settings. Same fix, same reason, in both
+            surfaces — see components/nav-sidebar.tsx. */}
         <div className="sticky bottom-0 mt-auto border-border/60 border-t bg-background p-3">
-          <SidebarAccount expanded />
+          <nav aria-label={t("nav.accountArea")} className="grid gap-1">
+            <DrawerLink item={NAV_ACCOUNT} pathname={pathname} />
+            <SidebarAccount expanded />
+          </nav>
         </div>
       </SheetContent>
     </Sheet>

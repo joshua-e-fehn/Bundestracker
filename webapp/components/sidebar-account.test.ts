@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 
 /**
  * A guard on the hydration contract of the shell's session-dependent slot.
@@ -81,8 +82,8 @@ describe("SidebarAccount cannot change element type on hydration", () => {
  * The same guard is needed everywhere a component branches on
  * `authClient.useSession()` in a way that changes the element *type*, because
  * the blast radius is not the component: React regenerates from the root and
- * detaches `<head>` wherever the mismatch happened. These are the other two
- * places that branch on it.
+ * detaches `<head>` wherever the mismatch happened. These are the other places
+ * that branch on it.
  */
 describe("every session-dependent branch is hydration-guarded", () => {
   const read = (name: string) =>
@@ -100,10 +101,69 @@ describe("every session-dependent branch is hydration-guarded", () => {
 
   test("AuthGuard gates its spinner branch on mount", () => {
     // Unreachable while every path is public, which is why it is cheap to fix
-    // now: it wraps the whole page, so it is the worst of the three if a
-    // private route ever arrives. See lib/auth-routes.ts.
+    // now: it wraps the whole page, so it is the worst of these if a private
+    // route ever arrives. See lib/auth-routes.ts.
     const source = read("./providers/auth-guard.tsx")
     expect(source).toMatch(/useEffect\(\(\)\s*=>\s*setMounted\(true\)\s*,\s*\[\]\)/)
     expect(source).toMatch(/if\s*\(\s*!mounted\s*\|\|\s*isPending\s*\)/)
+  })
+
+  test("FollowButton gates its signed-out link on mount", () => {
+    // The riskiest of the set by *count*: it renders once per roster row, so
+    // an unguarded version puts 25 potential mismatches on one page. Skeleton
+    // (<div>) → link (<a>) or button, same slot.
+    const source = read("./follow-button.tsx")
+    expect(source).toMatch(/useEffect\(\(\)\s*=>\s*setMounted\(true\)\s*,\s*\[\]\)/)
+    expect(source).toMatch(/if\s*\(\s*!mounted\s*\|\|\s*isPending\s*\)/)
+  })
+
+  test("SettingsPage gates its signed-out card on mount", () => {
+    // Skeleton (<div>) → the signed-in sections or the signed-out card. Both
+    // are <div>s today, which is not a defence: the guard is about what the
+    // branch *may* return, and this one owns the whole page body.
+    const source = read("./settings-page.tsx")
+    expect(source).toMatch(/useEffect\(\(\)\s*=>\s*setMounted\(true\)\s*,\s*\[\]\)/)
+    expect(source).toMatch(/!mounted \|\| isPending/)
+  })
+
+  /**
+   * The list above is hand-written, so it only covers the components someone
+   * remembered to add — and this is a bug whose whole character is being
+   * forgotten. `FollowButton` was the fourth.
+   *
+   * So this reads the directory: every component that calls
+   * `authClient.useSession()` must carry the mount flag. A new one fails here
+   * on the commit that adds it rather than as a swallowed click in production.
+   * Same filesystem-walk shape as lib/auth-routes.test.ts and
+   * components/mp-photo.test.ts, and for the same reason.
+   */
+  test("no component branches on the session without the flag", () => {
+    const dir = new URL(".", import.meta.url).pathname
+    const offenders: string[] = []
+
+    const walk = (path: string, prefix = "") => {
+      for (const entry of readdirSync(path, { withFileTypes: true })) {
+        const name = `${prefix}${entry.name}`
+        if (entry.isDirectory()) {
+          walk(join(path, entry.name), `${name}/`)
+          continue
+        }
+        if (!entry.name.endsWith(".tsx")) continue
+        const source = readFileSync(join(path, entry.name), "utf8")
+        if (!source.includes("authClient.useSession()")) continue
+        const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+        // The flag, and an effect that sets it. Reading the session without
+        // *branching* on it would be safe, but no component here does that, and
+        // demanding the guard from the ones that merely could costs two lines.
+        if (!/useEffect\(\(\)\s*=>\s*setMounted\(true\)\s*,\s*\[\]\)/.test(code)) {
+          offenders.push(name)
+        }
+      }
+    }
+    walk(dir)
+
+    // Named rather than counted: the fix is to add the flag to that file, and
+    // knowing which one it is is the whole value of the message.
+    expect(offenders).toEqual([])
   })
 })

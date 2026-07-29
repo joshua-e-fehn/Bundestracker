@@ -16,6 +16,22 @@ const STORAGE_KEY = "bundestrack.locale"
 type LocaleContextValue = {
   locale: Locale
   setLocale: (locale: Locale) => void
+  /**
+   * Apply a language saved on the reader's *account*, unless they have already
+   * chosen one on this device.
+   *
+   * Separate from `setLocale` because it is a different act with a different
+   * precedence. `setLocale` is the reader pressing the toggle — it wins over
+   * everything and is written to localStorage. This is the account's stored
+   * answer arriving after the fact, which under the rule below sits *between*
+   * a device-local choice and the browser's language list: it is a preference
+   * the same person expressed, on another device, so it beats
+   * `navigator.languages`; but a toggle pressed in this browser is more recent
+   * and more specific, so it does not beat that.
+   *
+   * Returns nothing and may do nothing. See `SavedLocaleSync`, its one caller.
+   */
+  adoptSavedLocale: (locale: Locale) => void
   t: (key: TranslationKey, values?: TranslationValues) => string
 }
 
@@ -34,17 +50,21 @@ const LocaleContext = createContext<LocaleContextValue | null>(null)
  * afterwards, because localStorage does not exist during SSR; reading it in
  * `useState` would desync hydration.
  *
- * ## Three sources, in this precedence
+ * ## Four sources, in this precedence
  *
- * 1. **The stored choice.** A reader who pressed the toggle has stated a
- *    preference, and nothing may override it.
- * 2. **The browser's own language list** (`navigator.languages`), for a first
+ * 1. **The stored choice.** A reader who pressed the toggle on *this device*
+ *    has stated a preference, and nothing may override it.
+ * 2. **The language saved on the account**, for a signed-in reader who has not
+ *    chosen on this device. Arrives asynchronously, long after the first paint
+ *    — see `adoptSavedLocale` and `SavedLocaleSync` — which is why it is
+ *    applied by a call rather than read here.
+ * 3. **The browser's own language list** (`navigator.languages`), for a first
  *    visit. Consulted rather than trusting `initialLocale` alone because the
  *    two disagree in practice: `Accept-Language` can be stripped by a proxy,
  *    absent on a prefetch, or normalised to one tag by a CDN, in which case
  *    the server negotiated against nothing and handed back the default. The
  *    browser still knows, so it is asked.
- * 3. **German**, the default — see `DEFAULT_LOCALE`. A browser set to French
+ * 4. **German**, the default — see `DEFAULT_LOCALE`. A browser set to French
  *    gets German, not English: the audience is German and the subject is the
  *    Bundestag.
  *
@@ -89,17 +109,38 @@ export function LocaleProvider({
     window.localStorage.setItem(STORAGE_KEY, next)
   }, [])
 
+  /**
+   * Precedence rule 2, applied when the account's answer arrives.
+   *
+   * The localStorage read is the whole of it: a key present means this reader
+   * has pressed the toggle in this browser, and rule 1 says that wins. Anything
+   * else — a first visit, a new device, a cleared browser — has nothing more
+   * specific than the account, so the account decides.
+   *
+   * It does **not** write `STORAGE_KEY`. Doing so would silently promote the
+   * account's answer to a device-local choice, after which clearing the
+   * preference in settings would leave the old language pinned in every browser
+   * that had ever loaded a page while signed in — and there would be no way to
+   * tell that state apart from a reader who had genuinely pressed the toggle.
+   */
+  const adoptSavedLocale = useCallback((next: Locale) => {
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    if (stored && isLocale(stored)) return
+    setLocaleState(next)
+  }, [])
+
   const value = useMemo<LocaleContextValue>(
     () => ({
       locale,
       setLocale,
+      adoptSavedLocale,
       // `getTranslator` rather than an inline `(key, values) => t(key, locale,
       // values)`: binding a locale to `t` is one operation, and it should have
       // one implementation whether the caller is a client component or a
       // server one.
       t: getTranslator(locale),
     }),
-    [locale, setLocale],
+    [locale, setLocale, adoptSavedLocale],
   )
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>

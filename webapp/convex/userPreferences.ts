@@ -160,6 +160,40 @@ export const updatePreferences = mutation({
 })
 
 /**
+ * The follow list with `mpInternalId` added, or **null** when it is already in
+ * it.
+ *
+ * Null is the load-bearing part: it means "no write needed", which is what
+ * makes `followMP` idempotent rather than merely repeatable. Returning the
+ * unchanged array instead would work too, but the caller would then have to
+ * compare arrays to decide whether to patch — and the version that skips that
+ * comparison is the one that stamps `updatedAt` on a no-op.
+ *
+ * Pure and exported for the same reason `tallyByGroup` is in convex/votes.ts:
+ * the rule can be tested without a database, and the rule is the part with the
+ * failure modes. `bun test` has no Convex runtime, so a handler-level test is
+ * not available here — see convex/userPreferences.test.ts.
+ */
+export function withFollow(followedMpIds: string[], mpInternalId: string): string[] | null {
+  if (followedMpIds.includes(mpInternalId)) return null
+  // Appended rather than sorted: this is the storage order, and the one surface
+  // that renders the list sorts by name for display (`getFollowedMPs`). Sorting
+  // ids here would order by a minted identifier, which is not an order anyone
+  // reads them in.
+  return [...followedMpIds, mpInternalId]
+}
+
+/** The follow list with `mpInternalId` removed, or null when it was not in it.
+ * The exact inverse of `withFollow`, including the no-write signal. */
+export function withoutFollow(followedMpIds: string[], mpInternalId: string): string[] | null {
+  if (!followedMpIds.includes(mpInternalId)) return null
+  // `filter`, not `splice` at `indexOf`: a list that somehow held a duplicate
+  // — a concurrent double-write, a hand-edited row — must come back with *none*
+  // of them, or an unfollow would appear not to have worked.
+  return followedMpIds.filter((id) => id !== mpInternalId)
+}
+
+/**
  * Follows an MP.
  *
  * Set semantics, not a toggle. Following someone already followed is a no-op
@@ -167,6 +201,11 @@ export const updatePreferences = mutation({
  * dropped response, cannot silently unfollow. `unfollowMP` is the separate,
  * equally idempotent inverse. A single `toggleFollow` would be the shorter API
  * and the wrong one.
+ *
+ * The client honours that shape rather than working around it:
+ * components/follow-button.tsx calls whichever of the two matches the state it
+ * is showing, so a stale render can at worst repeat an operation that has
+ * already happened.
  */
 export const followMP = mutation({
   args: { mpInternalId: v.string() },
@@ -174,8 +213,8 @@ export const followMP = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const row = await ensureRow(ctx, userId)
-    if (row.followedMpIds.includes(args.mpInternalId)) return row.followedMpIds
-    const followedMpIds = [...row.followedMpIds, args.mpInternalId]
+    const followedMpIds = withFollow(row.followedMpIds, args.mpInternalId)
+    if (followedMpIds === null) return row.followedMpIds
     await ctx.db.patch(row._id, { followedMpIds, updatedAt: Date.now() })
     return followedMpIds
   },
@@ -190,8 +229,9 @@ export const unfollowMP = mutation({
     const row = await ownRow(ctx, userId)
     // No row means nothing followed; creating one to record that would be a
     // write on behalf of a user who has chosen nothing.
-    if (!row || !row.followedMpIds.includes(args.mpInternalId)) return row?.followedMpIds ?? []
-    const followedMpIds = row.followedMpIds.filter((id) => id !== args.mpInternalId)
+    if (!row) return []
+    const followedMpIds = withoutFollow(row.followedMpIds, args.mpInternalId)
+    if (followedMpIds === null) return row.followedMpIds
     await ctx.db.patch(row._id, { followedMpIds, updatedAt: Date.now() })
     return followedMpIds
   },

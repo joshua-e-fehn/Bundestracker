@@ -131,3 +131,112 @@ describe("localeFromNavigator", () => {
     expect(localeFromNavigator(["ja"])).toBe("de")
   })
 })
+
+/**
+ * The privacy claim: what an account stores, said the same way everywhere.
+ *
+ * ## The bug
+ *
+ * `settings.signedOutBody` said an account stores "**genau zwei** Dinge" /
+ * "**exactly two** things" and listed the weights and the follow list. That was
+ * true when it was written and stopped being true on the same branch, which
+ * gave `preferredLocale` a writer — so the page contradicted itself: its own
+ * subtitle two lines up already named all three, and `/about`'s privacy note had
+ * been corrected to three while this one was left behind.
+ *
+ * "Genau"/"exactly" is what makes it an enumeration rather than a summary, and
+ * the item it omitted was the language — the one of the three that can *leave
+ * the device*, in the sentence a signed-out reader is using to decide whether to
+ * create an account. Found in review as F1.
+ *
+ * ## Why the test is written against the schema rather than against a wording
+ *
+ * A test asserting the strings contain "drei"/"three" would pass on the next
+ * column too, which is precisely when the sentence becomes wrong again. The
+ * defect is not a number in a string; it is a **claim about a table drifting
+ * from the table**. So the fixture below is the reader-facing columns of
+ * `userPreferences`, each paired with the words that name it in each locale, and
+ * the assertion is that every stored value is named on both surfaces.
+ *
+ * Adding a column to `userPreferences` therefore means adding an entry here,
+ * which fails until both privacy claims mention it. That is the property worth
+ * holding: `convex/schema.ts` is the only place that knows what is stored, and
+ * two pages tell readers about it.
+ *
+ * The `userId`, `createdAt` and `updatedAt` columns are deliberately not in the
+ * fixture: they are bookkeeping the reader neither chooses nor can clear, and a
+ * privacy note that enumerated them would be describing the row rather than the
+ * choices.
+ */
+describe("what an account stores is stated consistently", () => {
+  /**
+   * The reader-facing columns of `userPreferences` (convex/schema.ts), and how
+   * each is named in each locale.
+   *
+   * Patterns rather than fixed substrings, so a rewording that keeps the meaning
+   * passes and only a *missing item* fails. German is why: the follow list is
+   * "Abgeordneten, denen Sie **folgen**" on one surface and "die Liste der
+   * **gefolgten** Abgeordneten" on the other, and a literal `"folgen"` matches
+   * the first and not the second. Matching the stem covers both without
+   * loosening into "any sentence mentioning members".
+   */
+  const STORED_VALUES = [
+    { column: "customWeights", de: /Gewichtungen/i, en: /weightings/i },
+    { column: "followedMpIds", de: /\bge?folgt|folgen\b/i, en: /follow/i },
+    { column: "preferredLocale", de: /Sprache/i, en: /language/i },
+  ] as const
+
+  /** Both surfaces that tell a reader what an account holds. They are on
+   * different pages and were written months apart, which is exactly how they
+   * came to disagree. */
+  const PRIVACY_CLAIMS = ["settings.signedOutBody", "about.privacy.account.body"] as const
+
+  test("every stored value is named in both languages, on both surfaces", () => {
+    for (const key of PRIVACY_CLAIMS) {
+      for (const locale of LOCALES) {
+        const text = dictionaries[locale][key]
+        for (const value of STORED_VALUES) {
+          expect({
+            key,
+            locale,
+            column: value.column,
+            named: value[locale].test(text),
+          }).toEqual({ key, locale, column: value.column, named: true })
+        }
+      }
+    }
+  })
+
+  test("neither claim counts fewer things than are stored", () => {
+    // The exact wording that shipped, pinned so it cannot come back by way of a
+    // rewrite that "simplifies" the sentence. A claim about what leaves the
+    // device may summarise, but it may not undercount — and "genau"/"exactly"
+    // turns a summary into a count.
+    for (const key of PRIVACY_CLAIMS) {
+      // Asserted on the string itself rather than on a labelled object: the
+      // failure names the key through the message below, and `toMatch` takes a
+      // string.
+      expect(dictionaries.de[key], `de.${key} undercounts`).not.toMatch(/genau zwei/i)
+      expect(dictionaries.en[key], `en.${key} undercounts`).not.toMatch(/exactly two/i)
+    }
+  })
+
+  test("the settings page does not contradict its own subtitle", () => {
+    // The subtitle names all three ("Ihre Gewichtungen, Ihre Sprache und die
+    // Abgeordneten, denen Sie folgen"). The body beneath it claimed two. A page
+    // that disagrees with itself is worse than either version alone, because a
+    // reader cannot tell which sentence to believe.
+    for (const locale of LOCALES) {
+      const subtitle = dictionaries[locale]["settings.subtitle"]
+      const body = dictionaries[locale]["settings.signedOutBody"]
+      for (const value of STORED_VALUES) {
+        expect({
+          locale,
+          column: value.column,
+          inSubtitle: value[locale].test(subtitle),
+          inBody: value[locale].test(body),
+        }).toEqual({ locale, column: value.column, inSubtitle: true, inBody: true })
+      }
+    }
+  })
+})
