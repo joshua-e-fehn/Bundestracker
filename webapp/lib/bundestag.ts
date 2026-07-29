@@ -26,16 +26,20 @@ import type { Locale } from "./i18n"
 import { type PartyKey, partyFor } from "./parties"
 
 /**
- * The Wahlperiode the site shows by default.
+ * The Wahlperiode the site falls back to — **moved to lib/period.ts**, where
+ * everything else about period selection now lives.
  *
- * Mirrors `CURRENT_ELECTORAL_PERIOD` in pipeline/src/bundestrack/cli.py:32 —
- * the pipeline decides what gets *fetched*, this decides what gets *shown*, and
- * showing a period the pipeline has not loaded is an empty page rather than an
- * error. They are two files because they are two processes; keeping the number
- * in one named place on each side is what makes the next election a two-line
- * change.
+ * It is no longer "the Wahlperiode the site shows by default": that is
+ * `mps.getCurrentWahlperiode`, derived from the roster, and the reader can name
+ * a different one with `?wp=`. What is left is a fallback for the two callers
+ * that cannot await a query — `generateMetadata` on `/mps` and `/mps/[id]` —
+ * and lib/period.ts documents that narrowing where it is now declared.
+ *
+ * Re-exported rather than deleted so this module keeps a pointer for anyone who
+ * comes looking here first, which is where it lived for the whole life of the
+ * project. It is one declaration either way; see lib/period.ts.
  */
-export const CURRENT_WAHLPERIODE = 21
+export { CURRENT_WAHLPERIODE } from "./period"
 
 /**
  * The federal state a mandate was won in, or null where the source is silent.
