@@ -36,8 +36,10 @@ import { useEffect } from "react"
  * the best available answer before JavaScript runs, and correct for the two
  * rows of the table above that already agreed. This overwrites them on mount
  * rather than adding a third opinion — `media`-less entries win over
- * `media`-qualified ones only by being the *last* applicable match, so the tags
- * are removed instead of relying on ordering.
+ * `media`-qualified ones only by being the *last* applicable match, so the
+ * static tags are switched off rather than relied on to lose. Switched off by
+ * rewriting their `media` attribute, *not* by removing them: see the ⚠ in the
+ * effect below for the crash that taught us the difference.
  *
  * Renders nothing. It is a provider-shaped effect rather than a hook called from
  * the layout because the layout is a server component and this needs
@@ -56,6 +58,10 @@ import { useEffect } from "react"
  */
 const THEME_COLORS = { light: "#fafaf9", dark: "#0d0c0a" } as const
 
+/** A media query that is valid and matches nothing, used to switch off the
+ * static tags without detaching them from the DOM React owns. */
+const NEVER_MATCHES = "not all"
+
 export function ThemeColorSync() {
   const { resolvedTheme } = useTheme()
 
@@ -65,12 +71,29 @@ export function ThemeColorSync() {
     // answer rather than a guess that would flash.
     if (resolvedTheme !== "light" && resolvedTheme !== "dark") return
 
-    // The static pair from `viewport` is removed rather than left to lose on
-    // precedence: a browser picks the last tag whose `media` matches, so an
-    // unqualified tag placed before them would be overridden on exactly the
-    // machines this exists to fix.
+    // The static pair from `viewport` has to stop applying, because a browser
+    // picks the last tag whose `media` matches — an unqualified tag placed
+    // before them would be overridden on exactly the machines this exists to
+    // fix.
+    //
+    // ⚠ **They are neutralised, not removed.** `stale.remove()` was the first
+    // implementation and it crashed the app on every client-side navigation:
+    // those two tags are rendered by React (the `viewport` export in
+    // app/layout.tsx), so React holds references to them and expects to own
+    // their lifetime. Deleting them from under it means the next unmount of the
+    // head calls `removeChild` on a parent that is already `null` —
+    // "Cannot read properties of null (reading 'removeChild')", thrown on every
+    // route change, which tears down the React tree and leaves any open overlay
+    // stuck on screen over the new page. It was reproduced on a plain footer
+    // link with no overlay involved at all, so the symptom was not obviously
+    // about navigation chrome.
+    //
+    // Rewriting `media` to a query that can never match leaves the elements
+    // where React put them while making the browser ignore them, which is the
+    // whole of what this needs. `not all` is the standard "matches nothing"
+    // query.
     for (const stale of document.querySelectorAll('meta[name="theme-color"][media]')) {
-      stale.remove()
+      if (stale.getAttribute("media") !== NEVER_MATCHES) stale.setAttribute("media", NEVER_MATCHES)
     }
 
     let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]:not([media])')
