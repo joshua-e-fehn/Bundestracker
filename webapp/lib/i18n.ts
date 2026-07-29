@@ -84,6 +84,56 @@ const de = {
   // hovering pointer get, so the abbreviation never has to be guessed at.
   "nav.period": "WP {wahlperiode}",
   "nav.periodLabel": "{wahlperiode}. Wahlperiode — die hier dargestellte",
+  // The chip is a link to the same page in the current period whenever the
+  // reader has switched away — see components/site-header.tsx.
+  "nav.periodBackToCurrent": "Zur laufenden Wahlperiode",
+
+  // --- die Wahlperiodenauswahl ------------------------------------------
+  // Der Kontrolltext der einen Auswahl, die jede periodengebundene Seite
+  // trägt (components/period-selector.tsx). Getrennt von `search.*`, weil
+  // die Suche ihre eigenen Filter beschriftet und diese Auswahl keine
+  // Filterung ist, sondern der Gegenstand der Seite.
+  "period.label": "Wahlperiode",
+  "period.option": "{wahlperiode}. Wahlperiode",
+  "period.currentSuffix": "laufend",
+  "period.mandates": "{count} Mandate",
+
+  // Der Hinweis auf einer historischen Seite. Wer über einen geteilten Link
+  // ankommt, hat die Auswahl nie gesehen und weiß sonst nicht, dass dies
+  // nicht der sitzende Bundestag ist.
+  "period.historicalTitle": "{wahlperiode}. Wahlperiode — abgeschlossen",
+  "period.historicalBody":
+    "Diese Seite zeigt eine vergangene Wahlperiode. Nicht alle Quellen reichen so weit zurück; wo eine fehlt, steht es an der betreffenden Stelle.",
+  "period.notScored":
+    "Für diese Wahlperiode wurden noch keine Aktivitätswerte berechnet. Ranglisten und Punktzahlen bleiben deshalb leer — das ist ein offener Rechenlauf, kein untätiges Parlament.",
+
+  // Eine wohlgeformte URL zu einer Periode, die dieses Deployment nicht
+  // geladen hat. Ausdrücklich kein 404: die Adresse ist richtig, der
+  // Backfill fehlt.
+  "period.notLoaded": "{wahlperiode}. Wahlperiode ist hier nicht geladen",
+  "period.notLoadedHint":
+    "Die Adresse ist gültig und diese Wahlperiode hat getagt — sie wurde für dieses Deployment nur noch nicht eingelesen. Wählen Sie unten eine verfügbare Periode.",
+
+  // Quellengrenzen. Jede ist eine Eigenschaft dessen, was der Bundestag
+  // veröffentlicht, nicht dieses Projekts — siehe docs/historical-coverage.md.
+  // Sie stehen dort, wo die Null steht, weil eine Null ohne sie als Befund
+  // gelesen wird.
+  "period.source.committees.none":
+    "Ausschussmitgliedschaften werden nur für die laufende Wahlperiode veröffentlicht. Für abgeschlossene Perioden existiert keine maschinenlesbare Quelle — die Null bedeutet „nicht veröffentlicht“, nicht „ohne Ausschuss“.",
+  "period.source.speeches.none":
+    "Plenarprotokolle liegen erst ab der 18. Wahlperiode als XML vor. Für frühere Perioden gibt es die Sitzungen, aber keine maschinenlesbaren Wortprotokolle — Redebeiträge sind deshalb nicht erfasst.",
+  "period.source.votes.none":
+    "Namentliche Abstimmungen liegen erst ab September 2019 als Datenblatt vor. Für frühere Perioden existiert nur ein PDF, also kein Abstimmungsverhalten je Abgeordneter — und damit auch keine Beteiligungsquote.",
+  "period.source.votes.partial":
+    "Namentliche Abstimmungen liegen für diese Wahlperiode erst ab dem 26. September 2019 als Datenblatt vor. Ballots davor sind nur als PDF veröffentlicht und fehlen hier.",
+  "period.source.portraits.partial":
+    "Das Porträtverzeichnis des Bundestages führt die sitzenden Abgeordneten. Für abgeschlossene Wahlperioden sind deshalb weniger Bilder auffindbar.",
+  // Die Sitzverteilung ist in *jeder* Periode konstruiert, auch der
+  // laufenden — §9: es existiert nirgends ein maschinenlesbarer Sitzplan.
+  // Das ist hier die ehrliche Auskunft, dass die historische Seite nicht
+  // schlechter dasteht als die aktuelle.
+  "period.source.seating.equal":
+    "Die Sitzordnung ist in jeder Wahlperiode konstruiert — auch in der laufenden. Die Größenverhältnisse der Fraktionen sind gezählt, die einzelnen Plätze sind es nicht.",
 
   "auth.signIn": "Anmelden",
   "auth.signOut": "Abmelden",
@@ -390,6 +440,14 @@ const de = {
   // --- MP profile ---
   "mp.backToList": "Zurück zur Übersicht",
   "mp.notFound": "Diese Abgeordnete oder dieser Abgeordnete wurde nicht gefunden.",
+  // Die Person existiert, hat aber in dieser Wahlperiode kein Mandat gehabt.
+  // Ausdrücklich kein „nicht gefunden“: der Link ist richtig, nur die Periode
+  // passt nicht — und die Perioden, die passen, stehen darunter.
+  "mp.notInPeriod": "Kein Mandat in der {wahlperiode}. Wahlperiode",
+  "mp.notInPeriodNamed": "{name} hatte in der {wahlperiode}. Wahlperiode kein Mandat",
+  "mp.notInPeriodHint":
+    "Diese Person ist im Bundestrack erfasst, saß in der aufgerufenen Wahlperiode aber nicht im Bundestag.",
+  "mp.availablePeriods": "Vorhandene Wahlperioden",
   "mp.biography": "Biografie",
   "mp.birthDate": "Geboren",
   "mp.education": "Ausbildung",
@@ -1827,6 +1885,35 @@ const en: Dictionary = {
   "nav.theme": "Theme",
   "nav.period": "EP {wahlperiode}",
   "nav.periodLabel": "Electoral period {wahlperiode} — the one shown here",
+  "nav.periodBackToCurrent": "Go to the current electoral period",
+
+  "period.label": "Electoral period",
+  "period.option": "Electoral period {wahlperiode}",
+  "period.currentSuffix": "current",
+  "period.mandates": "{count} mandates",
+
+  "period.historicalTitle": "Electoral period {wahlperiode} — closed",
+  "period.historicalBody":
+    "This page shows a past electoral period. Not every source reaches back this far; where one does not, it is stated at the figure it affects.",
+  "period.notScored":
+    "Activity scores have not been computed for this electoral period yet. Rankings and scores are therefore empty — that is a pending computation, not an idle parliament.",
+
+  "period.notLoaded": "Electoral period {wahlperiode} is not loaded here",
+  "period.notLoadedHint":
+    "The address is valid and this electoral period did sit — it has simply not been ingested into this deployment. Pick an available period below.",
+
+  "period.source.committees.none":
+    "Committee memberships are published for the current electoral period only. No machine-readable source exists for closed periods — the zero means “not published”, not “sat on no committee”.",
+  "period.source.speeches.none":
+    "Plenary protocols are published as XML only from the 18th electoral period onwards. Earlier periods have the sittings but no machine-readable transcripts, so speeches are not recorded.",
+  "period.source.votes.none":
+    "Roll-call vote data sheets begin in September 2019. Earlier periods publish a PDF only, so there is no per-member voting record — and therefore no participation rate.",
+  "period.source.votes.partial":
+    "Roll-call vote data sheets for this electoral period begin on 26 September 2019. Ballots before that date are published as PDF only and are missing here.",
+  "period.source.portraits.partial":
+    "The Bundestag's portrait directory lists sitting members, so fewer photographs can be resolved for a closed electoral period.",
+  "period.source.seating.equal":
+    "The seating layout is constructed in every electoral period, including the current one. The relative sizes of the groups are counted; the individual seats are not.",
 
   "auth.signIn": "Sign in",
   "auth.signOut": "Sign out",
@@ -2062,6 +2149,11 @@ const en: Dictionary = {
   // --- MP profile ---
   "mp.backToList": "Back to all members",
   "mp.notFound": "This member could not be found.",
+  "mp.notInPeriod": "No mandate in electoral period {wahlperiode}",
+  "mp.notInPeriodNamed": "{name} held no mandate in electoral period {wahlperiode}",
+  "mp.notInPeriodHint":
+    "This person is on record in Bundestracker but did not sit in the Bundestag during the electoral period you asked for.",
+  "mp.availablePeriods": "Electoral periods on record",
   "mp.biography": "Biography",
   "mp.birthDate": "Born",
   "mp.education": "Education",

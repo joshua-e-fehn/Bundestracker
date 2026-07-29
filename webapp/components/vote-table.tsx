@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useDeferredValue, useMemo, useState } from "react"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { RebelVoteBadge } from "@/components/rebel-vote-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -95,6 +96,10 @@ export type VoteTableRow = {
 
 export function VoteTable({ rows }: { rows: ReadonlyArray<VoteTableRow> }) {
   const { t, locale } = useLocale()
+  // Carries the page's Wahlperiode into the profile link — see
+  // components/providers/period-provider.tsx. On a page that is not
+  // period-scoped this is the bare path it always was.
+  const mpHref = useMPHref()
   const [search, setSearch] = useState("")
   const [fraktion, setFraktion] = useState<string>(ANY)
   const [voteFilter, setVoteFilter] = useState<string>(ANY)
@@ -244,10 +249,7 @@ export function VoteTable({ rows }: { rows: ReadonlyArray<VoteTableRow> }) {
                 {visible.map((row) => (
                   <TableRow key={row.mpInternalId}>
                     <TableCell>
-                      <Link
-                        href={`/mps/${encodeURIComponent(row.mpInternalId)}`}
-                        className="font-medium hover:underline"
-                      >
+                      <Link href={mpHref(row.mpInternalId)} className="font-medium hover:underline">
                         {row.name}
                       </Link>
                       {/* The group repeats under the name where its own column

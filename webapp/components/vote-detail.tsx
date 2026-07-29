@@ -1,17 +1,21 @@
 "use client"
 
+import { useQuery } from "convex/react"
 import { AlertTriangle, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { CaveatNote } from "@/components/caveat-note"
 import { type FraktionBreakdown, FraktionVoteSummary } from "@/components/fraktion-vote-summary"
 import { LameDuckBadge } from "@/components/lame-duck-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { PeriodProvider } from "@/components/providers/period-provider"
 import { Card } from "@/components/ui/card"
 import { VoteBar, type VoteCounts } from "@/components/vote-bar"
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { VoteTable, type VoteTableRow } from "@/components/vote-table"
+import { api } from "@/convex/_generated/api"
 import { formatDate, formatPercent } from "@/lib/format"
 import { isLameDuckVote, LAME_DUCK_MAINTAINED_AS_OF } from "@/lib/lame-duck"
+import { periodLink } from "@/lib/period"
 
 /**
  * One ballot in full: the outcome, the chamber's split, each group's line, and
@@ -74,6 +78,9 @@ export function VoteDetail({
   rebelCount: number
 }) {
   const { t, locale } = useLocale()
+  // The sitting period, so a link back to a *current* page can stay bare. One
+  // subscription for the whole ballot page, passed to `PeriodProvider` below.
+  const periods = useQuery(api.mps.listPeriods, {})
 
   // Through the locale formatter rather than printed raw: every other date on
   // this page is, and an ISO string beside "18. März 2025" reads as a machine
@@ -109,40 +116,54 @@ export function VoteDetail({
   const turnoutBase = sheet.totalEligible > 0 ? sheet.totalEligible : publishedTotal
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-4">
-        <Link
-          href="/votes"
-          className="text-muted-foreground text-sm underline underline-offset-4 hover:text-foreground"
-        >
-          ← {t("votes.backToList")}
-        </Link>
+    // The ballot's own Wahlperiode scopes every link out of this page.
+    //
+    // `sheet.wahlperiode` rather than a `?wp=` on this URL, and that is the
+    // stronger source: a ballot *belongs* to one period as a fact about the
+    // ballot, where a query parameter is a statement about what the reader
+    // asked for. `/votes/[id]` is keyed by a sheet id that already determines
+    // the period, so a parameter has nothing to add and something to
+    // contradict.
+    //
+    // So a WP19 ballot's member rows link to WP19 profiles even for a reader
+    // who arrived from a bare `/votes/<id>`. That is right: the member voted in
+    // *that* chamber, and their current mandate — if they still hold one — is a
+    // different row about a different four years.
+    <PeriodProvider wahlperiode={sheet.wahlperiode} current={periods?.current}>
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-4">
+          <Link
+            href={periodLink("/votes", sheet.wahlperiode, periods?.current ?? null)}
+            className="text-muted-foreground text-sm underline underline-offset-4 hover:text-foreground"
+          >
+            ← {t("votes.backToList")}
+          </Link>
 
-        <div className="flex flex-col gap-3">
-          <h1 className="font-semibold text-2xl tracking-tight sm:text-3xl">{sheet.title}</h1>
+          <div className="flex flex-col gap-3">
+            <h1 className="font-semibold text-2xl tracking-tight sm:text-3xl">{sheet.title}</h1>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
-            <span className="tabular-nums">{formatDate(sheet.date, locale)}</span>
-            <span className="tabular-nums">
-              {t("votes.sitting", {
-                sitzungnr: sheet.sitzungnr,
-                abstimmnr: sheet.abstimmnr,
-              })}
-            </span>
-            <VoteOutcomeBadge result={sheet.result} locale={locale} />
-            {/* Full label here, unlike the list's compact mark: this is the page
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
+              <span className="tabular-nums">{formatDate(sheet.date, locale)}</span>
+              <span className="tabular-nums">
+                {t("votes.sitting", {
+                  sitzungnr: sheet.sitzungnr,
+                  abstimmnr: sheet.abstimmnr,
+                })}
+              </span>
+              <VoteOutcomeBadge result={sheet.result} locale={locale} />
+              {/* Full label here, unlike the list's compact mark: this is the page
                 about this one ballot, so there is room for the word and a
                 reader arriving from a search has no column header to read it
                 from. */}
-            <LameDuckBadge date={sheet.date} wahlperiode={sheet.wahlperiode} locale={locale} />
+              <LameDuckBadge date={sheet.date} wahlperiode={sheet.wahlperiode} locale={locale} />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* The caveat that governs every figure on this page. */}
-      <CaveatNote>{t("votes.namedOnlyNotice")}</CaveatNote>
+        {/* The caveat that governs every figure on this page. */}
+        <CaveatNote>{t("votes.namedOnlyNotice")}</CaveatNote>
 
-      {/* The badge is a two-word label; this is what it means. Rendered on the
+        {/* The badge is a two-word label; this is what it means. Rendered on the
           same condition, through the same function, so the note and the mark
           cannot appear without each other — a badge reading "Geschäftsführend"
           with no explanation is a label a reader has no way to check.
@@ -151,75 +172,76 @@ export function VoteDetail({
           every other one on this site does: it says the figures below are true
           and are not the whole story. Here the qualification is about *who*
           voted rather than about what was counted. */}
-      {isLameDuckVote(sheet.date, sheet.wahlperiode) ? (
-        <CaveatNote>
-          {t("votes.lameDuckNotice")} {t("votes.lameDuckMaintained", { date: maintainedAsOf })}
-        </CaveatNote>
-      ) : null}
+        {isLameDuckVote(sheet.date, sheet.wahlperiode) ? (
+          <CaveatNote>
+            {t("votes.lameDuckNotice")} {t("votes.lameDuckMaintained", { date: maintainedAsOf })}
+          </CaveatNote>
+        ) : null}
 
-      {mismatch ? (
-        <p className="flex gap-2 rounded-md border border-vote-abstain/40 bg-vote-abstain/10 p-3 text-xs leading-relaxed">
-          <AlertTriangle className="mt-px size-4 shrink-0" aria-hidden="true" />
-          <span>
-            {t("votes.tallyMismatch")}{" "}
-            <span className="tabular-nums">
-              {t("votes.tallyPublished")}: {publishedTotal} · {t("votes.tallyCounted")}:{" "}
-              {talliedTotal}
+        {mismatch ? (
+          <p className="flex gap-2 rounded-md border border-vote-abstain/40 bg-vote-abstain/10 p-3 text-xs leading-relaxed">
+            <AlertTriangle className="mt-px size-4 shrink-0" aria-hidden="true" />
+            <span>
+              {t("votes.tallyMismatch")}{" "}
+              <span className="tabular-nums">
+                {t("votes.tallyPublished")}: {publishedTotal} · {t("votes.tallyCounted")}:{" "}
+                {talliedTotal}
+              </span>
             </span>
-          </span>
-        </p>
-      ) : null}
+          </p>
+        ) : null}
 
-      <Card className="flex flex-col gap-4 p-4 sm:p-5">
-        <VoteBar counts={published} locale={locale} showLegend />
+        <Card className="flex flex-col gap-4 p-4 sm:p-5">
+          <VoteBar counts={published} locale={locale} showLegend />
 
-        <div className="flex flex-wrap gap-x-8 gap-y-3">
-          <Stat
-            label={t("votes.turnout")}
-            value={turnoutBase > 0 ? formatPercent(cast / turnoutBase, locale) : "—"}
-          />
-          <Stat label={t("votes.eligible")} value={String(sheet.totalEligible)} />
-          {rebelCount > 0 ? <Stat label={t("votes.rebels")} value={String(rebelCount)} /> : null}
-        </div>
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
+            <Stat
+              label={t("votes.turnout")}
+              value={turnoutBase > 0 ? formatPercent(cast / turnoutBase, locale) : "—"}
+            />
+            <Stat label={t("votes.eligible")} value={String(sheet.totalEligible)} />
+            {rebelCount > 0 ? <Stat label={t("votes.rebels")} value={String(rebelCount)} /> : null}
+          </div>
 
-        {/* The XLSX this ballot was parsed from. Null when it was reconstructed
+          {/* The XLSX this ballot was parsed from. Null when it was reconstructed
             from the protocol XML instead, which is also the case where
             `absentCount` cannot be trusted (schema note on `sourceUrl`). */}
-        {sheet.sourceUrl !== null ? (
-          <a
-            href={sheet.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex w-fit items-center gap-1.5 text-sm underline underline-offset-4 hover:text-foreground"
-          >
-            {t("votes.sourceSheet")}
-            <ExternalLink className="size-3.5" aria-hidden="true" />
-          </a>
-        ) : null}
-      </Card>
-
-      <section aria-labelledby="vote-breakdown-heading" className="flex flex-col gap-3">
-        <h2 id="vote-breakdown-heading" className="font-semibold text-lg">
-          {t("votes.breakdownTitle")}
-        </h2>
-        <Card className="p-4 sm:p-5">
-          <FraktionVoteSummary breakdown={breakdown} locale={locale} />
+          {sheet.sourceUrl !== null ? (
+            <a
+              href={sheet.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-fit items-center gap-1.5 text-sm underline underline-offset-4 hover:text-foreground"
+            >
+              {t("votes.sourceSheet")}
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+            </a>
+          ) : null}
         </Card>
-        <p className="text-muted-foreground text-xs leading-relaxed">{t("votes.rebelsNote")}</p>
-      </section>
 
-      <section aria-labelledby="vote-records-heading" className="flex flex-col gap-3">
-        <h2 id="vote-records-heading" className="font-semibold text-lg">
-          {t("votes.recordsTitle")}
-        </h2>
-        {records.length === 0 ? (
-          <p className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">
-            {t("votes.recordsEmpty")}
-          </p>
-        ) : (
-          <VoteTable rows={records} />
-        )}
-      </section>
-    </div>
+        <section aria-labelledby="vote-breakdown-heading" className="flex flex-col gap-3">
+          <h2 id="vote-breakdown-heading" className="font-semibold text-lg">
+            {t("votes.breakdownTitle")}
+          </h2>
+          <Card className="p-4 sm:p-5">
+            <FraktionVoteSummary breakdown={breakdown} locale={locale} />
+          </Card>
+          <p className="text-muted-foreground text-xs leading-relaxed">{t("votes.rebelsNote")}</p>
+        </section>
+
+        <section aria-labelledby="vote-records-heading" className="flex flex-col gap-3">
+          <h2 id="vote-records-heading" className="font-semibold text-lg">
+            {t("votes.recordsTitle")}
+          </h2>
+          {records.length === 0 ? (
+            <p className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">
+              {t("votes.recordsEmpty")}
+            </p>
+          ) : (
+            <VoteTable rows={records} />
+          )}
+        </section>
+      </div>
+    </PeriodProvider>
   )
 }

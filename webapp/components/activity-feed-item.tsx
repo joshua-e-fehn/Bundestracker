@@ -4,9 +4,10 @@ import { ChevronDown } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { EVENT_TYPE_STYLES, EventTypeIcon } from "@/components/event-type-icon"
+import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
-import { MPPhoto } from "@/components/mp-photo"
+import { useMPHref } from "@/components/providers/period-provider"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { FeedActor, FeedGroup } from "@/lib/feed-grouping"
@@ -489,11 +490,15 @@ function ActorLink({
   points: number | null
 }) {
   const { t, locale } = useLocale()
+  // Carries the page's Wahlperiode into the profile link — see
+  // components/providers/period-provider.tsx. On a page that is not
+  // period-scoped this is the bare path it always was.
+  const mpHref = useMPHref()
 
   return (
     <span className="flex items-center gap-2">
       <Link
-        href={`/mps/${encodeURIComponent(actor.mpInternalId)}`}
+        href={mpHref(actor.mpInternalId)}
         className="flex items-center gap-2 font-medium text-sm hover:underline"
       >
         <MPPhoto

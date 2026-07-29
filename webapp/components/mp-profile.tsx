@@ -16,6 +16,7 @@ import { formatDate } from "@/lib/bundestag"
 import { CONTACT_ANCHOR, type ContactBlock, contactChannels, hostOf } from "@/lib/contact"
 import type { Locale } from "@/lib/i18n"
 import { BUNDESTAG_MPS_URL } from "@/lib/links"
+import { periodLink } from "@/lib/period"
 
 /**
  * The profile: who this MP is, what they have done, and how it was scored.
@@ -98,17 +99,33 @@ export function MPProfile({
   mp,
   wahlperiode,
   today,
+  current,
 }: {
   mp: MPDoc
   wahlperiode: number
   today: string
+  /**
+   * The sitting Wahlperiode, so the panels below can tell "not published for a
+   * closed period" from "zero".
+   *
+   * Passed down rather than queried in each card. Five surfaces on this page
+   * need it — the committee card, the score panel, the vote list, the trend
+   * graphs and the back-link — and a query each would be five subscriptions to
+   * one number. It is also the value that decides whether the back-link carries
+   * a period, and that must be the *same* number the selector above used or the
+   * link would leave the period the reader is in.
+   */
+  current?: number | null
 }) {
   const { t, locale } = useLocale()
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Back to the roster of *this* period. A bare `/mps` would drop a reader
+          browsing WP19 into the current chamber — the silent period loss the
+          acceptance criteria name, on the one link every profile carries. */}
       <Link
-        href="/mps"
+        href={periodLink("/mps", wahlperiode, current)}
         className="text-muted-foreground text-sm hover:text-foreground hover:underline"
       >
         ← {t("mp.backToList")}
@@ -203,11 +220,15 @@ export function MPProfile({
               committee seats — both are context, and context can wait. */}
           <Contact mp={mp} />
           <Biography mp={mp} locale={locale} />
-          <MPCommittees mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
+          {/* `current` is what lets the empty state say *why* it is empty.
+              Committee membership is published for the sitting Bundestag alone
+              (§6.4), so on a closed period every MP has none — and "none" and
+              "not published" are the same empty array. */}
+          <MPCommittees mpInternalId={mp.internalId} wahlperiode={wahlperiode} current={current} />
         </aside>
 
         <div className="flex flex-col gap-6">
-          <MPScorePanel mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
+          <MPScorePanel mpInternalId={mp.internalId} wahlperiode={wahlperiode} current={current} />
 
           <Card>
             <CardHeader>
@@ -224,7 +245,11 @@ export function MPProfile({
               follow. */}
           <TrendGraphs mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
 
-          <MPRecentRecords mpInternalId={mp.internalId} wahlperiode={wahlperiode} />
+          <MPRecentRecords
+            mpInternalId={mp.internalId}
+            wahlperiode={wahlperiode}
+            current={current}
+          />
         </div>
       </div>
     </div>

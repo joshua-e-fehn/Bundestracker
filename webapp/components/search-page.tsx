@@ -6,10 +6,12 @@ import { useCallback } from "react"
 import { EVENT_TYPE_STYLES } from "@/components/event-type-icon"
 import { ALL, FilterSelect } from "@/components/filter-select"
 import { useLocale } from "@/components/providers/locale-provider"
+import { PeriodProvider } from "@/components/providers/period-provider"
 import { SearchBar } from "@/components/search-bar"
 import { SearchResults } from "@/components/search-results"
 import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
+import { PERIOD_PARAM, parsePeriodParam } from "@/lib/period"
 import { EVENT_TYPES, type EventType, isEventType } from "@/lib/taxonomy"
 
 /**
@@ -46,9 +48,17 @@ export function SearchPage({ defaultWahlperiode }: { defaultWahlperiode: number 
   const fraktion = params.get("fraktion") ?? ALL
   const committee = params.get("committee") ?? ALL
   const typeParam = params.get("type") ?? ALL
-  const periodParam = Number(params.get("wp"))
-  const wahlperiode =
-    Number.isFinite(periodParam) && periodParam > 0 ? periodParam : defaultWahlperiode
+
+  // Through `lib/period.ts`, not a local `Number()` — this page invented the
+  // `?wp=` convention and the rest of the site now shares it, so it must share
+  // the *parse* as well or the two would disagree about `?wp=21.5` and `?wp=0`.
+  // The old form here accepted both.
+  const requested = parsePeriodParam(params.get(PERIOD_PARAM))
+  // The deployment's own answer to "which period is current", preferred over
+  // the constant the page is handed: that constant is a build-time fallback for
+  // `generateMetadata`, and this page can afford the round-trip.
+  const periods = useQuery(api.mps.listPeriods, {})
+  const wahlperiode = requested ?? periods?.current ?? defaultWahlperiode
 
   const options = useQuery(api.search.getSearchFilterOptions, { wahlperiode })
 
@@ -132,18 +142,21 @@ export function SearchPage({ defaultWahlperiode }: { defaultWahlperiode: number 
         />
 
         {/* Only when there is a choice to make. A deployment holding one
-            Wahlperiode — which is every deployment until the Wave 10 backfill
-            runs — gets no control rather than a dropdown with one option. */}
-        {options && options.wahlperioden.length > 1 && (
+            Wahlperiode gets no control rather than a dropdown with one option —
+            `PeriodSelector` applies the same rule for the same reason.
+            `periods` comes from `mps.listPeriods` now rather than from this
+            page's own filter query, so the set offered here is the set offered
+            everywhere else by construction. */}
+        {periods && periods.periods.length > 1 && (
           <FilterSelect
             id="search-period"
             label={t("search.filterPeriod")}
             value={String(wahlperiode)}
-            onChange={(value) => setParam("wp", value)}
+            onChange={(value) => setParam(PERIOD_PARAM, value)}
             allLabel={t("search.period", { wahlperiode: defaultWahlperiode })}
-            options={options.wahlperioden.map((period) => ({
-              value: String(period),
-              label: t("search.period", { wahlperiode: period }),
+            options={periods.periods.map((entry) => ({
+              value: String(entry.wahlperiode),
+              label: t("search.period", { wahlperiode: entry.wahlperiode }),
             }))}
           />
         )}
@@ -172,13 +185,19 @@ export function SearchPage({ defaultWahlperiode }: { defaultWahlperiode: number 
         <p className="text-muted-foreground text-xs">{t("search.committeeScopeNotice")}</p>
       )}
 
-      <SearchResults
-        query={query}
-        wahlperiode={wahlperiode}
-        fraktion={fraktion === ALL ? undefined : fraktion}
-        committee={committee === ALL ? undefined : committee}
-        eventType={eventType}
-      />
+      {/* So a result card's profile link keeps the period the search ran in.
+          Around the results rather than the whole page: the filters above
+          navigate by writing parameters onto *this* path, which is a different
+          job from linking away — see components/providers/period-provider.tsx. */}
+      <PeriodProvider wahlperiode={wahlperiode} current={periods?.current}>
+        <SearchResults
+          query={query}
+          wahlperiode={wahlperiode}
+          fraktion={fraktion === ALL ? undefined : fraktion}
+          committee={committee === ALL ? undefined : committee}
+          eventType={eventType}
+        />
+      </PeriodProvider>
     </div>
   )
 }

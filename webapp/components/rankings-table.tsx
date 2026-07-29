@@ -6,6 +6,7 @@ import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { RankMedal } from "@/components/rank-medal"
 import {
   Table,
@@ -74,6 +75,10 @@ export function RankingsTable({
   onSort: (field: string) => void
 }) {
   const { t, locale } = useLocale()
+  // Carries the page's Wahlperiode into the profile link — see
+  // components/providers/period-provider.tsx. On a page that is not
+  // period-scoped this is the bare path it always was.
+  const mpHref = useMPHref()
 
   /**
    * The activity score, as a column like any other.
@@ -142,7 +147,7 @@ export function RankingsTable({
 
             <TableCell>
               <Link
-                href={`/mps/${encodeURIComponent(row.mpInternalId)}`}
+                href={mpHref(row.mpInternalId)}
                 className="flex items-center gap-2.5 font-medium hover:underline"
               >
                 <MPPhoto

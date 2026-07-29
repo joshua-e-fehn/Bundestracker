@@ -1,6 +1,6 @@
 "use client"
 
-import { type Preloaded, usePreloadedQuery, useQuery } from "convex/react"
+import { useQuery } from "convex/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useDeferredValue, useMemo, useState } from "react"
@@ -10,6 +10,7 @@ import { FraktionBadge } from "@/components/fraktion-badge"
 import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,9 +30,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-// A value import now, not only a type: the preloaded roster still arrives as a
-// `Preloaded<typeof api.mps.getMPsWithScores>`, but the follow set is read live
-// from `api.userPreferences.getPreferences` — see `followedIds`.
+// For the follow set, which is the one thing this component still reads for
+// itself — see `followedIds`. The roster arrives as a prop, because a preloaded
+// query cannot follow a period change; see the note on `rows`.
 import { api } from "@/convex/_generated/api"
 import { formatNumber, formatPercent, occupationOf, stateOf } from "@/lib/bundestag"
 import { scoreCeiling } from "@/lib/format"
@@ -43,9 +44,11 @@ import { MANDATE_LABEL_KEYS, MANDATE_TYPES, mandateType } from "@/lib/taxonomy"
 /**
  * The roster table: search, filter, sort, page.
  *
- * Everything here operates on the full list the server preloaded — see the note
- * on app/mps/page.tsx for why all ~630 rows come down at once. The consequence
- * is that no interaction on this page is a network round-trip.
+ * Everything here operates on the full list `components/mp-roster.tsx` fetched
+ * — see the note on app/mps/page.tsx for why all ~630 rows come down at once,
+ * and why they arrive as a prop rather than from a `preloadQuery` on the server
+ * page. The consequence is unchanged: no interaction on this page is a network
+ * round-trip.
  *
  * ## Every option comes from the data, and an unanswerable filter is not shown
  *
@@ -74,7 +77,15 @@ import { MANDATE_LABEL_KEYS, MANDATE_TYPES, mandateType } from "@/lib/taxonomy"
  * likewise hidden rather than showing a chamber that sat on no committees.
  */
 
-type Row = {
+/**
+ * One roster row as `getMPsWithScores` returns it.
+ *
+ * Exported as `RosterRow` because `components/mp-roster.tsx` fetches these and
+ * passes them in — see the note on `MPTable`'s `rows` prop for why the fetch
+ * moved out of this file. `Row` stays the local alias so the twenty-odd
+ * references below read as they did.
+ */
+export type RosterRow = {
   mp: {
     internalId: string
     name: string
@@ -114,6 +125,10 @@ type Row = {
   score: { totalScore: number; voteParticipationRate: number } | null
   committees: string[]
 }
+
+/** The local name, kept so the sorting and rendering helpers below read as they
+ * did before the type was exported. */
+type Row = RosterRow
 
 type SortKey = "name" | "fraktion" | "occupation" | "constituency" | "score" | "participation"
 type SortDirection = "asc" | "desc"
@@ -174,13 +189,23 @@ function sortValue(sort: { key: SortKey; direction: SortDirection }): string {
 }
 
 export function MPTable({
-  preloaded,
+  rows,
   wahlperiode,
 }: {
-  preloaded: Preloaded<typeof api.mps.getMPsWithScores>
+  /**
+   * The roster, already fetched.
+   *
+   * A prop rather than a `usePreloadedQuery` over a `Preloaded<...>` handed
+   * down from the server page, which is what this took until the period became
+   * a URL parameter. The reason is in app/mps/page.tsx: a preloaded query is
+   * bound to the arguments the *server* called it with, so a client-side switch
+   * from WP21 to WP19 would change the URL and keep answering with the WP21
+   * roster. `components/mp-roster.tsx` owns the fetch now, re-running it when
+   * the period changes, and this component renders whatever it is given.
+   */
+  rows: RosterRow[]
   wahlperiode: number
 }) {
-  const rows = usePreloadedQuery(preloaded)
   const { t, locale } = useLocale()
 
   /**
@@ -656,7 +681,13 @@ export function MPTable({
 function MPRow({ row, following }: { row: Row; following: boolean | undefined }) {
   const { t, locale } = useLocale()
   const router = useRouter()
-  const href = `/mps/${encodeURIComponent(row.mp.internalId)}`
+  // Through the shared builder, so the roster's period reaches the profile.
+  // This one href is used twice — by the name anchor and by the whole-row
+  // `router.push` below — so building it by hand dropped the period on both,
+  // which on a 630-row WP19 roster is 630 links into the wrong Bundestag. Found
+  // by lib/period-links.test.ts rather than by eye.
+  const mpHref = useMPHref()
+  const href = mpHref(row.mp.internalId)
   const occupation = occupationOf(row.mp)
 
   function handleRowClick(event: React.MouseEvent<HTMLTableRowElement>) {

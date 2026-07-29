@@ -2,10 +2,11 @@
 
 import { useQuery } from "convex/react"
 import Link from "next/link"
+import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { RankMedal } from "@/components/rank-medal"
-import { MPPhoto } from "@/components/mp-photo"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/table"
 import { api } from "@/convex/_generated/api"
 import { formatCount, formatRate, formatScore, initials } from "@/lib/format"
-import { partyByKey, type PartyKey } from "@/lib/parties"
+import { type PartyKey, partyByKey } from "@/lib/parties"
 
 /**
  * One Fraktion's members, ranked by activity score — what clicking a party on
@@ -45,6 +46,10 @@ import { partyByKey, type PartyKey } from "@/lib/parties"
  */
 export function PartyMembers({ party, wahlperiode }: { party: PartyKey; wahlperiode: number }) {
   const { t, locale } = useLocale()
+  // Carries the page's Wahlperiode into the profile link — see
+  // components/providers/period-provider.tsx. On a page that is not
+  // period-scoped this is the bare path it always was.
+  const mpHref = useMPHref()
   const result = useQuery(api.parties.getPartyMembers, { wahlperiode, party })
 
   if (result === undefined) {
@@ -62,6 +67,12 @@ export function PartyMembers({ party, wahlperiode }: { party: PartyKey; wahlperi
   if (result.rows.length === 0) {
     return (
       <p className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">
+        {/* Already the right sentence for a switchable period, and worth a note
+            now that this branch is reachable for a real reason rather than only
+            for an unloaded deployment: "no mandates are recorded for this group
+            **in this electoral period**" is what a reader on `/parties/fdp?wp=21`
+            needs, where the FDP holds no seats and did hold them in WP19 and
+            WP20. It is a fact about that Bundestag, not a gap in the data. */}
         {t("parties.members.empty")}
       </p>
     )
@@ -116,7 +127,7 @@ export function PartyMembers({ party, wahlperiode }: { party: PartyKey; wahlperi
 
                 <TableCell>
                   <Link
-                    href={`/mps/${encodeURIComponent(row.mpInternalId)}`}
+                    href={mpHref(row.mpInternalId)}
                     className="flex items-center gap-2.5 font-medium hover:underline"
                   >
                     <MPPhoto
