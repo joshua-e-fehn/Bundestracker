@@ -150,6 +150,49 @@ def month_scored(wahlperiode: int, month: str) -> bool:
     return bool(rows)
 
 
+#: The short forms `transform.normalise_fraktion` maps every source spelling to
+#: (`FRAKTION_PATTERNS`), plus the no-group status. Anything else in the roster
+#: is a spelling that fell through — the function passes it through and logs,
+#: rather than mapping it to `Fraktionslos` and quietly moving an MP out of
+#: their group, so the wrong value reaches the database and only a read like
+#: this one finds it.
+KNOWN_FRAKTIONEN = {
+    "CDU/CSU",
+    "SPD",
+    "BÜNDNIS 90/DIE GRÜNEN",
+    "AfD",
+    "FDP",
+    "Die Linke",
+    "Fraktionslos",
+}
+
+
+def unmapped_fraktionen(periods: list[int]) -> dict[int, set[str]]:
+    """Group spellings in the roster that `normalise_fraktion` did not map.
+
+    Worth checking per period rather than trusting the pattern list: the
+    wording changes between Wahlperioden — that is the reason the patterns are
+    substring matches and not an equality table — and a group that fails to map
+    is a value the seating order, the rankings filter and the UI all fail to
+    match. WP20's `Gruppe BSW …` is a real group and expected to appear here;
+    it is listed so a reader can tell it apart from a mis-parse.
+    """
+    found: dict[int, set[str]] = {}
+    for wahlperiode in periods:
+        try:
+            rows = query("mps:getFractionSizes", {"wahlperiode": wahlperiode})
+        except (urllib.error.URLError, RuntimeError):
+            continue
+        odd = {
+            str(row["fraktion"])
+            for row in rows  # type: ignore[union-attr]
+            if str(row["fraktion"]) not in KNOWN_FRAKTIONEN
+        }
+        if odd:
+            found[wahlperiode] = odd
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -200,6 +243,22 @@ def main() -> int:
         )
         if int(stats["mps"]["count"]) and totals == 0:
             incomplete.append(f"WP{wahlperiode}:no period-total scores")
+
+    unmapped = unmapped_fraktionen(periods)
+    if unmapped:
+        print()
+        print(
+            "Unmapped Fraktion spellings — `normalise_fraktion` passed these through:"
+        )
+        for wahlperiode, values in sorted(unmapped.items(), reverse=True):
+            print(f"  WP{wahlperiode}: {', '.join(sorted(values))}")
+        # Reported, not failed. A group that maps to nothing is *usually* a
+        # spelling `FRAKTION_PATTERNS` has not met, but it is sometimes a real
+        # group with no short form — WP20's `Gruppe BSW …` is one, and a
+        # Gruppe is constitutionally not a Fraktion, so inventing a short form
+        # for it would be a claim the sources do not make. Which of the two a
+        # value is takes a human, so this prints it rather than deciding.
+        print("  (a real group with no short form reads the same as a mis-parse here)")
 
     print()
     print("Source limits — a zero below these is absent data, not an idle chamber:")
