@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table"
 import type { api } from "@/convex/_generated/api"
 import { formatNumber, formatPercent, occupationOf, stateOf } from "@/lib/bundestag"
+import { landNameFor } from "@/lib/laender"
 import { scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 import { foldName } from "@/lib/search"
@@ -207,14 +208,19 @@ export function MPTable({
    * rather than from a list of sixteen Länder, because the codes are
    * period-scoped — see the header — and because a member whose record carries
    * none must not invent an option. `stateOf` is shared with the rankings so
-   * the two surfaces answer "which state" by one rule rather than two. */
-  const states = useMemo(
-    () =>
-      [...new Set(rows.flatMap((row) => stateOf(row.mp.federalState) ?? []))].sort((a, b) =>
-        a.localeCompare(b, "de"),
-      ),
-    [rows],
-  )
+   * the two surfaces answer "which state" by one rule rather than two.
+   *
+   * Carries the code *and* its label: the code is what the filter compares on
+   * and the label is what the reader picks, and they must not be the same
+   * string. Sorted by the label, in the reader's collation — an English reader
+   * scanning for Bavaria looks under B, and sorting by the code would file it
+   * under `BY` between `BW` and `BE`, which is an order neither language reads. */
+  const states = useMemo(() => {
+    const codes = [...new Set(rows.flatMap((row) => stateOf(row.mp.federalState) ?? []))]
+    return codes
+      .map((code) => ({ code, label: landNameFor(code, locale) }))
+      .sort((a, b) => a.label.localeCompare(b.label, locale))
+  }, [rows, locale])
 
   /** Committees anyone on this roster sits on. Empty on a historical period —
    * see the header. */
@@ -343,7 +349,10 @@ export function MPTable({
               setPage(0)
             }}
             allLabel={t("mps.allStates")}
-            options={states.map((code) => ({ value: code, label: code }))}
+            // The value stays the raw `WKR_LAND` code and only the label is
+            // translated: a locale-dependent filter value would make the same
+            // selection mean different things to a German and an English reader.
+            options={states.map(({ code, label }) => ({ value: code, label }))}
           />
         )}
 

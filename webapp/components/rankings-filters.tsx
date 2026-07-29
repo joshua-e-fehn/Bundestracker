@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select"
 import { formatMonth } from "@/lib/bundestag"
 import type { TranslationKey } from "@/lib/i18n"
+import { landNameFor } from "@/lib/laender"
 import type { AgeGroup } from "@/lib/taxonomy"
 
 /**
@@ -187,11 +188,22 @@ export function RankingsFilters({
           anyLabel={t("rankings.filter.allStates")}
           value={filters.state}
           onValueChange={(value) => set("state", value)}
-          width="w-[11rem]"
-          items={options.states.map((entry) => ({
-            value: entry.value,
-            label: `${entry.value} (${entry.count})`,
-          }))}
+          width="w-[13rem]"
+          // The value stays the raw `WKR_LAND` code; only the label is
+          // translated. A locale-dependent filter value would make the same
+          // selection mean different things in the two languages, and would
+          // break the day a translation was reworded.
+          //
+          // Sorted here rather than trusting the query's order: the server
+          // sorts by code (it has no locale), and "Bayern" belongs under B for
+          // a German reader and "Bavaria" under B for an English one — which
+          // `BY` satisfies for neither.
+          items={options.states
+            .map((entry) => ({
+              value: entry.value,
+              label: `${landNameFor(entry.value, locale)} (${entry.count})`,
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label, locale))}
         />
       )}
 
