@@ -113,7 +113,9 @@ export function bucketFor(aktivitaetsart: string): ActivityBucket {
   if (kind.includes("anfrage")) return "questions"
 
   // `Rede`, `Rede (zu Protokoll gegeben)` — a written speech submitted for the
-  // record, §5.2 — and `Schriftliche Erklärung gem. § 31 GO BT`.
+  // record, §5.2 — and `Schriftliche Erklärung gem. § 31 Geschäftsordnung BT`
+  // (the canonical DIP wording; `§ 31 GO BT` is what this repo *used* to
+  // record, but it never matched a real record, §5.1).
   if (kind.includes("rede") || kind.includes("erklärung")) return "speeches"
 
   if (kind.includes("antrag") || kind.includes("entschließung")) return "motions"

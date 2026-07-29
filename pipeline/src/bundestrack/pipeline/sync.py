@@ -58,7 +58,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
-from bundestrack.api.abgeordnetenwatch import AbgeordnetenwatchClient, parse_politicians
+from bundestrack.api.abgeordnetenwatch import (
+    AbgeordnetenwatchClient,
+    parse_mandates,
+    parse_politicians,
+    politician_stammdaten_index,
+)
 from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.dip import DIPClient
 from bundestrack.api.mp_profiles import MPProfileClient
@@ -77,6 +82,7 @@ from bundestrack.pipeline.state import (
     STREAM_ACTIVITIES,
     STREAM_MOTIONS,
     STREAM_PROTOCOLS,
+    STREAM_REFERRALS,
     SyncState,
     load_state,
     save_state,
@@ -95,6 +101,15 @@ FIRST_XML_WAHLPERIODE = 18
 #: one request, and small enough that an 80 537-record backfill streams through
 #: memory rather than being collected into a list first.
 STREAM_BATCH = 500
+
+#: Activities per run above which zero §31 declarations counts as drift.
+#: A period-scale run passes this comfortably; an incremental sync of a few
+#: hundred activities does not, so a small stream with no declarations reads
+#: as an ordinary quiet slice rather than an alarm. The base rate is roughly
+#: 2–3 % of activities (`docs/api-research.md` §4.5), so 2 000 activities with
+#: none is well past the noise floor. See L2 in
+#: `/tmp/review-source-backed-ingestion-gaps.md`.
+EXPLANATION_DRIFT_THRESHOLD = 2000
 
 
 @dataclass
@@ -213,6 +228,24 @@ class Pipeline:
         #: stage and posted by the motion stage — sponsorships are known before
         #: the motions they attach to are written.
         self._sponsorships: dict[str, dict[str, str | None]] = {}
+        #: `(sitting, yes, no, abstain)` → `dipVorgangId`, accumulated by the
+        #: referral stage and consumed by the vote stage. The same shape and the
+        #: same reason as `_sponsorships` above: the ballot's procedure is known
+        #: while `/vorgangsposition` streams past, and the sheets that need it
+        #: are downloaded two stages later. See `transform.ballot_vorgang_index`
+        #: for why the key is a tally — the two sources share no id at all.
+        self._ballot_vorgaenge: dict[transform.BallotKey, str] = {}
+        #: Ballot keys claimed by two different procedures across *any two*
+        #: batches of the referral stream. Scoped per run rather than per batch,
+        #: because `ballot_vorgang_index` sees only the batch it is called with
+        #: — it will drop an intra-batch collision, but WP19's ~166 batches of
+        #: 500 mean two positions with the same `(sitting, tally)` regularly
+        #: land in different batches, and a naive `.update()` between them
+        #: would silently overwrite. Once a key lands here it never leaves,
+        #: because a third arrival cannot resolve the original two: an
+        #: ambiguous join is not a join, and a wrong `dipVorgangId` would
+        #: attach a member's §31 declaration to a vote they did not cast it on.
+        self._ambiguous_ballot_keys: set[transform.BallotKey] = set()
 
     def close(self) -> None:
         for client in (
@@ -371,13 +404,22 @@ class Pipeline:
                 f"{', '.join(sorted(unmatched)[:6])}" + (" …" if len(unmatched) > 6 else "")
             )
 
-        politicians = parse_politicians(self.abgeordnetenwatch.iter_politicians())
+        # Fetched once and used twice. The rows carry both the enrichment
+        # columns and the `politician.id` → Stammdaten-id bridge that the
+        # mandate reconciliation below needs, and this collection is ~19
+        # requests against a source that answers 429 under load — so paging it
+        # a second time for the same bytes would be the one avoidable cost in
+        # a stage that is otherwise all necessary ones.
+        politician_rows = list(self.abgeordnetenwatch.iter_politicians())
+        politicians = parse_politicians(politician_rows)
         occupations = transform.politician_enrichment(politicians, resolver)
         resolver.attach_enrichment(occupations)
         stage.notes.append(
             f"{len(politicians)} abgeordnetenwatch politicians carry a Stammdaten id → "
             f"{len(occupations)} roster MPs with occupation or education"
         )
+
+        stage.notes.append(self._reconcile_mandates(resolver, politician_rows))
 
         stage.notes.append(self._load_contacts(profiles, resolver, full=full))
 
@@ -389,6 +431,47 @@ class Pipeline:
                 f"{len(unenriched)} of {roster_size} roster MPs have no enrichment at all — "
                 "they retry on the next sync (§7.3)"
             )
+
+    def _reconcile_mandates(
+        self, resolver: MPResolver, politician_rows: Sequence[dict[str, Any]]
+    ) -> str:
+        """Check the roster against abgeordnetenwatch's mandate list (§7.3).
+
+        ⚠ **Read-only.** It writes no MP, and above all deletes none: MdB-
+        Stammdaten is the roster (§6.1) and this is a community source. What it
+        is uniquely good for is being *fresher* — the ZIP is a periodic snapshot
+        that lags mid-term successions, and this endpoint publishes each one
+        with a start date and a note naming who was replaced.
+
+        So the output is a note an operator can act on: *these members are
+        sitting and this deployment's roster does not have them, since this
+        date*. Before this ran, the same fact surfaced weeks later as a vote row
+        that failed to resolve, with nothing saying why.
+
+        A period abgeordnetenwatch does not cover is not an error — its
+        coverage starts at WP16 (§4.3) and Bundestrack backfills to WP14 — so
+        that case returns a note rather than raising.
+        """
+        try:
+            mandates = parse_mandates(
+                self.abgeordnetenwatch.get_mandates(self.wahlperiode),
+                politician_stammdaten_index(politician_rows),
+            )
+        except ValueError as error:
+            # `_legislature` raises for a period this source does not cover.
+            return f"No abgeordnetenwatch mandate list for WP{self.wahlperiode}: {error}"
+
+        report = resolver.reconcile_mandates(mandates)
+        note = report.summary()
+        for gap in report.missing_from_roster[:6]:
+            # The published note verbatim, because it names the predecessor and
+            # the date — the two things that say how far behind the dump is.
+            note += f"\n      ⚠ not on the roster: {gap.name} ({gap.start_date or 'no date'})"
+            if gap.info:
+                note += f" — {gap.info}"
+        if len(report.missing_from_roster) > 6:
+            note += f"\n      … and {len(report.missing_from_roster) - 6} more"
+        return note
 
     def _load_contacts(
         self, profiles: Sequence[MPProfileLink], resolver: MPResolver, *, full: bool
@@ -490,6 +573,88 @@ class Pipeline:
             return
         stage.result = self.loader.upsert_committees(payloads)
 
+    # -- stage 4b: committee referrals -------------------------------------
+
+    def load_committee_referrals(self, report: RunReport, *, since: str | None) -> None:
+        """DIP `/vorgangsposition` → which committees each bill was referred to.
+
+        ⚠ **A separate claim from `load_committees` above, not a backfill of
+        it.** A referral names a committee and a document and no person, so it
+        cannot recover the committee *membership* that §6.4 says was never
+        published for WP14–20. The two write different tables on purpose; see
+        webapp/convex/committeeReferrals.ts.
+
+        Streamed in batches like the activities: WP19 alone is 82 855 positions,
+        and under a tenth of them refer anything, so collecting the corpus to
+        keep 8 % of it is the whole period in memory for nothing.
+
+        **It also builds the ballot → Vorgang index**, from the same pass. Every
+        named vote is a `Vorgangsposition` too, so the steps this walk already
+        reads carry both facts, and a second sweep of the same 23 800-82 900
+        records through the WAF would buy nothing (§2.6). See
+        `transform.ballot_vorgang_index` for the join, and `load_votes`, which
+        consumes it.
+        """
+        stage = report.stage("committee-referrals")
+        since = self._window(STREAM_REFERRALS, since)
+        result = BatchResult("committee referrals")
+        positions = 0
+        named = 0
+        seen: list[datetime] = []
+
+        for batch in _batched(
+            self.dip.iter_vorgangspositionen(self.wahlperiode, updated_since=since), STREAM_BATCH
+        ):
+            positions += len(batch)
+            seen.extend(p.aktualisiert for p in batch)
+            payloads = list(
+                transform.committee_referral_payloads(batch, wahlperiode=self.wahlperiode)
+            )
+            if payloads:
+                result.merge(self.loader.upsert_committee_referrals(payloads))
+
+            # Accumulated as the steps stream past rather than by keeping them:
+            # only the `(sitting, tally) → Vorgang` entry is wanted, and holding
+            # 82 855 models to re-read one stage later is the period in memory.
+            #
+            # ⚠ Merged one key at a time rather than by `.update()`, because a
+            # blanket update cannot see a collision the *next* batch introduces
+            # against an entry the previous one left behind — and WP19 is
+            # ~166 batches, so cross-batch collisions are the rule for any
+            # `(sitting, tally)` shared by more than one procedure. The
+            # invariant `ballot_vorgang_index`'s docstring commits to — an
+            # ambiguous join is not a join — has to hold at the run level, not
+            # only the batch level. See M1 in
+            # `/tmp/review-source-backed-ingestion-gaps.md`.
+            found = transform.ballot_vorgang_index(batch)
+            named += len(found)
+            for key, vorgang_id in found.items():
+                if key in self._ambiguous_ballot_keys:
+                    continue
+                existing = self._ballot_vorgaenge.get(key)
+                if existing is not None and existing != vorgang_id:
+                    logger.warning(
+                        "Ballot key %s claimed by procedures %s and %s across "
+                        "batches — dropping the join",
+                        key,
+                        existing,
+                        vorgang_id,
+                    )
+                    self._ballot_vorgaenge.pop(key, None)
+                    self._ambiguous_ballot_keys.add(key)
+                    continue
+                self._ballot_vorgaenge[key] = vorgang_id
+
+        stage.result = result
+        stage.notes.append(
+            f"{positions} procedure steps scanned. A referral is a fact about a bill, not "
+            "about any member — it is not committee membership (§6.4)"
+        )
+        stage.notes.append(
+            f"{named} named-vote steps indexed by (sitting, tally) for the ballot join"
+        )
+        self.state.advance(self.wahlperiode, STREAM_REFERRALS, max(seen) if seen else None)
+
     # -- stage 5: activities ----------------------------------------------
 
     def load_activities(self, report: RunReport, *, since: str | None) -> None:
@@ -504,6 +669,12 @@ class Pipeline:
         Sponsorships are derived here rather than from `autoren_anzeige`, which
         DIP caps at four entries (§3.4). They are posted by `load_motions`,
         after the motions they attach to exist.
+
+        §31 vote explanations ride this stream too, rather than getting a fetch
+        of their own: they *are* activities — `aktivitaetsart = "Schriftliche
+        Erklärung gem. § 31 Geschäftsordnung BT"` — so a second pass would be
+        the same 806 pages through the WAF for records this one has already
+        read.
         """
         stage = report.stage("activities")
         since = self._window(STREAM_ACTIVITIES, since)
@@ -511,11 +682,20 @@ class Pipeline:
         result = BatchResult("activities")
         questions = BatchResult("questions")
         events = BatchResult("feed events")
+        explanations = BatchResult("vote explanations")
         seen: list[datetime] = []
+        # Activities *received* from DIP, before the roster crosswalk skips
+        # any. Counted separately from `result.written` because the drift
+        # check reads what the stream carried — dry-run and quarantined rows
+        # never reach `result.written` but they were still activities the
+        # source published, and the drift is about the stream.
+        activities_seen = 0
+        explanations_seen = 0
 
         for batch in _batched(
             self.dip.iter_aktivitaeten(self.wahlperiode, updated_since=since), STREAM_BATCH
         ):
+            activities_seen += len(batch)
             seen.extend(a.aktualisiert for a in batch)
             # Sponsorships are accumulated as they stream past, not by keeping
             # the activities: 80 537 models held to be re-read one stage later
@@ -536,14 +716,41 @@ class Pipeline:
             if event_payloads:
                 events.merge(self.loader.add_activity_events(event_payloads))
 
+            explanation_payloads = list(transform.vote_explanation_payloads(batch, resolver))
+            explanations_seen += len(explanation_payloads)
+            if explanation_payloads:
+                explanations.merge(self.loader.upsert_vote_explanations(explanation_payloads))
+
         stage.result = result
         stage.notes.append(str(questions))
         stage.notes.append(str(events))
+        stage.notes.append(str(explanations))
         if result.skipped:
             stage.notes.append(
                 f"{result.skipped} activities name a DIP person with no roster match — "
                 "they attach on a later sync once the crosswalk resolves (§7.2)"
             )
+        # A substantial activity stream that yields zero §31 declarations is the
+        # exact drift GAP-018 was written to catch — every §31 declaration in
+        # DIP's history has been an `/aktivitaet`, so a stream of `N` activities
+        # with zero declarations means either the predicate stopped matching
+        # (DIP renamed the kind, as it has already done once — §5.1) or a
+        # source integration silently regressed. Fires on 2 000 rather than
+        # 100 because incremental syncs legitimately return a handful of
+        # activities with no declarations among them; the base rate is roughly
+        # 2–3 % of activities but variance is high per sitting. Reads the
+        # *seen* counts, not `result.written`, because dry runs and quarantined
+        # rows never reach the loader — but the drift is about what the source
+        # published, not what Convex ended up storing. See L2 in
+        # `/tmp/review-source-backed-ingestion-gaps.md`.
+        if activities_seen >= EXPLANATION_DRIFT_THRESHOLD and explanations_seen == 0:
+            note = (
+                f"⚠ {activities_seen} activities scanned with 0 §31 declarations. "
+                "The base rate is 2–3 % of the stream — check `is_vote_explanation` "
+                "against a fresh page of `aktivitaetsart` (docs/api-research.md §5.1)"
+            )
+            logger.warning(note)
+            stage.notes.append(note)
         self.state.advance(self.wahlperiode, STREAM_ACTIVITIES, max(seen) if seen else None)
 
     def _collect_sponsorships(self, batch: Sequence[Aktivitaet], resolver: MPResolver) -> None:
@@ -783,7 +990,17 @@ class Pipeline:
         sheets.record(
             _as_batch(
                 self.loader.upsert_vote_sheet(
-                    transform.vote_sheet_payload(sheet, title=title, sheet_date=link.date)
+                    transform.vote_sheet_payload(
+                        sheet,
+                        title=title,
+                        sheet_date=link.date,
+                        # Built by the referral stage from the same
+                        # `/vorgangsposition` pass. None when that stage did not
+                        # run, or when this ballot is one of the ~6 % DIP files
+                        # under a different sitting or tally — both mean "no
+                        # procedure", which is what the column stores.
+                        dip_vorgang_id=self._ballot_vorgaenge.get(transform.ballot_key(sheet)),
+                    )
                 )
             )
         )
@@ -1056,6 +1273,127 @@ def months_in(start: date | None, end: date | None) -> list[str]:
     return months
 
 
+def backfill_vote_vorgang(
+    wahlperiode: int,
+    *,
+    settings: Settings | None = None,
+    dry_run: bool = False,
+    pipeline: Pipeline | None = None,
+    max_pages: int = 200,
+) -> dict[str, int]:
+    """Patch late `dipVorgangId` links onto already-ingested ballots (L3).
+
+    A bounded, idempotent alternative to `--full` backfill for the one class of
+    miss that `sync` cannot repair on its own: a ballot ingested *before* its
+    referring `Vorgangsposition` surfaced in the referrals window lands with
+    `dipVorgangId` absent, is added to `state.ingested_ballot_keys`, and an
+    incremental sync never revisits it (`load_votes` stops at the first stored
+    key). Without this route, the fix is a whole-period ballot re-ingestion,
+    which is separately unsafe on a populated table (M2's failure mode) and
+    costs the whole listing over the WAF.
+
+    What this does instead:
+
+    1. Walks the referral stream once, populating `_ballot_vorgaenge` with
+       every `(sitting, tally) → vorgang_id` DIP publishes for the period.
+       Uses the same M1-safe cross-batch merge as the referral stage.
+    2. Pages through Convex's `voteSheetsMissingVorgang` for the period.
+    3. For each unresolved sheet, joins its `(sitzungnr, yes, no, abstain)`
+       against the map and — if resolved — sends a patch.
+    4. Batches patches to `votes/backfill-vorgang`, which never writes null
+       and skips a row that already carries the same value or a different
+       one (see `backfillVoteSheetVorgang`'s `conflicts` counter).
+
+    Returns a dict with `sheets_scanned`, `patches_sent`, `patched`,
+    `unchanged`, `conflicts`, `unknown` — so the CLI can print a summary and
+    an operator sees a `conflicts > 0` on a run that was supposed to be a
+    no-op reassignment.
+
+    ⚠ **Read-only where possible.** A `conflicts` row is left as-is; changing
+    a ballot's stored Vorgang is a migration and needs to be an explicit act,
+    not a side effect of running this. The route enforces it at the Convex
+    end; this function does not paper over it here.
+    """
+    owned = pipeline is None
+    run = pipeline or Pipeline(wahlperiode, settings=settings, dry_run=dry_run)
+    report = RunReport(wahlperiode, "backfill-vote-vorgang")
+    totals = {
+        "sheets_scanned": 0,
+        "patches_sent": 0,
+        "patched": 0,
+        "unchanged": 0,
+        "conflicts": 0,
+        "unknown": 0,
+    }
+    try:
+        # The roster must exist before anything else runs — this stage does not
+        # need it directly, but the referral walk shares `_ballot_vorgaenge`
+        # with `_ingest_ballot` and the shared Pipeline instance expects a
+        # populated resolver on nearly every path.
+        _guard(report, "roster", lambda: run.load_roster(report))
+        if run.resolver is None or not run.resolver.roster():
+            logger.error("No roster for WP%d — cannot backfill Vorgang links", wahlperiode)
+            return totals
+
+        _guard(
+            report,
+            "committee-referrals",
+            lambda: run.load_committee_referrals(report, since=None),
+        )
+        if not run._ballot_vorgaenge:
+            logger.warning(
+                "Referral walk found no ballot → Vorgang keys for WP%d — nothing to patch",
+                wahlperiode,
+            )
+            return totals
+
+        cursor: dict[str, int] | None = None
+        for _ in range(max_pages):
+            response = run.loader.missing_vote_vorgang(wahlperiode, cursor)
+            sheets = response.get("sheets", [])
+            totals["sheets_scanned"] += len(sheets)
+
+            patches = []
+            for sheet in sheets:
+                key = (
+                    int(sheet["sitzungnr"]),
+                    int(sheet["yesCount"]),
+                    int(sheet["noCount"]),
+                    int(sheet["abstainCount"]),
+                )
+                vorgang_id = run._ballot_vorgaenge.get(key)
+                if vorgang_id:
+                    patches.append(
+                        {
+                            "sitzungnr": sheet["sitzungnr"],
+                            "abstimmnr": sheet["abstimmnr"],
+                            "dipVorgangId": vorgang_id,
+                        }
+                    )
+
+            if patches:
+                totals["patches_sent"] += len(patches)
+                result = run.loader.patch_vote_vorgang(wahlperiode, patches)
+                for key in ("patched", "unchanged", "conflicts", "unknown"):
+                    totals[key] += result[key]
+
+            if response.get("done"):
+                break
+            cursor = response.get("nextCursor")
+            if cursor is None:
+                break
+        else:
+            logger.warning(
+                "Reached the %d-page ceiling on backfill-vote-vorgang for WP%d — "
+                "some unresolved sheets remain",
+                max_pages,
+                wahlperiode,
+            )
+    finally:
+        _finish(run, report, owned=owned)
+    return totals
+
+
 def recompute_scores(
     wahlperiode: int = CURRENT_WAHLPERIODE,
     *,
@@ -1129,6 +1467,10 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     # read. Both re-post the roster, so neither can blank what the other wrote.
     _guard(report, "enrichment", lambda: run.load_enrichment(report, full=not incremental))
     _guard(report, "committees", lambda: run.load_committees(report))
+    # Beside the committee seats rather than after the motions, because it is
+    # the other half of the committee picture — and deliberately *not* folded
+    # into that stage: a referral names no member, so it is a different claim.
+    _guard(report, "committee-referrals", lambda: run.load_committee_referrals(report, since=since))
     _guard(report, "activities", lambda: run.load_activities(report, since=since))
     _guard(report, "motions", lambda: run.load_motions(report, since=since))
     _guard(report, "speeches", lambda: run.load_speeches(report, since=since))

@@ -128,6 +128,59 @@ def backfill(ctx: click.Context, electoral_period: int) -> None:
     )
 
 
+@cli.command("backfill-vote-vorgang")
+@click.option(
+    "--wp",
+    "electoral_period",
+    type=int,
+    default=CURRENT_ELECTORAL_PERIOD,
+    show_default=True,
+    metavar="N",
+    help="Wahlperiode whose late Vorgang links to patch.",
+)
+@click.pass_context
+def backfill_vote_vorgang(ctx: click.Context, electoral_period: int) -> None:
+    """Patch late ballot → Vorgang links without re-ingesting the ballots.
+
+    Bounded and idempotent: it walks the referrals for the period once, then
+    pages through voteSheets missing a procedure and patches only those the
+    referral walk resolved. Never writes null, never re-attributes a ballot's
+    existing procedure — a `conflicts` count above 0 is a signal the operator
+    reads, not something this run acts on.
+
+    Cheaper than `--full` backfill on a populated period, and safe on prod:
+    the alternative would run `load_votes` from scratch, which is the M2
+    failure mode. Run this after ingest reports 0 declarations on a ballot
+    that should have some — the missing link is almost always the reason.
+    """
+    settings = ctx.obj["settings"]
+    dry_run = ctx.obj["dry_run"]
+    try:
+        if not dry_run:
+            settings.require_convex_http_url()
+            settings.require_pipeline_api_key()
+        totals = pipeline.backfill_vote_vorgang(
+            electoral_period, settings=settings, dry_run=dry_run
+        )
+    except ConfigError as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(
+        f"WP{electoral_period}: scanned {totals['sheets_scanned']} unresolved sheets, "
+        f"sent {totals['patches_sent']} patches "
+        f"({totals['patched']} patched, {totals['unchanged']} already correct, "
+        f"{totals['conflicts']} conflicts, {totals['unknown']} unknown)."
+    )
+    if totals["conflicts"]:
+        # A row that already carried a *different* Vorgang than the referral
+        # walk now names is a real disagreement, and this route deliberately
+        # does not silently rewrite it. Loud so an operator investigates.
+        click.echo(
+            f"⚠ {totals['conflicts']} ballot(s) already carry a different Vorgang. "
+            "Investigate before rerunning; a re-attribution needs a deliberate migration.",
+            err=True,
+        )
+
+
 @cli.command()
 @click.option(
     "--wp",

@@ -71,6 +71,11 @@ OVERLAP = timedelta(hours=1)
 STREAM_ACTIVITIES = "activities"
 STREAM_MOTIONS = "motions"
 STREAM_PROTOCOLS = "protocols"
+#: Committee referrals walk `/vorgangsposition`, which no other stage filters on
+#: `f.aktualisiert.start` — so it gets its own mark rather than sharing the
+#: motions one, for the reason in the module docstring: a shared watermark lets
+#: a stage that succeeded advance past the window a failed stage still needs.
+STREAM_REFERRALS = "committee-referrals"
 
 #: How long a fetched contact block stays fresh.
 #:

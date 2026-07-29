@@ -43,11 +43,18 @@ Three transforms carry a finding that is not obvious from the field names:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable, Iterator
 from datetime import date
 from typing import Any
 
-from bundestrack.models.dip import Aktivitaet, Drucksache, Vorgang
+from bundestrack.models.dip import (
+    NAMENTLICHE_ABSTIMMUNG,
+    Aktivitaet,
+    Drucksache,
+    Vorgang,
+    Vorgangsposition,
+)
 from bundestrack.models.enrichment import (
     MPContact,
     MPEnrichment,
@@ -569,6 +576,237 @@ def committee_payloads(resolver: MPResolver) -> list[Payload]:
     return payloads
 
 
+# --- committee referrals --------------------------------------------------
+
+
+def committee_referral_payloads(
+    positions: Iterable[Vorgangsposition], *, wahlperiode: int
+) -> Iterator[Payload]:
+    """Procedure steps → the committees each one referred a bill to (§3.3).
+
+    ⚠ **Not committee membership, and not per-MP work.** A referral names a
+    committee and a document; there is no person on the record. This is
+    deliberately a different table from `committee_payloads` above, and the two
+    must never be merged — see the header of webapp/convex/committeeReferrals.ts
+    for the specific misreading that would invite.
+
+    One payload per `(step, committee)`: a step refers a bill to three or four
+    committees at once, exactly one of them leading.
+
+    ⚠ `wahlperiode` is a **parameter, not a field on the record**. DIP publishes
+    no `wahlperiode` on `/vorgangsposition` — verified against the live API and
+    against this repo's own fixtures, where every position carries `None`. So it
+    comes from the query that selected these rows (`f.wahlperiode=N`), which is
+    the only thing that actually knows. Reading it off the model would have
+    written `null` into a required column on every row.
+
+    Every nullable value is passed through as the source gave it. `federfuehrung`
+    in particular is **not** defaulted to `False` — "not stated" and "not the
+    lead" are different claims, and only the source may make either. Nor is
+    `ueberweisungsart` dropped for being empty everywhere it was measured; a
+    value appearing later should land in the column rather than vanish.
+    """
+    for position in positions:
+        if not position.ueberweisung:
+            continue
+        for referral in position.ueberweisung:
+            committee = clean_text(referral.ausschuss)
+            if not committee:
+                # A referral with no committee names nothing. Skipped rather
+                # than written with an empty key, which would collide with
+                # every other such row on the same step.
+                logger.warning(
+                    "Vorgangsposition %s carries a referral with no committee — skipping",
+                    position.id,
+                )
+                continue
+            yield {
+                "dipVorgangspositionId": position.id,
+                "dipVorgangId": position.vorgang_id,
+                "committeeName": committee,
+                "committeeAbbreviation": clean_text(referral.ausschuss_kuerzel),
+                "leadCommittee": referral.federfuehrung,
+                "referralType": clean_text(referral.ueberweisungsart),
+                "positionKind": clean_text(position.vorgangsposition),
+                # The paper referred, from the step's own Fundstelle. Not from
+                # `beschlussfassung[].dokumentnummer`, which is a *different*
+                # document number and mis-joins — see the note in
+                # `bundestag-vote-outcomes`.
+                "documentNumber": clean_text(
+                    position.fundstelle.dokumentnummer if position.fundstelle else None
+                ),
+                "title": require_text(position.titel, f"Referral on step {position.id}"),
+                "date": require_iso(position.datum, f"Referral on step {position.id}"),
+                "wahlperiode": wahlperiode,
+            }
+
+
+# --- the ballot → Vorgang join --------------------------------------------
+
+#: A named ballot's key in the index below: `(sitting, yes, no, abstain)` —
+#: four ints, all from the ballot's own record.
+#:
+#: The Wahlperiode is *not* part of the key, because the map itself is scoped
+#: per run (`Pipeline._ballot_vorgaenge`) and a run is one period. Adding it
+#: here would be redundant on every insert and would let the same sheet's
+#: key change meaning if the map ever escaped that scope — which is exactly
+#: the kind of drift the `_ambiguous_ballot_keys` invariant (M1) has to hold
+#: against.
+BallotKey = tuple[int, int, int, int]
+
+
+def _sitting_number(position: Vorgangsposition) -> int | None:
+    """The sitting a plenary step belongs to, from `fundstelle.dokumentnummer`.
+
+    ⚠ **Only when the Fundstelle is a Plenarprotokoll.** The sibling
+    `beschlussfassung[].dokumentnummer` is a *Drucksache* number, so an
+    unguarded parse of `"21/216"` yields "sitting 216" — a plausible wrong join
+    rather than an error, which is the worst shape a bug can take here.
+    """
+    fundstelle = position.fundstelle
+    if fundstelle is None or fundstelle.dokumentart != "Plenarprotokoll":
+        return None
+    _, _, sitting = (fundstelle.dokumentnummer or "").partition("/")
+    return int(sitting) if sitting.isdigit() else None
+
+
+def _tally(bemerkung: str | None) -> tuple[int, int, int] | None:
+    """`yes:no:abstain` out of `abstimm_ergebnis_bemerkung`.
+
+    Free text with the counts *somewhere inside it*, in at least four observed
+    shapes: `"519:43:0"`, `"539:56:1 (Annahme der Beschlussempfehlung…)"`,
+    `"übrige Teile; 297:130:134"`, and prose carrying no counts at all. So this
+    searches rather than anchors, and never splits on `:` — a `.split(":")` on
+    the third shape raises, and on the second silently keeps a suffix.
+    """
+    if not bemerkung:
+        return None
+    match = re.search(r"(\d+)\s*:\s*(\d+)\s*:\s*(\d+)", bemerkung)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def ballot_vorgang_index(positions: Iterable[Vorgangsposition]) -> dict[BallotKey, str]:
+    """Named-vote steps → `{(wp, sitting, yes, no, abstain): vorgang_id}`.
+
+    ## Why a tally is part of the key
+
+    The XLSX vote sheet and DIP share **no identifier at all**. The sheet's
+    identity is `(wahlperiode, sitzungnr, abstimmnr)`; DIP knows the sitting but
+    numbers its ballots differently or not at all. What both publish is the
+    result, so the join is the sitting plus the counts — verified exact and
+    unique on all 8 ballots of WP21 sitting 90, and resolving 65 of 69 WP21
+    ballots overall.
+
+    The four that do not resolve are genuine divergences, where DIP files the
+    vote under a different sitting or a different tally. They stay unjoined:
+    a ballot with the *wrong* procedure attached would link a member's §31
+    declaration to a vote they did not cast it on, and nothing downstream could
+    detect that.
+
+    A key that two different procedures claim is dropped for the same reason —
+    an ambiguous join is not a join.
+    """
+    index: dict[BallotKey, str] = {}
+    ambiguous: set[BallotKey] = set()
+
+    for position in positions:
+        sitting = _sitting_number(position)
+        if sitting is None:
+            continue
+        for beschluss in position.beschlussfassung:
+            if beschluss.abstimmungsart != NAMENTLICHE_ABSTIMMUNG:
+                continue
+            counts = _tally(beschluss.abstimm_ergebnis_bemerkung)
+            if counts is None:
+                # Prose with no numbers in it. §4.1's sheet is still ingested;
+                # it simply carries no procedure, which the schema calls null.
+                continue
+            key = (sitting, *counts)
+            existing = index.get(key)
+            if existing is not None and existing != position.vorgang_id:
+                ambiguous.add(key)
+                logger.warning(
+                    "Ballot key %s claimed by procedures %s and %s — dropping the join",
+                    key,
+                    existing,
+                    position.vorgang_id,
+                )
+                continue
+            index[key] = position.vorgang_id
+
+    for key in ambiguous:
+        index.pop(key, None)
+    return index
+
+
+def ballot_key(sheet: VoteSheet) -> BallotKey:
+    """The same key, computed from a parsed XLSX sheet.
+
+    The counts come from the sheet's own rows, which is the only place they
+    exist — the XLSX publishes no totals line. So both sides of the join are
+    derived from what each source actually published, and neither is taken on
+    trust from the other.
+    """
+    counts = sheet.tally()
+    return (sheet.sitzungnr, counts[Vote.YES], counts[Vote.NO], counts[Vote.ABSTAIN])
+
+
+# --- vote explanations (§ 31 GO-BT) ---------------------------------------
+
+
+def vote_explanation_payloads(
+    aktivitaeten: Iterable[Aktivitaet], resolver: MPResolver
+) -> Iterator[Payload]:
+    """`Erklärung nach § 31 GO-BT` → the member's declared reason for a vote.
+
+    The one authoritative explanation attached to a named ballot. A ballot's
+    *title* says what was decided; this says why one named member decided it
+    that way, in that member's own words — which is why the words themselves are
+    **never** synthesised here.
+
+    What is stored is what DIP publishes: that the declaration exists, whose it
+    is, which procedure it concerns, and the page-anchored PDF link to where it
+    is printed. `subject` carries the referenced procedure's title — *what* was
+    voted on, not *why* — and is named so that no caller mistakes one for the
+    other.
+
+    An unresolved `person_id` is skipped rather than quarantined, for the same
+    reason `activity_payloads` skips one: it means the DIP↔Stammdaten crosswalk
+    has not linked that person yet, which resolves itself on a later sync.
+    """
+    for aktivitaet in aktivitaeten:
+        if not aktivitaet.is_vote_explanation:
+            continue
+        internal = resolver.from_dip_person_id(aktivitaet.person_id)
+        if internal is None:
+            continue
+        bezug = aktivitaet.vorgangsbezug[0] if aktivitaet.vorgangsbezug else None
+        fundstelle = aktivitaet.fundstelle
+        yield {
+            "dipAktivitaetId": aktivitaet.id,
+            "mpInternalId": internal,
+            # The join to the ballot. `vorgangsbezug` is capped at four entries
+            # (§3.4), but a declaration referenced exactly one procedure in
+            # every record sampled — and it is the procedure the declaration was
+            # filed *under*, so the first is the right one rather than merely
+            # the available one.
+            "dipVorgangId": bezug.id if bezug else None,
+            "subject": clean_text(bezug.titel) if bezug else None,
+            # Stored verbatim rather than assumed, because the string has
+            # already drifted once: this repo recorded `§ 31 GO BT`, and the API
+            # returns `Schriftliche Erklärung gem. § 31 Geschäftsordnung BT`.
+            "aktivitaetsart": require_text(
+                aktivitaet.aktivitaetsart, f"Vote explanation {aktivitaet.id}"
+            ),
+            "sourceUrl": clean_text(fundstelle.pdf_url if fundstelle else None),
+            "protocolNumber": clean_text(fundstelle.dokumentnummer if fundstelle else None),
+            "date": require_iso(aktivitaet.datum, f"Vote explanation {aktivitaet.id}"),
+            "wahlperiode": aktivitaet.wahlperiode,
+        }
+
+
 # --- votes ----------------------------------------------------------------
 
 
@@ -578,6 +816,7 @@ def vote_sheet_payload(
     result: str = "",
     title: str | None = None,
     sheet_date: date | None = None,
+    dip_vorgang_id: str | None = None,
 ) -> Payload:
     """One ballot → the `voteSheets` row.
 
@@ -589,9 +828,22 @@ def vote_sheet_payload(
     `result` is DIP's `beschlusstenor` when the ballot was discovered through
     `/vorgangsposition`, and empty otherwise — the sheet itself does not carry
     the outcome, only the votes.
+
+    ⚠ **`dip_vorgang_id` is omitted from the payload when the caller has no
+    value for it, rather than sent as `null`.** The schema keeps this column
+    `v.optional`, and `upsertRow` uses `db.patch`, which only touches fields
+    present on the incoming object — so omitting preserves whatever the row
+    already stored. Sending `null` on every backfill would erase every
+    previously-resolved link the moment the referrals stage returned nothing
+    (a WAF challenge, a period the source does not cover, a fresh run before
+    the walk completes), and every §31 declaration on those ballots would go
+    silently unreachable. See M2 in `/tmp/review-source-backed-ingestion-gaps.md`.
+    The distinction between "resolved and empty" and "resolved to a procedure"
+    is preserved through the map itself: the referral stage puts a resolved
+    ballot into `_ballot_vorgaenge`; missing means unknown, not confirmed-null.
     """
     counts = sheet.tally()
-    return {
+    payload: Payload = {
         "wahlperiode": sheet.wahlperiode,
         "sitzungnr": sheet.sitzungnr,
         "abstimmnr": sheet.abstimmnr,
@@ -611,6 +863,9 @@ def vote_sheet_payload(
         "totalEligible": sheet.total_eligible,
         "sourceUrl": sheet.source_url,
     }
+    if dip_vorgang_id is not None:
+        payload["dipVorgangId"] = dip_vorgang_id
+    return payload
 
 
 def vote_record_payloads(sheet: VoteSheet, resolver: MPResolver) -> Payload:

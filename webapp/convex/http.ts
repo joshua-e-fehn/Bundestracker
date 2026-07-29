@@ -184,6 +184,33 @@ function ingestionRoute<Ref extends FunctionReference<"mutation", "internal">>(
   })
 }
 
+/**
+ * Registers `POST /api/pipeline/<path>` as a front door to one query.
+ *
+ * Same shape as `ingestionRoute` (Bearer key, error mapping, JSON body carrying
+ * the args), for the reasons the ingestion routes go through one wrapper — a
+ * separate one exists at all because Convex needs `runQuery` rather than
+ * `runMutation`, and TypeScript's `FunctionReference<"query", …>` is
+ * incompatible with `FunctionReference<"mutation", …>`.
+ *
+ * POST rather than GET because the args go in a JSON body: the L3 backfill
+ * cursor is a two-field object, which is awkward as a query string, and the
+ * body path already carries the auth check.
+ */
+function pipelineQueryRoute<Ref extends FunctionReference<"query", "internal" | "public">>(
+  path: string,
+  query: Ref,
+): void {
+  http.route({
+    path: `/api/pipeline/${path}`,
+    method: "POST",
+    handler: pipelineRoute(async (ctx, request) => {
+      const body = await readJsonBody(request)
+      return json(await ctx.runQuery(query, asArgs<FunctionArgs<Ref>>(body)), 200)
+    }),
+  })
+}
+
 // The roster first: everything else joins to it, and every other ingestion
 // mutation rejects a record naming an MP who is not on it — §11.1's dependency
 // order, enforced rather than merely documented.
@@ -227,11 +254,55 @@ ingestionRoute("votes/backfill-dissent", internal.votes.backfillDissent)
  * `votes:voteScopeCoverage` reports what remains, read-only. See convex/votes.ts.
  */
 ingestionRoute("votes/backfill-scope", internal.votes.backfillVoteRecordScope)
+
+/**
+ * Patch late `dipVorgangId` links onto already-ingested ballots — L3 in the
+ * independent review. Idempotent: a re-run on a resolved row reports
+ * `unchanged`. Never writes null, so a caller that fails to name a Vorgang
+ * cannot erase a previously-resolved link (the M2 invariant, held one level
+ * lower).
+ *
+ * Called deliberately, not by the daily sync: an incremental `sync` walks the
+ * ballot listing newest-first and stops at the first already-stored key
+ * (sync.py:load_votes), so a ballot ingested before its referring
+ * `Vorgangsposition` surfaced in the referrals window never gets re-visited.
+ * This is the bounded backfill that repairs that class of miss without the
+ * full-period ballot re-ingestion that would run `load_votes` from scratch.
+ */
+ingestionRoute("votes/backfill-vorgang", internal.votes.backfillVoteSheetVorgang)
+
+/**
+ * The read half of the backfill above — a bounded page of ballots that still
+ * have no procedure. Read-only; the client-side join between `(sitting, tally)`
+ * and `dipVorgangId` happens in the pipeline, and only the resolved rows come
+ * back through the mutation. See convex/votes.ts:voteSheetsMissingVorgang.
+ */
+pipelineQueryRoute("votes/missing-vorgang", internal.votes.voteSheetsMissingVorgang)
 ingestionRoute("motions", internal.motions.upsertMotions)
 ingestionRoute("motion-sponsors", internal.motions.upsertMotionSponsors)
 ingestionRoute("speeches", internal.speeches.upsertSpeeches)
 ingestionRoute("questions", internal.questions.upsertQuestions)
 ingestionRoute("committee-memberships", internal.committees.upsertCommitteeMemberships)
+
+/**
+ * Committee *referrals* — which committees a bill was sent to (§3.3).
+ *
+ * Deliberately a separate route from `committee-memberships` above, writing a
+ * separate table. The two answer different questions about different subjects,
+ * and a referral names no member at all — see convex/committeeReferrals.ts for
+ * why merging them would make a historical period look as though its committee
+ * membership had been recovered.
+ */
+ingestionRoute("committee-referrals", internal.committeeReferrals.upsertCommitteeReferrals)
+
+/**
+ * `Erklärung nach § 31 GO-BT` — a member's own declared reason for their vote.
+ *
+ * Records that a declaration exists and links to the protocol page it is
+ * printed on. It carries no generated text and never will; see the header of
+ * convex/voteExplanations.ts.
+ */
+ingestionRoute("vote-explanations", internal.voteExplanations.upsertVoteExplanations)
 ingestionRoute("activities", internal.activities.upsertActivities)
 ingestionRoute("activity-events", internal.activityEvents.addActivityEvents)
 ingestionRoute("scores", internal.activityScores.upsertScore)

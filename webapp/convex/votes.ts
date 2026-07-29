@@ -1,7 +1,7 @@
 import { type Infer, v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { Doc, Id } from "./_generated/dataModel"
-import { internalMutation, type QueryCtx, query } from "./_generated/server"
+import { internalMutation, internalQuery, type QueryCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -35,13 +35,29 @@ import { vote, voteSheetInput } from "./schema"
  * `groupMajority` cannot name a sixth. */
 type Vote = Infer<typeof vote>
 
+/** The ballot as a caller sees it.
+ *
+ * `dipVorgangId` is `v.optional` in storage — it was added to a populated table,
+ * where a required field fails the whole deploy — but **total here**, for the
+ * reason `mpDoc` gives at convex/mps.ts: a `returns` validator that does not
+ * allow `undefined` fails the entire query with a bare "Server Error" naming
+ * neither field nor function, and pushing a third state out to every consumer
+ * would make them handle something that means exactly what `null` already does.
+ * `toVoteSheetDoc` normalises it. */
 const voteSheetDoc = v.object({
   id: v.id("voteSheets"),
   ...voteSheetInput,
+  dipVorgangId: v.union(v.null(), v.string()),
   createdAt: v.number(),
 })
 
-const toVoteSheetDoc = withId<"voteSheets">
+/** Drops the system fields and fills in the read shape's one total column —
+ * see `voteSheetDoc` on why `dipVorgangId` is nullable here but optional in
+ * storage. */
+function toVoteSheetDoc(row: Doc<"voteSheets">) {
+  const doc = withId<"voteSheets">(row)
+  return { ...doc, dipVorgangId: doc.dipVorgangId ?? null }
+}
 
 /** A vote record joined to the voter. The name is denormalised into the
  * response because the ballot view lists 630 rows and doing this per row in the
@@ -901,6 +917,169 @@ export const voteScopeCoverage = query({
       atLeastCeiling: pending.length >= ceiling,
       complete: pending.length === 0,
     }
+  },
+})
+
+// --- the Vorgang backfill (L3) --------------------------------------------
+
+/**
+ * Sheets in one period that still have no resolved procedure.
+ *
+ * The read half of the `voteSheets.dipVorgangId` backfill (L3 in the
+ * independent review). A ballot ingested *before* its referring
+ * `Vorgangsposition` surfaced in the referrals window lands with
+ * `dipVorgangId` absent, is added to `state.ingested_ballot_keys`, and an
+ * incremental `sync` never revisits it — the sheet is not re-posted and the
+ * ballot page shows no §31 section even when declarations exist. This query
+ * lets the pipeline patch those late arrivals without a full `--full`
+ * backfill (which is separately unsafe on a populated table when the
+ * referrals stage errors — see M2).
+ *
+ * Returns just the fields the pipeline needs to join back to
+ * `_ballot_vorgaenge`: the sitting and tally form the key, and
+ * `(sitzungnr, abstimmnr)` is what the caller sends back on the patch.
+ *
+ * Bounded read: one period has at most a few thousand voteSheets and the
+ * caller pages by `sitzungnr` cursor so a growing table cannot force this
+ * over the read cap.
+ */
+export const voteSheetsMissingVorgang = internalQuery({
+  args: {
+    wahlperiode: v.number(),
+    /** Return sheets whose `(sitzungnr, abstimmnr)` sorts strictly after this
+     * cursor. Absent means "from the beginning". */
+    cursor: v.optional(v.object({ sitzungnr: v.number(), abstimmnr: v.number() })),
+    limit: v.optional(v.number()),
+  },
+  returns: v.object({
+    sheets: v.array(
+      v.object({
+        sitzungnr: v.number(),
+        abstimmnr: v.number(),
+        yesCount: v.number(),
+        noCount: v.number(),
+        abstainCount: v.number(),
+      }),
+    ),
+    /** The last sheet's key, to page through with. Null when `done`. */
+    nextCursor: v.union(
+      v.null(),
+      v.object({ sitzungnr: v.number(), abstimmnr: v.number() }),
+    ),
+    done: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const limit = pageLimit(args.limit, 200)
+    // Period-scoped read through the natural-key index — one page at a time,
+    // so a period with 1 200 sheets is 6 requests rather than one giant one.
+    // The caller filters out already-resolved rows client-side rather than
+    // building an index just for the migration.
+    // A cursor past the sitting boundary needs the second field too; the
+    // range API only pins one inequality, so a second pass below filters the
+    // tail of the last sitting.
+    const rows = await ctx.db
+      .query("voteSheets")
+      .withIndex("by_wahlperiode_and_sitzungnr_and_abstimmnr", (chain) => {
+        const base = chain.eq("wahlperiode", args.wahlperiode)
+        if (!args.cursor) return base
+        return base.gt("sitzungnr", args.cursor.sitzungnr)
+      })
+      .take(limit + 1)
+    const startingSitting = args.cursor?.sitzungnr
+    const startingAbstimm = args.cursor?.abstimmnr
+    const filtered = rows.filter((row) => {
+      if (row.dipVorgangId != null) return false
+      if (startingSitting !== undefined && row.sitzungnr === startingSitting) {
+        return row.abstimmnr > (startingAbstimm ?? -1)
+      }
+      return true
+    })
+    const page = filtered.slice(0, limit)
+    const nextCursor =
+      filtered.length > limit
+        ? { sitzungnr: page[page.length - 1].sitzungnr, abstimmnr: page[page.length - 1].abstimmnr }
+        : rows.length > limit
+          ? { sitzungnr: rows[limit].sitzungnr, abstimmnr: rows[limit].abstimmnr }
+          : null
+
+    return {
+      sheets: page.map((row) => ({
+        sitzungnr: row.sitzungnr,
+        abstimmnr: row.abstimmnr,
+        yesCount: row.yesCount,
+        noCount: row.noCount,
+        abstainCount: row.abstainCount,
+      })),
+      nextCursor,
+      done: nextCursor === null,
+    }
+  },
+})
+
+/**
+ * Patch late `dipVorgangId` links onto already-ingested ballots.
+ *
+ * The write half of the L3 backfill: takes a batch of `(sitzungnr, abstimmnr)
+ * → dipVorgangId` and patches each row whose current value differs. **Never
+ * writes null**, so a patch that fails to name a Vorgang is a no-op rather
+ * than an erasure — the same invariant `vote_sheet_payload` holds (M2).
+ *
+ * Idempotent: a row already carrying the same value is skipped, so a
+ * re-run reports `patched: 0` and reads only the sheets in the batch. A row
+ * whose stored value *differs* is left alone and reported as `conflicts` —
+ * a caller cannot silently reassign a ballot's procedure through this route
+ * (that would require a deliberate migration).
+ *
+ * Scoped by `wahlperiode` because the natural key is only unique within a
+ * period, and taking a shortcut would let a WP20 sitting number clash with
+ * WP21's.
+ */
+export const backfillVoteSheetVorgang = internalMutation({
+  args: {
+    wahlperiode: v.number(),
+    patches: v.array(
+      v.object({
+        sitzungnr: v.number(),
+        abstimmnr: v.number(),
+        dipVorgangId: v.string(),
+      }),
+    ),
+  },
+  returns: v.object({
+    /** Rows whose `dipVorgangId` was set for the first time by this call. */
+    patched: v.number(),
+    /** Rows already carrying the same value — the idempotent no-op path. */
+    unchanged: v.number(),
+    /** Rows carrying a *different* value than the patch proposes. Left alone
+     * on purpose: a re-attributing write is a migration and needs to be
+     * explicit. Non-zero here is the signal an operator should act on. */
+    conflicts: v.number(),
+    /** Rows the patch named but this period does not have — either a sitting
+     * number that never existed or a ballot that was purged. */
+    unknown: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    assertBatchSize(args.patches.length, "vote-sheet vorgang patches")
+    let patched = 0
+    let unchanged = 0
+    let conflicts = 0
+    let unknown = 0
+    for (const patch of args.patches) {
+      const sheet = await findSheet(ctx, args.wahlperiode, patch.sitzungnr, patch.abstimmnr)
+      if (!sheet) {
+        unknown++
+        continue
+      }
+      if (sheet.dipVorgangId == null) {
+        await ctx.db.patch(sheet._id, { dipVorgangId: patch.dipVorgangId })
+        patched++
+      } else if (sheet.dipVorgangId === patch.dipVorgangId) {
+        unchanged++
+      } else {
+        conflicts++
+      }
+    }
+    return { patched, unchanged, conflicts, unknown }
   },
 })
 

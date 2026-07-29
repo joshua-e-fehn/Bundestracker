@@ -19,7 +19,7 @@ from datetime import datetime
 from bundestrack.api.base import BundestagAPIError
 from bundestrack.api.stammdaten import StammdatenClient
 from bundestrack.config import Settings
-from bundestrack.models.dip import Aktivitaet
+from bundestrack.models.dip import Aktivitaet, Vorgangsposition
 from bundestrack.models.enrichment import MPContact, MPPortrait, MPProfileLink, SocialProfile
 from bundestrack.models.stammdaten import parse_german_date
 from bundestrack.models.votes import VoteSheetLink
@@ -30,6 +30,7 @@ from bundestrack.pipeline.state import (
     STREAM_ACTIVITIES,
     STREAM_MOTIONS,
     STREAM_PROTOCOLS,
+    STREAM_REFERRALS,
     SyncState,
     load_state,
     save_state,
@@ -65,9 +66,18 @@ class StubStammdaten(StubClient):
 class StubDIP(StubClient):
     """DIP, answering with recorded pages and remembering its filters."""
 
-    def __init__(self, *, aktivitaeten: list[Aktivitaet] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        aktivitaeten: list[Aktivitaet] | None = None,
+        positionen: list[Vorgangsposition] | None = None,
+    ) -> None:
         self.aktivitaeten = aktivitaeten or []
+        self.positionen = positionen or []
         self.since: list[str | None] = []
+        #: The `updated_since` the referral stage asked for, kept apart from
+        #: `since` so the per-stream watermark can be asserted on its own.
+        self.referral_since: list[str | None] = []
 
     def iter_personen(self, wahlperiode=None, *, updated_since=None, **extra):
         return iter(())
@@ -75,6 +85,10 @@ class StubDIP(StubClient):
     def iter_aktivitaeten(self, wahlperiode=None, *, updated_since=None, **extra):
         self.since.append(updated_since)
         return iter(self.aktivitaeten)
+
+    def iter_vorgangspositionen(self, wahlperiode=None, *, updated_since=None, **extra):
+        self.referral_since.append(updated_since)
+        return iter(self.positionen)
 
     def iter_vorgaenge(self, wahlperiode=None, *, updated_since=None, **extra):
         self.since.append(updated_since)
@@ -131,11 +145,23 @@ class StubProfiles(StubClient):
 
 
 class StubAbgeordnetenwatch(StubClient):
-    def __init__(self, politicians: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        politicians: list[dict] | None = None,
+        mandates: list[dict] | None = None,
+    ) -> None:
         self.politicians = politicians or []
+        self.mandates = mandates or []
+        #: Set when `get_mandates` was reached at all — the assertion that the
+        #: endpoint stopped being dead code.
+        self.mandates_requested: list[int] = []
 
     def iter_politicians(self):
         return iter(self.politicians)
+
+    def get_mandates(self, wahlperiode: int = 21):
+        self.mandates_requested.append(wahlperiode)
+        return iter(self.mandates)
 
 
 class RecordingLoader(ConvexLoader):
@@ -1183,3 +1209,795 @@ def test_scoring_with_no_months_still_recomputes_the_total() -> None:
     recompute_scores(21, loader=loader)
 
     assert loader.months == [None]
+
+
+# --- committee referrals (GAP-030) ---------------------------------------
+
+
+def positionen() -> list[Vorgangsposition]:
+    """The recorded `/vorgangsposition` page, which carries real referrals."""
+    return [
+        Vorgangsposition.model_validate(doc)
+        for doc in fixture_json("dip", "vorgangsposition_page.json")["documents"]
+    ]
+
+
+def test_committee_referrals_are_posted_to_their_own_route() -> None:
+    """`Ueberweisung` was modelled and fetched and never written (GAP-030).
+
+    The route is separate from `committee-memberships` on purpose: a referral
+    names a committee and a document and no member, so it is a different claim
+    about a different subject. Asserting the *route* is what pins that down —
+    the two tables must not converge.
+    """
+    dip = StubDIP(positionen=positionen())
+    pipeline, loader = build(dip=dip)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    posted = loader.posted("committee-referrals")
+    assert posted, "referrals reached the deployment"
+    assert "committee-memberships" not in {path for path, _ in loader.payloads}
+    referrals = [row for payload in posted for row in payload["referrals"]]
+    assert len(referrals) == sum(len(p.ueberweisung) for p in positionen())
+
+
+def test_a_referral_row_carries_the_period_it_was_queried_for() -> None:
+    # DIP publishes no `wahlperiode` on `/vorgangsposition`, so the period comes
+    # from the query. Without this every row would be written with null in a
+    # required column — see the transform test of the same name.
+    dip = StubDIP(positionen=positionen())
+    pipeline, loader = build(dip=dip)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    rows = [row for payload in loader.posted("committee-referrals") for row in payload["referrals"]]
+    assert {row["wahlperiode"] for row in rows} == {21}
+
+
+def test_the_referral_stage_advances_its_own_watermark() -> None:
+    """One mark per stream (§11.2), for the reason `state.py` gives.
+
+    A shared mark lets a stage that succeeded advance past the window a failed
+    stage still needs — and this is the only stage that filters
+    `/vorgangsposition` on `f.aktualisiert.start`.
+    """
+    dip = StubDIP(positionen=positionen())
+    pipeline, _ = build(dip=dip)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    assert pipeline.state.watermark(21, STREAM_REFERRALS) is not None
+    assert pipeline.state.watermark(21, STREAM_ACTIVITIES) is None
+
+
+def test_the_referral_stage_says_a_referral_is_not_membership() -> None:
+    # The note is the whole guard against the misreading: a period with
+    # referrals and no committee rows must not look like recovered membership.
+    dip = StubDIP(positionen=positionen())
+    pipeline, _ = build(dip=dip)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    stage = next(s for s in report.stages if s.name == "committee-referrals")
+    assert any("not committee membership" in note for note in stage.notes)
+
+
+# --- vote explanations (GAP-018) -----------------------------------------
+
+
+def para31() -> list[Aktivitaet]:
+    """Recorded §31 declarations, re-pointed at the fixture roster."""
+    records = [
+        Aktivitaet.model_validate(doc)
+        for doc in fixture_json("dip", "aktivitaet_para31_page.json")["documents"]
+    ]
+    for record in records:
+        record.person_id = "1013"
+    return records
+
+
+def link_bilger(pipeline: Pipeline, report: RunReport) -> None:
+    """Populate the DIP crosswalk for the one MP the declarations point at.
+
+    Through `link_dip_persons` rather than by writing the crosswalk directly, so
+    these tests break if the §7.2 matching does — the same construction
+    `linked_resolver` uses in test_pipeline_transform.py. `StubDIP.iter_personen`
+    is empty by design, and a declaration whose person does not resolve is
+    correctly skipped, so without this the assertions would pass vacuously.
+    """
+    from bundestrack.models.dip import Person
+
+    resolver = pipeline.load_roster(report)
+    linked = resolver.link_dip_persons(
+        [
+            Person.model_validate(
+                {
+                    "id": "1013",
+                    "vorname": "Steffen",
+                    "nachname": "Bilger",
+                    "typ": "Person",
+                    "titel": "Steffen Bilger, MdB",
+                    "aktualisiert": "2026-07-24T12:03:00+02:00",
+                    "wahlperiode": [21],
+                    "funktion": ["MdB"],
+                }
+            )
+        ]
+    )
+    assert linked.linked == 1, "the fixture roster should match the DIP person"
+
+
+def test_vote_explanations_ride_the_activity_stream() -> None:
+    """§31 declarations *are* activities, so they cost no extra fetch.
+
+    A second pass over `/aktivitaet` would be the same ~806 pages through the
+    WAF for records the activity stage has already read (§2.6).
+    """
+    dip = StubDIP(aktivitaeten=para31())
+    pipeline, loader = build(dip=dip)
+    report = RunReport(21, "sync")
+    link_bilger(pipeline, report)
+
+    pipeline.load_activities(report, since=None)
+
+    posted = loader.posted("vote-explanations")
+    assert posted, "the declarations reached the deployment"
+    rows = [row for payload in posted for row in payload["explanations"]]
+    assert all("§ 31" in row["aktivitaetsart"] for row in rows)
+    # One fetch, not two: the stage read the stream once.
+    assert len(dip.since) == 1
+
+
+def test_an_explanation_carries_its_provenance_to_the_deployment() -> None:
+    # The link into the protocol PDF is the only route to the member's actual
+    # words, and the Vorgang id is the only join to the ballot.
+    dip = StubDIP(aktivitaeten=para31())
+    pipeline, loader = build(dip=dip)
+    report = RunReport(21, "sync")
+    link_bilger(pipeline, report)
+
+    pipeline.load_activities(report, since=None)
+
+    rows = [
+        row for payload in loader.posted("vote-explanations") for row in payload["explanations"]
+    ]
+    assert rows
+    assert all(row["sourceUrl"].startswith("https://dserver.bundestag.de/") for row in rows)
+    assert all(row["dipVorgangId"] for row in rows)
+
+
+def test_a_substantial_activity_stream_with_zero_declarations_warns(
+    monkeypatch,
+) -> None:
+    """L2: this drift is what GAP-018 was written against — a rename to
+    `aktivitaetsart` (§5.1 has already caught one) or a silent regression in
+    `is_vote_explanation` would make `voteExplanations` stop growing while the
+    activity stream kept going. Every fixture in the tree currently matches
+    the predicate, so a regression there passes CI green.
+
+    The alarm fires when the activity stream is large enough that zero
+    declarations is not a plausible quiet slice. `EXPLANATION_DRIFT_THRESHOLD`
+    is set well above incremental-sync volumes and well below a period-scale
+    run's — 2 000 was calibrated against §4.5's 2–3 % base rate.
+
+    Mutation-style: the predicate is inverted, so every real declaration in
+    the fixture is skipped and the drift warning must fire. The alternative —
+    building a fixture of 2 000 activities carrying no §31 — is a fixture that
+    grows with the constant, and this way the constant is what the test
+    reads.
+    """
+    from bundestrack.pipeline import sync as sync_module
+
+    monkeypatch.setattr(sync_module, "EXPLANATION_DRIFT_THRESHOLD", 3)
+    monkeypatch.setattr(
+        Aktivitaet,
+        "is_vote_explanation",
+        property(lambda self: False),
+    )
+
+    pipeline, _ = build(
+        dip=StubDIP(
+            aktivitaeten=[
+                aktivitaet("2026-07-10T00:00:00+02:00"),
+                aktivitaet("2026-07-11T00:00:00+02:00"),
+                aktivitaet("2026-07-12T00:00:00+02:00"),
+                aktivitaet("2026-07-13T00:00:00+02:00"),
+            ]
+        )
+    )
+    report = RunReport(21, "sync")
+    link_bilger(pipeline, report)
+
+    pipeline.load_activities(report, since=None)
+
+    stage = next(s for s in report.stages if s.name == "activities")
+    assert any("0 §31 declarations" in note for note in stage.notes), (
+        "the drift check must fire when the stream is above threshold and "
+        "zero declarations landed — this is what would catch a rename"
+    )
+
+
+def test_a_small_activity_stream_with_zero_declarations_does_not_warn() -> None:
+    """The alarm must not fire on the incremental-sync base case.
+
+    An overnight sync that pulls 40 new activities with none of them a §31
+    declaration is not drift — it is Tuesday. The threshold exists precisely
+    so this case does not page an operator every night.
+    """
+    pipeline, _ = build(
+        dip=StubDIP(
+            aktivitaeten=[
+                aktivitaet("2026-07-10T00:00:00+02:00"),
+                aktivitaet("2026-07-11T00:00:00+02:00"),
+            ]
+        )
+    )
+    report = RunReport(21, "sync")
+    link_bilger(pipeline, report)
+
+    pipeline.load_activities(report, since=None)
+
+    stage = next(s for s in report.stages if s.name == "activities")
+    assert not any("0 §31 declarations" in note for note in stage.notes)
+
+
+def test_a_run_with_no_declarations_posts_none() -> None:
+    # Most sittings have none (21/88 carried zero), so the empty case is the
+    # common one and must not write a placeholder.
+    pipeline, loader = build(dip=StubDIP(aktivitaeten=[aktivitaet("2026-07-10T00:00:00+02:00")]))
+    report = RunReport(21, "sync")
+    link_bilger(pipeline, report)
+
+    pipeline.load_activities(report, since=None)
+
+    assert loader.posted("vote-explanations") == []
+
+
+# --- roster reconciliation (GAP-029) -------------------------------------
+
+
+def test_the_mandate_endpoint_is_actually_called_now() -> None:
+    """`get_mandates` was built, tested and never called (GAP-029).
+
+    This is the assertion that it stopped being dead code — the same class of
+    bug as `ef687e5`, caught the same way.
+    """
+    aw = StubAbgeordnetenwatch()
+    pipeline, _ = build(abgeordnetenwatch=aw)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    assert aw.mandates_requested == [21]
+
+
+def test_a_member_missing_from_the_roster_is_named_in_the_stage_notes() -> None:
+    """The point of the whole reconciliation: surface the gap *now*.
+
+    Before this ran, the same fact surfaced weeks later as a vote row that
+    failed to resolve, with nothing saying why.
+    """
+    aw = StubAbgeordnetenwatch(
+        politicians=[{"id": 900, "ext_id_bundestagsverwaltung": "11009999"}],
+        mandates=[
+            {
+                "id": 1,
+                "label": "Katrin Zschau (Bundestag 2025 - 2029)",
+                "politician": {"id": 900},
+                "start_date": "2026-07-20",
+                "info": "Katrin Zschau ist am 20.07.2026 für Frank Junge nachgerückt.",
+                "electoral_data": {"mandate_won": "moved_up"},
+            }
+        ],
+    )
+    pipeline, _ = build(abgeordnetenwatch=aw)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    notes = "\n".join(next(s for s in report.stages if s.name == "enrichment").notes)
+    assert "Katrin Zschau" in notes
+    assert "2026-07-20" in notes
+    assert "Frank Junge" in notes
+
+
+def test_reconciliation_posts_no_mp_of_its_own() -> None:
+    """Read-only, and specifically never a writer.
+
+    MdB-Stammdaten is the roster (§6.1). A member abgeordnetenwatch names and
+    the dump does not is a *report*, not a row: writing one would put a
+    community source's claim about who sits in the Bundestag into a table the
+    rest of the site treats as official.
+    """
+    aw = StubAbgeordnetenwatch(
+        politicians=[{"id": 900, "ext_id_bundestagsverwaltung": "11009999"}],
+        mandates=[
+            {
+                "id": 1,
+                "label": "Nobody Here (Bundestag 2025 - 2029)",
+                "politician": {"id": 900},
+                "start_date": "2026-07-20",
+                "electoral_data": {"mandate_won": "moved_up"},
+            }
+        ],
+    )
+    pipeline, loader = build(abgeordnetenwatch=aw)
+    report = RunReport(21, "sync")
+    resolver = pipeline.load_roster(report)
+    before = set(resolver.internal_ids())
+
+    pipeline.load_enrichment(report)
+
+    posted = {row["internalId"] for payload in loader.posted("mps") for row in payload["mps"]}
+    assert posted <= before
+    assert "bt-11009999" not in posted
+
+
+def test_a_period_abgeordnetenwatch_does_not_cover_is_a_note_not_a_failure() -> None:
+    """Its coverage starts at WP16; Bundestrack backfills to WP14 (§4.3).
+
+    So a historical backfill hits this on every run, and it must not fail the
+    enrichment stage — the portraits and contact blocks in the same stage are
+    unaffected by a source that does not reach back that far.
+    """
+    from bundestrack.api.abgeordnetenwatch import LEGISLATURE_IDS
+
+    class RaisingAW(StubAbgeordnetenwatch):
+        def get_mandates(self, wahlperiode=21):
+            raise ValueError(f"No abgeordnetenwatch legislature id for Wahlperiode {wahlperiode}")
+
+    assert 14 not in LEGISLATURE_IDS
+    pipeline, _ = build(abgeordnetenwatch=RaisingAW())
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    stage = next(s for s in report.stages if s.name == "enrichment")
+    assert stage.ok
+    assert any("No abgeordnetenwatch mandate list" in note for note in stage.notes)
+
+
+def test_the_referral_pass_also_indexes_ballots_for_the_vote_stage() -> None:
+    """One walk of `/vorgangsposition`, two facts taken from it.
+
+    Every named vote is a `Vorgangsposition` too, so the steps the referral
+    stage already reads carry the ballot → Vorgang link as well. A second sweep
+    of the same 23 800–82 900 records through the WAF would buy nothing (§2.6),
+    and without the link a ballot page cannot reach the §31 declarations filed
+    on it — the sheet carries no id of any kind (§4.1, §7).
+    """
+    named = Vorgangsposition.model_validate(
+        {
+            "id": "696800",
+            "vorgangsposition": "Beratung",
+            "zuordnung": "BT",
+            "gang": True,
+            "fortsetzung": False,
+            "nachtrag": False,
+            "vorgangstyp": "Gesetzgebung",
+            "typ": "Vorgangsposition",
+            "titel": "Sportfördergesetz",
+            "dokumentart": "Plenarprotokoll",
+            "vorgang_id": "333135",
+            "datum": "2026-07-10",
+            "aktualisiert": "2026-07-20T10:47:41+02:00",
+            "fundstelle": {
+                "id": "5806",
+                "dokumentnummer": "21/90",
+                "dokumentart": "Plenarprotokoll",
+                "datum": "2026-07-10",
+                "herausgeber": "BT",
+            },
+            "beschlussfassung": [
+                {
+                    "beschlusstenor": "Annahme der Vorlage",
+                    "abstimmungsart": "Namentliche Abstimmung",
+                    "abstimm_ergebnis_bemerkung": "519:43:0",
+                }
+            ],
+        }
+    )
+    pipeline, _ = build(dip=StubDIP(positionen=[named]))
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    # Keyed by sitting and tally, because the two sources share no identifier.
+    assert pipeline._ballot_vorgaenge == {(90, 519, 43, 0): "333135"}
+    stage = next(s for s in report.stages if s.name == "committee-referrals")
+    assert any("named-vote steps indexed" in note for note in stage.notes)
+
+
+# --- M1: cross-batch collisions in the ballot → Vorgang join --------------
+
+
+def _named_step(*, id: str, vorgang_id: str, tally: str = "58:462:80") -> Vorgangsposition:
+    """A `Vorgangsposition` shaped exactly like the ones DIP returns for a
+    named vote — one per test, so the batching is what the assertion turns on
+    rather than a per-batch fixture."""
+    return Vorgangsposition.model_validate(
+        {
+            "id": id,
+            "vorgangsposition": "Beratung",
+            "zuordnung": "BT",
+            "gang": True,
+            "fortsetzung": False,
+            "nachtrag": False,
+            "vorgangstyp": "Gesetzgebung",
+            "typ": "Vorgangsposition",
+            "titel": f"Stub bill {id}",
+            "dokumentart": "Plenarprotokoll",
+            "vorgang_id": vorgang_id,
+            "datum": "2026-07-10",
+            "aktualisiert": "2026-07-20T10:47:41+02:00",
+            "fundstelle": {
+                "id": "5806",
+                "dokumentnummer": "21/90",
+                "dokumentart": "Plenarprotokoll",
+                "datum": "2026-07-10",
+                "herausgeber": "BT",
+            },
+            "beschlussfassung": [
+                {
+                    "beschlusstenor": "Ablehnung der Vorlage",
+                    "abstimmungsart": "Namentliche Abstimmung",
+                    "abstimm_ergebnis_bemerkung": tally,
+                }
+            ],
+        }
+    )
+
+
+def test_a_ballot_key_two_procedures_claim_across_batches_is_dropped(monkeypatch) -> None:
+    """M1: `_ballot_vorgaenge` must drop cross-batch collisions, not overwrite.
+
+    `ballot_vorgang_index` already drops intra-batch collisions (verified in
+    test_pipeline_transform.py::test_a_key_two_procedures_claim_is_dropped_rather_than_guessed).
+    The one this asserts is the *cross*-batch one, which the intra-batch check
+    cannot see: WP19 is ~166 batches of 500, and if two named votes with the
+    same `(sitting, tally)` sit in different batches the naive `.update()`
+    silently sets the map to whichever landed last.
+
+    The batch size is monkeypatched down to 1 rather than fed one giant
+    iterable, because the whole point of this regression is that each batch
+    goes through its own call to `ballot_vorgang_index` and the merge is what
+    needs to remember what the previous ones saw.
+    """
+    import bundestrack.pipeline.sync as sync_module
+
+    monkeypatch.setattr(sync_module, "STREAM_BATCH", 1)
+
+    first = _named_step(id="A", vorgang_id="V1", tally="58:462:80")
+    second = _named_step(id="B", vorgang_id="V2", tally="58:462:80")
+
+    pipeline, _ = build(dip=StubDIP(positionen=[first, second]))
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    key = (90, 58, 462, 80)
+    assert key not in pipeline._ballot_vorgaenge, (
+        "a cross-batch collision must drop the key; overwriting would attach "
+        "a member's §31 declaration to a vote they did not cast it on"
+    )
+    assert key in pipeline._ambiguous_ballot_keys, (
+        "the run-scoped ambiguity set must remember the collision so a later "
+        "batch cannot silently re-add the same key"
+    )
+
+
+def test_a_later_batch_matching_an_already_ambiguous_key_stays_dropped(monkeypatch) -> None:
+    """The ambiguity is sticky: once two procedures have claimed a key, a
+    third arrival for the same key cannot rescue it — the *first* two are
+    still incompatible, and there is no way from three claimants to a
+    non-guess. Ordered so this batches as (V1), (V2), (V1) again — the third
+    batch's `.update` on a fresh intra-batch map would put V1 back if the run
+    scope forgot."""
+    import bundestrack.pipeline.sync as sync_module
+
+    monkeypatch.setattr(sync_module, "STREAM_BATCH", 1)
+
+    pipeline, _ = build(
+        dip=StubDIP(
+            positionen=[
+                _named_step(id="A", vorgang_id="V1"),
+                _named_step(id="B", vorgang_id="V2"),
+                _named_step(id="C", vorgang_id="V1"),
+            ]
+        )
+    )
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_committee_referrals(report, since=None)
+
+    assert (90, 58, 462, 80) not in pipeline._ballot_vorgaenge
+
+
+# --- M2: a failed referrals stage must not blank existing links -----------
+
+
+def _real_wp21_sheet_link() -> VoteSheetLink:
+    """The 21/90/8 sheet's real link, matching the XLSX fixture we serve."""
+    return VoteSheetLink(
+        title="21. Wahlperiode: Namentliche Abstimmung Nr. 8, Sitzung 90",
+        pdf_url="https://example.invalid/21_90_8.pdf",
+        xlsx_url="https://example.invalid/21_90_8.xlsx",
+        date=dt.date(2026, 7, 10),
+    )
+
+
+class RealVoteSheetStub(StubVotes):
+    """A votes stub that parses the real 21/90/8 fixture on demand.
+
+    The rest of the ballot tests raise on `fetch_sheet` because they only care
+    about *which* sheets were paid for; the M2 regression is about what the
+    payload for a *fetched* sheet contains, so this one has to answer with a
+    real `VoteSheet`.
+    """
+
+    def fetch_sheet(self, link: VoteSheetLink):
+        from bundestrack.api.votes import parse_sheet
+
+        self.fetched.append(link.title)
+        return parse_sheet(
+            fixture_bytes("votes", "vote_21_90_8_excerpt.xlsx"),
+            source_url=link.xlsx_url,
+            title=link.title,
+            sheet_date=link.date,
+        )
+
+
+def test_load_votes_after_a_failed_referrals_stage_does_not_erase_dip_vorgang_id(
+    tmp_path,
+) -> None:
+    """M2: an operator re-runs `pixi run pipeline backfill --wp N` on
+    already-populated data. The referrals stage errors — a WAF challenge, a
+    DIP 5xx — and the `_guard` wrapper records it and lets the run continue.
+    `load_votes` then walks every ballot and re-upserts it.
+
+    Before the fix, `_ballot_vorgaenge.get(key)` returned `None` for every
+    ballot (the map was still empty from `__init__`), the payload carried
+    `dipVorgangId: null`, and Convex `patch` erased every previously-resolved
+    link — silently, because `getExplanationCoverage` counts declarations and
+    is unchanged by an unlinked ballot.
+
+    The fix is in `vote_sheet_payload`, which now *omits* the key when the
+    caller passes `None` — so `db.patch` does not touch the field and the
+    stored value survives.
+    """
+
+    class ExplodingDIP(StubDIP):
+        def iter_vorgangspositionen(self, *args, **kwargs):
+            raise BundestagAPIError("stub: WAF challenge on /vorgangsposition")
+
+    votes = RealVoteSheetStub([_real_wp21_sheet_link()])
+    pipeline, loader = build(dip=ExplodingDIP(), votes=votes, tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+
+    # The stage fails; `_guard` records the error and the run continues, which
+    # is exactly the operational path this test covers.
+    import contextlib
+
+    with contextlib.suppress(BundestagAPIError):
+        pipeline.load_committee_referrals(report, since=None)
+
+    assert pipeline._ballot_vorgaenge == {}, (
+        "the referrals stage must have contributed nothing — otherwise this "
+        "test is asserting the wrong invariant"
+    )
+    pipeline.load_votes(report, incremental=False)
+
+    (payload,) = [payload for path, payload in loader.payloads if path == "vote-sheets"]
+    assert "dipVorgangId" not in payload, (
+        "omitting the key preserves whatever the row already stored; sending "
+        "null would erase every previously-resolved link on this ballot"
+    )
+
+
+class VorgangBackfillLoader(RecordingLoader):
+    """A loader with a scriptable `missing_vote_vorgang` response, so the L3
+    orchestration test can run without touching Convex.
+
+    The real path talks to a live deployment through
+    `voteSheetsMissingVorgang`; the pipeline logic under test here is the
+    client-side join, the paging, and the counter aggregation — all of which
+    are between the two ends and cannot be exercised through a dry run.
+    """
+
+    def __init__(self, missing_pages: list[dict]) -> None:
+        super().__init__()
+        self._missing = list(missing_pages)
+        self.patch_calls: list[tuple[int, list[dict]]] = []
+
+    def missing_vote_vorgang(self, wahlperiode, cursor=None, *, limit=200):
+        if self._missing:
+            return self._missing.pop(0)
+        return {"sheets": [], "nextCursor": None, "done": True}
+
+    def patch_vote_vorgang(self, wahlperiode, patches):
+        self.patch_calls.append((wahlperiode, list(patches)))
+        return {"patched": len(patches), "unchanged": 0, "conflicts": 0, "unknown": 0}
+
+
+def test_backfill_vote_vorgang_joins_the_referral_map_to_unresolved_sheets(
+    tmp_path,
+) -> None:
+    """L3: the pipeline builds the ballot → Vorgang map from `/vorgangsposition`,
+    reads the ballots Convex still has no procedure for, joins them by
+    `(sitting, tally)`, and patches only the ones that resolve.
+
+    Unresolved sheets whose key is not in the map (a real divergence — a
+    ballot DIP files under a different sitting or tally) stay unresolved
+    rather than being guessed at: the L3 route is the same read model that
+    the M2 fix protects on write, and it *cannot* invent a procedure it did
+    not observe.
+    """
+    from bundestrack.models.dip import Vorgangsposition
+    from bundestrack.pipeline.sync import backfill_vote_vorgang
+
+    resolved = Vorgangsposition.model_validate(
+        {
+            "id": "696800",
+            "vorgangsposition": "Beratung",
+            "zuordnung": "BT",
+            "gang": True,
+            "fortsetzung": False,
+            "nachtrag": False,
+            "vorgangstyp": "Gesetzgebung",
+            "typ": "Vorgangsposition",
+            "titel": "Sportfördergesetz",
+            "dokumentart": "Plenarprotokoll",
+            "vorgang_id": "333135",
+            "datum": "2026-07-10",
+            "aktualisiert": "2026-07-20T10:47:41+02:00",
+            "fundstelle": {
+                "id": "5806",
+                "dokumentnummer": "21/90",
+                "dokumentart": "Plenarprotokoll",
+                "datum": "2026-07-10",
+                "herausgeber": "BT",
+            },
+            "beschlussfassung": [
+                {
+                    "beschlusstenor": "Annahme",
+                    "abstimmungsart": "Namentliche Abstimmung",
+                    "abstimm_ergebnis_bemerkung": "519:43:0",
+                }
+            ],
+        }
+    )
+    loader = VorgangBackfillLoader(
+        [
+            {
+                "sheets": [
+                    # Resolved by the referral walk above.
+                    {
+                        "sitzungnr": 90,
+                        "abstimmnr": 8,
+                        "yesCount": 519,
+                        "noCount": 43,
+                        "abstainCount": 0,
+                    },
+                    # No matching step — DIP filed this under a different
+                    # sitting or tally, so it stays unresolved.
+                    {
+                        "sitzungnr": 90,
+                        "abstimmnr": 1,
+                        "yesCount": 100,
+                        "noCount": 200,
+                        "abstainCount": 300,
+                    },
+                ],
+                "nextCursor": None,
+                "done": True,
+            },
+        ]
+    )
+    settings = Settings(
+        _env_file=None,
+        BUNDESTAG_API_KEY="test-key",
+        CONVEX_URL="https://example.convex.cloud",
+        PIPELINE_API_KEY="test-key",
+        BUNDESTRACK_STATE_PATH=str(tmp_path / "state.json"),
+    )
+    pipeline_run = Pipeline(
+        21,
+        settings=settings,
+        dry_run=True,
+        dip=StubDIP(positionen=[resolved]),
+        stammdaten=StubStammdaten(),
+        protocols=StubClient(),
+        votes=StubVotes(),
+        profiles=StubProfiles(),
+        abgeordnetenwatch=StubAbgeordnetenwatch(),
+        loader=loader,
+        state=SyncState(),
+    )
+
+    totals = backfill_vote_vorgang(21, settings=settings, pipeline=pipeline_run)
+
+    assert totals["sheets_scanned"] == 2
+    assert totals["patches_sent"] == 1, "only the resolved sheet is patched"
+    # Only one page of patches — grouped by page, not by sheet.
+    assert len(loader.patch_calls) == 1
+    (_, patches) = loader.patch_calls[0]
+    assert patches == [{"sitzungnr": 90, "abstimmnr": 8, "dipVorgangId": "333135"}]
+
+
+def test_backfill_vote_vorgang_does_nothing_when_the_referral_walk_is_empty(
+    tmp_path,
+) -> None:
+    """The route is deliberately a no-op when there is nothing to attach.
+
+    An empty referral map means either the source published nothing new (fine)
+    or the referral stage errored (bad) — and either way, sending patches with
+    no source data would be exactly the M2 failure mode (erasing existing
+    links or, here, guessing new ones). So this stops early and reports zero.
+    """
+    from bundestrack.pipeline.sync import backfill_vote_vorgang
+
+    loader = VorgangBackfillLoader([])
+    settings = Settings(
+        _env_file=None,
+        BUNDESTAG_API_KEY="test-key",
+        CONVEX_URL="https://example.convex.cloud",
+        PIPELINE_API_KEY="test-key",
+        BUNDESTRACK_STATE_PATH=str(tmp_path / "state.json"),
+    )
+    pipeline_run = Pipeline(
+        21,
+        settings=settings,
+        dry_run=True,
+        dip=StubDIP(positionen=[]),
+        stammdaten=StubStammdaten(),
+        protocols=StubClient(),
+        votes=StubVotes(),
+        profiles=StubProfiles(),
+        abgeordnetenwatch=StubAbgeordnetenwatch(),
+        loader=loader,
+        state=SyncState(),
+    )
+
+    totals = backfill_vote_vorgang(21, settings=settings, pipeline=pipeline_run)
+
+    assert totals["sheets_scanned"] == 0
+    assert totals["patches_sent"] == 0
+    assert loader.patch_calls == []
+
+
+def test_load_votes_with_a_populated_map_carries_the_resolved_procedure(tmp_path) -> None:
+    """The happy path, kept as a companion to the M2 test above so a fix that
+    accidentally omits the key *always* — even when resolved — fails here."""
+    from bundestrack.pipeline.transform import ballot_key
+
+    votes = RealVoteSheetStub([_real_wp21_sheet_link()])
+    pipeline, loader = build(dip=StubDIP(), votes=votes, tmp_path=tmp_path)
+    report = RunReport(21, "backfill")
+    pipeline.load_roster(report)
+    # A resolved link, as if the referrals stage had run and found this
+    # ballot's procedure. The key comes from the same `ballot_key` helper the
+    # production code uses, so the two sides cannot silently diverge.
+    sheet = votes.fetch_sheet(_real_wp21_sheet_link())
+    votes.fetched.clear()
+    pipeline._ballot_vorgaenge[ballot_key(sheet)] = "333135"
+
+    pipeline.load_votes(report, incremental=False)
+
+    (payload,) = [payload for path, payload in loader.payloads if path == "vote-sheets"]
+    assert payload["dipVorgangId"] == "333135"

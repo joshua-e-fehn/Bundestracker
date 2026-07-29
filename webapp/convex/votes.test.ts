@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { backfillVoteSheetVorgang, voteSheetsMissingVorgang } from "./votes"
 import {
   breakdownRows,
   chunk,
@@ -447,5 +448,85 @@ describe("dissent tallies derived from stored flags", () => {
     // stored flags has no such failure mode: the floor is an empty record set.
     expect(tallyOf([]).dissents).toBe(0)
     expect(tallyOf([]).ballotsCast).toBe(0)
+  })
+})
+
+// --- L3 backfill-vote-vorgang — the shape assertions ---------------------
+
+/** The JSON schema Convex builds from the runtime `args:` / `returns:` on a
+ * function. It carries `type`, `value` for objects, and `fieldType` for
+ * arrays — the shape the tests below key on. Convex's `internalMutation` and
+ * `internalQuery` expose these as `exportArgs()` / `exportReturns()` at
+ * runtime. */
+type ConvexSchema = {
+  type: string
+  value?: Record<string, { fieldType: ConvexSchema; optional?: boolean }>
+  values?: ConvexSchema[]
+}
+
+function argsSchema(fn: unknown): ConvexSchema {
+  return JSON.parse((fn as { exportArgs: () => string }).exportArgs())
+}
+
+function returnsSchema(fn: unknown): ConvexSchema {
+  return JSON.parse((fn as { exportReturns: () => string }).exportReturns())
+}
+
+describe("backfillVoteSheetVorgang: the mutation cannot write null", () => {
+  test("each patch's dipVorgangId is a plain string, not nullable", () => {
+    // This is the shape of the M2 invariant, held one level lower. The M2
+    // failure was `dipVorgangId: null` overwriting a resolved link; the L3
+    // route exists precisely so late resolutions can be patched in without
+    // going near that path. Accepting a nullable dipVorgangId here would
+    // let a caller silently erase what M2 protects on the ingest side.
+    const args = argsSchema(backfillVoteSheetVorgang)
+    // args.patches is an array; the element is an object; look up its
+    // `dipVorgangId` field's schema and assert it is exactly `string`.
+    const patchesField = args.value?.patches.fieldType
+    // Convex encodes v.array(...) as { type: "array", value: <element> }.
+    const element = (patchesField as unknown as { value: ConvexSchema }).value
+    const dipVorgangId = element.value?.dipVorgangId.fieldType
+    expect(dipVorgangId?.type).toBe("string")
+    expect(dipVorgangId?.values).toBeUndefined()
+  })
+
+  test("patches are scoped by wahlperiode, so a WP20 sitting cannot alias WP21", () => {
+    // The natural key is only unique within a period, so scoping is the whole
+    // safety of the ballot lookup. A shortcut that took `(sitzungnr,
+    // abstimmnr)` alone would silently patch the wrong ballot in another
+    // period the moment two shared a sitting number.
+    const args = argsSchema(backfillVoteSheetVorgang)
+    expect(args.value?.wahlperiode.fieldType.type).toBe("number")
+  })
+})
+
+describe("voteSheetsMissingVorgang: the read shape only carries the ballot key + tally", () => {
+  test("each returned sheet has the four fields the client-side join needs and nothing else", () => {
+    // The join key is `(sitzungnr, yes, no, abstain)` — that is what
+    // `_ballot_vorgaenge` is indexed by. Returning the whole `voteSheets` row
+    // would drag `title`, `sourceUrl`, `absentCount` and the rest across the
+    // wire on every backfill page; the L3 pipeline needs none of them.
+    const returns = returnsSchema(voteSheetsMissingVorgang)
+    const sheetsField = returns.value?.sheets.fieldType
+    const element = (sheetsField as unknown as { value: ConvexSchema }).value
+    expect(Object.keys(element.value ?? {}).sort()).toEqual([
+      "abstainCount",
+      "abstimmnr",
+      "noCount",
+      "sitzungnr",
+      "yesCount",
+    ])
+  })
+
+  test("nextCursor is nullable, so a caller can page to exhaustion", () => {
+    // The end signal is null, not absent — Convex's optional/undefined
+    // handling is what M2 uses to preserve fields, and reusing that same
+    // convention here would make an empty page indistinguishable from an
+    // exhausted one.
+    const returns = returnsSchema(voteSheetsMissingVorgang)
+    const cursor = returns.value?.nextCursor.fieldType
+    expect(cursor?.type).toBe("union")
+    const kinds = (cursor?.value as unknown as ConvexSchema[] | undefined)?.map((m) => m.type)
+    expect(kinds?.sort()).toEqual(["null", "object"])
   })
 })
