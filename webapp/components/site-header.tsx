@@ -2,6 +2,8 @@
 
 import { useQuery } from "convex/react"
 import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 import { BrandMark } from "@/components/brand-mark"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { NavMobile } from "@/components/nav-mobile"
@@ -11,6 +13,14 @@ import { SidebarToggle } from "@/components/sidebar-toggle"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
+import {
+  isCurrentPeriod,
+  PERIOD_PARAM,
+  parsePeriodParam,
+  periodHref,
+  resolvePeriod,
+} from "@/lib/period"
+import { cn } from "@/lib/utils"
 
 /**
  * The site header: brand, search, and the reader's own controls.
@@ -54,7 +64,7 @@ import { api } from "@/convex/_generated/api"
  */
 
 /**
- * Which Bundestag the site is showing, as a chip in the header.
+ * Which Bundestag the reader is looking at, as a chip in the header.
  *
  * Renders nothing while the query is in flight, and nothing when the roster is
  * empty — the two states a fresh deployment passes through. A skeleton here
@@ -67,18 +77,61 @@ import { api } from "@/convex/_generated/api"
  * the box down to its own magnifier glyph. With the destinations gone to the
  * sidebar the bar has room again, so the one fact every page is scoped to comes
  * back at the width it fits.
+ *
+ * ## It reads the URL, not `getCurrentWahlperiode`
+ *
+ * It used to print the newest period on the roster, unconditionally, and that
+ * was correct for exactly as long as every page showed that period. It is now
+ * a claim the page can contradict: on `/rankings?wp=19` the old chip said
+ * "WP 21" in the chrome above a WP19 table, which is worse than no chip —
+ * the one element on screen whose entire job is to say which Bundestag this is
+ * would have been the only one saying the wrong number.
+ *
+ * ## On a historical period it becomes a link back
+ *
+ * A reader who has switched away needs a way back that does not depend on
+ * finding the selector again on whichever page they have since navigated to —
+ * and the chip is already the thing that says which period they are in. So it
+ * carries the period *and* the way out of it, and it is a real anchor, so
+ * middle-click and "open in new tab" work as they do everywhere else. On the
+ * current period it stays a plain `<span>`: a link to the page you are already
+ * on is a control that does nothing.
  */
 function CurrentPeriodBadge() {
   const { t } = useLocale()
-  const wahlperiode = useQuery(api.mps.getCurrentWahlperiode)
+  const params = useSearchParams()
+  const pathname = usePathname()
+  const options = useQuery(api.mps.listPeriods, {})
+
+  const requested = parsePeriodParam(params.get(PERIOD_PARAM))
+  const wahlperiode = resolvePeriod(requested, options?.current)
 
   if (wahlperiode === undefined || wahlperiode === null) return null
 
+  const className =
+    "mr-1 hidden rounded-full border border-border/60 px-2.5 py-1 font-medium text-muted-foreground text-xs tabular-nums sm:inline-block"
+
+  if (!isCurrentPeriod(wahlperiode, options?.current)) {
+    return (
+      <Link
+        // The same path without the period — `periodHref` omits the parameter
+        // for the current one, so this is the bare URL rather than `?wp=21`.
+        // Other parameters ride along: a reader who has filtered a search and
+        // wants today's chamber keeps their query.
+        href={periodHref(pathname, options?.current ?? wahlperiode, {
+          current: options?.current,
+          params,
+        })}
+        title={t("nav.periodBackToCurrent")}
+        className={cn(className, "hover:border-border hover:text-foreground")}
+      >
+        {t("nav.period", { wahlperiode })}
+      </Link>
+    )
+  }
+
   return (
-    <span
-      title={t("nav.periodLabel", { wahlperiode })}
-      className="mr-1 hidden rounded-full border border-border/60 px-2.5 py-1 font-medium text-muted-foreground text-xs tabular-nums sm:inline-block"
-    >
+    <span title={t("nav.periodLabel", { wahlperiode })} className={className}>
       {t("nav.period", { wahlperiode })}
     </span>
   )
@@ -202,12 +255,22 @@ export function SiteHeader() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          {/* The one fact every page on this site is implicitly scoped to and
-              none of them states in the chrome: which Bundestag you are looking
-              at. Read from the data rather than from `CURRENT_WAHLPERIODE`, for
-              the reason `newestWahlperiode` gives — a constant keeps naming the
-              previous Bundestag for months after the next is sworn in. */}
-          <CurrentPeriodBadge />
+          {/* The one fact every page on this site is scoped to and none of them
+              states in the chrome: which Bundestag you are looking at. Read
+              from the URL and the roster rather than from `CURRENT_WAHLPERIODE`,
+              for the reason `newestWahlperiode` gives — a constant keeps naming
+              the previous Bundestag for months after the next is sworn in.
+
+              `Suspense` is required rather than decorative: the badge reads
+              `useSearchParams` to find the period, which opts its subtree out
+              of static prerendering, and Next.js fails the *build* for a
+              component that reads it without a boundary. The boundary is here
+              rather than around the whole header so only the chip waits — and
+              the fallback is nothing, because the chip already renders nothing
+              while its query is in flight. */}
+          <Suspense>
+            <CurrentPeriodBadge />
+          </Suspense>
 
           <LocaleToggle />
           <ThemeToggle />

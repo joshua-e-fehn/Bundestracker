@@ -3,6 +3,7 @@
 import { Minus, Plus, RotateCcw } from "lucide-react"
 import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { SeatTooltip, type SeatTooltipData } from "@/components/seat-tooltip"
 import { Button } from "@/components/ui/button"
 import { layoutHemicycle, type SeatingColorMode, seatColor, seatingMaxima } from "@/lib/seating"
@@ -362,6 +363,10 @@ const SeatLayer = memo(function SeatLayer({
   wahlperiode: number
 }) {
   const { t } = useLocale()
+  // The chamber's period travels with the seat: clicking a WP19 seat opens that
+  // member's WP19 profile. This is also the one link on the site that was not
+  // encoding its id — `encodeURIComponent` arrives with the shared builder.
+  const mpHref = useMPHref()
 
   return (
     <>
@@ -386,7 +391,7 @@ const SeatLayer = memo(function SeatLayer({
         <a
           key={seat.mpInternalId}
           data-seat-index={index}
-          href={`/mps/${seat.mpInternalId}`}
+          href={mpHref(seat.mpInternalId)}
           aria-label={t("seating.seatOf", { name: seat.name })}
           className="outline-none [&>circle]:hover:stroke-foreground [&>circle]:focus-visible:stroke-foreground"
         >

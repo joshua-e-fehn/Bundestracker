@@ -1,12 +1,13 @@
 import type { Metadata } from "next"
-import { CurrentPeriod } from "@/components/current-period"
+import { Suspense } from "react"
 import { PageHeading } from "@/components/page-heading"
+import { PeriodScope } from "@/components/period-scope"
 import { Seating } from "@/components/seating"
 import { SyntheticSeatingNotice } from "@/components/seating-notice"
 import { DEFAULT_LOCALE, t } from "@/lib/i18n"
 
 /**
- * `/seating` — the hemicycle.
+ * `/seating` — the hemicycle, for the Wahlperiode `?wp=` names.
  *
  * A server component rendering client ones, the shape AGENTS.md asks for: the
  * interactivity (colour mode, zoom, tooltips) and the Convex subscriptions live
@@ -21,6 +22,13 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * saying which half is real would be the most misleading thing this codebase
  * does. Hence the notice renders above the map, unconditionally, at full
  * contrast, before any data has loaded.
+ *
+ * The notice is period-independent for the same reason, and that is worth
+ * stating now that the page can show a closed Wahlperiode: the arc is
+ * constructed in *every* period including the current one, so a historical
+ * seating page is not more invented than today's. `period.source.seating.equal`
+ * says so on the page rather than leaving a reader to assume the older one is
+ * the worse of the two.
  *
  * German metadata, matching every other route here: `generateMetadata` cannot see
  * the client-side language toggle, so the tab title is the default locale's while
@@ -37,8 +45,11 @@ export default function SeatingPage() {
       <PageHeading titleKey="seating.title" subtitleKey="seating.subtitle" />
       <SyntheticSeatingNotice />
       {/* The component itself, not a closure over it: a function cannot cross
-          the server/client boundary. See components/current-period.tsx. */}
-      <CurrentPeriod component={Seating} />
+          the server/client boundary. See components/period-scope.tsx — and
+          app/rankings/page.tsx for why the `Suspense` boundary is required. */}
+      <Suspense>
+        <PeriodScope component={Seating} />
+      </Suspense>
     </main>
   )
 }

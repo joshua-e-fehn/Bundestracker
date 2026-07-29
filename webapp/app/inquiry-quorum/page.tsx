@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
-import { CurrentPeriod } from "@/components/current-period"
+import { Suspense } from "react"
 import { InquiryQuorum } from "@/components/inquiry-quorum"
 import { PageHeading } from "@/components/page-heading"
+import { PeriodScope } from "@/components/period-scope"
 import { DEFAULT_LOCALE, t } from "@/lib/i18n"
 
 /**
@@ -25,11 +26,26 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * that every figure is checkable — on a page that did not have to.
  *
  * A server component rendering a client one, the shape AGENTS.md asks for: the
- * Convex subscription and the combination filter live below this boundary. The
- * period is resolved by `CurrentPeriod` rather than carried in the URL, for the
- * reason that component gives — a hardcoded 21 keeps naming the previous
- * Bundestag for months after WP22 is elected, which on *this* page would mean
- * computing a quarter of a chamber that no longer sits.
+ * Convex subscription and the combination filter live below this boundary.
+ *
+ * ## The period, and why this page carries one at all
+ *
+ * The quarter is arithmetic over seat counts, so it is answerable for any
+ * period whose roster is loaded — and it is a genuinely different answer in
+ * each: WP20's 736 seats and its six groups produce a different threshold and a
+ * different set of combinations from WP21's. That makes the selector here a
+ * feature rather than a consequence of adding it everywhere.
+ *
+ * ⚠ `RULED_OUT` in lib/inquiry.ts is a hand-maintained record of which groups
+ * have ruled out working with which, and it describes the **present**
+ * political situation. On a historical period it is therefore an anachronism —
+ * a WP19 combination marked "ruled out" is marked so by a statement made years
+ * later. The page says as much where the table says it, rather than letting a
+ * current fact be read as a historical one.
+ *
+ * The period defaults to the current one and writes no parameter there — a
+ * hardcoded 21 would keep computing a quarter of a chamber that no longer
+ * sits, months after WP22 is elected.
  *
  * German metadata, matching every other route: `generateMetadata` cannot see the
  * client-side language toggle, so the tab title is the default locale's while
@@ -49,8 +65,11 @@ export default function InquiryQuorumPage() {
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:px-6">
       <PageHeading titleKey="inquiry.title" subtitleKey="inquiry.subtitle" />
       {/* The component itself, not a closure over it: a function cannot cross
-          the server/client boundary. See components/current-period.tsx. */}
-      <CurrentPeriod component={InquiryQuorum} />
+          the server/client boundary. See components/period-scope.tsx — and
+          app/rankings/page.tsx for why the `Suspense` boundary is required. */}
+      <Suspense>
+        <PeriodScope component={InquiryQuorum} />
+      </Suspense>
     </main>
   )
 }

@@ -528,14 +528,24 @@ export const searchMPs = query({
  * published" rather than "no committees" — §6.4, and the warning
  * convex/committees.ts carries. The UI hides the control rather than showing a
  * chamber that sat on nothing.
+ *
+ * ## It no longer answers "which periods exist"
+ *
+ * It used to, as a `wahlperioden` array built from a second full-table scan,
+ * because `/search` was the only page with a period control and this was the
+ * only query it asked. Now every page has one, and `mps.listPeriods` is the
+ * single query behind all of them — so `/search`'s selector offers the same set
+ * as `/rankings`' by construction rather than by two scans agreeing.
+ *
+ * That also removes the second scan: this query is called once per period
+ * change and the period list is not period-scoped, so recomputing it here was
+ * work proportional to the whole corpus attached to a per-period question.
  */
 export const getSearchFilterOptions = query({
   args: { wahlperiode: v.number() },
   returns: v.object({
     fraktionen: v.array(v.object({ value: v.string(), count: v.number() })),
     committees: v.array(v.string()),
-    /** Periods with any roster at all, newest first — the period filter. */
-    wahlperioden: v.array(v.number()),
   }),
   handler: async (ctx, args) => {
     const roster = await ctx.db
@@ -553,11 +563,6 @@ export const getSearchFilterOptions = query({
       .withIndex("by_wahlperiode_and_committeeName", (q) => q.eq("wahlperiode", args.wahlperiode))
       .collect()
 
-    // Every period on the roster. Bounded by the number of Wahlperioden, so a
-    // full scan is safe here in a way it is not on any other table — the same
-    // reasoning `getMPMandates` uses in convex/mps.ts.
-    const all = await ctx.db.query("mps").withIndex("by_wahlperiode_and_fraktion").collect()
-
     return {
       fraktionen: [...fraktionen]
         .map(([value, count]) => ({ value, count }))
@@ -565,7 +570,6 @@ export const getSearchFilterOptions = query({
       committees: [...new Set(memberships.map((row) => row.committeeName))].sort((a, b) =>
         a.localeCompare(b, "de"),
       ),
-      wahlperioden: [...new Set(all.map((mp) => mp.wahlperiode))].sort((a, b) => b - a),
     }
   },
 })

@@ -1,8 +1,9 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { CurrentPeriod } from "@/components/current-period"
+import { Suspense } from "react"
 import { PartyHeading } from "@/components/party-heading"
 import { PartyMembers } from "@/components/party-members"
+import { PeriodScope } from "@/components/period-scope"
 import { DEFAULT_LOCALE, t } from "@/lib/i18n"
 import { isPartyKey, partyByKey } from "@/lib/parties"
 
@@ -35,13 +36,20 @@ import { isPartyKey, partyByKey } from "@/lib/parties"
  * note in components/not-found-page.tsx. The call stays because it is correct
  * and will produce the right status once the framework does.
  *
- * ## The period is resolved by `CurrentPeriod`, not here
+ * ## The period is resolved by `PeriodScope`, not here
  *
- * Like every other route on the site: the URL carries the group, not the
- * Bundestag, and `newestWahlperiode` is the single place that derivation lives.
- * A second resolution in this page would be a second answer to "which Bundestag
- * is this". The group rides along as an extra prop — see the note on
- * `CurrentPeriod`.
+ * Like every other route on the site: the *path* carries the group and the
+ * *query string* carries the Bundestag, so `/parties/fdp?wp=19` is one group in
+ * one period and both halves are shareable. A second resolution in this page
+ * would be a second answer to "which Bundestag is this". The group rides along
+ * as an extra prop — see the note on `PeriodScope`.
+ *
+ * ⚠ A group that is a valid `PartyKey` need not have sat in every period, and
+ * this is the route where that shows: `/parties/fdp` is a real page in WP19 and
+ * WP20 and an empty one in WP21, where the FDP holds no seats. `PartyMembers`
+ * distinguishes that from an unscored period rather than rendering a bare empty
+ * table — a group that did not sit and a group nobody has scored look identical
+ * otherwise.
  */
 
 type Params = { params: Promise<{ party: string }> }
@@ -70,8 +78,11 @@ export default async function PartyPage({ params }: Params) {
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6">
       <PartyHeading party={party} />
       {/* The component itself, not a closure over it: a function cannot cross
-          the server/client boundary. See components/current-period.tsx. */}
-      <CurrentPeriod component={PartyMembers} props={{ party }} />
+          the server/client boundary. See components/period-scope.tsx — and
+          app/rankings/page.tsx for why the `Suspense` boundary is required. */}
+      <Suspense>
+        <PeriodScope component={PartyMembers} props={{ party }} />
+      </Suspense>
     </main>
   )
 }

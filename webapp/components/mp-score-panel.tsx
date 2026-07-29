@@ -6,6 +6,7 @@ import { useEffect, useState } from "react"
 import { DissentBadge } from "@/components/dissent-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { ScoreBreakdown, totalFor } from "@/components/score-breakdown"
+import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -37,9 +38,25 @@ import { DEFAULT_WEIGHTS, resolveWeights } from "@/lib/scoring"
 export function MPScorePanel({
   mpInternalId,
   wahlperiode,
+  current,
 }: {
   mpInternalId: string
   wahlperiode: number
+  /**
+   * The sitting period, so the score can say which of its components the
+   * period's sources could not measure.
+   *
+   * This matters more here than anywhere else on the page. The total is a
+   * weighted sum over six components, and on a closed period two or three of
+   * them are structurally zero — committees always, speeches before WP18, votes
+   * before WP19. A WP17 member therefore scores lower than a WP21 member of
+   * identical activity, and nothing in the number says so.
+   * `docs/historical-coverage.md` states the consequence plainly: *the UI must
+   * not rank an MP from WP15 against one from WP21 as though the same
+   * measurements stood behind both.* This is where that warning reaches a
+   * reader looking at one person's figure.
+   */
+  current?: number | null
 }) {
   const { t, locale } = useLocale()
   const { data: session } = authClient.useSession()
@@ -105,10 +122,15 @@ export function MPScorePanel({
         <CardHeader>
           <CardTitle>{t("mp.activityScore")}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-2">
           {/* Not a zero. No row means the cron has not scored this MP for this
-              period; a big "0" would be a claim about their work. */}
+              period; a big "0" would be a claim about their work.
+              `docs/historical-coverage.md` records that this is the *normal*
+              state of a freshly backfilled period — the nightly Convex sweep
+              recomputes the current calendar month, so a closed period stays
+              unscored until `scores --wp N --all-months` runs. */}
           <p className="text-muted-foreground text-sm">{t("score.none")}</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">{t("period.notScored")}</p>
         </CardContent>
       </Card>
     )
@@ -164,6 +186,14 @@ export function MPScorePanel({
             weights={customised ? effectiveWeights : undefined}
             locale={locale}
           />
+          {/* Which components this period's sources could not measure, under
+              the bars showing them at zero. Three separate notes rather than
+              one summary, because they have three different boundaries and a
+              reader on WP19 needs the committee one and not the speech one.
+              All three render nothing on the current period. */}
+          <SourceCoverageNote source="committees" wahlperiode={wahlperiode} current={current} />
+          <SourceCoverageNote source="speeches" wahlperiode={wahlperiode} current={current} />
+          <SourceCoverageNote source="votes" wahlperiode={wahlperiode} current={current} />
         </section>
 
         <Separator />

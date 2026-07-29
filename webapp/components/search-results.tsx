@@ -6,6 +6,7 @@ import { EventTypeIcon } from "@/components/event-type-icon"
 import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
@@ -187,7 +188,10 @@ function ResultCard({
   locale: Parameters<typeof formatDate>[1]
 }) {
   const { t } = useLocale()
-  const href = `/mps/${encodeURIComponent(mp.mpInternalId)}`
+  // Carries the search's own `?wp=` into the profile — a result found by
+  // searching WP19 must open that person's WP19 page. See
+  // components/providers/period-provider.tsx.
+  const href = useMPHref()(mp.mpInternalId)
   // Already resolved server-side through the same `occupationOf`
   // (convex/search.ts), which is why nothing is chosen here. Re-running it over
   // `{ occupation }` alone was the bug: it dropped the `profession` fallback the

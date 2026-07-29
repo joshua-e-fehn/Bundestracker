@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react"
 import { useLocale } from "@/components/providers/locale-provider"
+import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/convex/_generated/api"
 import { formatDate } from "@/lib/bundestag"
@@ -23,9 +24,13 @@ import { formatDate } from "@/lib/bundestag"
 export function MPCommittees({
   mpInternalId,
   wahlperiode,
+  current,
 }: {
   mpInternalId: string
   wahlperiode: number
+  /** The sitting period, so the empty state can name the *right* reason. See
+   * the note on the empty branch below. */
+  current?: number | null
 }) {
   const { t, locale } = useLocale()
   const committees = useQuery(api.committees.getCommitteesByMP, { mpInternalId, wahlperiode })
@@ -41,6 +46,16 @@ export function MPCommittees({
         ) : committees.length === 0 ? (
           <div className="flex flex-col gap-2">
             <p className="text-muted-foreground text-sm">{t("mp.noCommittees")}</p>
+            {/* Two different reasons for one empty list, and the page can now
+                be on either. On the current period the caveat is the general
+                one this card has always carried — the dump is a snapshot and a
+                member may genuinely hold no seat. On a *closed* period the
+                answer is sharper and permanent: nothing was ever published, for
+                anyone, so every profile in WP19 shows this and none of them is
+                a finding. `SourceCoverageNote` renders the second and nothing
+                on the first, which is why the general caveat stays below it
+                rather than being replaced. */}
+            <SourceCoverageNote source="committees" wahlperiode={wahlperiode} current={current} />
             <p className="text-muted-foreground text-xs">{t("score.caveat.committees")}</p>
           </div>
         ) : (

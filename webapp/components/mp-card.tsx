@@ -7,6 +7,7 @@ import { MandateBadge } from "@/components/mandate-badge"
 import { MPPhoto } from "@/components/mp-photo"
 import { PartyBadge } from "@/components/party-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { useMPHref } from "@/components/providers/period-provider"
 import { Card } from "@/components/ui/card"
 import { api } from "@/convex/_generated/api"
 import { formatScore, initials } from "@/lib/format"
@@ -212,6 +213,10 @@ export function MPCard({
   className?: string
 }) {
   const { t, locale } = useLocale()
+  // Carries the page's Wahlperiode into the profile link — see
+  // components/providers/period-provider.tsx. On a page that is not
+  // period-scoped this is the bare path it always was.
+  const mpHref = useMPHref()
 
   return (
     <Card
@@ -247,7 +252,7 @@ export function MPCard({
               rather than wrapping it, so the card keeps its grid and the
               heatmap's own titles stay reachable. */}
           <Link
-            href={`/mps/${encodeURIComponent(mpInternalId)}`}
+            href={mpHref(mpInternalId)}
             className="truncate font-medium text-sm outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-3 focus-visible:after:ring-ring/50"
           >
             {name}

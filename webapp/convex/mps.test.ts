@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Validator } from "convex/values"
-import { mpDoc, photoFields } from "./mps"
+import { listPeriods, mpDoc, photoFields } from "./mps"
 import schema, { mpInput } from "./schema"
 
 /**
@@ -215,5 +215,114 @@ describe("the federal state column", () => {
     const members = validator.members ?? []
     expect(validator.kind).toBe("union")
     expect(members.map((member) => member.kind).sort()).toEqual(["null", "string"])
+  })
+})
+
+/**
+ * `listPeriods` — the query the period selector is built on.
+ *
+ * Asserted at the validator level, like everything else in this file, because
+ * that is the level where this class of defect lands: a `returns:` validator
+ * that omits a field the handler returns **fails the whole query** with a bare
+ * "Server Error" naming neither field nor function (convex/schema.ts:210, and
+ * the outage `activityEvents.test.ts` records). `tsc --noEmit` does not catch
+ * it and `convex deploy` reports "Schema validation complete".
+ *
+ * That matters more here than for most queries: this one is called by the
+ * header chip and by every period-scoped page, so a validator defect takes the
+ * whole site's chrome down rather than one route.
+ */
+describe("listPeriods", () => {
+  /**
+   * The declared shape of a `query({ returns })`, as the runtime reports it.
+   *
+   * Convex serialises an object validator's fields as
+   * `{ fieldName: { fieldType, optional } }` rather than as the field's own
+   * validator — so a field's type is one level deeper than it reads. `field`
+   * below is what unwraps it; going without produced assertions that passed on
+   * `undefined`.
+   */
+  function returnsOf(fn: unknown): ExportedValidator {
+    const validator = (fn as { exportReturns?: () => string }).exportReturns?.()
+    return validator === undefined ? {} : JSON.parse(validator)
+  }
+
+  type ExportedValidator = {
+    type?: string
+    value?: unknown
+  }
+
+  /** One field of an exported object validator, unwrapped from its
+   * `{ fieldType, optional }` envelope. */
+  function field(validator: ExportedValidator, name: string): ExportedValidator {
+    const fields = (validator.value ?? {}) as Record<string, { fieldType?: ExportedValidator }>
+    return fields[name]?.fieldType ?? {}
+  }
+
+  test("declares a return validator at all", () => {
+    // Convex allows omitting `returns:`, and an omitted one is the shape that
+    // cannot be checked. AGENTS.md's Convex guidance asks for both validators
+    // on every function; this is that rule with a test behind it.
+    expect(Object.keys(returnsOf(listPeriods)).length).toBeGreaterThan(0)
+  })
+
+  test("answers with the periods and which of them is current", () => {
+    // The three things the selector needs, in one round-trip. `current` is
+    // nullable because a fresh deployment has no roster — which is a state, not
+    // a failure, and the UI renders it as "no data" rather than as period zero.
+    const returns = returnsOf(listPeriods)
+    expect(returns.type).toBe("object")
+    expect(Object.keys((returns.value ?? {}) as object).sort()).toEqual(["current", "periods"])
+    expect(field(returns, "periods").type).toBe("array")
+
+    const current = field(returns, "current")
+    expect(current.type).toBe("union")
+    expect((current.value as Array<{ type: string }>).map((member) => member.type).sort()).toEqual([
+      "null",
+      "number",
+    ])
+  })
+
+  test("each period carries its size and whether it has been scored", () => {
+    // `scored` is the field that separates "backfilled but unswept" from "this
+    // chamber did nothing". `docs/historical-coverage.md` records the first as
+    // the *normal* state of a fresh backfill — the nightly sweep only touches
+    // the current calendar month — so dropping this field would make every
+    // newly-loaded period read as an idle parliament.
+    const entry = field(returnsOf(listPeriods), "periods").value as ExportedValidator
+    expect(entry.type).toBe("object")
+    expect(Object.keys((entry.value ?? {}) as object).sort()).toEqual([
+      "mandates",
+      "scored",
+      "wahlperiode",
+    ])
+  })
+})
+
+/**
+ * `getMPMandates` — every period one person sat in.
+ *
+ * Documented in this module as "the profile page's period switcher" since it
+ * was written, and called by nothing until now: the audit of 2026-07-29 counted
+ * it among 19 public Convex functions with no caller (GAP-012), and
+ * `docs/historical-coverage.md` names it specifically as the backend for
+ * browsing history that no front end used.
+ *
+ * `components/mp-profile-scope.tsx` is that front end. The test is here rather
+ * than there because the property it needs is a property of the query: the
+ * profile's period control offers exactly these rows, so a shape change here is
+ * a control offering pages that do not exist.
+ */
+describe("getMPMandates", () => {
+  test("returns full mandate rows, which is what the switcher needs", () => {
+    // Not a bare list of period numbers. The "did not sit in this period"
+    // screen names the person — "Martin Hohmann held no mandate in WP21" beats
+    // an unnamed shrug — and it can only do that because these rows carry
+    // `name`. A projection to `number[]` would be smaller and would take that
+    // sentence away.
+    const declared = new Set(fieldsOf(mpDoc))
+    expect(declared.has("wahlperiode")).toBe(true)
+    expect(declared.has("name")).toBe(true)
+    expect(declared.has("internalId")).toBe(true)
   })
 })

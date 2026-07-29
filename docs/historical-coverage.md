@@ -83,28 +83,58 @@ and mark a missing one as *not computed* rather than as a zero
 
 `scripts/historical-backfill.sh` does both, per period, in one process.
 
-## What the UI does with a backfilled period — today, nothing
+## What the UI does with a backfilled period
 
-The data lands, and every page still shows WP21. This is worth stating plainly
-because a backfill that "worked" and a backfill nobody can see look identical
-from the browser.
+**Every period-bound page now takes one from the URL.** This section recorded
+the opposite until the period selector landed, and the original finding is worth
+keeping because it names the failure mode: a backfill that "worked" and a
+backfill nobody can see look identical from the browser.
 
-- `app/mps/page.tsx`, `app/mps/[id]/page.tsx` and the MP table all pass the
-  `CURRENT_WAHLPERIODE = 21` constant from `lib/bundestag.ts`. Nothing accepts a
-  period from the URL or from a control.
-- `convex/mps.ts` exports `getMPMandates` — documented as "the profile page's
+What it looked like before:
+
+- `app/mps/page.tsx`, `app/mps/[id]/page.tsx` and the MP table all passed the
+  `CURRENT_WAHLPERIODE = 21` constant from `lib/bundestag.ts`. Nothing accepted
+  a period from the URL or from a control.
+- `convex/mps.ts` exported `getMPMandates` — documented as "the profile page's
   period switcher", returning every period a person served in — and **no
-  component calls it**. The backend for browsing history exists; the front end
-  does not.
-- `getCurrentWahlperiode` reads the *newest* ingested period
-  (`newestWahlperiode`, ordered descending), so backfilling WP14–20 cannot
-  displace WP21 on the home page. Verified live during the WP20 run: it still
-  answered `21`.
+  component called it**. The backend for browsing history existed; the front end
+  did not.
 
-So the backfill is a data-layer change. Surfacing it needs a period control on
-the MP list and profile, wired to `getMPMandates` — a separate piece of work,
-and the reason the queries were already written to take a `wahlperiode`
-argument rather than assume one.
+### The contract now
+
+- **`?wp=N` scopes the page**, on `/mps`, `/mps/[id]`, `/rankings`, `/feed`,
+  `/seating`, `/parties`, `/parties/[party]`, `/votes`, `/inquiry-quorum` and
+  `/search`. The parameter is `/search`'s own convention, promoted rather than
+  replaced — `lib/period.ts` is the one parser and href builder, so no page can
+  disagree with another about what `?wp=21.5` means.
+- **An absent parameter means the current period**, resolved from the roster by
+  `newestWahlperiode` exactly as before. Switching *back* to the current period
+  writes no parameter, so a URL never pins a chamber that stops sitting — the
+  staleness `getCurrentWahlperiode` exists to prevent, which a hardcoded
+  `?wp=21` in every link would have reintroduced through the address bar.
+- **A current profile URL is unchanged.** `/mps/bt-0001` still resolves to the
+  current mandate; the parameter is additive.
+- **`getMPMandates` is wired**, to the profile's period switcher, which is what
+  it was written for. A profile offers the periods that person actually sat in,
+  so every option is a real page.
+- **`mps.listPeriods` is the single source** for which periods exist, how many
+  mandates each holds, and whether each has been scored. `/search`'s filter
+  reads it too, so the set offered there is the set offered everywhere.
+
+### Three absences, told apart
+
+The distinction this document opens with is now made on screen:
+
+| State | What it means | What the UI does |
+|---|---|---|
+| Source never published it | Permanent — committees before the current period, speeches before WP18, votes before 2019-09 | A note beside the zero, naming the boundary |
+| Period not backfilled | This deployment has not run it; the address is valid | Says so and lists the periods that are loaded. **Not a 404** |
+| Person did not sit | The mandate does not exist in that period | Names them, and links the periods they did sit in |
+
+The unscored case is a fourth and is called out separately, because a
+backfilled-but-unswept period renders every leaderboard empty and empty reads as
+an idle chamber. See "Scores" above for why that is the *normal* state of a
+fresh backfill rather than an edge case.
 
 ### A pre-existing discrepancy this exposed
 

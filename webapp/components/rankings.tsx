@@ -4,6 +4,7 @@ import { useQuery } from "convex/react"
 import { useMemo, useState } from "react"
 import { CaveatNote } from "@/components/caveat-note"
 import { useLocale } from "@/components/providers/locale-provider"
+import { usePeriod } from "@/components/providers/period-provider"
 import {
   ANY,
   EMPTY_FILTERS,
@@ -11,6 +12,7 @@ import {
   RankingsFilters,
 } from "@/components/rankings-filters"
 import { RankingsTable, type RankingTableRow } from "@/components/rankings-table"
+import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -50,6 +52,8 @@ const PAGE_SIZE = 50
 
 export function Rankings({ wahlperiode }: { wahlperiode: number }) {
   const { t } = useLocale()
+  // The sitting period, for the coverage notes below — see the note there.
+  const { current } = usePeriod()
   const [boardId, setBoardId] = useState(DEFAULT_BOARD_ID)
   const [filters, setFilters] = useState<RankingFilterState>(EMPTY_FILTERS)
   const [page, setPage] = useState(0)
@@ -276,6 +280,18 @@ export function Rankings({ wahlperiode }: { wahlperiode: number }) {
       />
 
       {board.caveatKey !== undefined && <CaveatNote>{t(board.caveatKey)}</CaveatNote>}
+
+      {/* Which of the score's components this period could not measure.
+          `docs/historical-coverage.md` states the consequence in as many words:
+          *the UI must not rank an MP from WP15 against one from WP21 as though
+          the same measurements stood behind both.* This page is the one that
+          would, so this is where the sentence has to be. Three notes rather
+          than one because they have three boundaries — WP19 needs the committee
+          note and not the speech note — and all three render nothing on the
+          current period. */}
+      <SourceCoverageNote source="committees" wahlperiode={wahlperiode} current={current} />
+      <SourceCoverageNote source="speeches" wahlperiode={wahlperiode} current={current} />
+      <SourceCoverageNote source="votes" wahlperiode={wahlperiode} current={current} />
 
       {board.kind === "crossParty" && crossPartyResult !== undefined && (
         // What this board's number is *of*. Stated because a dissent count over

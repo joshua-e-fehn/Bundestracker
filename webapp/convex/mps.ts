@@ -331,6 +331,82 @@ export const getCurrentWahlperiode = query({
   handler: async (ctx) => await newestWahlperiode(ctx),
 })
 
+/**
+ * Every Wahlperiode this deployment can show, newest first, with the current
+ * one named.
+ *
+ * `getCurrentWahlperiode` above answers "which Bundestag is this" and is the
+ * only period question the frontend could ask until now. That was enough while
+ * every page rendered the newest period and nothing else; it is not enough for
+ * a selector, which needs to know what the *alternatives* are before it can
+ * offer them — and needs to distinguish a period nobody has backfilled from one
+ * that exists and is empty.
+ *
+ * ## Why the whole roster is scanned
+ *
+ * A full `mps` scan is ~4 000 rows across WP19–21 today and would be ~5 500
+ * with every tracked period loaded. That is well inside a transaction's budget
+ * and is the same reasoning `getMPMandates` and `search.getSearchFilterOptions`
+ * already record: the *number of periods* is bounded by history, so grouping by
+ * it is bounded work in a way grouping any other table is not.
+ *
+ * `search.getSearchFilterOptions` does exactly this scan already, for exactly
+ * this list, and its `wahlperioden` field is now derived from this query rather
+ * than restated — one answer to "which periods exist", so the selector on
+ * `/search` and the selector everywhere else cannot offer different sets.
+ *
+ * ## `scored` is a third state, not a detail
+ *
+ * A backfilled period whose score sweep has not run renders every leaderboard
+ * empty, and empty reads as "nobody did anything". `docs/historical-coverage.md`
+ * records that a closed period needs `scores --wp N --all-months` and that the
+ * nightly Convex sweep only touches the *current* month, so this is the normal
+ * state of a freshly-backfilled period rather than an edge case. One indexed
+ * `.first()` per period answers it — the period-total row is `month: null`, the
+ * same row the rankings sort on.
+ */
+export const listPeriods = query({
+  args: {},
+  returns: v.object({
+    periods: v.array(
+      v.object({
+        wahlperiode: v.number(),
+        mandates: v.number(),
+        scored: v.boolean(),
+      }),
+    ),
+    current: v.union(v.null(), v.number()),
+  }),
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("mps").withIndex("by_wahlperiode_and_fraktion").collect()
+
+    const mandates = new Map<number, number>()
+    for (const row of rows) {
+      mandates.set(row.wahlperiode, (mandates.get(row.wahlperiode) ?? 0) + 1)
+    }
+
+    const periods = []
+    for (const [wahlperiode, count] of [...mandates].sort((a, b) => b[0] - a[0])) {
+      // Any period-total row at all. `.first()` on the index rather than a
+      // count: the question is "has the sweep run", and reading 772 score rows
+      // per period to answer a boolean would make this query scale with the
+      // corpus rather than with the number of periods.
+      const scored = await ctx.db
+        .query("activityScores")
+        .withIndex("by_wahlperiode_and_month_and_totalScore", (q) =>
+          q.eq("wahlperiode", wahlperiode).eq("month", null),
+        )
+        .first()
+      periods.push({ wahlperiode, mandates: count, scored: scored !== null })
+    }
+
+    // The newest, which is what `newestWahlperiode` answers — read from the
+    // same grouped rows rather than by a second query, so this response cannot
+    // name a current period absent from its own list.
+    return { periods, current: periods[0]?.wahlperiode ?? null }
+  },
+})
+
 /** One MP's mandate in one period. The profile page's first read. */
 export const getMP = query({
   args: { internalId: v.string(), wahlperiode: v.number() },

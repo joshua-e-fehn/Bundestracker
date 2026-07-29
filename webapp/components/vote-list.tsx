@@ -6,6 +6,8 @@ import { useDeferredValue, useState } from "react"
 import { CaveatNote } from "@/components/caveat-note"
 import { LameDuckBadge } from "@/components/lame-duck-badge"
 import { useLocale } from "@/components/providers/locale-provider"
+import { usePeriod } from "@/components/providers/period-provider"
+import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -71,6 +73,12 @@ const PAGE_SIZE = 25
 
 export function VoteList({ wahlperiode }: { wahlperiode: number }) {
   const { t, locale } = useLocale()
+  // The *sitting* period, for the empty state's coverage note. Read from the
+  // scope this page is rendered inside rather than taken as a prop: `PeriodScope`
+  // passes `wahlperiode` alone to every page component it renders, and widening
+  // that contract for one consumer would put a second period argument on seven
+  // components that do not want it. See components/providers/period-provider.tsx.
+  const { current } = usePeriod()
   const [search, setSearch] = useState("")
   const [result, setResult] = useState<string>(ANY)
   const [year, setYear] = useState<string>(ANY)
@@ -207,11 +215,22 @@ export function VoteList({ wahlperiode }: { wahlperiode: number }) {
           ))}
         </output>
       ) : rows.length === 0 ? (
-        <p className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">
-          {/* "no ballots loaded" and "none match your filters" are different
-              facts, and only one of them is the reader's doing. */}
-          {filtersActive ? t("votes.empty") : t("votes.emptyAll")}
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="rounded-lg border border-border border-dashed p-8 text-center text-muted-foreground text-sm">
+            {/* "no ballots loaded" and "none match your filters" are different
+                facts, and only one of them is the reader's doing. */}
+            {filtersActive ? t("votes.empty") : t("votes.emptyAll")}
+          </p>
+          {/* And a third fact, which is neither: for WP18 and earlier no
+              machine-readable ballot record exists at all, so this page is
+              empty for every reader of those periods no matter what they
+              filter. Below the message rather than instead of it, because the
+              filter distinction above stays true — and absent from WP20 on,
+              where an empty list really is about the ballots. */}
+          {!filtersActive && (
+            <SourceCoverageNote source="votes" wahlperiode={wahlperiode} current={current} />
+          )}
+        </div>
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-border">
