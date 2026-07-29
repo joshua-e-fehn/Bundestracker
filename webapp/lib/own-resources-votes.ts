@@ -131,13 +131,18 @@ export const OWN_RESOURCE_VOTES: readonly OwnResourceVote[] = [
   // ⚠ (21, 91, 2) "Antrag zur Reform des Wahlrechts" was removed on 2026-07-29.
   // It was never a Bundestag division: `scripts/seed-local.ts` fabricated it,
   // that script was once run against production, and the row survived the
-  // cleanup in convex/purgeSeed.ts — which deletes the seeder's *records* by
-  // walking its synthetic mandates and deliberately does not touch `voteSheets`
+  // cleanup in convex/purgeSeed.ts — which at the time deleted the seeder's
+  // *records* by walking its synthetic mandates and left `voteSheets` untouched
   // (see the note at purgeSeed.ts on the first seeded ballot colliding with a
   // real one). The tell is `totalEligible: 12`, the seeder's roster size: it is
   // the only sheet in the 254-ballot corpus under 100, every real one being 628,
   // 630 or 736. Its twelve votes were purged, so the card published a tally of
   // 6/3/1 that nobody cast, above an empty voter table.
+  //
+  // `purgeSeedData` now covers the sheets too, keyed on that same tell
+  // (`isSyntheticVoteSheet`), so a purge no longer leaves a ballot behind. This
+  // exclusion stays regardless: the entry was curated by natural key, and the
+  // argument below is about curation, not about what the purge reaches.
   //
   // This is the failure mode the header warns about from the other direction:
   // every entry here "was checked against the ingested corpus by its natural

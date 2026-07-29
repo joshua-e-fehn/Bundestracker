@@ -42,7 +42,9 @@ const WP = 21
  * on 2026-07-27 and wrote twelve invented mandates into the live roster; nine
  * carried the names of sitting members, so nine MPs appeared twice on a site
  * whose entire premise is that every figure is a Bundestag record. Removing them
- * took `convex/purgeSeed.ts` and a traversal of nine tables.
+ * took `convex/purgeSeed.ts` and a traversal of ten tables — and two attempts:
+ * the first missed the two ballots this script also writes, because a vote sheet
+ * belongs to no mandate, and one of them stayed live for two days afterwards.
  *
  * The default `SITE_URL` is a loopback address, so the accident needs an
  * explicit `CONVEX_SITE_URL=` pointing somewhere else — which is exactly the

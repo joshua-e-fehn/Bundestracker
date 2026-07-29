@@ -1,8 +1,14 @@
 import { v } from "convex/values"
-import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server"
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server"
 
 /**
- * Removes synthetic MPs, and everything that hangs off them, from a deployment.
+ * Removes everything a seeder wrote from a deployment: the synthetic MPs and
+ * all that hangs off them, and the ballots they invented.
  *
  * ## Why this exists
  *
@@ -16,10 +22,24 @@ import { internalMutation, internalQuery, type MutationCtx } from "./_generated/
  * the one defect that cannot be left to a later release.
  *
  * A mutation rather than a one-off script run from a laptop: the rows are
- * reachable from nine tables, deleting them in the wrong order leaves orphans
+ * reachable from ten tables, deleting them in the wrong order leaves orphans
  * that no query returns and no error mentions, and doing it in Convex means the
  * traversal uses the same indexes the readers do. It is also re-runnable, which
  * a hand-written sequence of dashboard deletions is not.
+ *
+ * ## Two id rules, because there are two kinds of fabricated row
+ *
+ * `isSyntheticId` decides a mandate; `isSyntheticVoteSheet` decides a ballot.
+ * They are separate because a sheet is owned by nobody — it is the division, not
+ * a person's participation in it — so no traversal from a mandate reaches one.
+ *
+ * That was originally read as a reason to leave sheets out of the purge, and the
+ * omission was written down instead of closed. It cost two days: the mandates
+ * were deleted on 2026-07-27, `seedDataPresent` reported a clean deployment, and
+ * `/votes/own-resources` went on publishing `(21, 91, 2)` — a 6/3/1 tally nobody
+ * cast, above an empty voter table — until 2026-07-29. Both halves now run from
+ * one entry point and are answered by one `done`, so a purge that reports
+ * success has left nothing behind.
  *
  * ## What identifies a synthetic row
  *
@@ -73,14 +93,27 @@ export function isSyntheticId(internalId: string): boolean {
 
 /** The synthetic mandates on this deployment. One roster scan, shared by the
  * dry run, the purge and the verification — the roster is ~650 rows and every
- * caller here needs the whole of it. */
-async function syntheticMandates(ctx: MutationCtx | { db: MutationCtx["db"] }) {
+ * caller here needs the whole of it.
+ *
+ * `QueryCtx` rather than `MutationCtx`: both of these only read, and a mutation
+ * ctx satisfies the query one, so the narrower type is what lets the two
+ * `internalQuery` callers share the definition with the mutation instead of
+ * keeping a second copy of the filter. */
+async function syntheticMandates(ctx: QueryCtx) {
   const roster = await ctx.db.query("mps").withIndex("by_wahlperiode_and_fraktion").collect()
   return roster.filter((mp) => isSyntheticId(mp.internalId))
 }
 
+/** The fabricated ballots on this deployment, the sheet-side counterpart to
+ * `syntheticMandates`. Shared by the dry run, the purge and the verification for
+ * the same reason: ~254 rows, and each caller needs all of them. */
+async function syntheticVoteSheets(ctx: QueryCtx) {
+  const sheets = await ctx.db.query("voteSheets").withIndex("by_date").collect()
+  return sheets.filter(isSyntheticVoteSheet)
+}
+
 /**
- * The synthetic mandates, with the damage each one does.
+ * The synthetic mandates and ballots, with the damage each one does.
  *
  * A dry run, and the reason this module has a query at all: the mutation below
  * deletes rows that cannot be recovered, so the operator gets to read the list —
@@ -90,6 +123,14 @@ async function syntheticMandates(ctx: MutationCtx | { db: MutationCtx["db"] }) {
  *
  * `shadowsRealMP` is the finding restated as data: it is true for exactly the
  * members a reader saw listed twice.
+ *
+ * `voteSheets` lists the ballots by their natural key and published tally. It is
+ * here because the sheets are the half of the purge nobody could see coming: the
+ * mandates announce themselves by name in a roster, whereas a fabricated
+ * division is indistinguishable from a real one on any page that renders it —
+ * `(21, 91, 2)` published a 6/3/1 result above an empty voter table and read as
+ * an ordinary electoral-law vote. An operator should see it listed before it is
+ * deleted, and — more to the point — before deciding the deployment is clean.
  */
 export const listSeedRows = internalQuery({
   args: {},
@@ -103,6 +144,20 @@ export const listSeedRows = internalQuery({
          * reader actually saw on the roster. */
         shadowsRealMP: v.boolean(),
         events: v.number(),
+      }),
+    ),
+    voteSheets: v.array(
+      v.object({
+        wahlperiode: v.number(),
+        sitzungnr: v.number(),
+        abstimmnr: v.number(),
+        title: v.string(),
+        /** The electorate that gives it away — twelve, where a real sheet
+         * carries 628, 630 or 736. */
+        totalEligible: v.number(),
+        /** Records still filed against it. Normally zero by the time this is
+         * read: the mandate traversal takes them first. */
+        records: v.number(),
       }),
     ),
     totalEvents: v.number(),
@@ -130,7 +185,27 @@ export const listSeedRows = internalQuery({
       })
     }
 
-    return { mps: mps.sort((a, b) => a.internalId.localeCompare(b.internalId)), totalEvents }
+    const voteSheets = []
+    for (const sheet of await syntheticVoteSheets(ctx)) {
+      const records = await ctx.db
+        .query("voteRecords")
+        .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+        .collect()
+      voteSheets.push({
+        wahlperiode: sheet.wahlperiode,
+        sitzungnr: sheet.sitzungnr,
+        abstimmnr: sheet.abstimmnr,
+        title: sheet.title,
+        totalEligible: sheet.totalEligible,
+        records: records.length,
+      })
+    }
+
+    return {
+      mps: mps.sort((a, b) => a.internalId.localeCompare(b.internalId)),
+      voteSheets,
+      totalEvents,
+    }
   },
 })
 
@@ -155,6 +230,12 @@ function bump(counts: Counts, table: string): void {
  * `mpInternalId` and is not added here leaves orphans behind a purge that
  * reports success. Every read goes through the index the schema defines for that
  * key, so this costs one range scan per table per MP rather than a table scan.
+ *
+ * ⚠ "Exhaustive" here means *of the tables keyed by `mpInternalId`* — a table
+ * holding fabricated rows that no mandate owns is invisible to this function no
+ * matter how carefully the list is kept. `voteSheets` was exactly that, and the
+ * cost is recorded in the module header. Its counterpart is
+ * `deleteSyntheticVoteSheets`; a future table of that shape needs its own.
  *
  * `voteRecords` is the one that cannot be reached from the ballot side, and the
  * reason the whole traversal is keyed on the MP. The seeder's first ballot
@@ -283,7 +364,64 @@ async function deleteRowsFor(
 }
 
 /**
- * Deletes the synthetic mandates and everything derived from them.
+ * Deletes the fabricated ballots, and any records still filed against them.
+ *
+ * Part of `purgeSeedData` rather than a mutation of its own, which is the fix
+ * for the way this went wrong the first time: the sheets were left out of the
+ * purge because they are not reachable from a mandate, the omission was
+ * *documented* rather than closed, and `(21, 91, 2)` then sat on the live
+ * `/votes/own-resources` page for two days after a purge that reported success.
+ * A cleanup with a second half an operator has to know to run separately is one
+ * that will be half-run. One entry point, one contract: after `purgeSeedData`
+ * reports `done`, nothing a seeder wrote is left in any table.
+ *
+ * Records first, on the same ordering argument as `deleteRowsFor`: an
+ * interrupted run leaves a sheet that still owns its rows rather than records
+ * pointing at nothing. In practice the mandate traversal has already taken them,
+ * so this is about the invariant, not the count.
+ */
+async function deleteSyntheticVoteSheets(
+  ctx: MutationCtx,
+  budget: { remaining: number },
+  counts: Counts,
+): Promise<Array<{ wahlperiode: number; sitzungnr: number; abstimmnr: number }>> {
+  const deleted = []
+
+  for (const sheet of await ctx.db.query("voteSheets").withIndex("by_date").collect()) {
+    if (budget.remaining <= 0) break
+    // Both conditions, not either — see `isSyntheticVoteSheet` on the XML-route
+    // sheets each would otherwise catch on its own.
+    if (!isSyntheticVoteSheet(sheet)) continue
+
+    const rows = await ctx.db
+      .query("voteRecords")
+      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+      .take(budget.remaining)
+    for (const row of rows) {
+      await ctx.db.delete(row._id)
+      budget.remaining--
+      bump(counts, "voteRecords")
+    }
+    // Only once its records are gone; a budget exhausted by them leaves the
+    // sheet for the next slice.
+    if (budget.remaining <= 0) break
+
+    await ctx.db.delete(sheet._id)
+    budget.remaining--
+    bump(counts, "voteSheets")
+    deleted.push({
+      wahlperiode: sheet.wahlperiode,
+      sitzungnr: sheet.sitzungnr,
+      abstimmnr: sheet.abstimmnr,
+    })
+  }
+
+  return deleted
+}
+
+/**
+ * Deletes the synthetic mandates, everything derived from them, and the ballots
+ * the seeder invented.
  *
  * Sliced and re-runnable: the caller loops while `done` is false, exactly like
  * `backfillSearchText` in convex/search.ts. The dependants of an MP are deleted
@@ -291,6 +429,11 @@ async function deleteRowsFor(
  * still owns its remaining rows rather than orphans no query can reach —
  * re-running finishes the job. That ordering is why this is not simply a
  * filtered delete over each table in turn.
+ *
+ * `done` answers for **both** halves. It used to mean "no synthetic mandates
+ * remain", which was true of a deployment still publishing a fabricated
+ * division, so an operator who ran this to completion and checked the one flag
+ * it returned was told the site was clean while it was not.
  *
  * Returns what it deleted, per table. An operator needs that to compare against
  * the dry run: a purge reporting zero deletions when `listSeedRows` reported
@@ -302,6 +445,13 @@ export const purgeSeedData = internalMutation({
   returns: v.object({
     deleted: v.record(v.string(), v.number()),
     mpsRemaining: v.number(),
+    /** Ballots still matching `isSyntheticVoteSheet` after this slice. */
+    voteSheetsRemaining: v.number(),
+    /** Each deleted sheet's natural key, so an operator can check what went
+     * against the corpus rather than trusting a count. */
+    voteSheetsDeleted: v.array(
+      v.object({ wahlperiode: v.number(), sitzungnr: v.number(), abstimmnr: v.number() }),
+    ),
     done: v.boolean(),
   }),
   handler: async (ctx, args) => {
@@ -318,8 +468,19 @@ export const purgeSeedData = internalMutation({
       bump(counts, "mps")
     }
 
+    // After the mandates, so a slice spent on the roster is not also spent
+    // here, and so the records a sheet owns are usually already gone.
+    const voteSheetsDeleted = await deleteSyntheticVoteSheets(ctx, budget, counts)
+
     const mpsRemaining = (await syntheticMandates(ctx)).length
-    return { deleted: counts, mpsRemaining, done: mpsRemaining === 0 }
+    const voteSheetsRemaining = (await syntheticVoteSheets(ctx)).length
+    return {
+      deleted: counts,
+      mpsRemaining,
+      voteSheetsRemaining,
+      voteSheetsDeleted,
+      done: mpsRemaining === 0 && voteSheetsRemaining === 0,
+    }
   },
 })
 
@@ -336,10 +497,22 @@ export const purgeSeedData = internalMutation({
  * synthetic mandate, by the `referenceType` marker the seeder stamps. Zero
  * synthetic mandates therefore implies zero seed events, which is the invariant
  * the purge establishes and this reports on.
+ *
+ * `voteSheets` is the field this answer was missing, and the omission was not
+ * academic: the mandates were purged on 2026-07-27 and this query then reported
+ * a clean deployment for two days while `/votes/own-resources` published a
+ * ballot nobody ever cast. A sheet is owned by no mandate, so a mandate-shaped
+ * check cannot see it — which is the whole reason it has to be counted here
+ * rather than inferred.
  */
 export const seedDataPresent = internalQuery({
   args: {},
-  returns: v.object({ mps: v.number(), seedEvents: v.number(), realMPs: v.number() }),
+  returns: v.object({
+    mps: v.number(),
+    seedEvents: v.number(),
+    voteSheets: v.number(),
+    realMPs: v.number(),
+  }),
   handler: async (ctx) => {
     const roster = await ctx.db.query("mps").withIndex("by_wahlperiode_and_fraktion").collect()
     const synthetic = roster.filter((mp) => isSyntheticId(mp.internalId))
@@ -356,34 +529,38 @@ export const seedDataPresent = internalQuery({
     return {
       mps: synthetic.length,
       seedEvents,
+      voteSheets: (await syntheticVoteSheets(ctx)).length,
       realMPs: roster.length - synthetic.length,
     }
   },
 })
 
+/** An electorate below this is not a chamber. The Bundestag's real sheets carry
+ * 628, 630 or 736; the seeder writes `MPS.length` — twelve. */
+const MIN_REAL_ELECTORATE = 100
+
 /**
- * The ballots the seeder invented, identified by an electorate no chamber has
- * and no published sheet to have counted it.
+ * Whether a ballot was invented by a seeder rather than held by the Bundestag.
  *
- * ## Why `voteSheets` is not in the traversal above
+ * ## Why sheets need their own predicate at all
  *
  * `deleteRowsFor` reaches everything a synthetic *mandate* owns, and a vote
  * sheet is owned by nobody — it is the ballot, not a person's participation in
- * it. That was the right call for the records (the note there explains why: the
- * seeder's first ballot landed on the natural key of a **real** division, so
- * deleting "synthetic ballots" would have destroyed a genuine sheet) but it left
- * a gap. The seeder wrote two sheets. One collided with a real key and has since
- * been overwritten in place by the pipeline — `upsertVoteSheet` patches by
- * natural key, so it is now the real ballot and must be left alone. The other,
- * `(21, 91, 2)`, named a sitting the Bundestag has not held, so nothing ever
- * overwrote it and it stayed: a fabricated division on a public site, its twelve
- * votes purged, publishing a 6/3/1 tally that nobody cast above an empty table.
+ * it. Keying the traversal on the MP was right for the records (the note there
+ * explains why: the seeder's first ballot landed on the natural key of a
+ * **real** division, so deleting "synthetic ballots" would have destroyed a
+ * genuine sheet) but it left the sheets themselves unreachable. The seeder wrote
+ * two. One collided with a real key and has since been overwritten in place by
+ * the pipeline — `upsertVoteSheet` patches by natural key, so it is now the real
+ * ballot and must be left alone. The other, `(21, 91, 2)`, named a sitting the
+ * Bundestag has not held, so nothing ever overwrote it and it stayed: a
+ * fabricated division on a public site, its twelve votes purged, publishing a
+ * 6/3/1 tally that nobody cast above an empty table.
  *
  * ## What identifies one, and why it is not the natural key
  *
  * **Both** an electorate below `MIN_REAL_ELECTORATE` and a null `sourceUrl`.
- * The seeder writes `MPS.length` — twelve — and no source URL; across the 254
- * ballots in production every real sheet carries the chamber (628, 630 or 736)
+ * Across the 254 ballots in production every real sheet carries the chamber
  * *and* its bundestag.de XLSX, and the seed row is the only one failing either.
  *
  * Two conditions rather than one because each alone has a real counterexample.
@@ -394,8 +571,8 @@ export const seedDataPresent = internalQuery({
  * per the schema note. A null `sourceUrl` is not by itself synthetic either, for
  * exactly that reason. Only the conjunction — a chamber of a dozen *and* no
  * published sheet — describes something no Bundestag division can be. A
- * historical backfill running now (WP19–WP14) is precisely the traffic that
- * could land XML-route sheets, so the narrower rule is not hypothetical.
+ * historical backfill (WP19–WP14) is precisely the traffic that lands XML-route
+ * sheets, so the narrower rule is not hypothetical.
  *
  * A hard-coded `(21, 91, 2)` would be the more obvious rule and is the wrong
  * one, for the reason that key is dangerous in the first place: the Bundestag
@@ -404,51 +581,13 @@ export const seedDataPresent = internalQuery({
  * real data, while one keyed on the row's own implausibility stops matching the
  * moment the row becomes real — the safe direction to fail.
  *
- * Records are deleted first, on the same ordering argument as `deleteRowsFor`:
- * an interrupted run leaves a sheet that still owns its rows rather than records
- * pointing at nothing. In practice there are none — the mandate traversal
- * already took them — so this is about the invariant, not the count.
+ * Exported and pure for the same reason `isSyntheticId` is: it is the predicate
+ * an irreversible delete runs over every ballot in the corpus, and it can be
+ * tested exhaustively without a database.
  */
-const MIN_REAL_ELECTORATE = 100
-
-export const purgeSeedVoteSheets = internalMutation({
-  args: {},
-  returns: v.object({
-    sheets: v.number(),
-    records: v.number(),
-    /** Each deleted sheet's natural key, so an operator can check what went
-     * against the corpus rather than trusting a count. */
-    deleted: v.array(
-      v.object({ wahlperiode: v.number(), sitzungnr: v.number(), abstimmnr: v.number() }),
-    ),
-  }),
-  handler: async (ctx) => {
-    const sheets = await ctx.db.query("voteSheets").withIndex("by_date").collect()
-    const deleted = []
-    let records = 0
-
-    for (const sheet of sheets) {
-      // Both, not either — see the header on the XML-route sheets each
-      // condition would otherwise catch on its own.
-      if (sheet.totalEligible >= MIN_REAL_ELECTORATE || sheet.sourceUrl !== null) continue
-
-      const rows = await ctx.db
-        .query("voteRecords")
-        .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
-        .collect()
-      for (const row of rows) {
-        await ctx.db.delete(row._id)
-        records++
-      }
-
-      await ctx.db.delete(sheet._id)
-      deleted.push({
-        wahlperiode: sheet.wahlperiode,
-        sitzungnr: sheet.sitzungnr,
-        abstimmnr: sheet.abstimmnr,
-      })
-    }
-
-    return { sheets: deleted.length, records, deleted }
-  },
-})
+export function isSyntheticVoteSheet(sheet: {
+  totalEligible: number
+  sourceUrl: string | null
+}): boolean {
+  return sheet.totalEligible < MIN_REAL_ELECTORATE && sheet.sourceUrl === null
+}

@@ -92,10 +92,15 @@ describe("OWN_RESOURCE_VOTES", () => {
     // Regression, 2026-07-29. Entry #1 was `(21, 91, 2)` "Antrag zur Reform des
     // Wahlrechts" — a ballot `scripts/seed-local.ts` fabricated, which reached
     // production when that script was once run against it and survived the
-    // cleanup because convex/purgeSeed.ts deletes the seeder's records by
-    // walking its mandates and deliberately leaves `voteSheets` alone. The
-    // curated entry passed every check in this file and rendered a tally of
-    // 6/3/1 that no MP cast, as the first card on a page about self-interest.
+    // cleanup because convex/purgeSeed.ts then deleted the seeder's records by
+    // walking its mandates and left `voteSheets` alone. The curated entry passed
+    // every check in this file and rendered a tally of 6/3/1 that no MP cast, as
+    // the first card on a page about self-interest.
+    //
+    // The purge covers the sheets now (`isSyntheticVoteSheet`), so that corpus
+    // can no longer hold this row — but this assertion is not about the corpus.
+    // It holds the curation rule directly, which is what has to survive a
+    // deployment that gets seeded again.
     //
     // The two seeded keys are `(21, 90, 1)` and `(21, 91, 2)`
     // (`sitzungnr: 90 + index`). The first has since been overwritten in place
