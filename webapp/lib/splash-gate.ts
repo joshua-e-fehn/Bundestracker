@@ -16,6 +16,8 @@
  *     state of a splash is its absence.
  *  3. **Never under `Save-Data`** — a reader who has told their browser to
  *     economise has told it about this too.
+ *  4. **Never once the page is already being read** — see `STALE_AFTER_MS`. An
+ *     opening that opens late is not an opening.
  *
  * ## Why this is a pure function of an explicit environment
  *
@@ -40,7 +42,45 @@ export type SplashEnvironment = {
   saveData?: boolean
   /** Whether this session has already been shown the splash. */
   alreadySeen?: boolean
+  /**
+   * How long the page has been up when the gate is asked, in milliseconds.
+   * Absent means "could not tell", which is not an objection — see
+   * `STALE_AFTER_MS`.
+   */
+  elapsedMs?: number
 }
+
+/**
+ * How late is too late to open, in milliseconds.
+ *
+ * The gate runs in an effect, so it runs after hydration — and on a slow device
+ * hydration is not fast. Measured against a production build of this app at
+ * increasing CPU throttling, the overlay appeared at:
+ *
+ * | throttle | splash appears | splash leaves |
+ * |----------|----------------|---------------|
+ * | 1×       | 1.0 s          | 2.5 s         |
+ * | 2×       | 1.5 s          | 3.0 s         |
+ * | 4×       | 2.9 s          | 5.3 s         |
+ * | 6×       | 4.5 s          | 8.1 s         |
+ * | 10×      | 7.5 s          | 10.6 s        |
+ *
+ * At the bottom two rows the reader has been looking at the finished page for
+ * seconds before a full-screen `bg-background` overlay drops over it — so it no
+ * longer reads as an opening at all, but as the site breaking. Worse, it is
+ * `fixed inset-0 z-100` above the header, so the reader's first click lands on
+ * the overlay and dismisses it instead of following the link they aimed at.
+ * That is the second, independent way this app produced "on a cold load the
+ * first click does nothing"; the first was the hydration mismatch fixed in
+ * components/user-menu.tsx, and the two were measured separately because they
+ * have nothing in common but the symptom.
+ *
+ * 2500 ms sits above every fast-path measurement and below the two that are
+ * too late — 4× still opens, 6× and 10× do not. A splash is a decoration, so
+ * when in doubt it does not run: that failure is invisible, while the one it
+ * replaces is a page that appears to be broken.
+ */
+export const STALE_AFTER_MS = 2500
 
 /** The `sessionStorage` key. Namespaced like `bundestrack.locale` in
  * components/providers/locale-provider.tsx, so the two are recognisably one
@@ -52,6 +92,10 @@ export function shouldRunSplash(environment: SplashEnvironment): boolean {
   if (environment.reduceMotion === true) return false
   if (environment.saveData === true) return false
   if (environment.alreadySeen === true) return false
+  // Strictly greater: an unmeasurable elapsed time is `undefined`, which is not
+  // a number and so not late — "could not tell" is not an objection, the same
+  // reading the three checks above give an absent field.
+  if (environment.elapsedMs !== undefined && environment.elapsedMs > STALE_AFTER_MS) return false
   return true
 }
 
@@ -79,7 +123,23 @@ export function readSplashEnvironment(): SplashEnvironment {
     reduceMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
     saveData: connection?.saveData === true,
     alreadySeen: hasSeenSplash(),
+    elapsedMs: elapsedSinceNavigation(),
   }
+}
+
+/**
+ * Milliseconds since this document started loading, or `undefined` where that
+ * cannot be told.
+ *
+ * `performance.now()` is measured from the start of navigation, which is
+ * exactly the clock this needs — time since the reader asked for the page,
+ * rather than time since any particular script ran. It is guarded because
+ * `performance` is absent in non-browser environments this module is also
+ * imported into (the gate is a pure function with its own tests).
+ */
+function elapsedSinceNavigation(): number | undefined {
+  if (typeof performance === "undefined" || typeof performance.now !== "function") return undefined
+  return performance.now()
 }
 
 /** Whether this session has already run the splash. Treats an unreadable

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { shouldRunSplash } from "./splash-gate"
+import { STALE_AFTER_MS, shouldRunSplash } from "./splash-gate"
 
 /**
  * Tests for the opening animation's gate.
@@ -30,6 +30,36 @@ describe("shouldRunSplash", () => {
 
   test("runs at most once per session", () => {
     expect(shouldRunSplash({ alreadySeen: true })).toBe(false)
+  })
+
+  test("never runs once the page has already been up too long", () => {
+    // The overlay is `fixed inset-0 z-100`, above the header. Dropped over a
+    // page the reader is already using, it both looks like a fault and eats the
+    // first click — which was one of the two ways this app produced "on a cold
+    // load the first click does nothing". Measured on a production build: the
+    // splash opened at 4.5 s at 6× CPU throttling and 7.5 s at 10×.
+    expect(shouldRunSplash({ elapsedMs: STALE_AFTER_MS + 1 })).toBe(false)
+    expect(shouldRunSplash({ elapsedMs: 7500 })).toBe(false)
+    // …and lateness outranks an otherwise perfect environment, the same way
+    // reduced motion does.
+    expect(
+      shouldRunSplash({
+        reduceMotion: false,
+        saveData: false,
+        alreadySeen: false,
+        elapsedMs: 7500,
+      }),
+    ).toBe(false)
+  })
+
+  test("still runs for a load that arrives in time", () => {
+    // The other direction, which is the one that fails invisibly: a threshold
+    // set too tight would disable the opening for ordinary readers and nobody
+    // would report it. 1.0 s is the measured 1× case and 2.9 s the 4× case;
+    // the boundary itself is inclusive.
+    expect(shouldRunSplash({ elapsedMs: 1004 })).toBe(true)
+    expect(shouldRunSplash({ elapsedMs: STALE_AFTER_MS })).toBe(true)
+    expect(shouldRunSplash({ elapsedMs: 0 })).toBe(true)
   })
 
   test("an unknown environment is not an objection", () => {
