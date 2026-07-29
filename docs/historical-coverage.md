@@ -19,6 +19,8 @@ nothing. Every table below separates *measured zero* from *never published*.
 | Named-vote **XLSX** sheets | **2019-09-26**, i.e. mid-WP19 | Measured by walking the listing to exhaustion: of 1 015 entries, 391 carry an XLSX and 624 are PDF-only, and the earliest sheet is 2019-09-26. This **corrects** §4.1's "roughly WP17 (2012/13)", which was inferred by bisection and is wrong by about seven years — it also settles open question 5, where two passes appeared to disagree because one was describing the listing (1 015 entries, reaching 2009) and the other the data sheets (none before 2019). |
 | MdB-Stammdaten **roster** | WP1 | The dump holds every MP since 1949. |
 | MdB-Stammdaten **committees** | **WP21 only** | Committee membership is published for the current period alone (§6.3, §6.4). WP1–20 carry `Fraktion/Gruppe` entries and nothing else. |
+| DIP **committee referrals** (`Ueberweisung`) | **WP18** in practice | Present on 4.8 %–9.7 % of procedure steps for WP18–21 (measured 2026-07-29). ⚠ A different claim from the row above: it says which committees a *bill* was sent to, and names no member. See the note below. |
+| DIP **vote explanations** (`§ 31 GO-BT`) | **WP19** confirmed | Published as an `/aktivitaet` carrying `person_id`, the procedure, and a page link into the protocol. Sparse by nature — most ballots carry none (§4.5). |
 
 Two consequences worth stating plainly, because they are permanent rather than
 pending:
@@ -28,6 +30,18 @@ pending:
   committee source in existence. A historical MP's committee count is `0`
   because nothing was published, and the score's committee component is
   therefore structurally absent for WP14–20 rather than measured at zero.
+
+  **This was checked against `Ueberweisung`, and it still holds.** DIP publishes
+  committee *referrals* — which committees a bill was sent to — for WP18–21, and
+  Bundestrack now ingests them (`committeeReferrals`). They do **not** narrow
+  the gap above by one MP. A referral names a committee and a document; there is
+  no person on the record and no field from which one could be derived. So it
+  answers "where did this bill go" and never "what did this member do", and the
+  committee component of the score stays structurally absent for WP14–20.
+  Referral coverage is its own question, reported by
+  `committeeReferrals:getReferralCoverage` — an empty answer there means the
+  period has not been backfilled, where an empty `committees:getCommittees`
+  means nothing was ever published. The two must not be read as one.
 - **No period before WP18 can have speech data.** Word counts, speech counts
   and the speaking-time proxy are all derived from protocol XML. WP14–17 have
   the sittings but not the machine-readable transcripts.
