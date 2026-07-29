@@ -442,9 +442,26 @@ const de = {
    * MP listing. Not a per-MP URL — the pipeline stores none for a member it
    * could not match — so it points at the roster rather than guessing a page. */
   "mp.officialDirectory": "Abgeordnetenverzeichnis des Bundestages",
-  /** The header's jump to the card below. A skip link within the profile, in
-   * the same spirit as `protokoll.skipToData` on `/`. */
-  "mp.jumpToContact": "Kontakt",
+  /**
+   * The identity card's jump to the contact card below. A skip link within the
+   * profile, in the same spirit as `protokoll.skipToData` on `/` — and worded
+   * the same way, naming the *destination* rather than repeating a heading.
+   *
+   * It used to be the bare word "Kontakt", which is `mp.contact` verbatim — the
+   * heading of the card it points at. A reader listing the page's links heard
+   * "Kontakt" with nothing to say it was an in-page jump, and a link whose name
+   * matches a heading elsewhere reads as a duplicate of it rather than as a
+   * shortcut to it. The `ArrowDownIcon` beside it is `aria-hidden`, so the
+   * glyph that makes the direction obvious to a sighted reader contributes
+   * nothing to the accessible name.
+   *
+   * Changed here rather than bolted on as an `aria-label` or an `sr-only`
+   * suffix, so the visible text and the accessible name stay the same string.
+   * A visible "Kontakt" under an `aria-label` of "Zu den Kontaktdaten" would
+   * put the two out of step — which breaks WCAG 2.5.3 (Label in Name) and
+   * voice control with it, since "click Kontakt" would no longer match.
+   */
+  "mp.jumpToContact": "Zu den Kontaktdaten",
   "mp.committeeRole": "Funktion",
   "mp.committeePeriod": "Zeitraum",
   "mp.noCommittees": "Keine Ausschussmitgliedschaften erfasst.",
@@ -1966,7 +1983,10 @@ const en: Dictionary = {
     "The Bundestag publishes neither email addresses nor telephone numbers for members — not even where contact details are available. For this member it also lists no contact form, no website and no constituency office.",
   "mp.postalSubstitute": "Reachable in writing at the Bundestag's address:",
   "mp.officialDirectory": "The Bundestag's own directory of members",
-  "mp.jumpToContact": "Contact",
+  /** Names the destination rather than repeating `mp.contact`, the heading it
+   * points at. See the German entry for why the visible text carries this
+   * rather than an `aria-label` over the shorter word. */
+  "mp.jumpToContact": "Jump to contact details",
   "mp.committeeRole": "Role",
   "mp.committeePeriod": "Period",
   "mp.noCommittees": "No committee memberships recorded.",

@@ -282,6 +282,19 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
  * action — but present in the first block of the page, which is the point. The
  * audit measured the contact heading at 1 385–1 492 px with nothing above it
  * hinting the card existed (GAP-002); this is the hint.
+ *
+ * ## The label names the destination, and carries the whole accessible name
+ *
+ * `mp.jumpToContact` is "Zu den Kontaktdaten", not "Kontakt". The bare word was
+ * `mp.contact` verbatim — the heading of the card this points at — so a reader
+ * listing the page's links heard the same word twice with nothing to say which
+ * one was the shortcut. The arrow is `aria-hidden`, so the glyph that makes the
+ * direction obvious to a sighted reader adds nothing to that name.
+ *
+ * There is deliberately no `aria-label` and no `sr-only` suffix: the visible
+ * text *is* the accessible name, which is what keeps WCAG 2.5.3 (Label in Name)
+ * satisfied and voice control working — a longer spoken name over a shorter
+ * visible one means "click Kontakt" stops matching the thing it names.
  */
 function ContactJumpLink() {
   const { t } = useLocale()

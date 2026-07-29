@@ -71,6 +71,67 @@ describe("the contact card sits near the top of the profile", () => {
   })
 })
 
+/**
+ * The jump link's accessible name.
+ *
+ * Raised as a low a11y finding in the review of PR #49: the label was the bare
+ * word "Kontakt", which is `mp.contact` verbatim — the heading of the card it
+ * points at. A screen-reader user listing the page's links heard the same word
+ * twice, with nothing to distinguish the shortcut from the destination, and the
+ * `ArrowDownIcon` that makes the direction obvious to a sighted reader is
+ * `aria-hidden` and contributes nothing to the name.
+ *
+ * These are tests on the *strings* rather than on a rendered accessibility
+ * tree, which `bun test` has no DOM for. What they buy is that a future edit
+ * shortening the label back to the heading fails here — and that shortening is
+ * a plausible tidy, since "Zu den Kontaktdaten" is four times the width of
+ * "Kontakt" in a 320 px sidebar card.
+ */
+describe("the jump link is distinguishable from the card it points at", () => {
+  for (const locale of LOCALES) {
+    test(`${locale}: its name differs from the card heading`, () => {
+      const jump = dictionaries[locale]["mp.jumpToContact"]
+      const heading = dictionaries[locale]["mp.contact"]
+      expect(jump, `${locale}.mp.jumpToContact`).not.toBe(heading)
+      // Not merely different — different in a way a listener notices. A label
+      // that only added punctuation would pass a `!==` and fail a reader.
+      expect(jump.length, `${locale}.mp.jumpToContact`).toBeGreaterThan(heading.length)
+    })
+
+    test(`${locale}: it names the destination rather than repeating the heading`, () => {
+      // The pattern `protokoll.skipToData` set on `/`: say where the link goes.
+      // Asserted as "contains the heading word plus more" rather than against
+      // the exact phrase, so rewording stays free while the property holds.
+      const jump = dictionaries[locale]["mp.jumpToContact"].toLowerCase()
+      const heading = dictionaries[locale]["mp.contact"].toLowerCase()
+      expect(jump.includes(heading.slice(0, 6)), `${locale}: "${jump}"`).toBe(true)
+      expect(jump.split(/\s+/).length, `${locale}: "${jump}"`).toBeGreaterThan(1)
+    })
+  }
+
+  test("the visible text carries the whole accessible name", () => {
+    // No `aria-label` and no `sr-only` on this link, deliberately. A spoken
+    // name longer than the visible one breaks WCAG 2.5.3 (Label in Name) and
+    // voice control with it: "click Kontakt" stops matching the control it
+    // names. Asserted over the component's own body so an `aria-label`
+    // elsewhere in the file does not mask it.
+    const body = code.slice(code.indexOf("function ContactJumpLink("))
+    const end = body.indexOf("\nfunction ")
+    const fn = body.slice(0, end === -1 ? undefined : end)
+    expect(fn).toContain('t("mp.jumpToContact")')
+    expect(fn).not.toContain("aria-label")
+    expect(fn).not.toContain("sr-only")
+  })
+
+  test("the arrow stays out of the accessible name", () => {
+    // It is decoration: the label already says the link goes somewhere. An
+    // unhidden icon would append its own name to the link's.
+    const body = code.slice(code.indexOf("function ContactJumpLink("))
+    const end = body.indexOf("\nfunction ")
+    expect(body.slice(0, end === -1 ? undefined : end)).toMatch(/ArrowDownIcon[^>]*aria-hidden/)
+  })
+})
+
 describe("the contact card always renders", () => {
   test("the Contact component has no early return", () => {
     // The two `return null` lines this replaced are what made 12 members — and
