@@ -780,23 +780,27 @@
  * chrome hidden, so a `220vh` track is meaningfully longer than two screens of
  * actual scrolling and the arc finishes early with a blank screen after it.
  *
- * ## Why 180 and not the 220 it was
+ * ## Why 150, after 180 and 220 before it
  *
- * 220svh is the sticky frame's own height plus ~1.2 screens of travel, which is
- * what Concept A asked for and is too much for what the reader gets: the arc
- * finished, and the chapter then held them for the rest of the pin looking at a
- * picture that had stopped changing. `revealThreshold` completes the fill at
- * 82 % of the travel, so the last fifth was always meant to be a pause on the
- * finished chamber — the pause is worth keeping, the two full screens before it
- * were not.
+ * Both earlier numbers were tuned against a reveal that did not start until the
+ * track's top hit the top of the viewport, and that is the measurement that
+ * changed. The chapter now begins filling as it *enters* the viewport
+ * (`useScroll`'s offset is `start end`, see the component), so roughly a
+ * viewport of what used to be dead lead-in is now travel the animation is
+ * actually using. Keeping 180svh on top of that would restore the original
+ * complaint from the other end: the arc would finish and the reader would be
+ * held on it.
  *
- * 180svh is ~0.8 screens of travel. Combined with the larger arc and the
- * always-present legend (see the component), the reader now spends that scroll
- * watching something that explains itself and ends on something to read, which
- * is the half of "the animation is confusing" that a duration alone could not
- * fix. Longer would be more cinematic and is exactly what makes a dashboard
- * reader feel trapped (§7); shorter and the seats arrive faster than the eye
- * follows them.
+ * 150svh is the sticky frame's own height plus ~0.5 screens of pinned travel.
+ * With `revealThreshold` completing at 70 %, the last ~0.15 of a screen is the
+ * pause on the finished chamber — deliberate, and the point the whole chapter
+ * is built to arrive at. Longer is more cinematic and is exactly what makes a
+ * dashboard reader feel trapped (§7); shorter and the pin stops being a pin.
+ *
+ * ⚠ The two numbers are coupled. `revealThreshold`'s 0.7 and this height
+ * together decide how much dead scroll sits after the chamber completes —
+ * raising one without lowering the other is how the "excessive empty scroll"
+ * failure comes back.
  */
 @layer components {
   .chamber-pin {
@@ -807,7 +811,7 @@
 @media (prefers-reduced-motion: no-preference) {
   @layer components {
     .chamber-pin {
-      height: 180svh;
+      height: 150svh;
     }
   }
 }

@@ -196,25 +196,66 @@ export const STATUTORY_SEATS = 630
 // --- the reveal ------------------------------------------------------------
 
 /**
- * How much of the arc is drawn at scroll `progress`, as a seat count.
+ * The share of the chamber that is already drawn when the reveal begins.
+ *
+ * ## The failure this constant exists to end
+ *
+ * The chapter used to open on an *empty* arc: `revealThreshold` returned 0 for
+ * the first slice of the travel, so the frame that the reader had just scrolled
+ * a screen to reach held a heading, a legend, "0 von 630 Sitzen" and no
+ * chamber. Measured in Safari at 1680 × 1050: the standfirst had scrolled off
+ * the top before the arc reached a tenth of its seats, which is the report this
+ * was fixed from — *"the text scrolls away while the hemicycle is still
+ * blank"*. A visualisation that is empty at the moment it is introduced does
+ * not read as one that is about to fill; it reads as one that has failed to
+ * load, and the legend beside it naming six colours that are nowhere on screen
+ * makes that worse rather than better.
+ *
+ * So the arc is never empty. 0.34 of the *distance* threshold is the inner
+ * third of the bank — around 250 of 630 seats, enough that the shape is
+ * unmistakably a hemicycle and every Fraktion in the centre already carries its
+ * colour, while the outer wedges are still visibly missing and therefore still
+ * worth scrolling for.
+ *
+ * A distance and not a seat fraction, for `centreOutwardDistance`'s reason: the
+ * seats are revealed by how far they sit from the top of the arc, so the two
+ * are related by the arc's own density and only the distance is meaningful
+ * here.
+ */
+export const REVEAL_FLOOR = 0.34
+
+/**
+ * How much of the arc is drawn at scroll `progress`, as a distance-from-centre
+ * threshold.
  *
  * The seats are revealed by *distance from the centre* rather than by index
  * (see `centreOutwardDistance`), so this returns a threshold on that distance
  * and not a slice of the list. A caller shows every seat whose `distance` is
  * under the threshold.
  *
- * `revealFraction` is deliberately not linear in progress. The first fifth of
- * the pin is spent reading the chapter's sentence, so the arc holds at a token
- * few seats; the last fifth is spent looking at a finished chamber before the
- * pin releases. In between it fills. Encoded here rather than as an `ease` on a
- * `useTransform` because the *shape* is the editorial decision — an ease is how
- * fast, this is when it starts and when it is done.
+ * Deliberately not linear in progress, and the shape has three parts rather
+ * than the two it had:
+ *
+ *  1. **It starts at `REVEAL_FLOOR`, not at nothing** — see that constant. The
+ *     chapter is introduced by a chamber, not by an empty frame that becomes
+ *     one.
+ *  2. **The fill is over the middle of the travel.** It begins immediately
+ *     (progress 0, which is now the moment the frame *pins* rather than the
+ *     moment it first appears — the caller's `offset` is what changed) and
+ *     completes at 70 %.
+ *  3. **The last 30 % is a pause on the finished chamber**, which is what the
+ *     reader is meant to arrive at. Wider than the 18 % it was, because the
+ *     travel is shorter now: the pause is the payoff and it is the one part of
+ *     this that should not be hurried.
+ *
+ * Encoded here rather than as an `ease` on a `useTransform` because the *shape*
+ * is the editorial decision — an ease is how fast, this is where it starts,
+ * when it is done, and how long it rests.
  */
 export function revealThreshold(progress: number): number {
   const clamped = Math.max(0, Math.min(1, progress))
-  if (clamped <= 0.12) return 0
-  if (clamped >= 0.82) return 1
-  return (clamped - 0.12) / 0.7
+  if (clamped >= 0.7) return 1
+  return REVEAL_FLOOR + (clamped / 0.7) * (1 - REVEAL_FLOOR)
 }
 
 // --- the chapters ----------------------------------------------------------
