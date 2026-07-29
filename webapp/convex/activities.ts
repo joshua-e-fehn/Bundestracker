@@ -88,15 +88,28 @@ export const upsertActivities = internalMutation({
 
 // --- scoring --------------------------------------------------------------
 
-/** One MP's activities in a window, tallied by score bucket. The `other`
- * bucket is counted rather than discarded — see the header note. */
-export async function activityTallies(
+/**
+ * One MP's activities in a window, as (date, score bucket) pairs.
+ *
+ * The read `activityTallies` does, without the aggregation — so a caller
+ * covering several sub-windows of one period can read the period once and count
+ * each window in memory, rather than issuing one indexed range per window over
+ * rows that overlap almost entirely. `gatherPeriod` in convex/activityScores.ts
+ * is that caller, and the reason the scorer no longer reads every source twice
+ * per member.
+ *
+ * The bucketing stays here rather than moving to the caller: `bucketFor` routes
+ * an unrecognised `aktivitaetsart` to a counted `other` (see the header note),
+ * and a second place deciding which kind of parliamentary work an activity is
+ * would be a second place to get that wrong.
+ */
+export async function activityDates(
   ctx: QueryCtx,
   mpInternalId: string,
   wahlperiode: number,
   from: string,
   to: string,
-): Promise<Record<string, number>> {
+): Promise<Array<{ date: string; bucket: string }>> {
   const rows = await ctx.db
     .query("activities")
     .withIndex("by_mpInternalId_and_wahlperiode_and_date", (q) =>
@@ -107,11 +120,22 @@ export async function activityTallies(
         .lte("date", to),
     )
     .collect()
+  return rows.map((row) => ({ date: row.date, bucket: bucketFor(row.aktivitaetsart) }))
+}
 
+/** One MP's activities in a window, tallied by score bucket. The `other`
+ * bucket is counted rather than discarded — see the header note. */
+export async function activityTallies(
+  ctx: QueryCtx,
+  mpInternalId: string,
+  wahlperiode: number,
+  from: string,
+  to: string,
+): Promise<Record<string, number>> {
+  const rows = await activityDates(ctx, mpInternalId, wahlperiode, from, to)
   const tallies: Record<string, number> = {}
   for (const row of rows) {
-    const bucket = bucketFor(row.aktivitaetsart)
-    tallies[bucket] = (tallies[bucket] ?? 0) + 1
+    tallies[row.bucket] = (tallies[row.bucket] ?? 0) + 1
   }
   return tallies
 }

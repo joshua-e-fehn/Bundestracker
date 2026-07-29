@@ -384,6 +384,62 @@ class ConvexLoader:
             result.record(self.post("vote-records", {**payload, "records": list(batch)}))
         return result
 
+    def backfill_vote_record_scope(
+        self,
+        *,
+        batch_size: int = 500,
+        max_slices: int = 2_000,
+    ) -> int:
+        """Copy each vote record's ballot period and date onto the record.
+
+        The migration for the period-scoped vote index. A `voteRecords` row used
+        to carry neither, so every per-MP question about votes read the member's
+        whole career off an MP-only index and then fetched a `voteSheets` row per
+        record to find out which period each vote belonged to — an unbounded scan
+        with an N+1 on top, and 64 % of the transaction that exceeded Convex's
+        read limit.
+
+        ⚠ **Not period-scoped, and not per-period.** It walks whatever rows are
+        un-migrated, across every Wahlperiode at once, so it is run *once per
+        deployment* rather than once per backfill. That is why it takes no
+        `wahlperiode`.
+
+        Needs no cursor: the un-migrated rows are exactly the ones the index
+        selects (Convex sorts a missing field below every value), and a migrated
+        row leaves that range by being written. So each call asks for the next
+        slice, and a crashed run resumes by being run again.
+
+        Returns the rows migrated. A second run returns 0, which is the signal
+        that the period-scoped reads are now complete — confirm with
+        `votes:voteScopeCoverage`, which reads the same range.
+        """
+        migrated = 0
+        for _ in range(max_slices):
+            response = self.post(
+                "votes/backfill-scope",
+                {"batchSize": batch_size},
+            )
+            migrated += int(response.get("migrated", 0))
+            orphaned = int(response.get("orphaned", 0))
+            if orphaned:
+                # A record whose ballot is gone. Left un-migrated deliberately —
+                # there is nothing to copy — but it should be visible, because
+                # the only thing that deletes a sheet without its records is a
+                # manual intervention or a bug in `purgeSeedData`.
+                logger.warning(
+                    "%d vote record(s) reference a ballot that no longer exists; "
+                    "they stay outside every period-scoped read",
+                    orphaned,
+                )
+            if self.dry_run or response.get("done"):
+                return migrated
+        logger.warning(
+            "Vote-record scope backfill stopped at the %d-slice limit — "
+            "period-scoped vote reads are still incomplete",
+            max_slices,
+        )
+        return migrated
+
     def backfill_dissent(
         self,
         wahlperiode: int,
@@ -405,30 +461,43 @@ class ConvexLoader:
         in one Convex transaction. The route returns `done` and leaves
         continuing to the caller.
 
-        Idempotent — every write is the delta between the stored flags and the
-        recomputed ones — so re-running repairs a drifted tally rather than
-        doubling it. Returns the number of records whose flags changed, which is
-        the useful signal: a second run over unchanged ballots returns 0.
+        Idempotent: the flags are derived from the ballot's own records and each
+        member's tally is derived from those flags, so a second run arrives at
+        the same numbers rather than doubling them. That is what makes it the
+        repair for a tally that has drifted.
+
+        The walk has two phases behind one integer cursor — the period's ballots,
+        then its roster — and both schedule their work rather than doing it
+        inline, so the route stays cheap regardless of `batch_size`. Returns the
+        number of member tallies rolled up (`mpsRolledUp`); `records` is retained
+        in the response shape but is now always 0, because the refreshes run in
+        their own transactions and this route cannot count rows it did not write.
         """
-        records = 0
+        rolled_up = 0
         cursor = 0
         for _ in range(max_slices):
             response = self.post(
                 "votes/backfill-dissent",
                 {"wahlperiode": wahlperiode, "cursor": cursor, "batchSize": batch_size},
             )
-            records += int(response.get("records", 0))
+            rolled_up += int(response.get("mpsRolledUp", 0))
             if self.dry_run or response.get("done"):
-                return records
+                return rolled_up
             next_cursor = response.get("nextCursor")
-            if next_cursor is None or next_cursor == cursor:
-                return records
-            cursor = int(next_cursor)
+            if next_cursor is None:
+                return rolled_up
+            # Coerced before comparing, for `recompute_scores`' reason: a guard
+            # that compares across types never fires, and this one is the only
+            # thing stopping a stalled deployment from being walked 2 000 times.
+            advanced = int(next_cursor)
+            if advanced == cursor:
+                return rolled_up
+            cursor = advanced
         logger.warning(
             "Dissent backfill stopped at the %d-slice limit — the tally may be incomplete",
             max_slices,
         )
-        return records
+        return rolled_up
 
     def generate_seating(self, wahlperiode: int) -> dict[str, Any]:
         """Regenerate the synthetic hemicycle from the roster.
@@ -458,9 +527,19 @@ class ConvexLoader:
         `max_slices` bounds a loop whose termination depends on a remote
         answer: a deployment that always returned `hasMore` would otherwise
         spin forever.
+
+        ⚠ The cursor is the **`internalId` the previous slice ended on**, not an
+        offset — a string, or None to start. It changed because an offset had to
+        be seeked to: the route's `take(cursor + batchSize + 1)` re-read every
+        member already scored, so paging a 635-member roster cost ~25 000 row
+        reads. A member id is a keyset seek and costs `batchSize + 1` wherever
+        the slice starts. It is deliberately a *derivable* id rather than an
+        opaque Convex pagination token, because `scripts/score-period.py` shards
+        a period across workers by computing slice boundaries from the roster it
+        already holds.
         """
         scored = 0
-        cursor = 0
+        cursor: str | None = None
         for _ in range(max_slices):
             response = self.post(
                 "scores/recompute",
@@ -475,9 +554,18 @@ class ConvexLoader:
             if self.dry_run or not response.get("hasMore"):
                 return scored
             next_cursor = response.get("nextCursor")
-            if next_cursor is None or next_cursor == cursor:
+            if next_cursor is None:
                 return scored
-            cursor = int(next_cursor)
+            # ⚠ Coerced *before* the comparison, not after. The guard catches a
+            # slice that made no progress — without it the loop re-scores the
+            # same members until `max_slices` — and it only works if both sides
+            # are the same type. Comparing the raw response against the stored
+            # cursor lets `0 == "0"` be false, which is exactly the case where
+            # the deployment is telling us it has not moved.
+            advanced = str(next_cursor)
+            if advanced == cursor:
+                return scored
+            cursor = advanced
         logger.warning(
             "Score recomputation stopped at the %d-slice limit — scores may be incomplete",
             max_slices,
