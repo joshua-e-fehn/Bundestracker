@@ -80,6 +80,17 @@ cmd = "bun run typecheck"
 cwd = "webapp"
 description = "TypeScript type check (tsc --noEmit)."
 
+[tasks.check-codegen]
+cmd = "bun run check:codegen"
+cwd = "webapp"
+# `convex/_generated/` is committed because it cannot be rebuilt without
+# deployment credentials (see webapp/.gitignore). This asserts the checked-in
+# copy still lists every module under `convex/` — the one way it drifts without
+# a deployment, and the way that breaks a clean checkout's typecheck. Its own
+# task rather than a step inside `typecheck` so its failure names codegen
+# instead of arriving as a property error at some call site.
+description = "Assert the committed Convex codegen still matches convex/."
+
 [tasks.test-python]
 cmd = "pytest"
 cwd = "pipeline"

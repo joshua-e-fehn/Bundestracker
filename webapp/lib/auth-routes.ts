@@ -27,13 +27,18 @@
  * ⚠ **A new page must be added here or it is not reachable.** That consequence
  * follows from the exact-match note above and is easy to miss, because the
  * failure does not look like an auth problem: `AuthGuard` redirects to
- * `/sign-in`, which does not exist yet, so the page renders a 404 and the
- * obvious suspect is the route itself. `/rankings` and `/feed` each spent a
- * debugging session on it, and `/seating` then spent a third — which is why
- * lib/auth-routes.test.ts now reads `app/` and asserts that every directory
- * with a `page.tsx` is listed here, rather than trusting anyone to remember.
- * Until a genuinely private route exists, every content route belongs on this
- * list.
+ * `/sign-in`, so an omitted route silently becomes a sign-in prompt for a page
+ * that needs no account, and the obvious suspect is the route itself.
+ * `/rankings` and `/feed` each spent a debugging session on it, and `/seating`
+ * then spent a third — which is why lib/auth-routes.test.ts now reads `app/`
+ * and asserts that every directory with a `page.tsx` is listed here, rather
+ * than trusting anyone to remember. Until a genuinely private route exists,
+ * every content route belongs on this list.
+ *
+ * (That redirect used to land on a 404, because `/sign-in` was listed here
+ * before the page existed. `app/sign-in/page.tsx` has existed since, so the
+ * symptom is now a sign-in panel rather than a missing page — the same bug,
+ * wearing the disguise the entry was always meant to give it.)
  */
 export const PUBLIC_PATHS = [
   "/",

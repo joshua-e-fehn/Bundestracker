@@ -312,13 +312,21 @@ export function MPCard({
           // the *section heading's* job ("Nach Aktivitätswert in der laufenden
           // Wahlperiode"), so repeating it under all ten numbers was buying a
           // layout problem with a word nobody needed twice. The `title` keeps
-          // it reachable on hover; `aria-label` keeps it announced.
-          <div
-            className="w-14 shrink-0 text-right"
-            title={t("mp.activityScore")}
-            aria-label={t("mp.activityScore")}
-          >
+          // it reachable on hover; an `sr-only` span keeps it announced.
+          //
+          // That span, rather than the `aria-label` this carried until now.
+          // `aria-label` on a bare `div` names nothing: the element has no role
+          // to hang a name on, so assistive tech drops the attribute and the
+          // number was read out bare — the exact outcome the label was added to
+          // prevent, and the one thing the comment above claimed it fixed.
+          // Biome names it (`a11y/useAriaPropsSupportedByRole`). Giving the div
+          // a role to make the attribute legal would be solving it backwards;
+          // `sr-only` text is what the rest of the codebase does when a visual
+          // label is dropped but the meaning has to survive — see
+          // `party-coalition-card.tsx:223` and `inquiry-quorum.tsx:648`.
+          <div className="w-14 shrink-0 text-right" title={t("mp.activityScore")}>
             <div className="font-semibold text-base tabular-nums">
+              <span className="sr-only">{`${t("mp.activityScore")}: `}</span>
               {formatScore(totalScore, locale)}
             </div>
           </div>

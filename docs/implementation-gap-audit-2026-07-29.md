@@ -7,6 +7,13 @@ This is Wave 1: evidence, not implementation. Every row below cites a file, a
 commit, a branch, a live URL or a measured production number. Where a claim
 could not be verified, it says so rather than guessing.
 
+> **Status updates are struck through in place rather than deleted.** This
+> document is dated evidence, so a row that has since been fixed keeps its
+> original finding — the reason the fix was needed is the part worth keeping.
+> Rows marked **fixed** were closed on branch `engineering-hygiene-gaps`
+> (GAP-013, GAP-014, GAP-023, GAP-024, and the documentation half of GAP-015).
+> Everything unmarked is as first measured on 2026-07-29.
+
 ---
 
 ## 0. The headline
@@ -73,9 +80,9 @@ the code asserts it; `roadmap_idea` = aspiration, never committed.
 | **GAP-010** | Cross-language search returns nothing | **partially_implemented** | A | explicit_plan | Thesaurus exists; `mps.occupation` is not in the search index | Index occupation/profession, or scope the promise | — | ✅ |
 | **GAP-011** | Occupation reaches 1 of 4 planned surfaces | **partially_implemented** | A | explicit_plan | Merge loss — `7e48f4a` is not an ancestor of `main` | Cherry-pick the table column; fix the seat tooltip | GAP-001 | ✅ |
 | **GAP-012** | 19 of 56 public Convex functions uncalled | **implemented_not_deployed** | A | code_contract | Backend built ahead of UI, repeatedly | Wire or delete; each is a decision | — | ✅ |
-| **GAP-013** | No CI: no test/lint/typecheck/deploy gate | **planned_but_absent** | A | inferred | Never set up | Add a workflow running the existing gates | — | ✅ |
-| **GAP-014** | Clean checkout cannot typecheck or fully test | **partially_implemented** | A | code_contract | `convex/_generated` is gitignored and needs credentials | Commit generated types or document the bootstrap | GAP-013 | ✅ |
-| **GAP-015** | README claims GitHub OAuth; it is disabled | **partially_implemented** | A | doc_statement | Credentials never registered | Register the app or correct the README | — | ✅ |
+| **GAP-013** | No CI: no test/lint/typecheck/deploy gate | ~~planned_but_absent~~ → **fixed** | A | inferred | Never set up | ~~Add a workflow running the existing gates~~ — `.github/workflows/ci.yml` runs the existing pixi tasks | — | ✅ |
+| **GAP-014** | Clean checkout cannot typecheck or fully test | ~~partially_implemented~~ → **fixed** | A | code_contract | `convex/_generated` is gitignored and needs credentials | ~~Commit generated types or document the bootstrap~~ — both: committed, with `check-codegen` guarding drift | GAP-013 | ✅ |
+| **GAP-015** | README claims GitHub OAuth; it is disabled | ~~partially_implemented~~ → **fixed (doc half)** | A | doc_statement | Credentials never registered | ~~Register the app or correct the README~~ — README corrected; **the app is still unregistered and GitHub sign-in still does not work** | — | ✅ |
 | **GAP-016** | README describes the cron in the present tense | **partially_implemented** | A | doc_statement | Doc written ahead of the deployment step | Correct with GAP-005 | GAP-005 | ✅ |
 | **GAP-017** | No `/motions` page though the backend is complete | **planned_but_absent** | B | explicit_plan | Route never created | Build it, or drop it from the nav plan | — | ⚠ i18n |
 | **GAP-018** | Vote explanations (§31 GO-BT) | **planned_but_absent** | B | explicit_plan | Plan hedged it ("where available"); read as optional | Confirm the source exists before committing | — | ✅ |
@@ -83,8 +90,8 @@ the code asserts it; `roadmap_idea` = aspiration, never committed.
 | **GAP-020** | Opposition adjustment + productivity metrics | **planned_but_absent** | B | explicit_plan | "Stats polish" tasks skipped | Treat as new scope; both are editorially loaded | GAP-009 | ✅ |
 | **GAP-021** | Federal-state filter inert on 2 pages | **partially_implemented** | A | explicit_plan | Pipeline never stores Bundesland | Store `WKR_LAND` at ingest | backfill | ✅ |
 | **GAP-022** | `/seating` React #418 hydration error, seen once in 4 loads | **partially_implemented** | C | inferred | Likely SSR/client mismatch; **not reproduced** on 3 further runs | Investigate only if it recurs; low confidence | — | ✅ |
-| **GAP-023** | `auth-routes.ts:30` comment says `/sign-in` doesn't exist | **stale_plan_superseded** | A | code_contract | Comment outlived the fix | Delete the stale sentence | — | ✅ |
-| **GAP-024** | `purgeSeed` does not cover `voteSheets` | **partially_implemented** | A | code_contract | Table omitted from the purge list | Add it; no fabricated ballot is live today | — | ✅ |
+| **GAP-023** | `auth-routes.ts:30` comment says `/sign-in` doesn't exist | ~~stale_plan_superseded~~ → **fixed** | A | code_contract | Comment outlived the fix | ~~Delete the stale sentence~~ — corrected to describe the symptom the route now has | — | ✅ |
+| **GAP-024** | `purgeSeed` does not cover `voteSheets` | ~~partially_implemented~~ → **fixed** | A | code_contract | Table omitted from the purge list | ~~Add it~~ — folded into `purgeSeedData`; `done` and `seedDataPresent` now answer for sheets too | — | ✅ |
 | **GAP-025** | "Procedural clock" | **stale_plan_superseded** | A | roadmap_idea | Never in any plan, commit or file | **Do not build.** Not committed scope | — | n/a |
 | **GAP-026** | Enrichment TTL is keyed by MP id with no Wahlperiode, so a historical backfill starves the current period | **partially_implemented** | A | code_contract | `contact_fetched_at` is `dict[internalId]` (`state.py:100`); the bundestag.de listing is current-roster-only | Key the TTL by `(internalId, wahlperiode)` | GAP-001 | ✅ |
 | **GAP-027** | Two MPs are permanently unenrichable; the "quarantine retries these" claim is false | **partially_implemented** | A | code_contract | `normalise_printed_name` drops middle initials; `portrait_enrichment` logs the miss but never calls `Quarantine.add` | Handle middle initials; route misses to the quarantine | GAP-001 | ✅ |
@@ -256,8 +263,9 @@ Being skeptical cuts both ways. These were checked and are genuinely complete:
   production — the defect Wave 6/Wave 8 both name is fixed.
 - **i18n is clean**: 781 DE keys, 781 EN keys, **zero** missing either way; no
   component references an undefined key.
-- **Tests pass**: 256/256 Python; 551/556 JS (the 5 failures are the
-  `_generated` bootstrap issue, GAP-014).
+- **Tests pass**: 256/256 Python; 551/556 JS (the 5 failures were the
+  `_generated` bootstrap issue, GAP-014 — since fixed: a clean checkout now runs
+  the whole suite green).
 - **Nav is complete** — every route is reachable from the navigation.
 - **Locale default is correct**: a `de-DE` browser gets German (`html lang="de"`).
 - **All 13 routes return HTTP 200** and render content.
@@ -329,14 +337,37 @@ branch touching `webapp/lib/i18n.ts`, `webapp/convex/schema.ts` or
 - **C3 · GAP-012** — triage the 19 uncalled functions: wire or delete.
 - **C4 · GAP-017** — decide on `/motions`. *⚠ i18n + navigation.*
 
-### Wave D — engineering hygiene (fully parallel)
+### Wave D — engineering hygiene (fully parallel) — ✅ **done, except D4**
 
-- **D1 · GAP-013** — CI running `pixi run lint`, `typecheck`, `test`.
-- **D2 · GAP-014** — make a clean checkout typecheck.
-- **D3 · GAP-015** — register GitHub OAuth or correct the README.
+Landed on branch `engineering-hygiene-gaps`.
+
+- ~~**D1 · GAP-013**~~ — ✅ `.github/workflows/ci.yml`: codegen check, `pixi run
+  lint`, `typecheck`, `test`, then a production-equivalent build with
+  placeholder Convex URLs and no deploy key. It adds no gate of its own, so CI
+  and local cannot drift.
+- ~~**D2 · GAP-014**~~ — ✅ `webapp/convex/_generated/` and
+  `convex/betterAuth/_generated/` are committed, because `bunx convex codegen`
+  cannot rebuild them without a deployment it has access to (Convex's own CLI
+  says to commit them). `pixi run check-codegen` guards the one way they drift
+  offline. A clean checkout now typechecks and runs 621/621 JS tests.
+  - Removed `convex/` at the **repo root** while here: five generated files
+    committed by accident in `f19eead`, imported by nothing, and already stale
+    against the schema by five modules.
+- ~~**D3 · GAP-015**~~ — ⚠ **doc half only.** The README no longer claims GitHub
+  OAuth works. **The OAuth app is still unregistered and GitHub sign-in still
+  does not work** — no credentials were touched.
 - **D4 · GAP-022** — `/seating` hydration error: seen once in four loads and not
   reproduced in three further runs. Watch for recurrence before spending on it.
-- **D5 · GAP-023 / GAP-024** — stale comment; `purgeSeed` `voteSheets`.
+  *Still open — deliberately not investigated.*
+- ~~**D5 · GAP-023 / GAP-024**~~ — ✅ the `/sign-in` comment now describes the
+  symptom that route actually has; `voteSheets` is inside `purgeSeedData`, whose
+  `done` and whose `seedDataPresent` counterpart now answer for ballots as well
+  as mandates. Nine focused tests on `isSyntheticVoteSheet`.
+- Fixed in passing, because it blocked D1: `mp-card.tsx:316` carried an
+  `aria-label` on a bare `div`, which assistive tech drops — so the score was
+  announced unlabelled, the opposite of what the comment beside it claimed.
+  Biome had been failing on it, which is why `pixi run lint` was red on `main`
+  and no CI gate could have been green on arrival.
 
 ### Wave E — scoped features (each needs a decision first)
 

@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "bash scripts/convex-deploy-if-key.sh && next build",
+    "build": "bash scripts/convex-deploy-if-key.sh && bash scripts/build-env-defaults.sh next build",
     "build:full": "bunx convex deploy && next build",
     "start": "next start",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check --write .",
     "typecheck": "tsc --noEmit",
+    "check:codegen": "bun run scripts/check-codegen.ts",
     "test": "bun test"
   },
   "dependencies": {
