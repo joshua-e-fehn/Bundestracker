@@ -34,7 +34,7 @@ import {
 } from "@/lib/trends"
 
 /**
- * One MP's activity over time — five charts behind five tabs.
+ * One MP's activity over time — the tabs and shapes lib/trends.ts declares.
  *
  * The contribution heatmap beside this answers "which *days* were busy"; these
  * answer "is this rising or falling", which a 365-cell grid cannot show. Monthly
@@ -44,11 +44,13 @@ import {
  *
  * ## What lives here and what does not
  *
- * The month arithmetic and the five charts' definitions are in lib/trends.ts,
- * for lib/heatmap.ts' reason: gap-filling and cumulative sums can be wrong
- * without looking wrong, and a test catches that where an eye does not. This
- * file draws what that module computes and holds the one piece of state — which
- * tab is open.
+ * The month arithmetic and the chart definitions live in lib/trends.ts —
+ * `TREND_CHARTS` there is the single list this file iterates for both the
+ * tab strip and the drawn figure, so the count is one place and grows there
+ * (GAP-019 added the sixth). Gap-filling and cumulative sums can be wrong
+ * without looking wrong, and the tests beside those definitions catch that
+ * where an eye does not. This file draws what that module computes and holds
+ * the one piece of state — which tab is open.
  *
  * ## Why recharts here when the seating map is hand-rolled SVG
  *
@@ -131,7 +133,8 @@ export function TrendGraphs({
 
             <Tabs value={chart.id} onValueChange={setChartId}>
               {/* Scrolls rather than wraps, matching components/rankings.tsx:
-                  five tabs wrapped to two rows on a narrow screen push the
+                  the six tabs (`TREND_CHARTS` in lib/trends.ts, count kept
+                  there) wrapped onto two rows on a narrow screen push the
                   chart below the fold. */}
               <TabsList className="w-full justify-start overflow-x-auto">
                 {TREND_CHARTS.map((entry) => (

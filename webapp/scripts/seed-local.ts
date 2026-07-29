@@ -424,26 +424,71 @@ async function main() {
   })
   console.log(`  ${MPS.length * 3} speeches`)
 
-  // The sponsors are attached below, per motion; here only the count of MPs
-  // decides how many papers to create.
-  const motions = MPS.slice(0, 8).map((_seed, index) => ({
+  /**
+   * The motions corpus — the input `/motions` pages over.
+   *
+   * Four properties of the real table are reproduced, because each is one the
+   * page has to survive and none of them was visible while every seeded row
+   * looked alike:
+   *
+   *  - **`vorgangstyp` is heavily skewed.** Measured against production,
+   *    `Schriftliche Frage` is 44 % of a WP21 sample and 71 % of a WP20 one.
+   *    That skew is the entire reason `by_wahlperiode_and_vorgangstyp_and_date`
+   *    exists (convex/schema.ts): filtering to a rarer kind after the fact
+   *    empties the first several pages. A seed of eight evenly-spread rows
+   *    could not have exercised it.
+   *  - **`vorgangstyp` is often null**, and null is not a filterable value —
+   *    `getMotionFilterOptions` drops it from the vocabulary deliberately, so
+   *    the seed has to contain some or that branch is never taken.
+   *  - **Most rows carry no Drucksache number.** 178 of 700 in the WP21 sample,
+   *    63 of 700 in WP20. `drucksachePdfUrl` returns null for those and the row
+   *    renders "no linkable document" instead of a link, which is a state worth
+   *    seeing on screen rather than only in a test.
+   *  - **A period spans several calendar years**, which is what the year filter
+   *    is for and what a single-year seed cannot show.
+   */
+  const MOTION_KINDS = [
+    // Weighted by frequency, so a filter on a rare kind behaves here the way it
+    // behaves in production rather than returning a third of the list.
+    ...Array<string | null>(9).fill("Schriftliche Frage"),
+    ...Array<string | null>(4).fill("Kleine Anfrage"),
+    "Gesetzgebung",
+    "Antrag",
+    "EU-Vorlage",
+    ...Array<string | null>(4).fill(null),
+  ]
+  const MOTION_TITLES = [
+    "Entwurf eines Gesetzes zur Beschleunigung von Planungsverfahren",
+    "Antrag: Digitale Infrastruktur im ländlichen Raum stärken",
+    "Entschließungsantrag zur Reform der Schuldenbremse",
+    "Antrag: Transparenz bei parlamentarischen Abstimmungen",
+    "Entwurf eines Gesetzes zur Änderung des Energiewirtschaftsgesetzes",
+    "Antrag: Förderung des öffentlichen Nahverkehrs",
+    "Entschließungsantrag zur europäischen Asylpolitik",
+    "Antrag: Bürokratieabbau für kleine und mittlere Unternehmen",
+    // Carries an umlaut in a word a reader would plausibly search for, so the
+    // title filter's folding (`für` → `fuer`, lib/search.ts) is exercised by the
+    // data rather than only by its unit test.
+    "Kleine Anfrage: Maßnahmen für die Barrierefreiheit im Fernverkehr",
+    "Kleine Anfrage: Stand der Digitalisierung in Bundesbehörden",
+  ]
+  // 60 rows rather than 8: enough to page twice at 25 and to leave a rare kind
+  // genuinely rare. Still a seed, not a corpus — production holds 37 726 for one
+  // period, and nothing here pretends to that scale.
+  const MOTION_COUNT = 60
+  const motions = Array.from({ length: MOTION_COUNT }, (_unused, index) => ({
     dipVorgangId: `vorgang-${index + 1}`,
     dipDrucksacheId: null,
-    drucksacheNr: `21/${7300 + index * 17}`,
-    title: [
-      "Entwurf eines Gesetzes zur Beschleunigung von Planungsverfahren",
-      "Antrag: Digitale Infrastruktur im ländlichen Raum stärken",
-      "Entschließungsantrag zur Reform der Schuldenbremse",
-      "Antrag: Transparenz bei parlamentarischen Abstimmungen",
-      "Entwurf eines Gesetzes zur Änderung des Energiewirtschaftsgesetzes",
-      "Antrag: Förderung des öffentlichen Nahverkehrs",
-      "Entschließungsantrag zur europäischen Asylpolitik",
-      "Antrag: Bürokratieabbau für kleine und mittlere Unternehmen",
-    ][index],
+    // Roughly a quarter, matching the sampled 178/700 — the rest render the
+    // "no linkable document" state.
+    drucksacheNr: index % 4 === 0 ? `21/${7300 + index * 17}` : null,
+    title: `${MOTION_TITLES[index % MOTION_TITLES.length]} (${index + 1})`,
     type: index % 2 === 0 ? "Gesetzentwurf" : "Antrag",
-    date: `2026-0${4 + (index % 4)}-${String(5 + index).padStart(2, "0")}`,
+    // Spread over two calendar years so the year filter has something to select
+    // between, newest first once the index orders them.
+    date: `${index < 40 ? 2026 : 2025}-${String(1 + (index % 12)).padStart(2, "0")}-${String(1 + (index % 28)).padStart(2, "0")}`,
     wahlperiode: WP,
-    vorgangstyp: null,
+    vorgangstyp: MOTION_KINDS[index % MOTION_KINDS.length],
   }))
   await post("motions", { motions })
   for (const [index, seed] of MPS.slice(0, 8).entries()) {

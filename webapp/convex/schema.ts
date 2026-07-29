@@ -876,7 +876,27 @@ const schema = defineSchema({
     .index("by_dipVorgangId", ["dipVorgangId"])
     .index("by_dipDrucksacheId", ["dipDrucksacheId"])
     // Listing, newest first, whole period or a date window inside it.
-    .index("by_wahlperiode_and_date", ["wahlperiode", "date"]),
+    .index("by_wahlperiode_and_date", ["wahlperiode", "date"])
+    /**
+     * The same listing narrowed to one procedure kind — what `/motions`' filter
+     * pages over.
+     *
+     * Two indexes and not one, for the reason `by_wahlperiode_and_eventType_and_date`
+     * exists on `activityEvents`: a page taken from the mixed list and then
+     * filtered by kind comes back short, and a short page is indistinguishable
+     * from "there are no more". This table makes that failure worse than the
+     * feed does. `Schriftliche Frage` is 44 % of a WP21 sample and 71 % of a
+     * WP20 one, so a reader filtering to `Antrag` after the fact would page
+     * through hundreds of empty results before the first match — and conclude
+     * the Bundestag tabled none.
+     *
+     * `vorgangstyp` is nullable, and a null sorts below every value rather than
+     * being excluded, so the null rows occupy their own contiguous range here.
+     * `getMotionFilterOptions` deliberately does not offer them as a filter
+     * value: an unrecorded kind is not a kind. They remain reachable through
+     * the unfiltered index above, which is where an unfiltered read belongs.
+     */
+    .index("by_wahlperiode_and_vorgangstyp_and_date", ["wahlperiode", "vorgangstyp", "date"]),
 
   motionSponsors: defineTable({ ...motionSponsorInput, createdAt: v.number() })
     .index("by_motionId_and_mpInternalId", ["motionId", "mpInternalId"])
