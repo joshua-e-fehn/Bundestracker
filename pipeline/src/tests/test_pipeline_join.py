@@ -233,6 +233,51 @@ def test_a_name_from_another_period_is_not_resolved_against_this_ones_index(
     assert resolver.resolve_printed_name("Alber", "Siegbert", None, wahlperiode=8) is None
 
 
+def test_an_unmatched_listing_entry_is_quarantined_rather_than_only_logged(
+    resolver,
+) -> None:
+    """GAP-027: the stage claimed the quarantine retried these; nothing did.
+
+    The bundestag.de listing is the Bundestag's own roster of the *sitting*
+    chamber, so a name in it that resolves to nobody is a real member the
+    Stammdaten snapshot is behind on (§7.3) — precisely the case quarantining
+    exists for. Until this call site existed, `portrait_enrichment` logged the
+    miss and moved on, so those MPs were never re-examined once the dump caught
+    up and stayed unenriched indefinitely.
+    """
+    assert (
+        resolver.resolve_listed_name("Nichtexistent", "Erika", context="https://www.bundestag.de/x")
+        is None
+    )
+
+    (entry,) = resolver.quarantine.for_source("mp-listing")
+    assert entry.nachname == "Nichtexistent"
+    assert entry.reason == "unmatched"
+    assert entry.context == "https://www.bundestag.de/x"
+
+
+def test_a_listing_miss_does_not_inflate_the_vote_sheet_quarantine(resolver) -> None:
+    """Kept under its own source, because the two mean different things.
+
+    A quarantined vote row is a ballot that would otherwise be silently lost
+    (§4.2 — the sheets are the only source carrying absences). A quarantined
+    listing entry is a missing portrait, which the UI already degrades for.
+    Folding them together would let an enrichment gap inflate the count that
+    signals a vote was dropped.
+    """
+    resolver.resolve_listed_name("Nichtexistent", "Erika")
+
+    assert resolver.quarantine.for_source("vote-sheet") == []
+    assert len(resolver.quarantine.for_source("mp-listing")) == 1
+
+
+def test_a_listing_entry_that_resolves_is_not_quarantined(resolver) -> None:
+    # The common case: 635 of 639 resolve. A quarantine that also collected
+    # successes would be one nobody reads.
+    assert resolver.resolve_listed_name("Bilger", "Steffen") == "bt-11004011"
+    assert len(resolver.quarantine) == 0
+
+
 # --- the quarantine -------------------------------------------------------
 
 

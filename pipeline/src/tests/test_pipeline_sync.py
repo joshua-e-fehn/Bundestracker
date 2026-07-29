@@ -363,10 +363,15 @@ def test_a_portrait_only_refresh_leaves_the_contact_block_alone() -> None:
     report = RunReport(21, "sync")
     pipeline.load_roster(report)
     # Every MP inside the TTL, so `_load_contacts` fetches nothing at all.
-    pipeline.state.contact_fetched_at["bt-11004011"] = datetime.now(dt.UTC).isoformat()
+    # Through `record_contact_fetch` rather than by writing the dict directly:
+    # the key is `(wahlperiode, internal id)` and a hand-built one that missed
+    # the period would leave this test passing while fetching after all.
+    pipeline.state.record_contact_fetch("bt-11004011", 21)
+    assert not pipeline.state.contact_is_stale("bt-11004011", 21), "the premise of this test"
 
     pipeline.load_enrichment(report)
 
+    assert profiles.fetched == [], "the TTL must have suppressed the contact fetch"
     rows = [row for call in loader.posted("mps") for row in call["mps"]]
     bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
     assert bilger["photoUrl"] == "https://www.bundestag.de/resource/image/1.jpg"
@@ -442,7 +447,7 @@ def test_a_fresh_contact_block_is_not_re_fetched() -> None:
     url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
     profiles = StubProfiles([profile("Bilger, Steffen", url)])
     state = SyncState()
-    state.record_contact_fetch("bt-11004011")
+    state.record_contact_fetch("bt-11004011", 21)
     pipeline, _ = build(profiles=profiles, state=state)
     report = RunReport(21, "sync")
     pipeline.load_roster(report)
@@ -458,7 +463,7 @@ def test_a_backfill_re_reads_every_contact_page_however_fresh() -> None:
     url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
     profiles = StubProfiles([profile("Bilger, Steffen", url)])
     state = SyncState()
-    state.record_contact_fetch("bt-11004011")
+    state.record_contact_fetch("bt-11004011", 21)
     pipeline, _ = build(profiles=profiles, state=state)
     report = RunReport(21, "sync")
     pipeline.load_roster(report)
@@ -468,11 +473,23 @@ def test_a_backfill_re_reads_every_contact_page_however_fresh() -> None:
     assert profiles.fetched == [url]
 
 
-def test_a_page_that_published_nothing_is_still_stamped() -> None:
-    """About half of MPs list no constituency office. Stamping only non-empty
-    responses would re-read those pages forever to rediscover the same
-    absence."""
+def test_a_page_that_parsed_to_nothing_is_not_stamped_as_a_success() -> None:
+    """GAP-028: an empty result is a read failure, not a member with no details.
+
+    Every sitting MP has a contact form, and `form_url` alone makes a block
+    non-empty — 623 of 635 carried one when production was last measured. So a
+    block with *nothing* in it did not come from a page that published nothing;
+    it came from a page this pipeline did not manage to read (a markup change,
+    a truncated body, a WAF page answering 200).
+
+    Stamping it anyway is what made the 12 empty contact blocks permanent:
+    marked fresh for `CONTACT_TTL`, they were never retried, and the stage
+    counted them among the pages it had successfully fetched. This is the
+    inverse of the sparse-but-real case below, which *is* stamped.
+    """
     url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    # `StubProfiles` answers a bare `MPContact()` for a URL it has no entry
+    # for — which is exactly the empty parse this guards.
     profiles = StubProfiles([profile("Bilger, Steffen", url)])
     pipeline, _ = build(profiles=profiles)
     report = RunReport(21, "sync")
@@ -481,7 +498,32 @@ def test_a_page_that_published_nothing_is_still_stamped() -> None:
     pipeline.load_enrichment(report)
 
     assert profiles.fetched == [url]
-    assert not pipeline.state.contact_is_stale("bt-11004011")
+    assert pipeline.state.contact_is_stale("bt-11004011", 21), "an empty parse must retry"
+    (note,) = [n for n in report.stages[-1].notes if n.startswith("contact:")]
+    assert "retry next sync" in note
+
+
+def test_a_sparse_but_real_contact_block_is_stamped() -> None:
+    """The other half of the rule, and why it is `is_empty` rather than a count.
+
+    About half of MPs list no constituency office, so a block carrying only a
+    form URL is a complete answer rather than a failed read. Re-fetching those
+    ~280 KB pages every sync to rediscover the same absence is precisely the
+    cost this gate exists to avoid — the retry above must not become "retry
+    everything sparse, forever".
+    """
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    profiles.contacts[url] = MPContact(
+        form_url="https://www.bundestag.de/services/formular/contactform?mdbId=1"
+    )
+    pipeline, _ = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+
+    pipeline.load_enrichment(report)
+
+    assert not pipeline.state.contact_is_stale("bt-11004011", 21)
 
 
 def test_the_contact_block_reaches_the_roster_row() -> None:
@@ -526,10 +568,16 @@ def test_an_unmatched_name_is_not_counted_as_a_fresh_contact_block() -> None:
     assert "still fresh" not in contact_note
 
 
-def test_a_listed_name_matching_no_roster_mp_is_reported_not_fatal() -> None:
+def test_a_listed_name_matching_no_roster_mp_is_quarantined_not_merely_reported() -> None:
     """The listing is the Bundestag's own roster, so a name that resolves to
-    nobody means the Stammdaten snapshot is behind (§7.3) — which the
-    quarantine already retries. It must not fail the stage."""
+    nobody means the Stammdaten snapshot is behind (§7.3). It must not fail the
+    stage — and it must actually reach the quarantine.
+
+    GAP-027: the note below has always claimed the quarantine retries these,
+    while `portrait_enrichment` only logged them. Asserting the note alone is
+    what let that gap survive, so this asserts the mechanism as well as the
+    message.
+    """
     profiles = StubProfiles([profile("Nichtexistent, Erika")])
     pipeline, _ = build(profiles=profiles)
     report = RunReport(21, "sync")
@@ -540,6 +588,30 @@ def test_a_listed_name_matching_no_roster_mp_is_reported_not_fatal() -> None:
     stage = report.stages[-1]
     assert stage.ok
     assert any("match no roster MP" in note for note in stage.notes)
+    (entry,) = pipeline.state.quarantine.for_source("mp-listing")
+    assert entry.nachname == "Nichtexistent"
+
+
+def test_a_quarantined_listing_entry_clears_once_the_dump_catches_up() -> None:
+    """What the quarantine is *for*, closing GAP-027's loop.
+
+    An entry only earns its keep if a later run retries it: the roster is
+    re-read every sync, and `clear_resolved` drops whatever the fresher dump
+    can now resolve. Without that, quarantining would just be a second place to
+    write the same log line.
+    """
+    state = SyncState()
+    state.quarantine.add(
+        QuarantinedName(source="mp-listing", nachname="Bilger", vorname="Steffen", wahlperiode=21)
+    )
+    pipeline, _ = build(state=state)
+    report = RunReport(21, "sync")
+
+    # The roster stage re-reads the dump and clears what now resolves.
+    pipeline.load_roster(report)
+
+    assert pipeline.state.quarantine.for_source("mp-listing") == []
+    assert any("now match the roster" in note for note in report.stages[0].notes)
 
 
 def test_one_unreadable_biography_page_does_not_end_the_stage() -> None:
@@ -560,7 +632,7 @@ def test_one_unreadable_biography_page_does_not_end_the_stage() -> None:
 
     stage = report.stages[-1]
     assert stage.ok
-    assert pipeline.state.contact_is_stale("bt-11004011")
+    assert pipeline.state.contact_is_stale("bt-11004011", 21)
     assert any("retry next sync" in note for note in stage.notes)
 
 
@@ -600,6 +672,81 @@ def test_enrichment_runs_after_the_crosswalk_so_the_roster_carries_both() -> Non
     rows = [row for call in loader.posted("mps") for row in call["mps"]]
     bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
     assert bilger["photoUrl"] is not None
+
+
+def test_an_ordinary_sync_inside_the_ttl_publishes_no_enrichment_null(tmp_path) -> None:
+    """The 2026-07-29 outage, reproduced end to end at the level it happened.
+
+    This is the scenario the incident actually took, rather than the unit
+    behind it: every member stamped fresh (as they were, at 08:31–08:42 UTC),
+    then an ordinary `sync` — which is what ran at 11:11:58 and left the
+    chamber blank two minutes later. Three writes post the roster in one run
+    (stage 1, the crosswalk, then enrichment), and the failure was that the
+    *first* of them carried five explicit nulls, which the Convex upsert
+    applies as erasures (`webapp/convex/lib/ingest.ts:123`).
+
+    So the assertion is over **every** roster post, not the last one. Checking
+    only the final write would pass against the exact code that took 633
+    portraits and 623 contact blocks to zero: the last post was never the
+    problem, the two before it were.
+    """
+    url = "https://www.bundestag.de/abgeordnete/biografien/B/bilger-1"
+    profiles = StubProfiles([profile("Bilger, Steffen", url)])
+    state = SyncState()
+    # Exactly the starved state the incident ran against: fetched hours ago, so
+    # `CONTACT_TTL` says fresh and stage 3 fetches nothing.
+    for internal in ("bt-11004011", "bt-11002718", "bt-11003142", "bt-11003639"):
+        state.record_contact_fetch(internal, 21)
+    pipeline, loader = build(profiles=profiles, state=state, tmp_path=tmp_path)
+
+    sync(21, pipeline=pipeline)
+
+    assert profiles.fetched == [], "the premise: the TTL suppressed every contact fetch"
+    posts = loader.posted("mps")
+    assert len(posts) >= 2, "the roster is posted more than once per run — that is the hazard"
+    for index, call in enumerate(posts):
+        for row in call["mps"]:
+            for column in ("photoUrl", "photoCredit", "education", "occupation", "contact"):
+                assert row.get(column, "absent") is not None, (
+                    f"roster post {index} sends {column}=null for {row['internalId']}, "
+                    "which erases what an earlier run stored"
+                )
+
+
+def test_a_historical_backfill_does_not_mark_the_current_period_fresh() -> None:
+    """GAP-026: the TTL is per mandate, so one period cannot starve another.
+
+    Measured consequence of the bare-id key: a `backfill --wp 19` running
+    against production stamped every member it fetched, and the members who
+    also sit in WP21 were then "fresh" for 30 days — so the next WP21 sync
+    fetched no contact page for them at all. WP20 held 0 contact blocks and 0
+    portraits while WP19 was still backfilling.
+
+    Asserted through `contact_is_stale` rather than on the dict, because the
+    guarantee is about what the *gate* answers: the stamps may share a file, but
+    they must not share a meaning.
+    """
+    state = SyncState()
+
+    state.record_contact_fetch("bt-11004011", 19)
+
+    assert not state.contact_is_stale("bt-11004011", 19), "the period that was fetched is fresh"
+    assert state.contact_is_stale("bt-11004011", 21), "the current period must still be due"
+
+
+def test_a_pre_scoping_stamp_is_read_as_stale_rather_than_adopted() -> None:
+    """The migration case, and why it errs towards a re-read.
+
+    Deployed state files hold bare-id stamps written before the key carried a
+    period, and they are genuinely ambiguous — the same dict mixed a WP21 sync's
+    stamps with a WP19 backfill's. Of the two ways to guess wrong, reading them
+    as current re-creates exactly the starvation the new key exists to end,
+    while reading them as stale costs one wider fetch, once. That is the trade
+    `load_state` already makes for a corrupt file.
+    """
+    state = SyncState(contact_fetched_at={"bt-11004011": datetime.now(dt.UTC).isoformat()})
+
+    assert state.contact_is_stale("bt-11004011", 21)
 
 
 # --- the watermark --------------------------------------------------------

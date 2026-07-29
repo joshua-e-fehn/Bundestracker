@@ -244,6 +244,67 @@ def test_historical_names_are_indexed_too(dump) -> None:
         assert index.lookup(name.nachname, name.vorname) == alber.id
 
 
+def test_a_forename_ending_in_middle_initials_matches_either_spelling() -> None:
+    """GAP-027: `Hoffmann, Philip M. A.` and `Giersch, Alexis L.` were
+    permanently unenrichable.
+
+    Stammdaten stores the initials; the source that prints only the first given
+    name does not, and the two are the same human. Both spellings are indexed —
+    from the stored side, so the strict form keeps working for a source that
+    does print them in full.
+
+    Measured against the live dump: exactly two WP21 forenames end in initials,
+    and indexing both spellings introduces **no** ambiguous key in WP18–21.
+    """
+    roster = StammdatenDump(
+        mps=[
+            MP(
+                id="11005487",
+                names=[MPName(nachname="Hoffmann", vorname="Philip M. A.")],
+                mandates=[Mandate(wahlperiode=21)],
+            )
+        ]
+    )
+    index = NameIndex(roster, wahlperiode=21)
+
+    assert index.lookup("Hoffmann", "Philip") == "11005487"
+    # …and the stored spelling still resolves, which is the half a normalise-
+    # the-query fix would have broken.
+    assert index.lookup("Hoffmann", "Philip M. A.") == "11005487"
+
+
+def test_a_second_given_name_is_not_mistaken_for_an_initial() -> None:
+    """The reason the pattern requires a period and an anchor.
+
+    `Anna Maria` and `Anna` are different people's names, not two spellings of
+    one. A rule that stripped any trailing token would merge them, and a
+    wrongly-merged name resolves to a real MP who is the wrong human — which is
+    the failure mode §7.1 says is worse than a gap, because nothing downstream
+    can detect it.
+    """
+    roster = StammdatenDump(
+        mps=[
+            MP(
+                id="11000001",
+                names=[MPName(nachname="Schmidt", vorname="Anna Maria")],
+                mandates=[Mandate(wahlperiode=21)],
+            ),
+            # A forename that *begins* with an initial: the anchor is what stops
+            # the pattern eating it and leaving an empty key.
+            MP(
+                id="11000002",
+                names=[MPName(nachname="Weber", vorname="A. Beatrix")],
+                mandates=[Mandate(wahlperiode=21)],
+            ),
+        ]
+    )
+    index = NameIndex(roster, wahlperiode=21)
+
+    assert index.lookup("Schmidt", "Anna") is None
+    assert index.lookup("Schmidt", "Anna Maria") == "11000001"
+    assert index.lookup("Weber", "A. Beatrix") == "11000002"
+
+
 def test_an_unmatched_name_returns_none_rather_than_a_guess(dump) -> None:
     # §7.3 asks for unmatched rows to be quarantined and retried on a later
     # sync, which requires the gap to be visible.

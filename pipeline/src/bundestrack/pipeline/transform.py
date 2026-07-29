@@ -392,9 +392,19 @@ def portrait_enrichment(
     Bundestag's own side, so a name here that resolves to nobody means the
     Stammdaten snapshot is behind (§7.3), not that the MP is fictitious.
 
-    Measured live on 2026-07-27: 635 of 639 resolve, none ambiguously. The four
-    misses are middle initials and MPs missing from the dump entirely — see
-    `models.enrichment.normalise_printed_name`.
+    Measured live on 2026-07-27: 635 of 639 resolved, none ambiguously. Two of
+    the four misses were middle initials (`Hoffmann, Philip M. A.`;
+    `Giersch, Alexis L.`), which `MPName.forename_variants` now indexes; the
+    rest are MPs missing from the dump entirely, which only a fresher dump
+    fixes.
+
+    ⚠ **A miss is quarantined, not merely returned.** These are entries in the
+    Bundestag's own listing of the sitting chamber, so one that resolves to
+    nobody names a real member the Stammdaten snapshot is behind on (§7.3) —
+    and until this routed them to `resolve_listed_name`, the stage's own note
+    said the quarantine retried them while nothing ever put them there. The
+    return value is unchanged and still drives that note; the quarantine is
+    what makes the retry real.
 
     An MP whose portrait had no photographer credit arrives here with
     `portrait=None` (the parser drops it, §6.5) and still yields an entry: the
@@ -406,9 +416,14 @@ def portrait_enrichment(
     for profile in profiles:
         name = normalise_printed_name(profile.printed_name)
         if name is None:
+            # No comma at all — the listing's non-MP teaser (a section header,
+            # a promotional card). There is no name here to quarantine, so this
+            # is reported as unmatched without claiming a member is missing.
             unmatched.append(profile.printed_name)
             continue
-        internal = resolver.resolve_printed_name(name.nachname, name.vorname, name.particle)
+        internal = resolver.resolve_listed_name(
+            name.nachname, name.vorname, name.particle, context=profile.profile_url
+        )
         if internal is None:
             unmatched.append(profile.printed_name)
             continue

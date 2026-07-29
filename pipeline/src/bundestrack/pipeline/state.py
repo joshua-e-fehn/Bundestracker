@@ -24,11 +24,18 @@ A JSON file beside the pipeline, holding three things:
   is re-downloaded every sync regardless, since there is no metadata endpoint
   to ask first.
 
-- **When each MP's contact block was last fetched** — the biography pages are
-  ~280 KB each and there are 639 of them, so re-reading the lot every sync is
-  ~175 MB through a WAF that counts bytes (§2.6). There is no hash and no
+- **When each mandate's contact block was last fetched** — the biography pages
+  are ~280 KB each and there are 639 of them, so re-reading the lot every sync
+  is ~175 MB through a WAF that counts bytes (§2.6). There is no hash and no
   `Last-Modified` to gate on the way protocols have `xml_hash`, so the gate is
   age: `contact_is_stale`. See `CONTACT_TTL`.
+
+  Keyed `<wahlperiode>:<internal id>`, and for the same reason the watermarks
+  are keyed per stream: a shared key lets one run's success suppress a fetch a
+  *different* run still needs. Contact blocks land on the mandate row, which is
+  per period — so a bare-id stamp written by a historical backfill marked the
+  current period fresh, and the chamber a reader is actually looking at went
+  unenriched. See `contact_key`.
 
 A file rather than a Convex table on purpose: it is operational state about
 *fetching*, not data about parliament, and the sync must be able to decide what
@@ -95,8 +102,16 @@ class SyncState(BaseModel):
     #: (§4.1), so an incremental run cannot ask the server for new ballots — it
     #: pages from the newest and stops at the first one in here.
     ingested_ballot_keys: dict[str, list[str]] = Field(default_factory=dict)
-    #: internal id → when that MP's contact block was last fetched, ISO 8601.
-    #: The gate on a ~280 KB-per-MP re-read — see `CONTACT_TTL`.
+    #: `<wahlperiode>:<internal id>` → when that mandate's contact block was
+    #: last fetched, ISO 8601. The gate on a ~280 KB-per-MP re-read — see
+    #: `CONTACT_TTL`.
+    #:
+    #: ⚠ **Keyed by period, not by human.** An MP who sat in WP20 and sits in
+    #: WP21 is two mandate rows (`mps` is keyed `(internalId, wahlperiode)`),
+    #: and each carries its own contact block. A bare-id key made one stamp
+    #: speak for both, so a historical backfill that fetched a member's page
+    #: for WP20 marked the *current* period fresh and starved stage 3 of the
+    #: period a reader is actually looking at. See `contact_key`.
     contact_fetched_at: dict[str, str] = Field(default_factory=dict)
     #: When the last run finished. Reported by `status`, never used as a
     #: watermark — see the module docstring for why that distinction matters.
@@ -187,18 +202,45 @@ class SyncState(BaseModel):
 
     # -- contact freshness -------------------------------------------------
 
-    def contact_is_stale(self, internal: str, *, now: datetime | None = None) -> bool:
-        """Whether this MP's biography page is worth re-reading.
+    @staticmethod
+    def contact_key(internal: str, wahlperiode: int) -> str:
+        """What one mandate's contact freshness is remembered under.
 
-        True for an MP never fetched, which is what makes a first run fetch
+        Period-scoped for the same reason `mps` is keyed `(internalId,
+        wahlperiode)`: the row a contact block lands on is the *mandate*, not
+        the human, and an MP re-elected into the next period has two of them.
+
+        Before this, one bare-id stamp spoke for every period at once, and the
+        consequence was not theoretical — a WP19 backfill running against
+        production stamped members who also sit in WP21, so the next WP21 sync
+        found them "fresh", fetched nothing, and left the current chamber's
+        contact blocks unfilled. The period a reader is looking at was starved
+        by a fetch for a period nobody was looking at.
+        """
+        return f"{wahlperiode}:{internal}"
+
+    def contact_is_stale(
+        self, internal: str, wahlperiode: int, *, now: datetime | None = None
+    ) -> bool:
+        """Whether this mandate's biography page is worth re-reading.
+
+        True for a mandate never fetched, which is what makes a first run fetch
         everyone. After that it is age against `CONTACT_TTL` — the pages carry
         no hash or `Last-Modified` to ask a cheaper question with.
 
         An unparseable stamp is treated as stale rather than fresh: the cost of
         being wrong is one ~280 KB re-read, against a contact block that would
         otherwise never refresh again.
+
+        A stamp written before the key carried a period is likewise read as
+        stale rather than adopted into one. It genuinely is ambiguous — the
+        same dict held stamps from a WP21 sync and a WP19 backfill alike — and
+        of the two ways to be wrong, guessing "current" re-creates exactly the
+        starvation this key exists to end, while guessing "stale" costs one
+        wider fetch, once. That is the trade this file already makes for a lost
+        state file (see the module docstring).
         """
-        stamp = self.contact_fetched_at.get(internal)
+        stamp = self.contact_fetched_at.get(self.contact_key(internal, wahlperiode))
         if not stamp:
             return True
         try:
@@ -208,15 +250,21 @@ class SyncState(BaseModel):
             return True
         return (now or datetime.now(UTC)) - fetched >= CONTACT_TTL
 
-    def record_contact_fetch(self, internal: str, *, now: datetime | None = None) -> None:
-        """Mark an MP's contact block as fetched, whatever it contained.
+    def record_contact_fetch(
+        self, internal: str, wahlperiode: int, *, now: datetime | None = None
+    ) -> None:
+        """Mark one mandate's contact block as fetched.
 
-        Recorded for an *empty* result too. Roughly half of MPs list no
-        constituency office, and a pipeline that only stamped non-empty
-        responses would re-read those pages on every sync forever — paying the
-        full ~280 KB to rediscover the same absence.
+        ⚠ Only for a fetch that actually *parsed* a block — see
+        `MPContact.is_empty` and the call site in `pipeline.sync._load_contacts`.
+        A 200 carrying no contact block at all is a page this pipeline failed to
+        read, not a member with nothing published, and stamping the two alike
+        made the failures permanent: an unparsed page was marked fresh for 30
+        days, so the MPs it affected never retried.
         """
-        self.contact_fetched_at[internal] = (now or datetime.now(UTC)).isoformat()
+        self.contact_fetched_at[self.contact_key(internal, wahlperiode)] = (
+            now or datetime.now(UTC)
+        ).isoformat()
 
     # -- ballots -----------------------------------------------------------
 

@@ -324,13 +324,22 @@ class Pipeline:
         3. **Contact** — one ~280 KB biography page per MP. 639 of those is
            ~175 MB through a WAF that counts bytes (§2.6), so this is gated on
            `state.contact_is_stale` and a daily sync refreshes a thirtieth of
-           the roster rather than all of it.
+           the roster rather than all of it. That gate is scoped to *this*
+           period (`state.contact_key`): the stamps are per mandate, so a
+           historical backfill cannot report the current chamber as fresh.
 
         Everything is attached to the resolver rather than posted directly, and
         the roster is re-posted at the end. That is not an optimisation: the
         `mps` upsert is the write that carries these columns
         (`transform.mp_payload`), and it runs again on the next sync — so a
         separately-written `photoUrl` would survive exactly until then.
+
+        The three sources arrive at different rates on purpose, and what makes
+        that safe is that `mp_payload` **omits** a column this run did not
+        resolve rather than sending it as null (see the ⚠ there). Without that,
+        the cheap sources would blank the expensive one on every sync — which
+        is what took every portrait and contact block in production to zero on
+        2026-07-29.
 
         Placed after `link_dip_persons` for the same reason it re-posts: that
         stage already re-posts the roster to patch in the crosswalk, and going
@@ -353,11 +362,13 @@ class Pipeline:
             # Not an error, and specifically not a reason to fail the stage:
             # the listing is the Bundestag's own roster, so a name here that
             # resolves to nobody means the Stammdaten snapshot is behind
-            # (§7.3), which the quarantine already retries.
+            # (§7.3). `portrait_enrichment` has quarantined each one, so the
+            # retry this note describes is now something the code does rather
+            # than something it asserts.
             stage.notes.append(
-                f"{len(unmatched)} listed names match no roster MP — the Stammdaten "
-                f"snapshot is behind (§7.3): {', '.join(sorted(unmatched)[:6])}"
-                + (" …" if len(unmatched) > 6 else "")
+                f"{len(unmatched)} listed names match no roster MP and are quarantined for a "
+                f"later sync — the Stammdaten snapshot is behind (§7.3): "
+                f"{', '.join(sorted(unmatched)[:6])}" + (" …" if len(unmatched) > 6 else "")
             )
 
         politicians = parse_politicians(self.abgeordnetenwatch.iter_politicians())
@@ -391,6 +402,16 @@ class Pipeline:
         One page failing is noted and stepped over rather than ending the
         stage. Its timestamp is not recorded, so the next sync retries it —
         the same rule `load_speeches` applies to an unreadable protocol.
+
+        ⚠ **A page that parsed to nothing counts as a failure, not a success.**
+        Every WP21 MP has a contact form — `form_url` alone makes a block
+        non-empty, and 623 of 635 carried one when production was last measured
+        — so an entirely empty result is this pipeline failing to read the page,
+        not the Bundestag publishing nothing. Stamping it anyway is what made
+        the 12 empty blocks permanent: marked fresh for `CONTACT_TTL`, they
+        were never retried, and the stage reported them as pages successfully
+        fetched. `MPContact.is_empty` is therefore the retry condition as well
+        as a reporting one.
         """
         due: list[tuple[str, str]] = []
         fresh = 0
@@ -404,14 +425,15 @@ class Pipeline:
                 # an unmatched name has no contact block to be fresh or stale,
                 # and folding it into the skipped count would report a name the
                 # roster has never heard of as an MP whose page was up to date.
+                # `portrait_enrichment` has already quarantined it (§7.3).
                 continue
-            if full or self.state.contact_is_stale(internal):
+            if full or self.state.contact_is_stale(internal, self.wahlperiode):
                 due.append((internal, profile.profile_url))
             else:
                 fresh += 1
 
         fetched = 0
-        published = 0
+        empty = 0
         failed = 0
         for internal, url in due:
             try:
@@ -420,17 +442,30 @@ class Pipeline:
                 failed += 1
                 logger.warning("Contact page %s failed: %s", url, error)
                 continue
+            if contact.is_empty:
+                # Not stamped, so the next sync retries it. See the ⚠ above:
+                # every sitting member has at least a contact form, so nothing
+                # parsed means the page was not read — a markup change, a
+                # truncated response, a WAF body that answered 200.
+                empty += 1
+                logger.warning(
+                    "Contact page %s parsed to an empty block — not stamping it, so the next "
+                    "sync retries. Every sitting MP publishes at least a contact form, so this "
+                    "is a page this pipeline failed to read rather than a member with none.",
+                    url,
+                )
+                continue
             resolver.attach_enrichment([transform.contact_enrichment(internal, contact)])
-            # Stamped even when the page published nothing: about half of MPs
+            # Stamped for a block that parsed, however sparse: about half of MPs
             # list no constituency office, and re-reading 280 KB every sync to
-            # rediscover the same absence is the cost this gate exists to avoid.
-            self.state.record_contact_fetch(internal)
+            # rediscover that is the cost this gate exists to avoid. A form URL
+            # and nothing else is a real, complete answer.
+            self.state.record_contact_fetch(internal, self.wahlperiode)
             fetched += 1
-            if not contact.is_empty:
-                published += 1
 
-        note = f"contact: {fetched} biography pages fetched, {published} with published details" + (
-            f", {failed} failed and retry next sync" if failed else ""
+        retrying = failed + empty
+        note = f"contact: {fetched} biography pages fetched with published details" + (
+            f", {retrying} published nothing or failed and retry next sync" if retrying else ""
         )
         return note + (f", {fresh} still fresh (<{CONTACT_TTL.days} days)" if fresh else "")
 
