@@ -1,0 +1,113 @@
+# The gates that already exist, run on every push and pull request.
+#
+# Nothing here is a new rule. `pixi run lint`, `typecheck`, `test` and `build`
+# are the four tasks pixi.toml already defines and AGENTS.md already documents;
+# this file only makes a machine run them before a branch is merged rather than
+# trusting whoever opened it to have run them locally. Adding a fifth gate here
+# that does not exist as a pixi task would put the CI definition and the local
+# one out of step, which is the failure this is meant to prevent.
+#
+# ## Two package managers, and only two
+#
+# Pixi owns the Python environment and is the entry point for every task; Bun
+# resolves the JS. Bun is not on conda-forge (see the note in pixi.toml), so it
+# is installed by its own action rather than by pixi — that is the one place the
+# two-tool story shows through. Never npm, pnpm or yarn: the lockfile is
+# `bun.lock` and a run that reached for another manager would resolve a
+# different dependency tree than the one that was tested.
+#
+# Both installs are lockfile-strict. `setup-pixi` passes `--locked` by default
+# when `pixi.lock` is present, and `bun install --frozen-lockfile` fails rather
+# than updating `bun.lock` — so a lockfile that has drifted from its manifest
+# fails here instead of silently making CI test a dependency set nobody has.
+#
+# ## Why one job rather than four parallel ones
+#
+# The four gates share an install, and installing pixi + the Python env + 500
+# npm packages costs more than the gates themselves do (the whole suite runs in
+# well under a minute once installed). Four jobs would pay that four times for a
+# little wall-clock. They also share an ordering that matters: lint and
+# typecheck fail fast and read clearly, so putting the build last means the
+# expensive step only runs on a tree that has already passed the cheap ones.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A force-push or a second push to a PR makes the previous run's answer
+# irrelevant. Cancelling it keeps the queue honest about what is actually being
+# tested. `main` is excluded by the ref in the key only insofar as each of its
+# commits gets its own group, so pushes to main never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: lint · typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned exactly, as setup-pixi's own README asks: pixi is pre-1.0 and
+      # the action's API may change between minor versions.
+      - name: Install pixi
+        uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          pixi-version: v0.73.0
+          cache: true
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Not `pixi run install-web`: that task wraps a plain `bun install`, and
+      # CI wants the frozen variant so a stale `bun.lock` is an error rather
+      # than something the run quietly fixes for itself.
+      - name: Install JS dependencies
+        working-directory: webapp
+        run: bun install --frozen-lockfile
+
+      # `convex/_generated` is committed (see webapp/.gitignore) because it
+      # cannot be regenerated without deployment credentials, which CI does not
+      # have and a fork's PR must not be given. This asserts the checked-in copy
+      # still matches the module list on disk — the one way it drifts without
+      # a deployment, and the one that breaks a clean checkout's typecheck.
+      - name: Check committed Convex codegen is current
+        run: pixi run check-codegen
+
+      - name: Lint (Ruff + Biome)
+        run: pixi run lint
+
+      - name: Typecheck (tsc --noEmit)
+        run: pixi run typecheck
+
+      - name: Test (pytest + bun test)
+        run: pixi run test
+
+      # The production build, with the two Convex URLs `bun run build` needs at
+      # *build* time — `lib/auth-server.ts` validates them while Next.js
+      # collects page data, so the build fails outright without them (see
+      # webapp/.env.example). They are placeholders and no request is made to
+      # them: nothing is rendered against live data here, and a real URL would
+      # be a secret this workflow deliberately does not hold.
+      #
+      # No `CONVEX_DEPLOY_KEY`, which is what makes this build-only.
+      # `scripts/convex-deploy-if-key.sh` skips the Convex deploy when the key
+      # is unset, so this is exactly the Vercel *preview* build — the
+      # production-equivalent compile of every route, with no deployment.
+      - name: Build (production-equivalent, no deploy)
+        run: pixi run build
+        env:
+          NEXT_PUBLIC_CONVEX_URL: https://placeholder.convex.cloud
+          NEXT_PUBLIC_CONVEX_SITE_URL: https://placeholder.convex.site
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
