@@ -318,6 +318,61 @@ def test_the_portrait_reaches_the_roster_upsert_rather_than_a_write_of_its_own()
     assert bilger["photoCredit"] == "Foto/Fraktion"
 
 
+def test_a_roster_post_with_no_enrichment_omits_the_columns_rather_than_nulling_them() -> None:
+    """The regression behind the 2026-07-29 production outage.
+
+    The Convex upsert patches exactly the keys present
+    (`webapp/convex/lib/ingest.ts:123`), so a column sent as null *clears* the
+    stored value. Stage 1 always builds its payload from a freshly-constructed
+    resolver holding no enrichment, which means every run opens by re-posting
+    the whole roster — and while those posts carried explicit nulls, that
+    opening write blanked every portrait and contact block in the chamber.
+    Production went from 633 portraits to 0 in one batch at 11:13:56 UTC and
+    rendered initials for all 635 members.
+
+    So the assertion is specifically about *absence*, not about the value: a
+    payload carrying `photoUrl: None` would satisfy any check that the portrait
+    is falsy while still destroying the stored one.
+    """
+    pipeline, loader = build()
+    report = RunReport(21, "sync")
+
+    pipeline.load_roster(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
+    for column in ("photoUrl", "photoCredit", "education", "occupation", "contact"):
+        assert column not in bilger, f"{column} would clear the stored value"
+    # The Stammdaten columns are unconditional: that source is read in full on
+    # every run, so those keys are always present and always authoritative.
+    assert bilger["name"] == "Steffen Bilger"
+    assert bilger["fraktion"] == "CDU/CSU"
+
+
+def test_a_portrait_only_refresh_leaves_the_contact_block_alone() -> None:
+    """Per column, not all-or-nothing.
+
+    The sources arrive at different rates by design: the portrait listing is
+    cheap and re-read every sync, while the ~280 KB biography pages are gated
+    on a 30-day TTL (`state.CONTACT_TTL`). A sync that refreshed only the
+    portraits must not blank the contact block it deliberately did not fetch —
+    which is what made the outage persist rather than heal on the next run.
+    """
+    profiles = StubProfiles([profile("Bilger, Steffen")])
+    pipeline, loader = build(profiles=profiles)
+    report = RunReport(21, "sync")
+    pipeline.load_roster(report)
+    # Every MP inside the TTL, so `_load_contacts` fetches nothing at all.
+    pipeline.state.contact_fetched_at["bt-11004011"] = datetime.now(dt.UTC).isoformat()
+
+    pipeline.load_enrichment(report)
+
+    rows = [row for call in loader.posted("mps") for row in call["mps"]]
+    bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
+    assert bilger["photoUrl"] == "https://www.bundestag.de/resource/image/1.jpg"
+    assert "contact" not in bilger, "a fresh contact block would be cleared"
+
+
 def test_occupation_joins_by_stammdaten_id_rather_than_by_name() -> None:
     """abgeordnetenwatch carries the Stammdaten id verbatim, so §7.1 does not
     apply to this source — the join is exact and needs no name at all."""
@@ -473,7 +528,12 @@ def test_one_unreadable_biography_page_does_not_end_the_stage() -> None:
 def test_an_uncredited_portrait_never_reaches_the_row() -> None:
     """§6.5: these are photographer-credited works, not open-licensed ones, so
     showing the credit is the licence condition. A portrait without one is
-    dropped rather than rendered bare."""
+    dropped rather than rendered bare.
+
+    Dropped means *omitted*, not nulled: the columns are absent from the
+    payload, so an uncredited portrait cannot overwrite a credited one an
+    earlier run stored. See the roster-post test above.
+    """
     profiles = StubProfiles([profile("Bilger, Steffen", credit=None)])
     pipeline, loader = build(profiles=profiles)
     report = RunReport(21, "sync")
@@ -483,8 +543,8 @@ def test_an_uncredited_portrait_never_reaches_the_row() -> None:
 
     rows = [row for call in loader.posted("mps") for row in call["mps"]]
     bilger = [row for row in rows if row["internalId"] == "bt-11004011"][-1]
-    assert bilger["photoUrl"] is None
-    assert bilger["photoCredit"] is None
+    assert "photoUrl" not in bilger
+    assert "photoCredit" not in bilger
 
 
 def test_enrichment_runs_after_the_crosswalk_so_the_roster_carries_both() -> None:

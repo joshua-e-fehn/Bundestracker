@@ -39,10 +39,30 @@ import { mpInput, scoreBreakdown } from "./schema"
 
 /** The public shape of an MP. Convex's system fields are dropped: `internalId`
  * is the identifier every other table and every URL uses, so exposing `_id`
- * too would invite a second one into the frontend. */
-const mpDoc = v.object({ ...mpInput, createdAt: v.number(), updatedAt: v.number() })
+ * too would invite a second one into the frontend.
+ *
+ * `photoUrl` is re-declared as required-but-nullable rather than inherited from
+ * `mpInput`, because the write shape and the read shape want opposite things
+ * here. On the way *in* the column is optional so the pipeline can omit a
+ * portrait it did not resolve instead of nulling the stored one
+ * (convex/schema.ts:202) — that omission is the whole fix for the 2026-07-29
+ * blanking. On the way *out* an absent key would make every consumer handle a
+ * third state that means exactly what `null` already means, so `toMpDoc`
+ * normalises it and the eight components rendering portraits keep the
+ * `string | null` they were written against. */
+export const mpDoc = v.object({
+  ...mpInput,
+  photoUrl: v.union(v.null(), v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
 
-const toMpDoc = withoutSystemFields<"mps">
+/** Drops the system fields and fills in the read shape's one total column —
+ * see `mpDoc` on why `photoUrl` is nullable here but optional in storage. */
+function toMpDoc(row: Doc<"mps">) {
+  const doc = withoutSystemFields<"mps">(row)
+  return { ...doc, photoUrl: doc.photoUrl ?? null }
+}
 
 // --- lookup ---------------------------------------------------------------
 

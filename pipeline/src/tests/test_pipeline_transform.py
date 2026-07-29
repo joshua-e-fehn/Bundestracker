@@ -131,11 +131,17 @@ def test_an_unmapped_group_is_passed_through_and_warned_about(
 
 
 def test_the_roster_payload_matches_the_convex_mp_shape(resolver) -> None:
-    """Every nullable field is *present* as null, never omitted.
+    """Every nullable *Stammdaten* field is present as null, never omitted.
 
     The Convex validators require it (webapp/convex/schema.ts): a forgotten key
     is a 400 naming the field, which is the point — but only if the transform
     emits the key at all.
+
+    The enrichment columns are the deliberate exception and are asserted
+    separately below: they come from sources a given run may not have reached,
+    and the same upsert that makes a present key authoritative makes a null one
+    destructive. Stammdaten, by contrast, is re-read in full every run, so
+    these keys are always both present and authoritative.
     """
     payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
     bilger = payloads["bt-11004011"]
@@ -148,8 +154,25 @@ def test_the_roster_payload_matches_the_convex_mp_shape(resolver) -> None:
     # An open `end` means still serving, and must stay distinguishable from a
     # date — that is how §6.2 reconciles 635 mandate rows to 630 seats.
     assert bilger["datesInOffice"] == {"start": "2025-03-25", "end": None}
-    for nullable in ("ortsZusatz", "praefix", "photoUrl", "constituency", "education"):
+    for nullable in ("ortsZusatz", "praefix", "constituency"):
         assert nullable in bilger, nullable
+
+
+def test_an_unenriched_roster_payload_omits_the_enrichment_columns(resolver) -> None:
+    """The inverse of the rule above, and the one that broke production.
+
+    `roster_payloads` is called by stage 1 with a resolver that holds no
+    enrichment yet — every run starts that way. The Convex upsert patches the
+    keys present (`webapp/convex/lib/ingest.ts:123`), so emitting these as null
+    made that opening write erase what earlier runs had learned: on 2026-07-29
+    it took 633 stored portraits to 0 and left the live site rendering initials
+    for the whole chamber.
+    """
+    payloads = {p["internalId"]: p for p in transform.roster_payloads(resolver)}
+    bilger = payloads["bt-11004011"]
+
+    for enriched in ("photoUrl", "photoCredit", "education", "occupation", "contact"):
+        assert enriched not in bilger, enriched
 
 
 def test_the_display_name_carries_the_ortszusatz_because_it_disambiguates(
