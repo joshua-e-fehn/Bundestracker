@@ -45,19 +45,37 @@ fails loudly at build time instead.
 
 The side effect was that `bun run build` could not run at all without a
 configured deployment, which made the repo's own build gate unrunnable by CI and
-by anyone who had just cloned. `scripts/build-env-defaults.sh` closes that:
+by anyone who had just cloned. `scripts/build-env-defaults.sh` closes that, and
+the exact rule is the point:
 
-- it fills in a well-formed `placeholder-build-check-000` pair **only when the
-  variables are unset or empty**, so a real value always wins — Vercel's
-  dashboard values are never touched;
-- the placeholder is a public value by construction (`NEXT_PUBLIC_*` is inlined
-  into the browser bundle) and is never contacted, since no route here is
-  prerendered against live data;
-- it announces itself on stderr, because a placeholder build is a **compile
-  check, not something deployable**.
+| `NEXT_PUBLIC_CONVEX_URL` / `…_SITE_URL` | deploying? | result |
+|---|---|---|
+| both set | either | passed through untouched |
+| **exactly one set** | either | **exit 1** — never substitutes |
+| neither set | yes | **exit 1** — a shipped build must name its backend |
+| neither set | no | placeholder pair; compile check only |
 
-`scripts/build-env-defaults.test.ts` runs the script for real and pins both
-directions — the fill-in and, more importantly, the never-override.
+"Deploying" means `CONVEX_DEPLOY_KEY`, `VERCEL` or `VERCEL_ENV` is set. Only the
+last row substitutes anything, so a placeholder can only reach a build whose
+output nobody will serve.
+
+The two refusals exist because the alternative is worse than a failed build. A
+half-configured pair means somebody set one variable and mistyped or forgot the
+other — they are configuring a real deployment, and silently discarding their
+value would be the least helpful possible response. And with `CONVEX_DEPLOY_KEY`
+set, `scripts/convex-deploy-if-key.sh` has *already deployed the backend* by the
+time this runs, so a placeholder frontend would ship beside a real deployment:
+the site loads, every query returns nothing, and a real ballot renders "does not
+exist". That is the exact failure `lib/convex-url.ts` was written to prevent.
+
+The placeholder itself is a public value by construction (`NEXT_PUBLIC_*` is
+inlined into the browser bundle), is never contacted since no route here is
+prerendered against live data, and announces itself on stderr — a placeholder
+build is a **compile check, not something deployable**.
+
+`scripts/build-env-defaults.test.ts` runs the real script in a real subprocess
+across every cell of that matrix — 21 tests, including the never-override case
+and the deploy-key-plus-half-pair case that this rule was added for.
 
 `.env.example` lists the auth secrets; those are set on the Convex deployment
 with `bunx convex env set`, not in a file, and nothing in the build path reads

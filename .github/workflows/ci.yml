@@ -110,5 +110,11 @@ jobs:
       # scripts/convex-deploy-if-key.sh skips the Convex deploy when the key is
       # unset, so this is precisely the Vercel *preview* build — every route
       # compiled, nothing deployed, and no secret held by this workflow.
+      #
+      # That absence is load-bearing in the other direction too. The placeholder
+      # is only substituted for a build that is going nowhere: with a deploy key
+      # present, or on Vercel, build-env-defaults.sh refuses instead. So if this
+      # workflow ever gains a deploy key, this step starts failing until it also
+      # gains the two real URLs — which is the correct order to discover that.
       - name: Build (production-equivalent, no deploy)
         run: pixi run build

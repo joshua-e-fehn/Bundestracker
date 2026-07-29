@@ -39,8 +39,10 @@ things make that true:
   `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` are validated at
   **build** time (`webapp/lib/convex-url.ts`), so `bun run build` used to fail
   outright without them; `webapp/scripts/build-env-defaults.sh` supplies a
-  well-formed pair **only when they are unset**, so a real deployment URL is
-  never overridden and the validator is untouched.
+  well-formed pair **only when both are unset and the build is not deploying**.
+  A half-configured pair, or any build carrying `CONVEX_DEPLOY_KEY`, `VERCEL` or
+  `VERCEL_ENV`, still fails loudly — a shipped build must name its real backend,
+  and the validator is untouched.
 
 The full argument for both is in `webapp/README.md`.
 
