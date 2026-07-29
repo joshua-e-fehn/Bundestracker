@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { api } from "@/convex/_generated/api"
-import { formatNumber, formatPercent, stateOf } from "@/lib/bundestag"
+import { formatNumber, formatPercent, occupationOf, stateOf } from "@/lib/bundestag"
 import { scoreCeiling } from "@/lib/format"
 import type { TranslationKey } from "@/lib/i18n"
 import { foldName } from "@/lib/search"
@@ -81,12 +81,27 @@ type Row = {
     /** Rendered with the portrait or not at all — the licence condition. See
      * components/mp-photo.tsx. */
     photoCredit?: string | null
+    /**
+     * What the MP does now (abgeordnetenwatch), falling back to what they did
+     * before (Stammdaten `BERUF`) — resolved through `occupationOf`, never by
+     * reading one of them here. That function is the one place the precedence
+     * lives, and the roster, the seating tooltip, the profile and the search
+     * card all go through it.
+     *
+     * ⚠ `?:` as well as `| null`: these are `v.optional` in storage
+     * (convex/schema.ts) because Wave 8 added them to a populated table, so an
+     * un-enriched row has the key *absent* rather than null — and a deploy that
+     * lands before its Convex counterpart serves rows without the field at all
+     * (components/seat-tooltip.tsx documents the outage that caused).
+     */
+    occupation?: string | null
+    profession?: string | null
   }
   score: { totalScore: number; voteParticipationRate: number } | null
   committees: string[]
 }
 
-type SortKey = "name" | "fraktion" | "constituency" | "score" | "participation"
+type SortKey = "name" | "fraktion" | "occupation" | "constituency" | "score" | "participation"
 type SortDirection = "asc" | "desc"
 
 const PAGE_SIZE = 25
@@ -118,6 +133,8 @@ const SORT_OPTIONS: ReadonlyArray<{ key: SortKey; direction: SortDirection }> = 
   { key: "name", direction: "desc" },
   { key: "fraktion", direction: "asc" },
   { key: "fraktion", direction: "desc" },
+  { key: "occupation", direction: "asc" },
+  { key: "occupation", direction: "desc" },
   { key: "constituency", direction: "asc" },
   { key: "constituency", direction: "desc" },
   { key: "score", direction: "desc" },
@@ -130,6 +147,7 @@ const SORT_OPTIONS: ReadonlyArray<{ key: SortKey; direction: SortDirection }> = 
 const SORT_LABEL_KEYS: Record<SortKey, TranslationKey> = {
   name: "mps.columnName",
   fraktion: "mp.party",
+  occupation: "mp.occupation",
   constituency: "mps.columnConstituency",
   score: "mps.columnScore",
   participation: "mps.columnParticipation",
@@ -445,6 +463,19 @@ export function MPTable({
                 sort={sort}
                 onSort={toggleSort}
               />
+              {/* After the party. `lg:` rather than the constituency's `md:`:
+                  occupations are free text and run to 60 characters, so on a
+                  tablet this column and that one together squeeze the name —
+                  which is the column the table is read by. The sort dropdown
+                  above still offers it at every width, so a phone reader can
+                  order by it even where the cells are hidden. */}
+              <SortableHead
+                label={t("mp.occupation")}
+                sortKey="occupation"
+                sort={sort}
+                onSort={toggleSort}
+                className="hidden lg:table-cell"
+              />
               <SortableHead
                 label={t("mps.columnConstituency")}
                 sortKey="constituency"
@@ -472,7 +503,7 @@ export function MPTable({
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   {rows.length === 0 ? t("mps.emptyRoster") : t("mps.empty")}
                 </TableCell>
               </TableRow>
@@ -550,6 +581,7 @@ function MPRow({ row }: { row: Row }) {
   const { t, locale } = useLocale()
   const router = useRouter()
   const href = `/mps/${encodeURIComponent(row.mp.internalId)}`
+  const occupation = occupationOf(row.mp)
 
   function handleRowClick(event: React.MouseEvent<HTMLTableRowElement>) {
     // The anchor handles its own clicks, including the modified ones this
@@ -597,6 +629,26 @@ function MPRow({ row }: { row: Row }) {
           <FraktionBadge fraktion={row.mp.fraktion} />
           <MandateBadge electionMethod={row.mp.electionMethod} locale={locale} compact />
         </span>
+      </TableCell>
+      {/* Truncated to one line: these are free text and run to 60 characters
+          ("selbstständiger Immobilienunternehmer"), which would otherwise set
+          the row height for the whole table. The full string is in the `title`,
+          so nothing is unreachable.
+
+          An em dash where nothing is recorded, matching the score columns
+          below and meaning the same thing: *unknown*. It is emphatically not
+          "unemployed" — neither source publishes that, and neither does this
+          cell. `occupationOf` collapses absent, null and empty to null, all
+          three of which occur on a roster the enrichment stage has not
+          finished. */}
+      <TableCell
+        className="hidden max-w-56 truncate text-muted-foreground lg:table-cell"
+        // Undefined rather than an empty string where nothing is recorded: an
+        // empty `title` is still a tooltip, and hovering the dash to be told
+        // nothing is worse than not being offered one.
+        title={occupation ?? undefined}
+      >
+        {occupation ?? <span className="text-muted-foreground/60">—</span>}
       </TableCell>
       <TableCell className="hidden text-muted-foreground md:table-cell">
         {/* The fallback reads the *stored* mandate type, not the absence of a
@@ -683,6 +735,13 @@ function isMissing(row: Row, key: SortKey): boolean {
   switch (key) {
     case "constituency":
       return row.mp.constituency === null
+    // Sorts to the bottom in both directions, like an unscored MP: a member
+    // with no recorded trade is *unknown*, not alphabetically first. Folding
+    // them into the comparison as `""` would open the ascending sort with a
+    // block of blank cells that reads as the least employed members of the
+    // chamber.
+    case "occupation":
+      return occupationOf(row.mp) === null
     case "score":
     case "participation":
       return row.score === null
@@ -712,6 +771,11 @@ function compareRows(a: Row, b: Row, key: SortKey): number {
       return compareByName(a, b)
     case "fraktion":
       return a.mp.fraktion.localeCompare(b.mp.fraktion, "de")
+    // German collation, like every other text column here: it files "Ökonom"
+    // with the O rather than after the Z, which is where a byte comparison puts
+    // it and where nobody scanning this column will look for it.
+    case "occupation":
+      return (occupationOf(a.mp) ?? "").localeCompare(occupationOf(b.mp) ?? "", "de")
     case "constituency":
       return (a.mp.constituency ?? "").localeCompare(b.mp.constituency ?? "", "de")
     case "score":

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { foldSearchQuery } from "./search"
+import { occupationFields } from "./bundestag"
+import { foldedTextMatches, foldSearchQuery, indexableText } from "./search"
 import { expandQuery, thesaurusTerms } from "./thesaurus"
 
 describe("thesaurus entries", () => {
@@ -78,5 +79,69 @@ describe("expandQuery", () => {
     // would make the search assert an equivalence the drafters avoided.
     expect(expandQuery("migration")).not.toContain("asyl")
     expect(expandQuery("asyl")).not.toContain("migration")
+  })
+})
+
+/**
+ * The lexicon against the roster field it was written for — the whole of
+ * GAP-010, asserted end to end.
+ *
+ * The gap was not that the table was wrong. `expandQuery("lawyer")` already
+ * returned `rechtsanwalt`, and the tests above already proved it. The failure
+ * was one layer down: `mps.occupation` and `mps.profession` sit on the roster
+ * row, which carries no search index and produces no feed event, so the term
+ * the lexicon produced had nothing to match against. Measured live during the
+ * audit: `lawyer` → 0 results, `Rechtsanwalt` → 5, and those 5 were motion
+ * titles rather than the lawyers in the chamber.
+ *
+ * So these run the reader's actual path — fold, expand, match the roster
+ * string — rather than any one stage of it. The professions section of the
+ * lexicon is the part with the best data behind it (Stammdaten's `BERUF` covers
+ * 94.3 % of the roster) and was the part that reached nobody.
+ */
+describe("profession queries reach the roster", () => {
+  /** What convex/search.ts does with one MP: the reader's query plus its
+   * lexicon expansion, each tried against every recorded trade. */
+  function finds(mp: { occupation?: string | null; profession?: string | null }, query: string) {
+    const folded = foldSearchQuery(query)
+    const terms = [folded, ...expandQuery(folded)]
+    return occupationFields(mp).some((value) =>
+      terms.some((term) => foldedTextMatches(indexableText(value), term)),
+    )
+  }
+
+  test("an English query reaches the German trade", () => {
+    // The requirement Wave 9 names, and the measurement GAP-010 records.
+    expect(finds({ profession: "Rechtsanwalt" }, "lawyer")).toBe(true)
+    expect(finds({ profession: "Ärztin" }, "doctor")).toBe(true)
+    expect(finds({ occupation: "Landwirt" }, "farmer")).toBe(true)
+    expect(finds({ profession: "Diplom-Ingenieur" }, "engineer")).toBe(true)
+  })
+
+  test("and the German query still does", () => {
+    // The direction that was already meant to work. Both, because a lexicon
+    // that fixed one by breaking the other would be no better.
+    expect(finds({ profession: "Rechtsanwalt" }, "Rechtsanwalt")).toBe(true)
+    expect(finds({ profession: "Rechtsanwältin" }, "Rechtsanwalt")).toBe(true)
+    expect(finds({ profession: "Rechtsanwältin" }, "Rechtsanwältin")).toBe(true)
+  })
+
+  test("reaches a trade the profile label does not show", () => {
+    // The reason the matching reads every field rather than `occupationOf`'s
+    // one: a sitting member's `occupation` is frequently the mandate itself.
+    expect(finds({ occupation: "MdB", profession: "Rechtsanwältin" }, "lawyer")).toBe(true)
+  })
+
+  test("an MP with nothing recorded is found by nothing", () => {
+    // Unknown, not unemployed — and emphatically not "matches every query",
+    // which is what an empty haystack plus a permissive matcher would give.
+    expect(finds({}, "lawyer")).toBe(false)
+    expect(finds({ occupation: null, profession: null }, "lawyer")).toBe(false)
+    expect(finds({ occupation: "", profession: "  " }, "lawyer")).toBe(false)
+  })
+
+  test("a trade nobody holds finds nobody", () => {
+    expect(finds({ profession: "Rechtsanwalt" }, "farmer")).toBe(false)
+    expect(finds({ profession: "Rechtsanwalt" }, "zzzznotaword")).toBe(false)
   })
 })

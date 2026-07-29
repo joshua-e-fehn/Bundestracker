@@ -186,3 +186,63 @@ export function foldSearchQuery(value: string): string {
     .filter((word) => word.length > 0)
     .join(" ")
 }
+
+// --- matching text the index cannot reach ---------------------------------
+
+/**
+ * Whether `indexed` satisfies `foldedQuery`, under the index's own rule.
+ *
+ * ## Why an in-memory matcher exists at all
+ *
+ * Convex's `searchIndex` only searches a column it was declared on, and two
+ * things a reader plausibly searches for are not on one: a **committee name**,
+ * which produces no feed event (the pipeline writes `committeeMemberships` and
+ * stops), and an MP's **trade**, which lives on the roster row rather than on
+ * anything they did. convex/search.ts matches both in memory, and this is the
+ * one place that decides what "matches" means for them — so a committee name
+ * and an occupation are found on the same rules a motion title is, rather than
+ * on two hand-rolled `includes` calls that drift.
+ *
+ * ## The rules are the index's, restated
+ *
+ * Both arguments have already been folded — `indexed` by `indexableText`,
+ * `foldedQuery` by `foldSearchQuery` — so the umlaut handling is inherited
+ * whole and is not repeated here. What this adds is the *term* semantics, which
+ * were measured against a real search index (see the header):
+ *
+ *  - **Every term must be present.** `ausschuss umwelt` needs both.
+ *  - **Only the final term is prefix-matched.** `klima` finds `klimaschutz`;
+ *    `klimaschutz` does not find `klima`.
+ *  - **Order does not matter**, because a document is a bag of tokens.
+ *
+ * ⚠ This deliberately replaces a plain `text.includes(needle)`, which is what
+ * committee matching used before occupation matching needed the same rule. The
+ * substring test was both too broad and too narrow: it matched across token
+ * boundaries — the false positive convex/search.ts documented, where `tumwelt`
+ * finds `naturschutz umwelt` — while *failing* `ausschuss umwelt`, because
+ * `indexableText` emits its tokens in first-seen order with each umlaut
+ * expansion beside its own word, so two words a reader typed adjacently are
+ * frequently not adjacent in the indexed string.
+ *
+ * The one case that behaviour costs: a multi-word query whose non-final words
+ * carry an umlaut is matched on the *canonical* spelling only, since only the
+ * final term gets the prefix rule that would otherwise reach the expansion.
+ * The index has the same limit for the same reason, so this stays faithful to
+ * it rather than being quietly cleverer than the thing it stands in for.
+ */
+export function foldedTextMatches(indexed: string, foldedQuery: string): boolean {
+  const terms = foldedQuery.split(" ").filter((term) => term.length > 0)
+  if (terms.length === 0) return false
+  const tokens = indexed.split(" ").filter((token) => token.length > 0)
+  if (tokens.length === 0) return false
+
+  const final = terms.length - 1
+  return terms.every((term, index) =>
+    index === final
+      ? tokens.some((token) => token.startsWith(term))
+      : // Whole-token, not prefix: the index prefix-matches the last term and
+        // nothing else, and being more generous here would make a keyword
+        // reachable in a committee name that is unreachable in a motion title.
+        tokens.includes(term),
+  )
+}

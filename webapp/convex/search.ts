@@ -1,4 +1,8 @@
 import { v } from "convex/values"
+// Relative, not "@/lib/…": convex/tsconfig.json defines no path aliases.
+import { occupationFields, occupationOf } from "../lib/bundestag"
+import { foldedTextMatches, indexableText } from "../lib/search"
+import { OCCUPATION_REFERENCE } from "../lib/taxonomy"
 import type { Doc } from "./_generated/dataModel"
 import { internalMutation, type QueryCtx, query } from "./_generated/server"
 import { withSearchText } from "./activityEvents"
@@ -26,7 +30,7 @@ import { eventType } from "./schema"
  * feed is one index, one ordering, and the row that matched already names the
  * person it belongs to.
  *
- * ## Committee names are searched from the other end
+ * ## Two things are searched from the other end
  *
  * A committee seat produces no feed event — the pipeline writes
  * `committeeMemberships` and stops — so `Ausschuss für Umwelt` would find
@@ -34,6 +38,18 @@ import { eventType } from "./schema"
  * below therefore scans that table directly for the period and matches names in
  * memory. It is affordable for the reason convex/committees.ts gives: ~1 744
  * rows for a whole Wahlperiode, and only for the current one.
+ *
+ * **An MP's trade is the same shape of problem, and was the same bug.** The
+ * search box says it finds people "by topic, profession or committee"
+ * (`search.placeholder`), and the lexicon's largest section is professions —
+ * `lawyer` → `rechtsanwalt` is the example lib/thesaurus.ts opens with. But
+ * `mps.occupation` and `mps.profession` sit on the roster row, which carries no
+ * search index and produces no event, so *neither* word reached anything: a
+ * live check measured `lawyer` at 0 results and `Rechtsanwalt` at 5, and those
+ * 5 were motion titles that happen to contain the word rather than the lawyers
+ * in the chamber. `occupationMatches` closes it, against the same roster read
+ * this query already does for every result's name and group — so the recall
+ * costs no extra document reads at all.
  *
  * ## What this search does and does not do
  *
@@ -122,8 +138,10 @@ const searchResult = v.object({
   fraktion: v.string(),
   ...photoFields,
   constituency: v.union(v.null(), v.string()),
-  /** What the MP does now, if known — the field Wave 8 added. Shown on the card
-   * because a search for `Rechtsanwalt` should display the word it matched. */
+  /** What the MP does, if anything is recorded — `occupationOf`'s answer, so
+   * the card shows the same line the profile and the roster table do. Shown
+   * because a search for `Rechtsanwalt` should display the word it matched;
+   * null is *unknown* and renders as nothing rather than as a dash. */
   occupation: v.union(v.null(), v.string()),
   /** Every matching record of this MP's, not just the ones listed. See
    * `REASONS_PER_MP`. */
@@ -134,21 +152,30 @@ const searchResult = v.object({
 // --- committee matching ---------------------------------------------------
 
 /**
- * MPs whose committee name contains the query, with the committee as evidence.
+ * Whether any of `needles` matches `text`, on the search index's own rules.
  *
- * A substring test on the folded name rather than an index scan: committees
- * have no feed events (see the header), the table is ~1 744 rows for a period,
- * and the names are long enough that a prefix match on the first word would
- * miss `Ausschuss für Umwelt` for a reader who typed `Umwelt` — which is how
- * anyone refers to it.
+ * `foldedTextMatches` from lib/search.ts — the same module that built the
+ * index, so text matched here and text matched by Convex agree about umlauts,
+ * about which term is prefix-matched, and about a query needing all of its
+ * words. The two in-memory matchers below both go through this rather than
+ * through a substring test, which is what stops a keyword being reachable in a
+ * committee name and unreachable in a motion title.
+ */
+function matchesAny(text: string, needles: readonly string[]): boolean {
+  return needles.some((needle) => foldedTextMatches(text, needle))
+}
+
+/**
+ * MPs whose committee name matches the query, with the committee as evidence.
+ *
+ * An in-memory scan rather than an index scan: committees have no feed events
+ * (see the header), the table is ~1 744 rows for a period, and the names are
+ * long enough that a prefix match on the first word would miss
+ * `Ausschuss für Umwelt` for a reader who typed `Umwelt` — which is how anyone
+ * refers to it.
  *
  * The folding is `indexableText`'s, applied to both sides through the same
- * function that built the index, so a committee name matches on the same rules
- * a motion title does. `includes` on the joined token string can match across a
- * token boundary — `tumwelt` would find `naturschutz umwelt` — but every needle
- * that reaches here is itself a folded word sequence, so a false positive needs
- * a query that is already a substring spanning two words. That is a card the
- * reader dismisses, not a wrong claim about an MP.
+ * function that built the index.
  */
 async function committeeMatches(
   ctx: QueryCtx,
@@ -179,10 +206,56 @@ async function committeeMatches(
       }).searchText
       folded.set(row.committeeName, text)
     }
-    if (!needles.some((needle) => text.includes(needle))) continue
+    if (!matchesAny(text, needles)) continue
     const bucket = hits.get(row.mpInternalId) ?? []
     bucket.push({ committeeName: row.committeeName, role: row.role })
     hits.set(row.mpInternalId, bucket)
+  }
+  return hits
+}
+
+/**
+ * The roster rows whose recorded trade matches the query, with the words that
+ * matched.
+ *
+ * ## Both fields, not the one the profile prints
+ *
+ * `occupationFields` (lib/bundestag.ts) is the same precedence rule the label
+ * comes from, read whole rather than headfirst. Matching only `occupationOf`'s
+ * answer would make recall depend on which source happened to fill first: an
+ * MP whose `occupation` reads `MdB` and whose `profession` reads
+ * `Rechtsanwältin` is a lawyer nobody could find, and there are enough of them
+ * that "occupation is often literally MdB" is a note the profile card already
+ * carries. So the *matching* is over every recorded answer and the *label*
+ * stays the precedence's head — one rule, read two ways, which is the whole
+ * reason the ordering lives in one function.
+ *
+ * ## The matched word is the evidence, verbatim
+ *
+ * The card says why an MP is on the list, and for these the reason is a word on
+ * their roster row rather than a record. So the *stored* string is returned —
+ * `Rechtsanwältin`, as the source spells it, umlaut and all — never the folded
+ * token that matched it and never the reader's English query. A card that
+ * answered `lawyer` with the word "lawyer" would be asserting a translation the
+ * Bundestag never published; the reader sees the German word and the page's
+ * `search.alsoSearched` line tells them why it is there.
+ *
+ * No extra reads: the roster is already collected by the caller for every
+ * result's name and group, and this walks the rows it holds.
+ */
+function occupationMatches(
+  roster: readonly Doc<"mps">[],
+  needles: readonly string[],
+): Map<string, string[]> {
+  const hits = new Map<string, string[]>()
+  for (const mp of roster) {
+    // Absent, null and empty all mean "no trade recorded" and are all dropped
+    // by `occupationFields`. An MP with nothing recorded is unknown, so they
+    // match nothing here rather than matching a query for an empty string.
+    const matched = occupationFields(mp).filter((value) =>
+      matchesAny(indexableText(value), needles),
+    )
+    if (matched.length > 0) hits.set(mp.internalId, matched)
   }
   return hits
 }
@@ -287,19 +360,11 @@ export const searchMPs = query({
           // they are on a different one.
           new Map<string, { committeeName: string; role: string | null }[]>()
 
-    // Grouped before the roster is read, so the roster lookup is one indexed
-    // point read per *matched MP* rather than per matched event.
     const byMp = new Map<string, Doc<"activityEvents">[]>()
     for (const event of events.values()) {
       const bucket = byMp.get(event.mpInternalId) ?? []
       bucket.push(event)
       byMp.set(event.mpInternalId, bucket)
-    }
-    // An MP matched *only* by their committee has no events, and would
-    // otherwise never enter the loop below — which is the whole point of
-    // searching committee names separately.
-    for (const mpInternalId of committees.keys()) {
-      if (!byMp.has(mpInternalId)) byMp.set(mpInternalId, [])
     }
 
     const roster = await ctx.db
@@ -307,6 +372,19 @@ export const searchMPs = query({
       .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
       .collect()
     const mps = new Map(roster.map((mp) => [mp.internalId, mp]))
+
+    // The whole roster, once, for the reason the header gives: an MP's trade is
+    // on their row and produces no event, so the index cannot reach it. Read
+    // here rather than in a matcher of its own because this collect already
+    // happens — every result needs its name and group from it.
+    const occupations = occupationMatches(roster, terms)
+
+    // An MP matched *only* by their committee or their trade has no events, and
+    // would otherwise never enter the loop below — which is the whole point of
+    // matching either separately.
+    for (const mpInternalId of [...committees.keys(), ...occupations.keys()]) {
+      if (!byMp.has(mpInternalId)) byMp.set(mpInternalId, [])
+    }
 
     const results = []
     for (const [mpInternalId, rows] of byMp) {
@@ -320,6 +398,7 @@ export const searchMPs = query({
       if (args.fraktion !== undefined && mp.fraktion !== args.fraktion) continue
 
       const seats = committees.get(mpInternalId) ?? []
+      const trades = occupations.get(mpInternalId) ?? []
       if (args.committee !== undefined) {
         const onCommittee = await ctx.db
           .query("committeeMemberships")
@@ -360,6 +439,22 @@ export const searchMPs = query({
         })
       }
 
+      // The trade, likewise dateless and likewise the only evidence for an MP
+      // matched solely by it — which is the case this whole path exists for.
+      // The stored spelling, not the query: see `occupationMatches`.
+      for (const trade of trades.slice(0, Math.max(0, REASONS_PER_MP - reasons.length))) {
+        reasons.push({
+          // `activity`, the catch-all kind — being a lawyer is not a thing that
+          // happened, and `eventType` is the vocabulary of things that did.
+          eventType: "activity" as const,
+          date: "",
+          title: trade,
+          description: null,
+          referenceId: null,
+          referenceType: OCCUPATION_REFERENCE,
+        })
+      }
+
       results.push({
         mpInternalId,
         name: mp.name,
@@ -370,15 +465,28 @@ export const searchMPs = query({
         photoUrl: mp.photoUrl ?? null,
         photoCredit: mp.photoCredit ?? null,
         constituency: mp.constituency,
-        // `?? null`, because `mps.occupation` is `v.optional` (convex/schema.ts:216)
-        // — Wave 8 added it to a populated table, where a required field fails
-        // deploy-time row validation. So an unenriched MP has no key at all, and
-        // `undefined` does not satisfy this query's own returns validator: the
-        // search would throw at runtime for exactly the members the pipeline has
-        // not reached yet. The same collapse `getSeats` makes in convex/seating.ts:299,
-        // and the distinction 2bcfd4d turned on — absent is not null.
-        occupation: mp.occupation ?? null,
-        matchCount: rows.length + seats.length,
+        // Through `occupationOf`, not `mp.occupation` alone — the same
+        // precedence `occupationMatches` searches over, so the card cannot
+        // match on a word it then declines to print. That was the live bug:
+        // this read `mps.occupation` while the profile and the table read the
+        // fallback too, so the 28 WP21 members with a `profession` and no
+        // `occupation` matched a search and showed a blank line under their
+        // name.
+        //
+        // Null where neither source has anything, and null is *unknown* — the
+        // card renders nothing at all rather than a dash that would read as a
+        // recorded absence. `occupationOf` returns null for absent, for null
+        // and for a whitespace-only string, all three of which occur: the
+        // columns are `v.optional` (convex/schema.ts:216) because Wave 8 added
+        // them to a populated table, so an unenriched MP has no key. An
+        // `undefined` here would fail this query's own returns validator and
+        // take the whole search down for exactly the members the pipeline has
+        // not reached — the outage convex/mps.ts:photoFields documents.
+        occupation: occupationOf(mp),
+        // The trade counts once per matched field, like a seat counts once.
+        // Without it an MP found *only* by their profession would report "0
+        // matches" beside four lines of evidence.
+        matchCount: rows.length + seats.length + trades.length,
         reasons,
       })
     }

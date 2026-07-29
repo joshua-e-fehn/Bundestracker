@@ -9,9 +9,9 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
-import { formatDate, occupationOf } from "@/lib/bundestag"
+import { formatDate } from "@/lib/bundestag"
 import { foldSearchQuery } from "@/lib/search"
-import type { EventType } from "@/lib/taxonomy"
+import { type EventType, OCCUPATION_REFERENCE } from "@/lib/taxonomy"
 import { expandQuery } from "@/lib/thesaurus"
 
 /**
@@ -188,7 +188,12 @@ function ResultCard({
 }) {
   const { t } = useLocale()
   const href = `/mps/${encodeURIComponent(mp.mpInternalId)}`
-  const occupation = occupationOf({ occupation: mp.occupation })
+  // Already resolved server-side through the same `occupationOf`
+  // (convex/search.ts), which is why nothing is chosen here. Re-running it over
+  // `{ occupation }` alone was the bug: it dropped the `profession` fallback the
+  // server had already applied, so an MP with only a Stammdaten `BERUF` matched
+  // the search and then showed a blank line under their name.
+  const occupation = mp.occupation
   const hidden = mp.matchCount - mp.reasons.length
 
   return (
@@ -241,6 +246,15 @@ function ResultCard({
             >
               <EventTypeIcon type={reason.eventType} size="sm" className="mt-0.5" />
               <span className="min-w-0 flex-1 text-sm">
+                {/* An occupation hit is the one reason that is not a record,
+                    and a bare "Rechtsanwältin" on a list of motion titles would
+                    read as the title of one. The label says which field
+                    matched — the same job the icon does for the other kinds,
+                    which this reason cannot use because it borrows the generic
+                    `activity` glyph (see `OCCUPATION_REFERENCE`). */}
+                {reason.referenceType === OCCUPATION_REFERENCE ? (
+                  <span className="text-muted-foreground">{t("mp.occupation")}: </span>
+                ) : null}
                 <span className="break-words">{reason.title}</span>
                 {/* A committee seat has no date — it is held across the period
                     rather than taken on a day — so the empty string it carries
