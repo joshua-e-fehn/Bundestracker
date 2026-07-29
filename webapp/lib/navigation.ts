@@ -182,6 +182,34 @@ export function isActivePath(pathname: string, href: string): boolean {
 }
 
 /**
+ * The `aria-current` value for a nav entry, or `undefined` when it is not on
+ * the reader's path at all.
+ *
+ * `isActivePath` is deliberately a *prefix* match — that is what lets `/votes`
+ * carry the gold marker while the reader is on `/votes/own-resources`, so the
+ * bar still says which section they are in. Reusing that same boolean for
+ * `aria-current="page"` overstated it: on `/votes/own-resources` **two** rows
+ * announced themselves as the current page, the child and its parent. Only one
+ * page can be the current page, so a screen-reader user was told the ancestor
+ * was their location just as emphatically as the destination actually was.
+ *
+ * ARIA has a value for exactly this. `aria-current` is a token, not a boolean:
+ * `page` means "this *is* the current page", and `true` means "this is the
+ * current item in *some* set" — the right weight for an ancestor that contains
+ * the location without being it. So the distinction the visual marker was
+ * already making (this row is your section / this row is your page) is now made
+ * to assistive technology too, rather than being flattened to `page` twice.
+ *
+ * Returns `undefined` rather than `"false"` for the inactive case: the absent
+ * attribute is the standard way to say "not current", and `aria-current="false"`
+ * is treated as absent anyway while adding noise to the DOM.
+ */
+export function navCurrent(pathname: string, href: string): "page" | true | undefined {
+  if (pathname === href) return "page"
+  return isActivePath(pathname, href) ? true : undefined
+}
+
+/**
  * Whether a group contains the reader's location.
  *
  * Drives the bar's group triggers, which show the active marker when the reader
