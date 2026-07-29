@@ -88,6 +88,33 @@ describe("OWN_RESOURCE_VOTES", () => {
     }
   })
 
+  test("names no ballot the seeder invented", () => {
+    // Regression, 2026-07-29. Entry #1 was `(21, 91, 2)` "Antrag zur Reform des
+    // Wahlrechts" — a ballot `scripts/seed-local.ts` fabricated, which reached
+    // production when that script was once run against it and survived the
+    // cleanup because convex/purgeSeed.ts deletes the seeder's records by
+    // walking its mandates and deliberately leaves `voteSheets` alone. The
+    // curated entry passed every check in this file and rendered a tally of
+    // 6/3/1 that no MP cast, as the first card on a page about self-interest.
+    //
+    // The two seeded keys are `(21, 90, 1)` and `(21, 91, 2)`
+    // (`sitzungnr: 90 + index`). The first has since been overwritten in place
+    // by the real ballot the pipeline loaded for that key, so it is excluded by
+    // name rather than by rule — which is the point of asserting the pair
+    // rather than the survivor: this file cannot see the corpus, so the only
+    // thing it can hold is "do not curate a key a seeder ever wrote".
+    const seeded = [
+      { wahlperiode: 21, sitzungnr: 90, abstimmnr: 1 },
+      { wahlperiode: 21, sitzungnr: 91, abstimmnr: 2 },
+    ]
+    for (const key of seeded) {
+      expect(
+        ownResourceVote(key),
+        `${key.wahlperiode}/${key.sitzungnr}/${key.abstimmnr}`,
+      ).toBeNull()
+    }
+  })
+
   test("stays within the query's read budget", () => {
     // `getVoteSheetsByKey` throws above MAX_BALLOT_KEYS rather than truncating,
     // so an over-long list takes the page down instead of shortening it. That

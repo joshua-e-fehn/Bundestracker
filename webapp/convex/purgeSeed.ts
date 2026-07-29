@@ -360,3 +360,95 @@ export const seedDataPresent = internalQuery({
     }
   },
 })
+
+/**
+ * The ballots the seeder invented, identified by an electorate no chamber has
+ * and no published sheet to have counted it.
+ *
+ * ## Why `voteSheets` is not in the traversal above
+ *
+ * `deleteRowsFor` reaches everything a synthetic *mandate* owns, and a vote
+ * sheet is owned by nobody — it is the ballot, not a person's participation in
+ * it. That was the right call for the records (the note there explains why: the
+ * seeder's first ballot landed on the natural key of a **real** division, so
+ * deleting "synthetic ballots" would have destroyed a genuine sheet) but it left
+ * a gap. The seeder wrote two sheets. One collided with a real key and has since
+ * been overwritten in place by the pipeline — `upsertVoteSheet` patches by
+ * natural key, so it is now the real ballot and must be left alone. The other,
+ * `(21, 91, 2)`, named a sitting the Bundestag has not held, so nothing ever
+ * overwrote it and it stayed: a fabricated division on a public site, its twelve
+ * votes purged, publishing a 6/3/1 tally that nobody cast above an empty table.
+ *
+ * ## What identifies one, and why it is not the natural key
+ *
+ * **Both** an electorate below `MIN_REAL_ELECTORATE` and a null `sourceUrl`.
+ * The seeder writes `MPS.length` — twelve — and no source URL; across the 254
+ * ballots in production every real sheet carries the chamber (628, 630 or 736)
+ * *and* its bundestag.de XLSX, and the seed row is the only one failing either.
+ *
+ * Two conditions rather than one because each alone has a real counterexample.
+ * A low electorate is not by itself synthetic: `totalEligible` is the number of
+ * rows on the sheet (`total_eligible` in pipeline models/votes.py), and a ballot
+ * reconstructed from the protocol XML lists only the MPs who cast a vote (§4.2)
+ * — the same case where `sourceUrl` is null and `absentCount` cannot be trusted,
+ * per the schema note. A null `sourceUrl` is not by itself synthetic either, for
+ * exactly that reason. Only the conjunction — a chamber of a dozen *and* no
+ * published sheet — describes something no Bundestag division can be. A
+ * historical backfill running now (WP19–WP14) is precisely the traffic that
+ * could land XML-route sheets, so the narrower rule is not hypothetical.
+ *
+ * A hard-coded `(21, 91, 2)` would be the more obvious rule and is the wrong
+ * one, for the reason that key is dangerous in the first place: the Bundestag
+ * may yet hold a real sitting 91, vote 2, and `upsertVoteSheet` would patch this
+ * row into a genuine ballot. A delete keyed on the triple would then destroy
+ * real data, while one keyed on the row's own implausibility stops matching the
+ * moment the row becomes real — the safe direction to fail.
+ *
+ * Records are deleted first, on the same ordering argument as `deleteRowsFor`:
+ * an interrupted run leaves a sheet that still owns its rows rather than records
+ * pointing at nothing. In practice there are none — the mandate traversal
+ * already took them — so this is about the invariant, not the count.
+ */
+const MIN_REAL_ELECTORATE = 100
+
+export const purgeSeedVoteSheets = internalMutation({
+  args: {},
+  returns: v.object({
+    sheets: v.number(),
+    records: v.number(),
+    /** Each deleted sheet's natural key, so an operator can check what went
+     * against the corpus rather than trusting a count. */
+    deleted: v.array(
+      v.object({ wahlperiode: v.number(), sitzungnr: v.number(), abstimmnr: v.number() }),
+    ),
+  }),
+  handler: async (ctx) => {
+    const sheets = await ctx.db.query("voteSheets").withIndex("by_date").collect()
+    const deleted = []
+    let records = 0
+
+    for (const sheet of sheets) {
+      // Both, not either — see the header on the XML-route sheets each
+      // condition would otherwise catch on its own.
+      if (sheet.totalEligible >= MIN_REAL_ELECTORATE || sheet.sourceUrl !== null) continue
+
+      const rows = await ctx.db
+        .query("voteRecords")
+        .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
+        .collect()
+      for (const row of rows) {
+        await ctx.db.delete(row._id)
+        records++
+      }
+
+      await ctx.db.delete(sheet._id)
+      deleted.push({
+        wahlperiode: sheet.wahlperiode,
+        sitzungnr: sheet.sitzungnr,
+        abstimmnr: sheet.abstimmnr,
+      })
+    }
+
+    return { sheets: deleted.length, records, deleted }
+  },
+})
