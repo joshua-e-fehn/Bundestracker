@@ -9,17 +9,39 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import { formatCount } from "@/lib/format"
 import { partyColor, partyLabel } from "@/lib/parties"
-import { buildArc, CHAPTERS, revealThreshold, STATUTORY_SEATS } from "@/lib/protokoll"
+import { buildArc, CHAPTERS, REVEAL_FLOOR, revealThreshold, STATUTORY_SEATS } from "@/lib/protokoll"
 import { cn } from "@/lib/utils"
 
 /**
  * Chapter 1 — the chamber assembling itself as the reader scrolls.
  *
- * The arc is pinned for a little under one viewport height while its seats
- * arrive from the centre outward, then releases into the rest of the page. It
- * is the same arc `ProtokollSplash` assembles and the same geometry `/seating`
- * draws — `buildArc` (lib/protokoll.ts) is shared by all three, so a reader who
- * has seen one recognises the others.
+ * The arc arrives already a third drawn, fills from the centre outward as the
+ * chapter rises into view, completes during a short pin, and releases into the
+ * rest of the page. It is the same arc `ProtokollSplash` assembles and the same
+ * geometry `/seating` draws — `buildArc` (lib/protokoll.ts) is shared by all
+ * three, so a reader who has seen one recognises the others.
+ *
+ * ## The choreography, and the "it looks broken" report it was rebuilt from
+ *
+ * The chapter used to read as a failure at desktop widths: the heading and
+ * standfirst scrolled away while the hemicycle was still blank or carrying a
+ * handful of isolated dots, and the seats only arrived once the copy was gone.
+ * Two separate causes, both fixed here, and neither of them the animation
+ * itself:
+ *
+ *  1. **The scroll range began too late.** `useScroll`'s offset was
+ *     `start start`, which reports 0 for the entire time the frame is on screen
+ *     but the track's top has not yet reached the top of the viewport — about a
+ *     full viewport of scrolling on a 150svh track. See the offset below.
+ *  2. **The opening frame was empty.** `revealThreshold` returned 0 for the
+ *     first slice of the travel, so the first thing the reader met was a
+ *     legend, a "0 von 630 Sitzen" and no chamber. It now starts at
+ *     `REVEAL_FLOOR` and is never empty at any scroll position, including in
+ *     the server-rendered HTML.
+ *
+ * Together they are one decision: **the chamber is what introduces the chapter,
+ * so it has to be present when the chapter is.** The reader should never be
+ * looking at prose about a hemicycle that is not on screen.
  *
  * ## What the scroll has to end on
  *
@@ -97,12 +119,38 @@ export function ChapterChamber({ wahlperiode }: { wahlperiode: number | null | u
    */
   const [hovered, setHovered] = useState<string | null>(null)
 
-  // Against the scroll *track* — the tall spacer the sticky frame lives in —
-  // rather than the window, so the reveal is bound to this chapter's own
-  // position and stays correct when a section above it changes height.
+  /**
+   * Progress through this chapter's own travel, 0…1.
+   *
+   * Against the scroll *track* — the tall spacer the sticky frame lives in —
+   * rather than the window, so the reveal is bound to this chapter's own
+   * position and stays correct when a section above it changes height.
+   *
+   * ## Why the range starts at `start end` and not `start start`
+   *
+   * This is the bug the chapter read as broken from, and it was in the offset
+   * rather than in the animation. `start start` means "0 until the top of the
+   * track reaches the top of the viewport" — but the track is 150svh tall and
+   * its *frame* is at the top of it, so the frame is fully on screen for
+   * roughly a whole viewport of scrolling before progress leaves 0. Measured in
+   * Safari at 1680 × 1050: the arc held at its opening state for ~980 px of
+   * scroll, which is exactly the span in which the chapter's heading and
+   * standfirst scroll up and out. The reader watched the copy leave a picture
+   * that had not started.
+   *
+   * `start end` starts the clock when the top of the track crosses the *bottom*
+   * of the viewport — the first moment any of this chapter is visible. So the
+   * arc is already filling as it rises into view, is well past half drawn by
+   * the time the frame pins, and finishes during the pin rather than after it.
+   * The copy and the chamber now move together, which is the continuity the
+   * chapter was missing.
+   *
+   * `end end` is unchanged: the travel still ends when the track's bottom
+   * reaches the viewport's bottom, i.e. as the pin releases.
+   */
   const { scrollYProgress } = useScroll({
     target: track,
-    offset: ["start start", "end end"],
+    offset: ["start end", "end end"],
   })
 
   /**
@@ -120,7 +168,7 @@ export function ChapterChamber({ wahlperiode }: { wahlperiode: number | null | u
    * of two seats out of 630, and a `setState` per frame would re-render the
    * whole arc 60 times a second.
    */
-  const [threshold, setThreshold] = useState(reduceMotion === true ? 1 : 0)
+  const [threshold, setThreshold] = useState(reduceMotion === true ? 1 : REVEAL_FLOOR)
   useMotionValueEvent(scrollYProgress, "change", (progress) => {
     if (reduceMotion === true) return
     const next = revealThreshold(progress)
@@ -130,10 +178,17 @@ export function ChapterChamber({ wahlperiode }: { wahlperiode: number | null | u
     })
   })
 
-  // Reduced motion is the finished state — see the header. Also the state for a
-  // reader who has not scrolled yet on a browser where the observer has not
-  // fired: the threshold starts at 0 and the first `change` event sets it, so
-  // the arc opens empty and fills, which is the intended first frame.
+  // Reduced motion is the finished state — see the header.
+  //
+  // The initial state for everyone else is `REVEAL_FLOOR` rather than 0, and
+  // that is the same decision as the floor itself rather than a separate one:
+  // this is what renders on the server, on the first paint, and for however
+  // many frames pass before `useScroll` reports anything. Starting at 0 meant
+  // the chapter's first frame — including the one baked into the SSR HTML — was
+  // an empty arc under a legend, which is the "looks broken" frame the reader
+  // saw. It is now a chamber from the very first paint, whatever the scroll
+  // position, and `revealThreshold` never returns less than this so it cannot
+  // go backwards on the first event either.
   const visible = reduceMotion === true ? 1 : threshold
 
   const seats = useMemo(
@@ -235,7 +290,14 @@ export function ChapterChamber({ wahlperiode }: { wahlperiode: number | null | u
               {/* The count, rising with the arc. Not `aria-live` — §9: the
                   final value is in the DOM and that is what gets read; a live
                   region would announce a number changing forty times. */}
-              <SeatCount drawn={Math.round(arc.total * visible)} total={arc.total} />
+              {/* `seats.length` — the seats actually on screen — rather than
+                  `arc.total * visible`. `visible` is a *distance* threshold and
+                  the arc's density is not uniform in it, so the old expression
+                  was only ever approximately the count it printed; with a
+                  non-zero `REVEAL_FLOOR` it would also have opened on a figure
+                  that did not match the picture beside it. The list is already
+                  computed for the render below, so this is free. */}
+              <SeatCount drawn={seats.length} total={arc.total} />
 
               {/* The legend, present from the start rather than faded in at the
                   end.

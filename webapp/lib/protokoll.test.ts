@@ -7,6 +7,7 @@ import {
   DATA_ANCHOR,
   MAX_ARC_SEATS,
   placeholderArc,
+  REVEAL_FLOOR,
   revealThreshold,
   STATUTORY_SEATS,
 } from "./protokoll"
@@ -185,23 +186,49 @@ describe("placeholderArc", () => {
 })
 
 describe("revealThreshold", () => {
-  test("holds an empty chamber while the sentence is read", () => {
-    expect(revealThreshold(0)).toBe(0)
-    expect(revealThreshold(0.05)).toBe(0)
+  test("never opens on an empty chamber", () => {
+    // The regression this file exists to hold: the chapter is introduced *by*
+    // the hemicycle, so there is no scroll position — including the one the
+    // server renders at — where the frame is on screen without one. An empty
+    // arc under a six-colour legend reads as a visualisation that failed to
+    // load, not as one that is about to fill.
+    expect(revealThreshold(0)).toBe(REVEAL_FLOOR)
+    expect(revealThreshold(0.05)).toBeGreaterThanOrEqual(REVEAL_FLOOR)
+  })
+
+  test("the floor is a substantial chamber, not a token few seats", () => {
+    // A handful of dots is the "isolated dots" half of the same report. The
+    // floor has to be enough of the bank that the shape is unmistakable.
+    const arc = buildArc(WP21)
+    if (!arc) throw new Error("expected an arc")
+    const drawn = arc.seats.filter((seat) => seat.distance <= revealThreshold(0)).length
+    expect(drawn).toBeGreaterThan(arc.total * 0.25)
+    // …and still visibly unfinished, or there is nothing left to scroll for.
+    expect(drawn).toBeLessThan(arc.total * 0.75)
   })
 
   test("reaches a full chamber before the pin releases", () => {
     // The failure this catches: a curve that only reaches 1 at progress 1 leaves
     // the outermost seats arriving as the section leaves the screen, so the
-    // finished picture is never actually seen.
-    expect(revealThreshold(0.82)).toBe(1)
+    // finished picture is never actually seen. It completes at 70 %, leaving
+    // the last 30 % of the travel as a pause on the finished chamber.
+    expect(revealThreshold(0.7)).toBe(1)
     expect(revealThreshold(1)).toBe(1)
+  })
+
+  test("completes with enough travel left to rest on the result", () => {
+    // The other half of "excessive dead scroll": if the fill ran to ~1 the
+    // reader would arrive at the finished chamber exactly as it left. Guards
+    // the pause without pinning the exact constant.
+    expect(revealThreshold(0.85)).toBe(1)
+    expect(revealThreshold(0.6)).toBeLessThan(1)
   })
 
   test("clamps rather than extrapolating past the pin", () => {
     // `useScroll` can report slightly outside 0…1 at the ends of a range, and an
-    // unclamped threshold would hide every seat at -0.01.
-    expect(revealThreshold(-0.5)).toBe(0)
+    // unclamped threshold would draw a *smaller* chamber than the floor at
+    // -0.01 — a visible backwards step at the top of the chapter.
+    expect(revealThreshold(-0.5)).toBe(REVEAL_FLOOR)
     expect(revealThreshold(1.5)).toBe(1)
   })
 
