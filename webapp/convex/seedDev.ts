@@ -93,6 +93,14 @@ export const seedDev = internalMutation({
     scores: v.number(),
     events: v.number(),
     ballots: v.number(),
+    /** Rows written to `voteExplanations` — the input the §31 disclosure on
+     * the vote detail page reads. Zero when the roster was too small. */
+    explanations: v.number(),
+    /** Rows written to `motions` — enough for `/motions` to show the referrals
+     * disclosure against both "with referrals" and "without" rows. */
+    motions: v.number(),
+    /** Rows written to `committeeReferrals`. */
+    referrals: v.number(),
   }),
   handler: async (ctx, args) => {
     // Refuses to touch a deployment that already holds data, unless told
@@ -239,9 +247,22 @@ export const seedDev = internalMutation({
     }
 
     // --- ballots, so the cross-party board has something to compute over ---
+    //
+    // Six synthetic sheets: half linked to a synthetic DIP Vorgang, half
+    // unlinked. The linked ones are the input the §31 disclosure needs to
+    // exercise its populated arm; the unlinked ones exercise the "linkage
+    // missing" arm, which is the third state `voteSheets.dipVorgangId`
+    // stores (schema note). Without at least one of each, the disclosure's
+    // three branches — populated, empty, unlinked — cannot all be seen on a
+    // local dashboard run.
     let ballots = 0
+    let linkedSheetVorgangId: string | null = null
     for (let sitting = 1; sitting <= 6; sitting++) {
       const sheetDate = `2026-07-${String(sitting * 3).padStart(2, "0")}`
+      // Every other sheet is linked. `seed-vorgang-` prefix keeps the id
+      // recognisably synthetic — a real DIP id is a bare integer.
+      const isLinked = sitting % 2 === 1
+      const dipVorgangId = isLinked ? `seed-vorgang-${sitting}` : null
       const sheetId = await ctx.db.insert("voteSheets", {
         wahlperiode: WAHLPERIODE,
         sitzungnr: 80 + sitting,
@@ -256,8 +277,14 @@ export const seedDev = internalMutation({
         absentCount: 0,
         totalEligible: roster.length,
         sourceUrl: null,
+        dipVorgangId,
         createdAt: now,
       })
+      if (linkedSheetVorgangId === null && dipVorgangId !== null) {
+        // Remember the first linked sheet's Vorgang so the §31 rows below
+        // attach to a real page a reader can navigate to.
+        linkedSheetVorgangId = dipVorgangId
+      }
       for (const mp of roster) {
         // Most members follow the group line; a small share defect, so the
         // cross-party board is not uniformly zero.
@@ -279,6 +306,124 @@ export const seedDev = internalMutation({
         })
       }
       ballots++
+    }
+
+    // --- §31 declarations against the first linked ballot -----------------
+    //
+    // Two rows so the disclosure has more than a single-item edge case, and
+    // both attributed to synthetic MPs so the per-MP traversal in
+    // convex/purgeSeed.ts reaches them (an added reader there covers the
+    // voteExplanations table). Deliberately attached to only *one* of the
+    // linked ballots — the other linked sheets exercise the "linked, none
+    // filed" state so the disclosure's `emptyNoneFiled` arm is visible on a
+    // dashboard.
+    let explanations = 0
+    if (linkedSheetVorgangId !== null && roster.length >= 2) {
+      for (const [index, mp] of roster.slice(0, 2).entries()) {
+        await ctx.db.insert("voteExplanations", {
+          // The natural key. `seed-erklärung-` prefix keeps it recognisably
+          // synthetic; DIP's activity ids are bare integers.
+          dipAktivitaetId: `seed-erklaerung-${index + 1}`,
+          mpInternalId: mp.internalId,
+          dipVorgangId: linkedSheetVorgangId,
+          // The referenced procedure's *title*, not a reason — schema note
+          // on `voteExplanations.subject` is explicit that this is what was
+          // voted on, not why. Any wording that read as an explanation
+          // would defeat the point of storing it separately from `title`.
+          subject: `Testdaten: Vorgangstitel ${linkedSheetVorgangId}`,
+          aktivitaetsart: "Schriftliche Erklärung gem. § 31 Geschäftsordnung BT",
+          // A stub protocol-page URL — a synthetic seed cannot link to the
+          // real one, and inventing a plausible bundestag.de URL would land
+          // a broken external link on a page that will render for other
+          // developers. `null` says "no source available" honestly.
+          sourceUrl: null,
+          protocolNumber: `${WAHLPERIODE}/${80 + index}`,
+          date: `2026-07-${String(3 + index).padStart(2, "0")}`,
+          wahlperiode: WAHLPERIODE,
+          createdAt: now,
+        })
+        explanations++
+      }
+    }
+
+    // --- motions + committee referrals -----------------------------------
+    //
+    // Three motions so the /motions page has both "with referral" and
+    // "without" rows to render. Referrals are attached to one of them,
+    // leaving two rows for the `emptyNoReferral` arm of the disclosure.
+    // Every motion carries a `dipVorgangId` — the referrals query is keyed
+    // on it and the disclosure's unlinked arm is exercised by the
+    // Drucksache-only path in `seed-local.ts` instead.
+    //
+    // ⚠ Neither `motions` nor `committeeReferrals` names an MP, so
+    // `purgeSeedData`'s per-MP traversal does not reach them. The seed
+    // Vorgang ids therefore carry a `seed-motion-` prefix that
+    // `convex/purgeSeed.ts` uses to identify them from the motion/referral
+    // side, matching the same shape as the `bt-` mandate prefix.
+    const motionSeeds = [
+      {
+        vorgang: "seed-motion-1",
+        title: "Testdaten: Entwurf eines Gesetzes zur Digitalisierung der Verwaltung",
+        vorgangstyp: "Gesetzgebung",
+        withReferrals: true,
+      },
+      {
+        vorgang: "seed-motion-2",
+        title: "Testdaten: Antrag zu Klimaschutzmaßnahmen",
+        vorgangstyp: "Antrag",
+        withReferrals: false,
+      },
+      {
+        vorgang: "seed-motion-3",
+        title: "Testdaten: Kleine Anfrage zur Bahninfrastruktur",
+        vorgangstyp: "Kleine Anfrage",
+        withReferrals: false,
+      },
+    ]
+    let motions = 0
+    for (const [index, seed] of motionSeeds.entries()) {
+      await ctx.db.insert("motions", {
+        dipVorgangId: seed.vorgang,
+        dipDrucksacheId: null,
+        drucksacheNr: `${WAHLPERIODE}/${9000 + index}`,
+        title: seed.title,
+        type: "Gesetzentwurf",
+        date: `2026-07-${String(1 + index * 2).padStart(2, "0")}`,
+        wahlperiode: WAHLPERIODE,
+        vorgangstyp: seed.vorgangstyp,
+        createdAt: now,
+      })
+      motions++
+    }
+
+    let referrals = 0
+    const REFERRAL_COMMITTEES = [
+      { name: "Ausschuss für Digitales", abbrev: "AfD-Aus", lead: true },
+      { name: "Innenausschuss", abbrev: "InnAus", lead: false },
+      { name: "Rechtsausschuss", abbrev: "RAus", lead: false },
+    ]
+    for (const seed of motionSeeds) {
+      if (!seed.withReferrals) continue
+      for (const [index, committee] of REFERRAL_COMMITTEES.entries()) {
+        await ctx.db.insert("committeeReferrals", {
+          dipVorgangspositionId: `seed-position-${seed.vorgang}-${index}`,
+          dipVorgangId: seed.vorgang,
+          committeeName: committee.name,
+          committeeAbbreviation: committee.abbrev,
+          leadCommittee: committee.lead,
+          // `ueberweisungsart` is empty on every referral sampled from DIP,
+          // so `null` here matches the real distribution rather than
+          // inventing a value.
+          referralType: null,
+          positionKind: "Überweisung",
+          documentNumber: `${WAHLPERIODE}/9000`,
+          title: seed.title,
+          date: "2026-07-01",
+          wahlperiode: WAHLPERIODE,
+          createdAt: now,
+        })
+        referrals++
+      }
     }
 
     // --- feed events ---
@@ -306,6 +451,6 @@ export const seedDev = internalMutation({
       }
     }
 
-    return { mps: roster.length, scores, events, ballots }
+    return { mps: roster.length, scores, events, ballots, explanations, motions, referrals }
   },
 })

@@ -363,10 +363,26 @@ async function main() {
   })
 
   // Two ballots, so the party-line comparison has something to compare against
-  // — including one where a member breaks with their group.
+  // — including one where a member breaks with their group. The first is
+  // linked to a DIP Vorgang so the vote-detail §31 disclosure has a populated
+  // arm to exercise; the second is *deliberately unlinked* so the
+  // "linkage missing" arm is visible too. The schema note on
+  // `voteSheets.dipVorgangId` sets out why the three states matter.
   for (const [index, ballot] of [
-    { abstimmnr: 1, title: "Gesetz zur Änderung des Klimaschutzgesetzes", date: "2026-06-18" },
-    { abstimmnr: 2, title: "Antrag zur Reform des Wahlrechts", date: "2026-07-02" },
+    {
+      abstimmnr: 1,
+      title: "Gesetz zur Änderung des Klimaschutzgesetzes",
+      date: "2026-06-18",
+      // `seed-vorgang-` prefix keeps it recognisably synthetic; a real DIP
+      // Vorgang id is a bare integer.
+      dipVorgangId: "seed-vorgang-klimaschutz",
+    },
+    {
+      abstimmnr: 2,
+      title: "Antrag zur Reform des Wahlrechts",
+      date: "2026-07-02",
+      dipVorgangId: null,
+    },
   ].entries()) {
     await post("vote-sheets", {
       wahlperiode: WP,
@@ -382,6 +398,7 @@ async function main() {
       absentCount: 0,
       totalEligible: MPS.length,
       sourceUrl: null,
+      dipVorgangId: ballot.dipVorgangId,
     })
     await post("vote-records", {
       wahlperiode: WP,
@@ -407,6 +424,37 @@ async function main() {
     })
   }
   console.log("  2 ballots")
+
+  // §31 declarations against the first (linked) ballot's Vorgang, so the
+  // vote-detail page's disclosure has a populated arm. Attributed to three
+  // members whose names the reader has already seen; a real §31 sample
+  // (measured 2026-07-29) reaches 20 declarations against a sitting's
+  // busiest ballot, so three is a plausible chamber and not a wall. The
+  // second ballot is left with no declaration on purpose — that is the
+  // "linked, none filed" arm of the disclosure.
+  await post("vote-explanations", {
+    explanations: MPS.slice(0, 3).map((seed, index) => ({
+      // `seed-` prefix keeps the ids recognisably synthetic; a real DIP
+      // activity id is a bare integer.
+      dipAktivitaetId: `seed-erklaerung-${index + 1}`,
+      mpInternalId: seed.internalId,
+      dipVorgangId: "seed-vorgang-klimaschutz",
+      // The referenced procedure's *title*, not the member's reason — the
+      // schema note on `voteExplanations.subject` is explicit that this
+      // is what was voted on, not why.
+      subject: "Gesetz zur Änderung des Klimaschutzgesetzes",
+      aktivitaetsart: "Schriftliche Erklärung gem. § 31 Geschäftsordnung BT",
+      // A stub source link, so the disclosure's link branch is exercised
+      // without pointing at a real external URL a seeder should not be
+      // linking to. `#seed-declaration-<n>` renders as a same-page anchor
+      // and does not navigate off the site.
+      sourceUrl: `about:blank#seed-declaration-${index + 1}`,
+      protocolNumber: `${WP}/${90}`,
+      date: "2026-06-18",
+      wahlperiode: WP,
+    })),
+  })
+  console.log("  3 §31 declarations")
 
   await post("speeches", {
     speeches: MPS.flatMap((seed, mpIndex) =>
@@ -506,6 +554,43 @@ async function main() {
     })
   }
   console.log(`  ${motions.length} motions`)
+
+  // Committee referrals against a handful of the motions above — the input
+  // the `/motions` row disclosure reads. Three motions get referrals each
+  // (one lead, two consulted), so the disclosure's populated arm exercises
+  // ordering (lead first) and every sensible column. The rest of the 60
+  // motions stay empty, which is what the "no referral for this motion"
+  // arm needs. `getReferralCoverage` returns a positive count for the
+  // period either way, so the "not backfilled" arm is exercised through
+  // tests rather than through this seed.
+  const REFERRAL_COMMITTEES = [
+    { name: "Ausschuss für Klimaschutz und Energie", abbrev: "KEnAus", lead: true },
+    { name: "Ausschuss für Verkehr", abbrev: "VerkAus", lead: false },
+    { name: "Rechtsausschuss", abbrev: "RAus", lead: false },
+  ]
+  const referrals: Array<Record<string, unknown>> = []
+  for (const [motionIndex, motion] of motions.slice(0, 3).entries()) {
+    for (const [committeeIndex, committee] of REFERRAL_COMMITTEES.entries()) {
+      referrals.push({
+        dipVorgangspositionId: `seed-position-${motion.dipVorgangId}-${committeeIndex}`,
+        dipVorgangId: motion.dipVorgangId,
+        committeeName: committee.name,
+        committeeAbbreviation: committee.abbrev,
+        leadCommittee: committee.lead,
+        // `ueberweisungsart` was empty on every referral sampled from DIP,
+        // so null here matches the real distribution rather than
+        // inventing a value.
+        referralType: null,
+        positionKind: motionIndex === 0 ? "Überweisung" : "1. Beratung",
+        documentNumber: motion.drucksacheNr,
+        title: motion.title,
+        date: motion.date,
+        wahlperiode: WP,
+      })
+    }
+  }
+  await post("committee-referrals", { referrals })
+  console.log(`  ${referrals.length} committee referrals`)
 
   // The contribution graph's input: a year of daily events, denser on sitting
   // weeks and empty over the summer recess, so the grid has real texture rather

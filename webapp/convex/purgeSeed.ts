@@ -334,6 +334,23 @@ async function deleteRowsFor(
           .take(take),
     },
     {
+      // `voteExplanations` is keyed by MP — a §31 declaration is a named
+      // person's statement — so a synthetic mandate's seeded declarations
+      // reach the same per-MP scan every other member-keyed table does.
+      // Added when seedDev started writing them so the vote-detail
+      // disclosure has a populated arm to render; without this reader a
+      // subsequent purge would leave those rows and a re-seed would land
+      // beside them.
+      table: "voteExplanations",
+      read: (take: number) =>
+        ctx.db
+          .query("voteExplanations")
+          .withIndex("by_mpInternalId_and_wahlperiode_and_date", (q) =>
+            q.eq("mpInternalId", mpInternalId),
+          )
+          .take(take),
+    },
+    {
       table: "activities",
       read: (take: number) =>
         ctx.db
@@ -420,6 +437,77 @@ async function deleteSyntheticVoteSheets(
 }
 
 /**
+ * The Vorgang-id prefix seedDev mints for the synthetic motions and
+ * referrals — a real DIP id is a bare integer, so this cannot collide.
+ * Kept separate from `isSyntheticVoteSheet` because these tables carry no
+ * electorate and no XLSX URL; the prefix is the only honest marker.
+ */
+const SEED_VORGANG_PREFIX = "seed-"
+
+function isSyntheticVorgangId(id: string | null): boolean {
+  return id !== null && id.startsWith(SEED_VORGANG_PREFIX)
+}
+
+/**
+ * Deletes seeded motions and the referrals attached to them.
+ *
+ * Neither table names an MP, so `deleteRowsFor`'s per-mandate traversal
+ * cannot reach them — the same reason `voteSheets` needs its own path
+ * (`deleteSyntheticVoteSheets`). Referrals first, so a slice exhausted on
+ * them leaves the motion in place for the next slice rather than the
+ * reverse — the mirror of the ordering the vote-sheet path uses for its
+ * records-then-sheet order.
+ */
+async function deleteSyntheticMotionsAndReferrals(
+  ctx: MutationCtx,
+  budget: { remaining: number },
+  counts: Counts,
+): Promise<void> {
+  // Referrals: keyed on Vorgang id, so a range read per seeded motion
+  // reaches exactly its rows without a table scan.
+  const motions = await ctx.db.query("motions").withIndex("by_dipVorgangId").collect()
+  const seedMotions = motions.filter((row) => isSyntheticVorgangId(row.dipVorgangId))
+  for (const motion of seedMotions) {
+    if (budget.remaining <= 0) break
+    if (motion.dipVorgangId !== null) {
+      const referrals = await ctx.db
+        .query("committeeReferrals")
+        .withIndex("by_dipVorgangId", (q) => q.eq("dipVorgangId", motion.dipVorgangId))
+        .take(budget.remaining)
+      for (const row of referrals) {
+        await ctx.db.delete(row._id)
+        budget.remaining--
+        bump(counts, "committeeReferrals")
+      }
+      if (budget.remaining <= 0) break
+    }
+    await ctx.db.delete(motion._id)
+    budget.remaining--
+    bump(counts, "motions")
+  }
+}
+
+/** Whether any seeded motion or referral remains — the check `purgeSeedData`'s
+ * `done` flag needs to answer for these two tables the way it answers for
+ * mandates and vote sheets. */
+async function seedMotionsRemaining(
+  ctx: QueryCtx,
+): Promise<{ motions: number; referrals: number }> {
+  const motions = await ctx.db.query("motions").withIndex("by_dipVorgangId").collect()
+  const seedMotions = motions.filter((row) => isSyntheticVorgangId(row.dipVorgangId))
+  let referrals = 0
+  for (const motion of seedMotions) {
+    if (motion.dipVorgangId === null) continue
+    const rows = await ctx.db
+      .query("committeeReferrals")
+      .withIndex("by_dipVorgangId", (q) => q.eq("dipVorgangId", motion.dipVorgangId))
+      .collect()
+    referrals += rows.length
+  }
+  return { motions: seedMotions.length, referrals }
+}
+
+/**
  * Deletes the synthetic mandates, everything derived from them, and the ballots
  * the seeder invented.
  *
@@ -447,6 +535,12 @@ export const purgeSeedData = internalMutation({
     mpsRemaining: v.number(),
     /** Ballots still matching `isSyntheticVoteSheet` after this slice. */
     voteSheetsRemaining: v.number(),
+    /** Seeded motions still matching the Vorgang-id prefix. Kept alongside
+     * `mpsRemaining` and `voteSheetsRemaining` for the same reason: `done`
+     * has to answer for every table the seeder writes, and forgetting one
+     * is exactly the failure mode this module's header records. */
+    motionsRemaining: v.number(),
+    referralsRemaining: v.number(),
     /** Each deleted sheet's natural key, so an operator can check what went
      * against the corpus rather than trusting a count. */
     voteSheetsDeleted: v.array(
@@ -472,14 +566,26 @@ export const purgeSeedData = internalMutation({
     // here, and so the records a sheet owns are usually already gone.
     const voteSheetsDeleted = await deleteSyntheticVoteSheets(ctx, budget, counts)
 
+    // The last of the three non-per-mandate halves — see the note on the
+    // helper. Nothing else references seed motions or referrals, so this
+    // ordering is not load-bearing beyond the budget-slicing invariant.
+    await deleteSyntheticMotionsAndReferrals(ctx, budget, counts)
+
     const mpsRemaining = (await syntheticMandates(ctx)).length
     const voteSheetsRemaining = (await syntheticVoteSheets(ctx)).length
+    const remainingMotions = await seedMotionsRemaining(ctx)
     return {
       deleted: counts,
       mpsRemaining,
       voteSheetsRemaining,
+      motionsRemaining: remainingMotions.motions,
+      referralsRemaining: remainingMotions.referrals,
       voteSheetsDeleted,
-      done: mpsRemaining === 0 && voteSheetsRemaining === 0,
+      done:
+        mpsRemaining === 0 &&
+        voteSheetsRemaining === 0 &&
+        remainingMotions.motions === 0 &&
+        remainingMotions.referrals === 0,
     }
   },
 })
@@ -511,6 +617,14 @@ export const seedDataPresent = internalQuery({
     mps: v.number(),
     seedEvents: v.number(),
     voteSheets: v.number(),
+    /** Seeded motions still in the corpus, matched by Vorgang-id prefix.
+     * Reported alongside `mps` and `voteSheets` because a purge that leaves
+     * these behind leaves publicly-visible fabricated rows on `/motions` —
+     * exactly the class of defect the `voteSheets` field on this object was
+     * added to catch after the two-day incident recorded in the module
+     * header. */
+    motions: v.number(),
+    referrals: v.number(),
     realMPs: v.number(),
   }),
   handler: async (ctx) => {
@@ -526,10 +640,13 @@ export const seedDataPresent = internalQuery({
       seedEvents += events.filter((row) => row.referenceType === SEED_REFERENCE_TYPE).length
     }
 
+    const remainingMotions = await seedMotionsRemaining(ctx)
     return {
       mps: synthetic.length,
       seedEvents,
       voteSheets: (await syntheticVoteSheets(ctx)).length,
+      motions: remainingMotions.motions,
+      referrals: remainingMotions.referrals,
       realMPs: roster.length - synthetic.length,
     }
   },

@@ -4,6 +4,7 @@ import { usePaginatedQuery, useQuery } from "convex/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { CaveatNote } from "@/components/caveat-note"
+import { CommitteeReferralsDisclosure } from "@/components/committee-referrals-disclosure"
 import { ALL, FilterSelect } from "@/components/filter-select"
 import { MotionSponsors } from "@/components/motion-sponsors"
 import { useLocale } from "@/components/providers/locale-provider"
@@ -245,6 +246,15 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
   )
 
   const options = useQuery(api.motions.getMotionFilterOptions, { wahlperiode })
+  // Coverage for referrals — read **once at the page level** so the row
+  // disclosure can distinguish an unbackfilled period from a motion that had
+  // no referral. Same shape and reasoning as the explanation coverage query
+  // on components/vote-detail.tsx. This is the read that makes the empty
+  // state honest; per-row fetches would multiply into `results.length` reads
+  // of the same period-wide answer.
+  const referralCoverage = useQuery(api.committeeReferrals.getReferralCoverage, { wahlperiode })
+  const hasAnyReferrals =
+    referralCoverage === undefined ? undefined : referralCoverage.referrals > 0
 
   const searching = urlQuery !== ""
   const pageSize = searching ? SEARCHED_PAGE_SIZE : PAGE_SIZE
@@ -421,7 +431,11 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
           ) : null}
           <ul className="flex list-none flex-col gap-2 p-0">
             {results.map((motion) => (
-              <MotionRow key={motion.id} motion={motion} />
+              <MotionRow
+                key={motion.id}
+                motion={motion}
+                hasAnyReferralsForPeriod={hasAnyReferrals}
+              />
             ))}
           </ul>
         </>
@@ -470,6 +484,7 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
  */
 function MotionRow({
   motion,
+  hasAnyReferralsForPeriod,
 }: {
   motion: {
     id: string
@@ -478,7 +493,16 @@ function MotionRow({
     type: string | null
     vorgangstyp: string | null
     drucksacheNr: string | null
+    /** The DIP procedure id, from `motionInput`. Null when the motion was
+     * ingested by its Drucksache alone — a real case, since a row reaches
+     * the pipeline as *either* a Vorgang or a Drucksache and rarely both
+     * (schema note on `motions`). The referrals index is keyed by Vorgang,
+     * so a null here means the disclosure has no honest read to make. */
+    dipVorgangId: string | null
   }
+  /** Threaded through from the caller's `getReferralCoverage` read — see the
+   * page-level comment. */
+  hasAnyReferralsForPeriod: boolean | undefined
 }) {
   const { t, locale } = useLocale()
   const pdf = drucksachePdfUrl(motion.drucksacheNr)
@@ -520,6 +544,15 @@ function MotionRow({
       </div>
 
       <MotionSponsors motionId={motion.id} />
+      {/* The referrals disclosure lives beside sponsors, both using the same
+          skip-when-closed contract. Kept as its own slot rather than folded
+          into sponsors because the two answer different questions and both
+          have their own caveats — merging would be exactly the merge
+          convex/committeeReferrals.ts's boundary is written to prevent. */}
+      <CommitteeReferralsDisclosure
+        dipVorgangId={motion.dipVorgangId}
+        hasAnyForPeriod={hasAnyReferralsForPeriod}
+      />
     </li>
   )
 }
