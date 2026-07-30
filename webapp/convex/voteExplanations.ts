@@ -1,5 +1,12 @@
 import { type ObjectType, v } from "convex/values"
-import { internalMutation, internalQuery, type MutationCtx, query } from "./_generated/server"
+import type { Doc } from "./_generated/dataModel"
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+  type QueryCtx,
+  query,
+} from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -106,6 +113,62 @@ export const upsertVoteExplanations = internalMutation({
  * Bounded by the chamber: one declaration per member at most, and the largest
  * sample seen was 78 in a whole sitting.
  */
+/**
+ * The `getExplanationsByMotion` handler body, extracted so read-cost tests
+ * can call it with a fake `ctx`. Same pattern as
+ * `voteSheetsMissingVorgangHandler` in convex/votes.ts.
+ */
+export async function getExplanationsByMotionHandler(
+  ctx: QueryCtx,
+  args: { wahlperiode: number; dipVorgangId: string },
+): Promise<
+  Array<
+    Omit<Doc<"voteExplanations">, "_id" | "_creationTime"> & {
+      name: string
+      fraktion: string
+    }
+  >
+> {
+  const rows = await ctx.db
+    .query("voteExplanations")
+    .withIndex("by_wahlperiode_and_dipVorgangId", (q) =>
+      q.eq("wahlperiode", args.wahlperiode).eq("dipVorgangId", args.dipVorgangId),
+    )
+    .collect()
+
+  // Batch the `mpLabel` join by unique MP id — see the equivalent note on
+  // `getSpeechesBySitting` in convex/speeches.ts. §31 usually is one row
+  // per member per Vorgang, so this changes N lookups to at most N (no
+  // improvement when they match), but the pattern is what stops a future
+  // caller — or a future DIP that emits two activity records per (member,
+  // Vorgang) — from silently reintroducing an N+1. The largest single
+  // sample is 78 declarations across ~78 unique members (protocol 21/90);
+  // 108 unique speakers is a WP21 peak per §5.2. Well inside the read cap.
+  const uniqueIds = new Set(rows.map((row) => row.mpInternalId))
+  const labels = new Map<string, Awaited<ReturnType<typeof mpLabel>>>()
+  for (const id of uniqueIds) {
+    // Every row of this query shares the same `wahlperiode` — it is the
+    // index prefix — so `mpLabel(id, args.wahlperiode)` and
+    // `mpLabel(id, row.wahlperiode)` return the same mandate. Using
+    // `args.wahlperiode` avoids reading `row.wahlperiode` for a value the
+    // caller already supplied.
+    labels.set(id, await mpLabel(ctx, id, args.wahlperiode))
+  }
+
+  const joined = rows.map((row) => {
+    // Same invariant as `getSpeechesBySitting`: every id in `rows` was in
+    // `uniqueIds`, so `labels.get(...)` is defined. The `??` fallback
+    // preserves the pre-batch semantics for a future edit that broke it.
+    const mp = labels.get(row.mpInternalId)
+    return {
+      ...withoutSystemFields<"voteExplanations">(row),
+      name: mp?.name ?? row.mpInternalId,
+      fraktion: mp?.fraktion ?? "",
+    }
+  })
+  return joined.sort((a, b) => a.name.localeCompare(b.name, "de"))
+}
+
 export const getExplanationsByMotion = query({
   args: { wahlperiode: v.number(), dipVorgangId: v.string() },
   returns: v.array(
@@ -116,25 +179,7 @@ export const getExplanationsByMotion = query({
       fraktion: v.string(),
     }),
   ),
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("voteExplanations")
-      .withIndex("by_wahlperiode_and_dipVorgangId", (q) =>
-        q.eq("wahlperiode", args.wahlperiode).eq("dipVorgangId", args.dipVorgangId),
-      )
-      .collect()
-
-    const joined = []
-    for (const row of rows) {
-      const mp = await mpLabel(ctx, row.mpInternalId, row.wahlperiode)
-      joined.push({
-        ...withoutSystemFields<"voteExplanations">(row),
-        name: mp.name,
-        fraktion: mp.fraktion,
-      })
-    }
-    return joined.sort((a, b) => a.name.localeCompare(b.name, "de"))
-  },
+  handler: getExplanationsByMotionHandler,
 })
 
 /**
@@ -180,16 +225,25 @@ export const getExplanationsByMP = query({
  * no more. Convex charges by documents read, so this costs one document
  * in a populated period and zero in an empty one.
  */
+/**
+ * The `hasAnyExplanationsForPeriod` handler body, extracted so read-cost
+ * tests can call it with a fake `ctx`.
+ */
+export async function hasAnyExplanationsForPeriodHandler(
+  ctx: QueryCtx,
+  args: { wahlperiode: number },
+): Promise<boolean> {
+  const first = await ctx.db
+    .query("voteExplanations")
+    .withIndex("by_wahlperiode_and_dipVorgangId", (q) => q.eq("wahlperiode", args.wahlperiode))
+    .first()
+  return first !== null
+}
+
 export const hasAnyExplanationsForPeriod = query({
   args: { wahlperiode: v.number() },
   returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const first = await ctx.db
-      .query("voteExplanations")
-      .withIndex("by_wahlperiode_and_dipVorgangId", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .first()
-    return first !== null
-  },
+  handler: hasAnyExplanationsForPeriodHandler,
 })
 
 /**

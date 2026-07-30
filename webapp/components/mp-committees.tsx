@@ -38,7 +38,10 @@ export function MPCommittees({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("mp.committees")}</CardTitle>
+        {/* `as="h2"` — sibling landmark of the biography, contact and score
+            panels on the MP profile. F-05 of the review, applied through
+            the shared `CardTitle` primitive. */}
+        <CardTitle as="h2">{t("mp.committees")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {committees === undefined ? (

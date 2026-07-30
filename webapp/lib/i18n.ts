@@ -583,6 +583,24 @@ const de = {
   "mp.latestMotions": "Neueste Anträge",
   "mp.latestQuestions": "Neueste Anfragen",
   "mp.latestVotes": "Neueste namentliche Abstimmungen",
+  // Kein "-Erklärungen": das Panel steht neben "Neueste namentliche
+  // Abstimmungen", die kürzere Form würde §31 mit einer allgemeinen "Erklärung"
+  // verwechseln. Ausgeschrieben und mit §-Zeichen, damit ein Screenreader das
+  // Bundestagsspezifische hört.
+  "mp.latestExplanations": "Neueste Erklärungen nach §31 GO-BT",
+  // Zwei Leerzustände wie im Ballot-Disclosure — hier für eine Person statt
+  // für einen Vorgang. Die Prämisse ist dieselbe: es macht einen Unterschied,
+  // ob niemand etwas erklärt hat oder ob die Wahlperiode noch nicht
+  // eingelesen wurde.
+  "mp.noExplanations":
+    "Für diese Wahlperiode ist keine Erklärung nach §31 GO-BT dieser Person erfasst.",
+  "mp.explanationsPeriodNotBackfilled":
+    "Für diese Wahlperiode sind noch keine §31-Erklärungen eingelesen. Das heißt nicht, dass diese Person keine eingereicht hat — es heißt, dieses Deployment hat sie noch nicht abgeholt.",
+  // Der Bezugstitel — was abgestimmt wurde — kann in DIP fehlen. Kein Grund
+  // für einen leeren Eintrag: die Erklärung ist trotzdem eingereicht, das
+  // Protokoll trotzdem verlinkt. So bleibt die Zeile lesbar, statt still
+  // auszufallen.
+  "mp.explanationSubjectMissing": "Vorgangstitel nicht erfasst",
   "mp.noQuestions": "Für diese Wahlperiode sind keine Anfragen erfasst.",
   // The two instruments, named as the Bundestag names them. Not translated into
   // a description ("schriftliche Anfrage") because these are the terms on the
@@ -2124,6 +2142,37 @@ const de = {
   "voteExplanations.sourceLinkLabel":
     "Zum Protokoll — Erklärung von {name} (öffnet neuen Tab)",
 
+  // --- Sitzung (sitting detail page) --------------------------------------
+  // Der Titel benennt die Sitzung im Bundestagsformat: "Sitzung 21/90" ist
+  // die kanonische Kurzform, die auch auf `mp-recent-records`-Reden steht
+  // (`mp.sitting`). Datum, Redenzahl und Abstimmungen kommen aus den
+  // tatsächlich vorhandenen Rows. Keine Behauptung über Sitzungsdauer,
+  // Anwesenheit, Tagesordnung — diese Angaben veröffentlicht der Bundestag
+  // nicht als Datenfelder, und das Protokoll unten führt zum Wortlaut.
+  "sitting.metaTitle": "Sitzung {wahlperiode}/{sitzungnr}",
+  "sitting.metaDescription":
+    "Plenarsitzung {sitzungnr} der {wahlperiode}. Wahlperiode — Reden und namentliche Abstimmungen aus dem amtlichen Protokoll.",
+  "sitting.title": "Sitzung {wahlperiode}/{sitzungnr}",
+  "sitting.backToVotes": "Zurück zu den Abstimmungen",
+  "sitting.openProtocol": "Amtliches Protokoll (PDF) öffnen",
+  "sitting.ballotsHeading": "Namentliche Abstimmungen",
+  "sitting.speechesHeading": "Reden ({count})",
+  "sitting.noBallots":
+    "Für diese Sitzung sind keine namentlichen Abstimmungen erfasst. Namentliche Abstimmungen kommen aus den XLSX-Sitzungsblättern des Bundestages.",
+  "sitting.noSpeeches":
+    "Für diese Sitzung sind keine Reden erfasst. Reden werden aus dem Plenarprotokoll-XML gelesen.",
+  // Der Leerzustand für die ganze Seite — weder Rede noch Abstimmung. Sagt,
+  // welche Sitzung gemeint war, warum die Seite leer ist, und verweist auf
+  // das Protokoll (dessen URL deterministisch aus (wp, sitzungnr) folgt und
+  // deshalb unabhängig von unseren Daten funktioniert).
+  "sitting.emptyTitle":
+    "Für Sitzung {wahlperiode}/{sitzungnr} liegen hier weder Reden noch namentliche Abstimmungen vor.",
+  "sitting.emptyBody":
+    "Entweder wurde diese Sitzung noch nicht eingelesen, oder es gab keine namentliche Abstimmung und keine im Protokoll-XML erfasste Rede. Das amtliche Protokoll unten führt zum Original.",
+  // Der Link, den `/votes/[id]` von der Sitzungszeile aus setzt. Kurz und
+  // ohne Nummerierung: die Nummer steht schon in der Zeile daneben.
+  "sitting.linkFromVote": "Ganze Sitzung",
+
   // --- Ausschussüberweisungen (committeeReferrals) ------------------------
   // Auf der Drucksachenseite offengelegt: an welche Ausschüsse ein Vorgang
   // gegangen ist. Das ist eine Aussage über die Drucksache, nicht über
@@ -2491,6 +2540,14 @@ const en: Dictionary = {
   "mp.latestMotions": "Latest motions",
   "mp.latestQuestions": "Latest written questions",
   "mp.latestVotes": "Latest recorded votes",
+  // Spelled out with the section symbol so a screen reader hears the
+  // Bundestag-specific instrument rather than the generic word "declaration".
+  "mp.latestExplanations": "Latest §31 GO-BT declarations",
+  "mp.noExplanations":
+    "No §31 GO-BT declaration by this member is recorded for this electoral period.",
+  "mp.explanationsPeriodNotBackfilled":
+    "This deployment has not yet ingested §31 declarations for this electoral period. That does not mean this member filed none — it means they have not been fetched here yet.",
+  "mp.explanationSubjectMissing": "Procedure title not recorded",
   "mp.noQuestions": "No written questions recorded for this electoral period.",
   // The German terms are kept: these are the names printed on the Drucksache,
   // and "major/minor interpellation" is a translation no reader would search
@@ -3527,6 +3584,25 @@ const en: Dictionary = {
   "voteExplanations.sourceLink": "Open protocol",
   "voteExplanations.sourceLinkLabel":
     "Open protocol — declaration by {name} (opens new tab)",
+
+  // --- Sitting detail page ------------------------------------------------
+  "sitting.metaTitle": "Sitting {wahlperiode}/{sitzungnr}",
+  "sitting.metaDescription":
+    "Plenary sitting {sitzungnr} of the {wahlperiode}th electoral period — speeches and named ballots from the official protocol.",
+  "sitting.title": "Sitting {wahlperiode}/{sitzungnr}",
+  "sitting.backToVotes": "Back to ballots",
+  "sitting.openProtocol": "Open official protocol (PDF)",
+  "sitting.ballotsHeading": "Named ballots",
+  "sitting.speechesHeading": "Speeches ({count})",
+  "sitting.noBallots":
+    "No named ballots are recorded for this sitting. Named ballots come from the Bundestag's XLSX sitting sheets.",
+  "sitting.noSpeeches":
+    "No speeches are recorded for this sitting. Speeches are parsed from the plenary protocol XML.",
+  "sitting.emptyTitle":
+    "No speeches or named ballots are recorded here for sitting {wahlperiode}/{sitzungnr}.",
+  "sitting.emptyBody":
+    "Either this sitting has not been ingested yet, or it held no named ballot and no speech is recorded in the protocol XML. The official protocol below is the source.",
+  "sitting.linkFromVote": "Full sitting",
 
   // --- Committee referrals (committeeReferrals) ---------------------------
   "referrals.show": "Show committee referrals",

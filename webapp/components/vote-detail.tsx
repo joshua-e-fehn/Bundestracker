@@ -14,6 +14,7 @@ import { VoteExplanationsDisclosure } from "@/components/vote-explanations-discl
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { VoteTable, type VoteTableRow } from "@/components/vote-table"
 import { api } from "@/convex/_generated/api"
+import { safeExternalUrl } from "@/lib/bundestag"
 import { formatDate, formatPercent } from "@/lib/format"
 import { isLameDuckVote, LAME_DUCK_MAINTAINED_AS_OF } from "@/lib/lame-duck"
 import { periodLink } from "@/lib/period"
@@ -162,12 +163,30 @@ export function VoteDetail({
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
               <span className="tabular-nums">{formatDate(sheet.date, locale)}</span>
-              <span className="tabular-nums">
+              {/* The sitting label — unchanged in wording — becomes a link to
+                  the sitting page. `(wahlperiode, sitzungnr)` names a real
+                  page for every ballot (both fields are required on
+                  `voteSheets`), so this is unconditional; the sitting page
+                  itself decides how to render an unbackfilled or empty
+                  sitting. Link kept on the ballot label only, not on the
+                  vote-number half — a reader who clicked "Abstimmung 3"
+                  would not expect the whole sitting, only that ballot.
+                  `periodLink` scopes the URL to the ballot's own
+                  Wahlperiode, matching the "back to /votes" link two rows
+                  up. */}
+              <Link
+                href={periodLink(
+                  `/sittings/${sheet.wahlperiode}/${sheet.sitzungnr}`,
+                  sheet.wahlperiode,
+                  periods?.current ?? null,
+                )}
+                className="tabular-nums underline underline-offset-4 hover:text-foreground"
+              >
                 {t("votes.sitting", {
                   sitzungnr: sheet.sitzungnr,
                   abstimmnr: sheet.abstimmnr,
                 })}
-              </span>
+              </Link>
               <VoteOutcomeBadge result={sheet.result} locale={locale} />
               {/* Full label here, unlike the list's compact mark: this is the page
                 about this one ballot, so there is room for the word and a
@@ -223,18 +242,26 @@ export function VoteDetail({
 
           {/* The XLSX this ballot was parsed from. Null when it was reconstructed
             from the protocol XML instead, which is also the case where
-            `absentCount` cannot be trusted (schema note on `sourceUrl`). */}
-          {sheet.sourceUrl !== null ? (
-            <a
-              href={sheet.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-fit items-center gap-1.5 text-sm underline underline-offset-4 hover:text-foreground"
-            >
-              {t("votes.sourceSheet")}
-              <ExternalLink className="size-3.5" aria-hidden="true" />
-            </a>
-          ) : null}
+            `absentCount` cannot be trusted (schema note on `sourceUrl`).
+            `safeExternalUrl` guards the render side against a `javascript:` or
+            `data:` URL landing in `voteSheets.sourceUrl` — the ingest check
+            catches this on write, but a stored value from a bad backfill would
+            otherwise render as a working link (React does not strip these).
+            See F-10 of the review. */}
+          {(() => {
+            const safeSourceUrl = safeExternalUrl(sheet.sourceUrl)
+            return safeSourceUrl ? (
+              <a
+                href={safeSourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-fit items-center gap-1.5 text-sm underline underline-offset-4 hover:text-foreground"
+              >
+                {t("votes.sourceSheet")}
+                <ExternalLink className="size-3.5" aria-hidden="true" />
+              </a>
+            ) : null
+          })()}
         </Card>
 
         <section aria-labelledby="vote-breakdown-heading" className="flex flex-col gap-3">

@@ -98,9 +98,23 @@ describe("no branch generates or paraphrases a reason", () => {
 
   test("the source link points to the protocol, not to generated content", () => {
     // The caveat repeats it and the link honours it: the words live in the
-    // PDF. `sourceUrl` is the only route to them.
-    expect(disclosure).toMatch(/href=\{row\.sourceUrl\}/)
+    // PDF. `sourceUrl` is the only route to them. Post F-10, the raw
+    // stored value is passed through `safeExternalUrl` before it reaches
+    // `<a href>` — the caveat is unchanged.
+    expect(disclosure).toMatch(/safeExternalUrl\(row\.sourceUrl\)/)
     expect(disclosure).toMatch(/t\("voteExplanations\.caveat"\)/)
+  })
+
+  test("the source anchor is gated on the scheme allowlist, not on the raw column", () => {
+    // The specific wrong version this pins: a `<a href={row.sourceUrl}>`
+    // without the scheme check would render a `javascript:` URL landing in
+    // the column as an executable link (React does not strip these). The
+    // behavioural tests for the helper live in lib/bundestag.test.ts; this
+    // is the wiring check.
+    expect(disclosure).toMatch(/safeExternalUrl/)
+    // And the render-side branch must be gated on the *result* of the
+    // check, so a truthy raw column is never enough on its own.
+    expect(disclosure).toMatch(/const safe = safeExternalUrl\(row\.sourceUrl\)/)
   })
 })
 

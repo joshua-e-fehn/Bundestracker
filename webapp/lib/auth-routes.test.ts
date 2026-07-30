@@ -1,7 +1,27 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
-import { continueWithoutAccountTarget, isPublicPath } from "./auth-routes"
+import { continueWithoutAccountTarget, isPublicPath, PUBLIC_PATHS } from "./auth-routes"
+
+/**
+ * Depth-first search for a `page.tsx` anywhere under `dir`. Skips route
+ * groups (`(...)`) and private folders (`_...`), matching Next's own route
+ * resolution. Used to catch dynamic-only routes like
+ * `/sittings/[wp]/[sittingNumber]` whose only `page.tsx` lives under two
+ * dynamic segments and never at the top level (F-09).
+ */
+function hasPageAnywhereUnder(dir: string): boolean {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name === "page.tsx") return true
+    if (!entry.isDirectory()) continue
+    // Route groups and private folders do not appear in URLs, so their
+    // pages do not extend the parent's route surface. Dynamic segments
+    // (`[foo]`) do count.
+    if (/^[(_@]/.test(entry.name)) continue
+    if (hasPageAnywhereUnder(join(dir, entry.name))) return true
+  }
+  return false
+}
 
 /**
  * Tests for the public-route list.
@@ -38,15 +58,40 @@ describe("isPublicPath", () => {
     // must be browsable signed out. A new page fails here on the commit that
     // adds it rather than in a browser weeks later. Route groups and private
     // folders are skipped — they do not appear in a URL — and so are dynamic
-    // segments, which are covered by their parent's prefix.
+    // segments *at the same level*, which are covered by their parent's
+    // prefix.
+    //
+    // ## Deep dynamic-only routes are the F-09 gap
+    //
+    // A route whose only `page.tsx` lives under nested dynamic segments —
+    // e.g. `app/sittings/[wahlperiode]/[sittingNumber]/page.tsx` — has no
+    // top-level `sittings/page.tsx`, and the top-only loop above cannot see
+    // it. Result: a rebase that dropped the `/sittings` line from
+    // PUBLIC_PATHS would slip through this check. The descent below fixes
+    // that: for any top-level directory that carries dynamic children but no
+    // own `page.tsx`, walk it until we find one, and pin the top-level
+    // segment as public.
     const appDir = new URL("../app/", import.meta.url).pathname
     for (const entry of readdirSync(appDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       if (/^[(_[@]/.test(entry.name)) continue
       if (entry.name === "api") continue
-      if (!existsSync(join(appDir, entry.name, "page.tsx"))) continue
+      const hasOwnPage = existsSync(join(appDir, entry.name, "page.tsx"))
+      const hasDeepPage = hasOwnPage || hasPageAnywhereUnder(join(appDir, entry.name))
+      if (!hasDeepPage) continue
       expect(isPublicPath(`/${entry.name}`)).toBe(true)
     }
+  })
+
+  test("dynamic sitting URL is on the public list — F-09 explicit backstop", () => {
+    // The filesystem parity test above descends now, so this is redundant on
+    // paper — and pinned anyway, because F-09's whole point is that a
+    // rebase that drops `/sittings` from PUBLIC_PATHS should fail loudly at
+    // this level rather than only in a browser. Same reason `/mps/bt-0001`
+    // is spelled out above the filesystem loop.
+    expect(isPublicPath("/sittings/21/90")).toBe(true)
+    expect(isPublicPath("/sittings/19/1")).toBe(true)
+    expect(isPublicPath("/sittings/anything")).toBe(true)
   })
 
   test("settings is public, because it has a signed-out rendering", () => {
@@ -83,6 +128,20 @@ describe("isPublicPath", () => {
     // equality or a "/"-delimited prefix, which is what stops that.
     expect(isPublicPath("/mpsecret")).toBe(false)
     expect(isPublicPath("/api-internal")).toBe(false)
+  })
+
+  test("PUBLIC_PATHS has no duplicate entries — F-12", () => {
+    // A dupe is harmless at runtime but reads as dead code and hides
+    // whichever comment sits next to the shorter copy. The review flagged
+    // `/votes` being listed twice; this pins the whole array so a future
+    // merge conflict cannot reintroduce that (or introduce another one).
+    const seen = new Set<string>()
+    const duplicates: string[] = []
+    for (const path of PUBLIC_PATHS) {
+      if (seen.has(path)) duplicates.push(path)
+      seen.add(path)
+    }
+    expect(duplicates).toEqual([])
   })
 
   test("an unlisted path is gated, which is the point of the list", () => {

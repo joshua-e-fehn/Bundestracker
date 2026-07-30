@@ -65,12 +65,13 @@ export const PUBLIC_PATHS = [
   // `/mps/<internalId>`, and a link that redirects to a 404 is worse than one
   // that reaches a page not yet written.
   "/mps",
-  // The fourth route to be added without this entry — see the ⚠ above. The
-  // voting explorer (PR #13) shipped with `app/votes/page.tsx` and no line
-  // here, so `lib/auth-routes.test.ts` has been failing on main since: the
-  // filesystem check that exists precisely to catch this caught it, and the
-  // fix is the one line it was written to demand.
-  "/votes",
+  // Historically `/votes` appeared twice here — once at the top with the
+  // other early routes, once with a comment about being the fourth route
+  // to hit the "forgot to add to PUBLIC_PATHS" bug. The dupe was harmless
+  // at runtime but read as dead code and hid the comment beneath. F-12 of
+  // the review flagged it; the parity test in lib/auth-routes.test.ts now
+  // asserts no duplicates.
+  //
   // The Fraktion comparison dashboard, and its `/parties/<key>` member lists —
   // covered by the prefix, like `/mps/<internalId>`. Caught by the filesystem
   // check on the commit that added the page rather than in a browser later,
@@ -121,6 +122,14 @@ export const PUBLIC_PATHS = [
   // The prefix covers `/committees/<name>` for the same reason `/mps` covers
   // profile pages.
   "/committees",
+  // The plenary sitting detail — `/sittings/[wp]/[nr]`. Eleventh time the
+  // filesystem check has demanded a line, and the ⚠ above applies here too:
+  // the sitting page is linked from every ballot's sitting label
+  // (components/vote-detail.tsx), so a missing entry would send every reader
+  // who clicked "Sitzung 21/90" to a sign-in prompt for a page that is a
+  // read-through of the plenary protocol XML — open data that requires no
+  // account.
+  "/sittings",
   // The reader's own saved choices — weights, language, follow list. The one
   // route on this site whose *contents* need an account, and still public,
   // because the page has a signed-out rendering that explains what an account

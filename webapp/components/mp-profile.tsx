@@ -232,7 +232,12 @@ export function MPProfile({
 
           <Card>
             <CardHeader>
-              <CardTitle>{t("heatmap.title")}</CardTitle>
+              {/* `as="h2"`, matching the `Panel` chrome in
+                  mp-recent-records.tsx and the sibling cards on this page —
+                  the MP profile's `<h1>` is the member's name, and every
+                  landmark section below is a peer that a screen-reader
+                  reader should be able to jump between. F-05 of the review. */}
+              <CardTitle as="h2">{t("heatmap.title")}</CardTitle>
             </CardHeader>
             <CardContent>
               <ActivityHeatmap mpInternalId={mp.internalId} locale={locale} today={today} />
@@ -299,7 +304,10 @@ function Biography({ mp, locale }: { mp: MPDoc; locale: Locale }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("mp.biography")}</CardTitle>
+        {/* `as="h2"` — sibling of the panels in the main column and of the
+            contact + committees cards below. See the note on the heatmap
+            title above. */}
+        <CardTitle as="h2">{t("mp.biography")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {rows.length === 0 && !mp.bio ? (
@@ -408,7 +416,8 @@ function Contact({ mp }: { mp: MPDoc }) {
     // as the sections in components/about-page.tsx.
     <Card id={CONTACT_ANCHOR} className="scroll-mt-20">
       <CardHeader>
-        <CardTitle>{t("mp.contact")}</CardTitle>
+        {/* `as="h2"` — same reason, see the heatmap title above. */}
+        <CardTitle as="h2">{t("mp.contact")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {contact.any ? null : (
