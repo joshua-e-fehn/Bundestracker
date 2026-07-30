@@ -251,7 +251,8 @@ ingestionRoute("votes/backfill-dissent", internal.votes.backfillDissent)
  * recomputation.** Both now read votes through the period-scoped index, and a
  * record this has not reached is absent from that range: the failure is an
  * undercount that repairs itself, not a wrong attribution, but it is a real one.
- * `votes:voteScopeCoverage` reports what remains, read-only. See convex/votes.ts.
+ * `POST /api/pipeline/coverage/vote-scope` reports what remains, read-only —
+ * paired below, and wrapped by `scripts/verify-coverage.py`. See convex/votes.ts.
  */
 ingestionRoute("votes/backfill-scope", internal.votes.backfillVoteRecordScope)
 
@@ -278,6 +279,23 @@ ingestionRoute("votes/backfill-vorgang", internal.votes.backfillVoteSheetVorgang
  * back through the mutation. See convex/votes.ts:voteSheetsMissingVorgang.
  */
 pipelineQueryRoute("votes/missing-vorgang", internal.votes.voteSheetsMissingVorgang)
+
+/**
+ * Coverage answers for operators — the three counters that used to be public
+ * `query()`s in their modules with no UI caller and no automated operator
+ * caller. Reached over `POST /api/pipeline/coverage/<name>` with the same
+ * bearer key the ingest routes carry, so an operator running
+ * `scripts/verify-coverage.py` can ask exactly the questions the UI's
+ * `hasAny*ForPeriod` booleans cannot answer, without the surface being
+ * poll-able by anyone who guessed the path.
+ *
+ * Ordering mirrors the ingest routes for the sibling tables above: referrals
+ * beside `committee-referrals`, explanations beside `vote-explanations`,
+ * vote-scope beside `votes/backfill-scope`.
+ */
+pipelineQueryRoute("coverage/referrals", internal.committeeReferrals.getReferralCoverage)
+pipelineQueryRoute("coverage/explanations", internal.voteExplanations.getExplanationCoverage)
+pipelineQueryRoute("coverage/vote-scope", internal.votes.voteScopeCoverage)
 ingestionRoute("motions", internal.motions.upsertMotions)
 ingestionRoute("motion-sponsors", internal.motions.upsertMotionSponsors)
 ingestionRoute("speeches", internal.speeches.upsertSpeeches)

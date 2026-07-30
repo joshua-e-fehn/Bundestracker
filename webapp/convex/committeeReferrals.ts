@@ -1,5 +1,5 @@
 import { type ObjectType, v } from "convex/values"
-import { internalMutation, type MutationCtx, query } from "./_generated/server"
+import { internalMutation, internalQuery, type MutationCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -153,22 +153,33 @@ export const hasAnyReferralsForPeriod = query({
 /**
  * What referral data a deployment holds for a period, per committee.
  *
- * Kept for **operator** callers — a dashboard-side "how many referrals in
- * this period, how many lead, which committees" answer that
- * `hasAnyReferralsForPeriod` above cannot give. The UI does NOT use this:
- * every disclosure page-level read now goes through the boolean, so the
- * read cost of a `/motions` load does not grow with the size of a period.
+ * **Operator surface**, reached over `POST /api/pipeline/coverage/referrals`
+ * with the bearer key — see convex/http.ts and `scripts/verify-coverage.py`
+ * for how it is called. The UI never calls this: every disclosure's
+ * page-level read goes through `hasAnyReferralsForPeriod` above so the read
+ * cost of a `/motions` load does not grow with the size of a period. Kept
+ * separate from that boolean because a dashboard-side "how many referrals in
+ * this period, how many lead, which committees" answer is a different
+ * question — and one an operator running a coverage check actually asks.
+ *
+ * Now an `internalQuery`, not a public one: the pattern the audit named
+ * (`webapp/convex/committeeReferrals.ts:171`) had a public surface with no UI
+ * caller and no automated operator caller, which is worse than either — the
+ * `.collect()` and the whole read cost were reachable by anyone who knew the
+ * path. Internalising it moves the surface behind the same bearer gate the
+ * ingest routes carry (http.ts:pipelineQueryRoute → pipelineRoute), so the
+ * dashboard question stays answerable and the public API shrinks.
  *
  * An empty answer here means *this period has not been backfilled*, which
- * is a different statement from `getCommittees` returning empty — that
- * one means *nothing was ever published* (§6.4). Keeping them as separate
- * queries on separate tables is what lets the UI say which.
+ * is a different statement from `getCommittees` returning empty — that one
+ * means *nothing was ever published* (§6.4). Keeping them as separate
+ * queries on separate tables is what lets the operator say which.
  *
  * `.collect()` over one period: WP21 holds a few hundred referrals against a
  * ~23 800-position corpus of which under 5 % refer anything, an order of
  * magnitude inside the read limit.
  */
-export const getReferralCoverage = query({
+export const getReferralCoverage = internalQuery({
   args: { wahlperiode: v.number() },
   returns: v.object({
     referrals: v.number(),
