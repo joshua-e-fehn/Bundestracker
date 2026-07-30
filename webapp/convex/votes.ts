@@ -899,11 +899,14 @@ export const backfillVoteRecordScope = internalMutation({
  * `remaining` equal to `ceiling` means "at least this many", which
  * `atLeastCeiling` states rather than leaving to the caller to infer.
  *
- * A query rather than a mutation so it can be called from `/api/query` against
- * production without a write path — see the verification section of the branch
- * report.
+ * **Operator surface**, reached over `POST /api/pipeline/coverage/vote-scope`
+ * with the bearer key — see convex/http.ts and `scripts/verify-coverage.py`
+ * for how it is called. Now an `internalQuery` (was a public `query`): the
+ * only intended caller was an operator running a post-deploy check, so it
+ * belongs behind the same bearer gate the ingest routes carry rather than on
+ * the public surface where anyone who guessed the path could poll it.
  */
-export const voteScopeCoverage = query({
+export const voteScopeCoverage = internalQuery({
   args: { ceiling: v.optional(v.number()) },
   returns: v.object({
     remaining: v.number(),
@@ -1524,60 +1527,12 @@ export function majorityOf(votes: readonly Vote[]): { vote: Vote; share: number 
 const MAX_GROUP_COMPARISONS = 25
 
 // --- public queries -------------------------------------------------------
-
-/**
- * One ballot, with its records.
- *
- * `tallied` is counted from the rows that actually landed, alongside the
- * published counts on the sheet itself. They should agree; when they do not,
- * the ingest is incomplete, and the UI can say so rather than present a
- * confidently wrong total. See the header note.
- */
-export const getVoteSheet = query({
-  args: { wahlperiode: v.number(), sitzungnr: v.number(), abstimmnr: v.number() },
-  returns: v.union(
-    v.null(),
-    v.object({
-      sheet: voteSheetDoc,
-      records: v.array(voteRecordDoc),
-      tallied: v.object({
-        yes: v.number(),
-        no: v.number(),
-        abstain: v.number(),
-        invalid: v.number(),
-        absent: v.number(),
-      }),
-    }),
-  ),
-  handler: async (ctx, args) => {
-    const sheet = await findSheet(ctx, args.wahlperiode, args.sitzungnr, args.abstimmnr)
-    if (!sheet) return null
-
-    // Bounded by the chamber: 630-odd rows for one ballot, well inside the
-    // read limit, and a page of a ballot is not a useful thing to return.
-    const records = await ctx.db
-      .query("voteRecords")
-      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
-      .collect()
-
-    const tallied = { yes: 0, no: 0, abstain: 0, invalid: 0, absent: 0 }
-    const joined = []
-    for (const record of records) {
-      tallied[record.vote]++
-      const mp = await mpLabel(ctx, record.mpInternalId, sheet.wahlperiode)
-      joined.push({
-        mpInternalId: record.mpInternalId,
-        name: mp.name,
-        fraktion: mp.fraktion,
-        vote: record.vote,
-        partyAtVote: record.partyAtVote,
-        remark: record.remark,
-      })
-    }
-    joined.sort((a, b) => a.name.localeCompare(b.name, "de"))
-    return { sheet: toVoteSheetDoc(sheet), records: joined, tallied }
-  },
-})
+//
+// A natural-key single-ballot form used to live here (`getVoteSheet`), keyed
+// on `(wahlperiode, sitzungnr, abstimmnr)`. `/votes/[id]` uses `getVoteSheetById`
+// (Convex id) and no other caller ever materialised. Removed; `findSheet`
+// below is still the shared lookup helper for the ballots page and the
+// backfill route, so a future natural-key caller would go through it.
 
 /** Ballots in a period, newest first. */
 export const getVoteSheets = query({
@@ -1978,37 +1933,11 @@ export const getVoteSheetById = query({
   },
 })
 
-/**
- * How each parliamentary group voted on one ballot.
- *
- * The same table `getVoteSheetById` embeds, as its own query — for a caller
- * that wants the group summary without 630 rows of records crossing the wire.
- * Both go through `tallyByGroup`, so the two can never disagree.
- */
-export const getFraktionVoteBreakdown = query({
-  args: { id: v.id("voteSheets") },
-  returns: v.union(v.null(), v.array(fraktionBreakdownRow)),
-  handler: async (ctx, args) => {
-    const sheet = await ctx.db.get(args.id)
-    if (!sheet) return null
-
-    const records = await ctx.db
-      .query("voteRecords")
-      .withIndex("by_voteSheetId_and_mpInternalId", (q) => q.eq("voteSheetId", sheet._id))
-      .collect()
-
-    // Only the records with no group printed on them need the roster, so this
-    // resolves lazily rather than labelling all 630.
-    const fallback = new Map<string, string>()
-    for (const record of records) {
-      if (record.partyAtVote !== null || fallback.has(record.mpInternalId)) continue
-      const mp = await mpLabel(ctx, record.mpInternalId, sheet.wahlperiode)
-      fallback.set(record.mpInternalId, mp.fraktion)
-    }
-
-    return breakdownRows(tallyByGroup(records, (id) => fallback.get(id) ?? ""))
-  },
-})
+// A per-group tally form used to sit here (`getFraktionVoteBreakdown`).
+// `getVoteSheetById` embeds the same table in its response through the same
+// `tallyByGroup` helper, and no caller wanted the summary without the records
+// beside it — so the isolated form was removed. `tallyByGroup` /
+// `breakdownRows` are still the shared helpers the embed uses.
 
 /**
  * A named set of ballots, looked up by natural key.

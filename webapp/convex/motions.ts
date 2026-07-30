@@ -85,11 +85,11 @@ async function upsertOne(ctx: MutationCtx, input: ObjectType<typeof motionInput>
   return await upsertRow(ctx, "motions", existing, input, now)
 }
 
-export const upsertMotion = internalMutation({
-  args: motionInput,
-  returns: v.object({ id: v.id("motions"), created: v.boolean() }),
-  handler: async (ctx, args) => await upsertOne(ctx, args, Date.now()),
-})
+// The one-motion form used to sit here (`upsertMotion`) beside the batch
+// form below. The pipeline HTTP route (`/api/pipeline/motions`) always
+// batches, so the singular never had a caller. Removed; `upsertOne` is still
+// the shared upsert path that both the batch mutation and any future single
+// caller would go through.
 
 export const upsertMotions = internalMutation({
   args: { motions: v.array(v.object(motionInput)) },
@@ -153,19 +153,10 @@ export const upsertMotionSponsors = internalMutation({
 
 // --- public queries -------------------------------------------------------
 
-/** Motions in a period, newest first. */
-export const getMotions = query({
-  args: { wahlperiode: v.number(), limit: v.optional(v.number()) },
-  returns: v.array(motionDoc),
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("motions")
-      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .order("desc")
-      .take(pageLimit(args.limit, 50))
-    return rows.map(toMotionDoc)
-  },
-})
+// A period-wide `getMotions` used to sit here, capping at 50 rows with no
+// cursor. `getMotionsPage` below serves the /motions list with real pagination
+// and there was no other caller — the untruncated variant was a footgun
+// waiting to render half a period.
 
 /**
  * The motions one MP put their name to, newest first.

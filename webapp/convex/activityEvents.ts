@@ -162,46 +162,13 @@ export const addActivityEvents = internalMutation({
 })
 
 // --- public queries -------------------------------------------------------
-
-/**
- * One MP's feed, newest first, optionally one kind.
- *
- * Two indexes rather than one filtered in memory, because the two questions
- * page differently. Filtering a mixed page by kind would return a short page
- * of speeches for an MP whose recent record is mostly votes, and shortness is
- * indistinguishable from "there are no more" — the tab would look empty rather
- * than paginate.
- */
-export const getActivityFeed = query({
-  args: {
-    mpInternalId: v.string(),
-    eventType: v.optional(eventType),
-    limit: v.optional(v.number()),
-  },
-  returns: v.array(activityEventDoc),
-  handler: async (ctx, args) => {
-    const limit = pageLimit(args.limit, 50)
-    // Bound to a local before the branch, so the narrowing survives into the
-    // index callback — inside it, `args.eventType` is optional again and would
-    // need a non-null assertion to satisfy `eq`.
-    const kind = args.eventType
-    const rows =
-      kind === undefined
-        ? await ctx.db
-            .query("activityEvents")
-            .withIndex("by_mpInternalId_and_date", (q) => q.eq("mpInternalId", args.mpInternalId))
-            .order("desc")
-            .take(limit)
-        : await ctx.db
-            .query("activityEvents")
-            .withIndex("by_mpInternalId_and_eventType_and_date", (q) =>
-              q.eq("mpInternalId", args.mpInternalId).eq("eventType", kind),
-            )
-            .order("desc")
-            .take(limit)
-    return rows.map(toEventDoc)
-  },
-})
+//
+// A per-MP filtered feed used to live here (`getActivityFeed`) but was never
+// wired to a UI: the MP profile reads `getActivityCalendar` for the heatmap
+// and `feed.getFeed` for the paginated list, and the two mixed-kind queries
+// below are the only public readers of this table. The dead exit is gone; the
+// derived shape at line 60 still names the older function in its historical
+// account of why the read-model validator exists.
 
 /** The chamber-wide feed for a period — the home page's "what just happened". */
 export const getChamberFeed = query({
@@ -255,5 +222,37 @@ export const getActivityCalendar = query({
     return [...counts.entries()]
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date))
+  },
+})
+
+/**
+ * When the pipeline last landed a fresh row the site can render.
+ *
+ * The footer's "Daten Stand" / "Data as of" line uses this: the site presents
+ * official parliamentary data under its own name (AGENTS.md), so a reader is
+ * entitled to know on every page how recent the picture is. `null` for a
+ * fresh deployment whose pipeline has not yet run — the widget renders an
+ * honest "unavailable" state rather than a fabricated timestamp.
+ *
+ * The `_creationTime` of the newest row rather than a bespoke `lastSyncAt`
+ * table, for two reasons: `upsertRow` in convex/lib/ingest.ts stamps
+ * `createdAt` (and Convex stamps `_creationTime`) *only on insert*, so a
+ * re-ingest of already-known data does not falsely bump the freshness
+ * timestamp — the footer keeps telling the truth about what a new visitor
+ * would see. And `activityEvents` is the single unified feed every ingest
+ * stage writes into (sync.py: motions, questions, speeches, votes, sponsors
+ * all emit into it), so `max(_creationTime)` here is the site-wide answer
+ * rather than one derived from crontab uptime, which the audit named
+ * specifically as the wrong signal.
+ *
+ * One document read per page view — `.order("desc").take(1)` on the built-in
+ * `_creationTime` index. Rate-limited by definition to what the footer needs.
+ */
+export const getLatestIngestTime = query({
+  args: {},
+  returns: v.union(v.null(), v.number()),
+  handler: async (ctx) => {
+    const [newest] = await ctx.db.query("activityEvents").order("desc").take(1)
+    return newest?._creationTime ?? null
   },
 })

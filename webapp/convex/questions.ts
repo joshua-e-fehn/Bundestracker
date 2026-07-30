@@ -102,16 +102,7 @@ export const getQuestionsByMP = query({
   },
 })
 
-/** Questions across the chamber in a period, newest first. */
-export const getQuestions = query({
-  args: { wahlperiode: v.number(), limit: v.optional(v.number()) },
-  returns: v.array(questionDoc),
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("questions")
-      .withIndex("by_wahlperiode_and_date", (q) => q.eq("wahlperiode", args.wahlperiode))
-      .order("desc")
-      .take(pageLimit(args.limit, 50))
-    return rows.map(toQuestionDoc)
-  },
-})
+// A period-wide `getQuestions` used to sit here, capping at 50 rows with no
+// cursor. There is no /questions listing, so no caller ever materialised; the
+// MP profile reads `getQuestionsByMP` and the chamber feed reads the mixed
+// `activityEvents.getChamberFeed`. Removed to keep the public surface honest.
