@@ -3,6 +3,7 @@
 import { ExternalLinkIcon } from "lucide-react"
 import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
+import { DataAsOf } from "@/components/data-as-of"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
 // Both URLs used to be file-private constants here, which was right while the
@@ -81,7 +82,17 @@ export function SiteFooter() {
 
         <div className="flex flex-col gap-2 border-border/60 border-t pt-6 text-muted-foreground text-xs sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-2xl">{t("footer.disclaimer")}</p>
-          <p className="shrink-0">{t("footer.builtBy")}</p>
+          {/* Data-as-of sits beside the disclaimer for the reason the
+              disclaimer sits in the footer: both are provenance statements a
+              reader is entitled to see on every page. `flex-wrap` so a long
+              phrase on mobile drops beneath the byline rather than pushing it
+              off-screen; the row still reads left-to-right on desktop. See
+              components/data-as-of.tsx for what the timestamp actually is
+              and what the "unknown" branch means. */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 shrink-0">
+            <DataAsOf />
+            <p>{t("footer.builtBy")}</p>
+          </div>
         </div>
       </div>
 
