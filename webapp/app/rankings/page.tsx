@@ -3,7 +3,8 @@ import { Suspense } from "react"
 import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
 import { Rankings } from "@/components/rankings"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/rankings` — the leaderboards, for the Wahlperiode `?wp=` names.
@@ -21,13 +22,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * while the period list resolves, so a second one here would be a skeleton
  * replacing a skeleton.
  *
- * German metadata, matching the root layout's reasoning: `generateMetadata`
- * cannot see the client-side language toggle, so the tab title is the default
- * locale's while the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("rankings.title", DEFAULT_LOCALE),
-  description: t("rankings.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("rankings.title", locale),
+    description: t("rankings.subtitle", locale),
+  }
 }
 
 export default function RankingsPage() {

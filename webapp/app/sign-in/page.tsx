@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { SignInPanel } from "@/components/sign-in-panel"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/sign-in` — the provider picker.
@@ -14,17 +15,19 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * session check and the OAuth call need the browser; the page and its metadata
  * do not.
  *
- * German metadata, matching every other route here: `generateMetadata` cannot
- * see the client-side language toggle, so the tab title is the default
- * locale's while the panel follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  *
  * `robots: noindex` — a sign-in form is not a page a search engine should
  * surface for a site whose whole content is public and reachable without one.
  */
-export const metadata: Metadata = {
-  title: t("auth.signIn", DEFAULT_LOCALE),
-  description: t("auth.optionalNotice", DEFAULT_LOCALE),
-  robots: { index: false, follow: true },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("auth.signIn", locale),
+    description: t("auth.optionalNotice", locale),
+    robots: { index: false, follow: true },
+  }
 }
 
 export default function SignInPage() {

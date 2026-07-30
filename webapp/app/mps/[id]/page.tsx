@@ -3,7 +3,8 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { MPProfileScope } from "@/components/mp-profile-scope"
 import { api } from "@/convex/_generated/api"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 import { CURRENT_WAHLPERIODE, PERIOD_PARAM, parsePeriodParam } from "@/lib/period"
 
 /**
@@ -77,7 +78,7 @@ function periodFrom(searchParams: Record<string, string | string[] | undefined>)
 }
 
 export async function generateMetadata({ params, searchParams }: Params): Promise<Metadata> {
-  const [{ id }, query] = await Promise.all([params, searchParams])
+  const [{ id }, query, locale] = await Promise.all([params, searchParams, resolveServerLocale()])
   // The URL's period, or the constant. Not `mps.getCurrentWahlperiode`: that is
   // a second uncached round-trip before the document head can be written, on a
   // page that is already fetching the mandate. See the note on
@@ -87,9 +88,9 @@ export async function generateMetadata({ params, searchParams }: Params): Promis
     internalId: decodeURIComponent(id),
     wahlperiode,
   })
-  // German, like the rest of the site's metadata: `generateMetadata` cannot see
-  // the client-side language toggle. See the note in app/layout.tsx.
-  if (!mp) return { title: t("common.notFound", DEFAULT_LOCALE) }
+  // The MP's name is language-agnostic; only the not-found fallback needs a
+  // locale. See app/layout.tsx for the cookie → header → German precedence.
+  if (!mp) return { title: t("common.notFound", locale) }
   return {
     title: mp.name,
     description: [mp.name, mp.fraktion, mp.constituency].filter(Boolean).join(" · "),

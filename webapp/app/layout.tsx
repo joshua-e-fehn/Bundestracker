@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
-import { cookies, headers } from "next/headers"
+import { cookies } from "next/headers"
 import { AppShell } from "@/components/app-shell"
 import { NavSidebar } from "@/components/nav-sidebar"
 import { AuthGuard } from "@/components/providers/auth-guard"
@@ -15,7 +15,8 @@ import { SiteHeader } from "@/components/site-header"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { getToken } from "@/lib/auth-server"
-import { DEFAULT_LOCALE, localeFromAcceptLanguage, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 import { SIDEBAR_COOKIE, sidebarExpanded } from "@/lib/sidebar-state"
 import { cn } from "@/lib/utils"
 import { AuthProvider } from "@/providers/auth-provider"
@@ -36,53 +37,67 @@ const fontMono = Geist_Mono({
  * vars in production — fine there, silently wrong anywhere else. */
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
 
+/** BCP 47 → Open Graph locale. The two spellings are not interchangeable —
+ * OG wants underscores (`de_DE`), hreflang wants hyphens (`de-DE`). Kept
+ * beside the metadata builder so the pair moves together. */
+const OG_LOCALE = { de: "de_DE", en: "en_GB" } as const
+
 /**
- * Metadata is German — the default locale, and the language of both the
- * audience and the subject. It is static because `generateMetadata` cannot see
- * the client-side language toggle; a reader who switches to English gets
- * English page content and a German tab title.
+ * Metadata is negotiated per request rather than pinned to the default locale.
  *
- * `alternates.languages` still advertises both, because that is a statement
- * about the *page* rather than about the current reader: one URL serves both
- * languages, so both point at the same href. Note the two locale spellings are
- * not interchangeable — Open Graph wants `de_DE` and hreflang wants `de-DE`.
+ * The cookie the language toggle writes (`LOCALE_COOKIE` in lib/i18n.ts) is
+ * what `generateMetadata` reads — via `resolveServerLocale` — so a reader who
+ * switched to English on their last visit gets an English `<title>` and an
+ * English social-share card on the next one, instead of the German tab title
+ * they used to see above the English body. On a first visit with no cookie the
+ * decision falls to `Accept-Language`; only when both are silent does it fall
+ * to German.
+ *
+ * `alternates.languages` advertises both regardless of the chosen locale,
+ * because that is a statement about the *page* rather than about the current
+ * reader: one URL serves both, so both point at the same href.
  */
-export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
-  title: {
-    default: t("app.name", DEFAULT_LOCALE),
-    template: `${t("app.name", DEFAULT_LOCALE)} — %s`,
-  },
-  description: t("app.description", DEFAULT_LOCALE),
-  applicationName: t("app.name", DEFAULT_LOCALE),
-  keywords: [
-    "Bundestag",
-    "Abgeordnete",
-    "Open Data",
-    "Parlament",
-    "Transparenz",
-    "German parliament",
-  ],
-  authors: [{ name: "Joshua Fehn" }],
-  alternates: {
-    canonical: "/",
-    languages: { "de-DE": "/", "en-GB": "/" },
-  },
-  openGraph: {
-    type: "website",
-    siteName: t("app.name", DEFAULT_LOCALE),
-    title: t("app.name", DEFAULT_LOCALE),
-    description: t("app.description", DEFAULT_LOCALE),
-    locale: "de_DE",
-    alternateLocale: ["en_GB"],
-    url: "/",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: t("app.name", DEFAULT_LOCALE),
-    description: t("app.description", DEFAULT_LOCALE),
-  },
-  robots: { index: true, follow: true },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  const appName = t("app.name", locale)
+  const description = t("app.description", locale)
+  return {
+    metadataBase: new URL(siteUrl),
+    title: {
+      default: appName,
+      template: `${appName} — %s`,
+    },
+    description,
+    applicationName: appName,
+    keywords: [
+      "Bundestag",
+      "Abgeordnete",
+      "Open Data",
+      "Parlament",
+      "Transparenz",
+      "German parliament",
+    ],
+    authors: [{ name: "Joshua Fehn" }],
+    alternates: {
+      canonical: "/",
+      languages: { "de-DE": "/", "en-GB": "/" },
+    },
+    openGraph: {
+      type: "website",
+      siteName: appName,
+      title: appName,
+      description,
+      locale: OG_LOCALE[locale],
+      alternateLocale: locale === "de" ? [OG_LOCALE.en] : [OG_LOCALE.de],
+      url: "/",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: appName,
+      description,
+    },
+    robots: { index: true, follow: true },
+  }
 }
 
 /**
@@ -133,10 +148,14 @@ export default async function RootLayout({
 }>) {
   // All three are per-request, so this stays a server component and awaits
   // them. `getToken` returns null for the signed-out majority — expected, not a
-  // failure. Negotiating the locale here means the first paint is already in
-  // the reader's language rather than flashing German at an English reader.
-  const [token, requestHeaders, cookieStore] = await Promise.all([getToken(), headers(), cookies()])
-  const locale = localeFromAcceptLanguage(requestHeaders.get("accept-language"))
+  // failure. `resolveServerLocale` consults the locale cookie first and falls
+  // back to `Accept-Language`, so a reader who pressed the toggle on a previous
+  // visit gets their language on this one's first paint — see lib/i18n-server.ts.
+  const [token, locale, cookieStore] = await Promise.all([
+    getToken(),
+    resolveServerLocale(),
+    cookies(),
+  ])
   // Read on the server so the shell's first paint is already the width the
   // reader chose. Doing this on the client instead would render the expanded
   // 16 rem shell, paint it, and snap to the 3.5 rem rail on hydration — with

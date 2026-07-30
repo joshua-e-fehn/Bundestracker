@@ -4,7 +4,10 @@ import {
   dictionaries,
   getTranslator,
   isLocale,
+  LOCALE_COOKIE,
+  LOCALE_COOKIE_MAX_AGE,
   LOCALES,
+  localeCookieValue,
   localeFromAcceptLanguage,
   localeFromNavigator,
   t,
@@ -154,6 +157,38 @@ describe("localeFromNavigator", () => {
     // is the opt-in, so it must never be reached by falling through.
     expect(localeFromNavigator(["fr-FR", "es-ES"])).toBe("de")
     expect(localeFromNavigator(["ja"])).toBe("de")
+  })
+})
+
+describe("locale cookie", () => {
+  test("the cookie name is the same on the server and the client", () => {
+    // Wired the same way `SIDEBAR_COOKIE` is: one export, imported by both the
+    // server-side reader (lib/i18n-server.ts `resolveServerLocale`) and the
+    // client-side writer (`components/providers/locale-provider.tsx`
+    // `writeLocaleCookie`). If a future refactor forks the two constants apart,
+    // the toggle would stop persisting to SSR — this pins the single name.
+    expect(LOCALE_COOKIE).toBe("bundestrack.locale")
+  })
+
+  test("the max-age is a year, not a session", () => {
+    // A language choice is not per-session — it is a preference that the
+    // reader made once and expects to keep. The number itself matters less
+    // than the order of magnitude; anything under a month would silently
+    // reset a repeat visitor. One year matches `SIDEBAR_COOKIE_MAX_AGE`.
+    expect(LOCALE_COOKIE_MAX_AGE).toBe(60 * 60 * 24 * 365)
+  })
+
+  test("`localeCookieValue` round-trips through `isLocale`", () => {
+    // The cookie carries the locale as its literal value (no encoding, no
+    // wrapper), so `resolveServerLocale` reads it with `isLocale`. This pins
+    // that shape: whatever `localeCookieValue` writes must be something
+    // `isLocale` accepts on the way back — otherwise a cookie the toggle just
+    // wrote would fail to validate on the next SSR and the reader would flip
+    // back to the fallback.
+    for (const locale of LOCALES) {
+      expect(isLocale(localeCookieValue(locale))).toBe(true)
+      expect(localeCookieValue(locale)).toBe(locale)
+    }
   })
 })
 

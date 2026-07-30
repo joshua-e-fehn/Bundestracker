@@ -3,7 +3,8 @@ import { Suspense } from "react"
 import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
 import { VoteList } from "@/components/vote-list"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/votes` — every named ballot in the Wahlperiode `?wp=` names.
@@ -24,13 +25,17 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * is rather than leaving it as a bare zero — a page of no ballots reads as a
  * parliament that never divided.
  *
- * German metadata, matching the rest of the site: `generateMetadata` cannot see
- * the client-side language toggle, so the tab title is the default locale's
- * while the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence. `PageHeading` below is a client
+ * component reading the same locale via `useLocale`, so the visible H1 and
+ * the tab title agree on the reader's language.
  */
-export const metadata: Metadata = {
-  title: t("votes.title", DEFAULT_LOCALE),
-  description: t("votes.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("votes.title", locale),
+    description: t("votes.subtitle", locale),
+  }
 }
 
 export default function VotesPage() {

@@ -4,7 +4,8 @@ import { notFound } from "next/navigation"
 import { VoteDetail } from "@/components/vote-detail"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * One named ballot — `/votes/[id]`.
@@ -53,11 +54,11 @@ async function loadSheet(rawId: string) {
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { id } = await params
+  const [{ id }, locale] = await Promise.all([params, resolveServerLocale()])
   const data = await loadSheet(decodeURIComponent(id))
-  // German, like every other page's metadata — `generateMetadata` cannot see
-  // the client-side language toggle. See the note in app/layout.tsx.
-  if (!data) return { title: t("common.notFound", DEFAULT_LOCALE) }
+  // The ballot's title is language-agnostic; only the not-found fallback needs
+  // a locale. See app/layout.tsx for the cookie → header → German precedence.
+  if (!data) return { title: t("common.notFound", locale) }
   return {
     title: data.sheet.title,
     description: [data.sheet.result, data.sheet.date].filter(Boolean).join(" · "),

@@ -49,6 +49,40 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
 }
 
+/**
+ * The cookie that carries the reader's chosen language across requests.
+ *
+ * The toggle is a client-side preference and lives in `localStorage`
+ * (`STORAGE_KEY` in components/providers/locale-provider.tsx) — that is the
+ * source of truth for what the browser renders. This cookie is a *mirror* of
+ * it: written by `setLocale` after the toggle is pressed, so the *next*
+ * request's server render can put the reader in the right language before
+ * hydration.
+ *
+ * Without it, `generateMetadata` on every page — and the `<html lang>` and
+ * `<title>` those metadata build — has to fall back to `Accept-Language`,
+ * which is what the browser was configured to send rather than what the reader
+ * chose. An English reader on a German-configured browser (or the far more
+ * common inverse) would flash the wrong `<title>` for a moment before the
+ * client took over, and every social-share preview would carry the wrong
+ * language.
+ *
+ * `SameSite=Lax`, no `Secure` (works in dev over `http://`), path=/, one year.
+ * Same shape as `SIDEBAR_COOKIE` (lib/sidebar-state.ts).
+ */
+export const LOCALE_COOKIE = "bundestrack.locale"
+
+/** Serialises `locale` into a `Set-Cookie` / `document.cookie` value. Used by
+ * `setLocale` on the toggle press. */
+export function localeCookieValue(locale: Locale): string {
+  return locale
+}
+
+/** How long the locale cookie survives with no re-touch — one year, mirroring
+ * `SIDEBAR_COOKIE_MAX_AGE`. Long-lived rather than session-scoped because a
+ * language choice is not a per-session decision. */
+export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
 // --- dictionaries ---------------------------------------------------------
 
 /**
@@ -790,7 +824,6 @@ const de = {
     "Eine gefolgte Person sitzt nicht in der {wahlperiode}. Wahlperiode und wird hier nicht angezeigt.",
   "settings.watchlist.notSitting":
     "{count} gefolgte Personen sitzen nicht in der {wahlperiode}. Wahlperiode und werden hier nicht angezeigt.",
-  "settings.error": "Ihre Einstellungen konnten nicht geladen werden.",
 
   // --- activity heatmap ---
   "heatmap.title": "Aktivitätsverlauf",
@@ -1289,6 +1322,18 @@ const de = {
   "footer.builtBy": "Erstellt von Joshua Fehn",
   "footer.disclaimer":
     "Kein offizielles Angebot des Deutschen Bundestages. Alle Angaben stammen aus öffentlich zugänglichen amtlichen Daten.",
+  // "Daten Stand" — the freshness line beside the disclaimer. `{when}` is a
+  // relative phrase ("vor 2 Stunden") from lib/relative-time.ts, and the
+  // widget renders the absolute UTC timestamp in the tooltip so the vague
+  // reading is always paired with the exact one. Wording is deliberately
+  // "Daten Stand" and not "Zuletzt aktualisiert" — the second implies a
+  // parliamentary event happened, this speaks to when the pipeline last
+  // landed a fresh row.
+  "footer.dataAsOf": "Daten Stand: {when}",
+  // The unavailable branch: a fresh deployment before its first pipeline run,
+  // or an activityEvents query that returned null. Rendered rather than
+  // hidden so the line's absence never reads as "brand new data".
+  "footer.dataAsOfUnknown": "Daten Stand: unbekannt",
 
   // --- seating map ---
   "seating.title": "Sitzverteilung",
@@ -2521,7 +2566,6 @@ const en: Dictionary = {
     "One followed person does not sit in the {wahlperiode}th electoral period and is not shown here.",
   "settings.watchlist.notSitting":
     "{count} followed people do not sit in the {wahlperiode}th electoral period and are not shown here.",
-  "settings.error": "Your settings could not be loaded.",
 
   // --- activity heatmap ---
   "heatmap.title": "Activity over time",
@@ -2842,6 +2886,8 @@ const en: Dictionary = {
   "footer.builtBy": "Built by Joshua Fehn",
   "footer.disclaimer":
     "Not an official service of the German Bundestag. All figures come from publicly available official data.",
+  "footer.dataAsOf": "Data as of {when}",
+  "footer.dataAsOfUnknown": "Data as of: unknown",
 
   // --- seating map ---
   "seating.title": "Seating map",

@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { SettingsPage } from "@/components/settings-page"
 import { CURRENT_WAHLPERIODE } from "@/lib/bundestag"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/settings` — the reader's own saved choices.
@@ -22,17 +23,20 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * constant keeps the followed list and the profiles it links to answering for
  * the same Bundestag.
  *
- * German metadata like every other route here — `generateMetadata` cannot see
- * the client-side language toggle (see app/layout.tsx).
+ * Locale-aware metadata via `resolveServerLocale` — the same negotiation the
+ * layout uses. See app/layout.tsx for the cookie → header → German precedence.
  *
  * `robots: noindex` for the same reason `/sign-in` carries it: this page is
  * empty of content for anyone who is not the reader it belongs to, and a search
  * engine surfacing it would offer a settings page to people with no settings.
  */
-export const metadata: Metadata = {
-  title: t("settings.title", DEFAULT_LOCALE),
-  description: t("settings.subtitle", DEFAULT_LOCALE),
-  robots: { index: false, follow: true },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("settings.title", locale),
+    description: t("settings.subtitle", locale),
+    robots: { index: false, follow: true },
+  }
 }
 
 export default function Settings() {

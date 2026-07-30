@@ -3,7 +3,8 @@ import { Suspense } from "react"
 import { PageHeading } from "@/components/page-heading"
 import { PartyComparison } from "@/components/party-comparison"
 import { PeriodScope } from "@/components/period-scope"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/parties` — the Fraktion comparison dashboard, for the Wahlperiode `?wp=`
@@ -16,13 +17,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * subscriptions live below this boundary, so what ships as JS is the charts and
  * not the page.
  *
- * German metadata, matching every other route here: `generateMetadata` cannot
- * see the client-side language toggle, so the tab title is the default locale's
- * while the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("parties.title", DEFAULT_LOCALE),
-  description: t("parties.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("parties.title", locale),
+    description: t("parties.subtitle", locale),
+  }
 }
 
 export default function PartiesPage() {

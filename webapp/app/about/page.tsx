@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { AboutPage } from "@/components/about-page"
 import { PageHeading } from "@/components/page-heading"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/about` — what the numbers on this site mean, in one place.
@@ -37,13 +38,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * lib/scoring.ts, not from the database — so `AboutPage` is a client component
  * only because it is translated.
  *
- * German metadata, matching every other route: `generateMetadata` cannot see
- * the client-side language toggle, so the tab title is the default locale's
- * while the page follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("about.title", DEFAULT_LOCALE),
-  description: t("about.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("about.title", locale),
+    description: t("about.subtitle", locale),
+  }
 }
 
 export default function About() {

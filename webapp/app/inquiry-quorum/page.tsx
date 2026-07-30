@@ -3,7 +3,8 @@ import { Suspense } from "react"
 import { InquiryQuorum } from "@/components/inquiry-quorum"
 import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/inquiry-quorum` — the Untersuchungsausschuss quarter, as arithmetic.
@@ -47,13 +48,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * hardcoded 21 would keep computing a quarter of a chamber that no longer
  * sits, months after WP22 is elected.
  *
- * German metadata, matching every other route: `generateMetadata` cannot see the
- * client-side language toggle, so the tab title is the default locale's while
- * the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("inquiry.title", DEFAULT_LOCALE),
-  description: t("inquiry.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("inquiry.title", locale),
+    description: t("inquiry.subtitle", locale),
+  }
 }
 
 export default function InquiryQuorumPage() {
