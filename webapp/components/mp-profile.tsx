@@ -521,3 +521,16 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
     </a>
   )
 }
+
+// Named re-export for `components/mp-contact.test.ts` to render Contact in
+// isolation: `MPProfile` itself pulls in `FollowButton`, `MPCommittees`,
+// `MPScorePanel`, `ActivityHeatmap`, `TrendGraphs`, and `MPRecentRecords` —
+// every one of them a client component with a Convex subscription — so
+// importing the whole profile into a source-only test drags in the entire
+// dependency graph. The re-export sits at the bottom of the file rather
+// than in front of `function Contact` above so `mp-profile.test.ts`'s
+// source-slice guards (which scan for the next `\nfunction ` boundary)
+// keep finding the same Contact boundary they always did — a `function`
+// declaration, not an `export function` one. See `mp-contact.test.ts` for
+// the AC-6 rendered-DOM assertions this makes possible.
+export { Contact }

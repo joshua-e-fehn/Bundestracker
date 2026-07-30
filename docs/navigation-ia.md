@@ -50,10 +50,10 @@ not the order features were built.
 |---|---|---|
 | — | *Everything at once* | `/dashboard` |
 | **Abgeordnete & Fraktionen** | *Who?* | `/mps`, `/rankings`, `/parties`, `/seating` |
-| **Entscheidungen** | *What did the Bundestag do?* | `/votes` (→ `/votes/own-resources`), `/inquiry-quorum` |
+| **Entscheidungen** | *What did the Bundestag do?* | `/votes` (→ `/votes/own-resources`), `/motions`, `/inquiry-quorum` |
 | **Einordnung** | *What does this mean?* | `/feed`, `/about` |
 
-Two destinations sit outside the groups deliberately:
+Three destinations sit outside the groups deliberately:
 
 - **`/dashboard`** is not a category, it is all three at once, and it is the one
   destination a returning reader wants from anywhere. It stays a single click
@@ -63,6 +63,26 @@ Two destinations sit outside the groups deliberately:
 - **`/search`** is a *box* in the bar and an *entry* in the mobile drawer. A
   link beside a box pointing at the same feature would be two controls for one
   thing; below the width that fits a box, the drawer carries both.
+- **`/settings`** is about the *reader* rather than about the Bundestag, so
+  by grouping rule 3 it does not sit inside a Bundestag-subject group. There
+  is exactly one such destination, so it lives in the shell's account slot
+  (above `SidebarAccount` at the foot of the rail and drawer, and rendered
+  via `NAV_ACCOUNT` in `webapp/lib/navigation.ts`) rather than being given a
+  fourth group for one row. Kept *out* of the account dropdown because that
+  dropdown only exists once a session does, and `/settings` renders a
+  signed-out page explaining what an account is for — hiding it inside the
+  dropdown would put the sentence out of reach of the readers who need it.
+
+### Why `/motions` is a peer of `/votes` and not a child
+
+A motion is not a narrower cut of a ballot: the two lists share no rows. A
+named ballot is a `voteSheets` row and a motion is a `motions` row, and the
+sources publish nothing that joins them. `/votes` answers *how did the
+Bundestag decide*; `/motions` answers *what was put before it*. Placement
+rule 2 (a genuinely new question) applies rather than rule 1 (a narrower cut
+of an existing entry's subject), so it lands as a top-level entry under
+`Entscheidungen` beside `/votes` rather than nested under it — the same
+distinction the file's own comment gives at `NAV_GROUPS`.
 
 ### Why "Sitzverteilung" is under *people* and not under *decisions*
 
@@ -101,22 +121,27 @@ becomes one. `webapp/lib/auth-routes.ts` is the source of truth and
 a nav entry that would redirect a signed-out reader to sign-in fails the suite.
 
 **The navigation is identical in both states.** There is no signed-in-only
-section, because the data model does not support one honestly. Signing in stores
-exactly two things (`convex/userPreferences.ts`): custom score weightings and a
-followed-MP list. Both are applied *in place* on the pages that use them —
-`/mps/[id]`'s score panel and the feed's ranking — rather than on pages of their
-own.
+section. Signing in stores three things (`convex/userPreferences.ts`) —
+custom score weightings, a followed-MP list, and the reader's saved language
+— all of which are applied *in place* on the pages that use them: the score
+weightings on `/mps/[id]`'s panel, the follow list on `/settings` (and the
+`FollowButton` beside each MP row), and the language via `SavedLocaleSync`.
+Every product page is reachable to a signed-out reader, and none of them
+change behaviour when a session appears — the signed-in benefit is
+persistence across devices, not a new surface.
 
-So the personal area is the **`UserMenu` in the header corner**, and it holds
-what genuinely exists: the account identity and sign-out. No settings page, no
-profile page, no empty "Saved" section. Criterion 5 of the brief asked for the
-architecture to be ready without fabricating functionality; the rule for when
-that changes is:
+`/settings` is the first user-owned page and the exception the earlier IA
+had reserved for "when this changes": it exists because both the follow
+list and the weight sliders needed one page to manage them, and it sits in
+the account slot (`NAV_ACCOUNT` in `webapp/lib/navigation.ts`) beside the
+`UserMenu` rather than inside it. The dropdown only exists once a session
+does; the page's signed-out state is the sentence explaining what an
+account would do for you, and that sentence would be unreachable from the
+chrome if `/settings` lived inside the menu.
 
-> When a signed-in user gains state that needs a *page* of its own — a real
-> follow list, a saved-weightings manager — it becomes a fourth group in
-> `NAV_GROUPS`, rendered only when a session exists, and `PUBLIC_PATHS` gains
-> its first genuine omission. Not before.
+The next signed-in-only *page* — a real saved-weightings preset manager, a
+per-MP note surface — is what would justify a fourth group in `NAV_GROUPS`
+and the first honest omission from `PUBLIC_PATHS`. Not before.
 
 ---
 
