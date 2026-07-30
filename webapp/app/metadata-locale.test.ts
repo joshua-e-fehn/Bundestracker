@@ -72,14 +72,39 @@ function stripComments(source: string): string {
  * would not fail the scan. Metadata is either the static `export const
  * metadata: Metadata = { ... }` block or the `export async function
  * generateMetadata(...) { ... }` body, both ending at the first top-level
- * `}` after the opening `{`. */
+ * `}` after the opening `{`.
+ *
+ * ⚠ The dynamic-form pattern deliberately matches the whole signature
+ * (including the parameter list and return type) and the brace walker
+ * anchors on the LAST character of the match — the body's opening brace —
+ * not on the next `{` after the export keyword. A signature like
+ * `generateMetadata({ params }: Params): Promise<Metadata> {` contains the
+ * destructure's `{` before the body's `{`, so a naïve
+ * `indexOf("{", start)` opens the walker on the destructure, closes on
+ * its matching `}`, and returns the parameter clause instead of the body.
+ * The three dynamic pages on the site (`/mps/[id]`, `/parties/[party]`,
+ * `/votes/[id]`) all use destructured params, so that regression left the
+ * two body-content assertions vacuous for exactly the highest-traffic
+ * pages the file exists to guard. Two guards below fail loudly if either
+ * half regresses: the per-dynamic-page region-length assertion, and the
+ * synthesised old-shape regression sample.
+ */
 function metadataRegion(source: string): string {
   const stripped = stripComments(source)
-  const staticStart = stripped.match(/export const metadata[^=]*=\s*\{/)
-  const dynamicStart = stripped.match(/export async function generateMetadata[^{]*\{/)
-  const start = staticStart?.index ?? dynamicStart?.index
-  if (start === undefined) return ""
-  const opening = stripped.indexOf("{", start)
+  const staticMatch = stripped.match(/export const metadata[^=]*=\s*\{/)
+  const dynamicMatch = stripped.match(
+    /export async function generateMetadata\s*\([^)]*\)[^{]*\{/,
+  )
+  const match = staticMatch ?? dynamicMatch
+  if (!match || match.index === undefined) return ""
+  const start = match.index
+  // Anchor the brace walker at the LAST character of the signature match —
+  // the opening brace the regex found. `indexOf("{", start)` would land on
+  // the destructure's `{` in `generateMetadata({ params }: Params) {` and
+  // return the parameter clause instead of the body. Using
+  // `match.index + match[0].length - 1` skips the whole signature and
+  // opens the walker on the true body brace.
+  const opening = start + match[0].length - 1
   let depth = 0
   for (let i = opening; i < stripped.length; i++) {
     if (stripped[i] === "{") depth++
@@ -100,6 +125,81 @@ describe("every page negotiates its <title> per request", () => {
     // the file discovery works at all — the number matters less than that it
     // is non-zero, so no periodic update is needed as new pages ship.
     expect(pages.length).toBeGreaterThan(5)
+  })
+
+  test("test-of-the-test: every dynamic page's region contains its function body", () => {
+    // Directly guards the H1 defect the independent review caught: an
+    // earlier `[^{]*\{` in `metadataRegion` stopped at the destructure's
+    // opening brace in signatures like
+    // `generateMetadata({ params }: Params): Promise<Metadata> {`, so the
+    // brace walker closed on the destructure and returned the parameter
+    // clause instead of the body — the two "no DEFAULT_LOCALE inside
+    // metadata" and "t() implies resolveServerLocale" assertions below
+    // then early-returned because they saw no `t(` in a 49–63-character
+    // region, and every dynamic page passed vacuously.
+    //
+    // A parameter clause is a few dozen characters; a real function body
+    // is hundreds. Asserting the region on each dynamic page is at least
+    // 200 characters (against actual bodies of ~500-1000) means the
+    // extractor got past the destructure. If the extractor ever regresses
+    // to skipping the body again, this test fires long before the two
+    // vacuous assertions do.
+    const dynamicPages = pages.filter((path) => /\/\[[^\]]+\]\/page\.tsx$/.test(path))
+    expect(dynamicPages.length).toBeGreaterThanOrEqual(3)
+    for (const path of dynamicPages) {
+      const region = metadataRegion(readFileSync(path, "utf8"))
+      const relPath = relative(APP_DIR, path)
+      // The region must contain the whole body, so the two downstream
+      // scans see the `t(...)` / `DEFAULT_LOCALE` calls they exist to
+      // refuse. The 200-character floor is comfortably above any
+      // parameter clause (the widest destructure in the tree is 63
+      // characters) and comfortably below the shortest real body.
+      expect({
+        path: relPath,
+        regionLength: region.length,
+        containsBodyMarker: region.includes("resolveServerLocale") || region.includes("return"),
+      }).toEqual({
+        path: relPath,
+        regionLength: expect.any(Number),
+        containsBodyMarker: true,
+      })
+      expect(region.length).toBeGreaterThan(200)
+    }
+  })
+
+  test("test-of-the-test: the old-shape regression is caught by the extractor", () => {
+    // A synthesised source shaped like the pre-NEW-01 regression the file
+    // exists to prevent: a dynamic `generateMetadata` whose body reaches
+    // for `DEFAULT_LOCALE` directly instead of threading
+    // `resolveServerLocale` through the params `Promise.all`. Under the
+    // old `[^{]*\{` regex this returned the destructure clause only
+    // (`DEFAULT_LOCALE` absent from the 49-char region → false negative);
+    // under the fix the region contains the body and the check trips.
+    //
+    // Kept as a synthesised source rather than a live-file check so the
+    // test's demonstration of the fix is deterministic — a future edit
+    // that flipped a real dynamic page back to `DEFAULT_LOCALE` would
+    // fail the per-page assertion below, but this one always sees the
+    // shape whether the tree currently ships it or not.
+    const regressionSample = `
+import type { Metadata } from "next"
+type Params = { params: Promise<{ id: string }> }
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const { id } = await params
+  // The pre-NEW-01 shape — the exact call the fix removed everywhere.
+  return { title: t("common.notFound", DEFAULT_LOCALE, { id }) }
+}
+`
+    const region = metadataRegion(regressionSample)
+    // The whole body reaches the region, so both downstream scans fire.
+    expect(region.length).toBeGreaterThan(150)
+    expect(region).toContain("DEFAULT_LOCALE")
+    expect(region).toContain("t(")
+    // …which is precisely what the "no DEFAULT_LOCALE inside metadata"
+    // assertion below matches on. Under the old extractor this would have
+    // been empty of both markers, and the sample would have passed the
+    // per-page loop untouched.
+    expect(region.match(/DEFAULT_LOCALE/g) ?? []).not.toEqual([])
   })
 
   test.each(pages.map((path) => [relative(APP_DIR, path), path]))(
