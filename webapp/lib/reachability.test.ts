@@ -92,25 +92,26 @@ const USAGE_ROOTS: string[] = [
 const ALLOWLIST: Record<string, string> = {
   "auth.getCurrentUser":
     "read by the @convex-dev/better-auth React hooks during session hydration — no static api.auth.getCurrentUser reference exists in the tree",
-  // The two rows below are the 'backend built, no UI' shape the 2026-07-30
-  // reachability audit called out (RES-02, RES-03). Each has a UI it was
-  // designed for — per-MP §31 declarations, per-sitting speech view — that
-  // has not been built yet. Kept public because the intent is genuinely to
-  // wire them, not to keep the surface; an audit run in Q4 2026 that still
-  // finds them here should treat that as evidence to delete rather than to
-  // renew the exception.
+  // Two rows used to live below this one — `voteExplanations.getExplanationsByMP`
+  // and `speeches.getSpeechesBySitting`, the 'backend built, no UI' shape
+  // the 2026-07-30 reachability audit called out (RES-02, RES-03). Both
+  // came off this list when the `/sittings/[wp]/[nr]` route and the §31
+  // panel on `/mps/[id]` shipped: the callers now live in
+  // `components/sitting-detail.tsx` (which uses `getSpeechesBySitting`)
+  // and `components/mp-recent-records.tsx` (which uses
+  // `getExplanationsByMP`), so the "no static caller" claim is no longer
+  // true. Removing the entries is what turned the exception into an
+  // assertion that both functions have callers rather than reasons — the
+  // `no allowlist entry has become a real caller` test below is what
+  // enforces it, so a future edit that dropped the callers without
+  // deleting the exports would fail there instead of silently
+  // reintroducing the audit's finding.
   //
   // RES-01 (the committees drilldown, `committees.getCommittees` and
-  // `committees.getCommitteeMembers`) came off this list when the
-  // `/committees` and `/committees/[id]` routes shipped — the callers now
-  // live in `components/committee-directory.tsx` and
-  // `components/committee-members.tsx`, so the "no static caller" claim is
-  // no longer true. Removing the entries is what turned the exception into
-  // an assertion that both functions have callers rather than reasons.
-  "voteExplanations.getExplanationsByMP":
-    "reserved for a per-MP §31 declarations tab on the profile (RES-02); if the tab does not ship in the next audit cycle, delete both this export and the entry",
-  "speeches.getSpeechesBySitting":
-    "reserved for a per-sitting speech view (RES-03); if the sitting-detail route does not ship in the next audit cycle, delete both this export and the entry",
+  // `committees.getCommitteeMembers`) came off the list on origin/main
+  // when the `/committees` and `/committees/[id]` routes shipped — the
+  // callers now live in `components/committee-directory.tsx` and
+  // `components/committee-members.tsx`, same shape as RES-02/RES-03.
 }
 
 /** File extensions worth scanning for callers. Python is here because

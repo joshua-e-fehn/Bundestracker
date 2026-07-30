@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { SittingDetail } from "@/components/sitting-detail"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 import { parseSittingParams } from "@/lib/sitting"
 
 /**
@@ -35,23 +36,27 @@ import { parseSittingParams } from "@/lib/sitting"
  * period-not-backfilled, no-records.
  *
  * Metadata is the same shape as `/mps/[id]`: the number goes in the title so
- * a browser tab shows it, the description names the sitting fully. German,
- * like every other server-rendered title on the site — `generateMetadata`
- * cannot see the client-side language toggle (app/layout.tsx).
+ * a browser tab shows it, the description names the sitting fully. The
+ * locale is negotiated per request via `resolveServerLocale` — cookie >
+ * Accept-Language > German — the pattern lib/i18n-server.ts documents and
+ * `metadata-locale.test.ts` refuses new pages that skip.
  */
 
 type Params = { params: Promise<{ wahlperiode: string; sittingNumber: string }> }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const raw = await params
+  // Params and locale awaited together so the head is written in one round
+  // trip; same shape as the neighbouring `/mps/[id]` metadata (matches the
+  // pattern `metadata-locale.test.ts` enforces).
+  const [raw, locale] = await Promise.all([params, resolveServerLocale()])
   const parsed = parseSittingParams(raw.wahlperiode, raw.sittingNumber)
-  if (!parsed) return { title: t("common.notFound", DEFAULT_LOCALE) }
+  if (!parsed) return { title: t("common.notFound", locale) }
   return {
-    title: t("sitting.metaTitle", DEFAULT_LOCALE, {
+    title: t("sitting.metaTitle", locale, {
       wahlperiode: parsed.wahlperiode,
       sitzungnr: parsed.sitzungnr,
     }),
-    description: t("sitting.metaDescription", DEFAULT_LOCALE, {
+    description: t("sitting.metaDescription", locale, {
       wahlperiode: parsed.wahlperiode,
       sitzungnr: parsed.sitzungnr,
     }),
