@@ -70,6 +70,74 @@ describe("the sidebar is a shell, not an overlay", () => {
   })
 })
 
+describe("the header meets the rail in one line", () => {
+  const metrics = readFileSync(
+    new URL("../lib/sidebar-metrics.ts", import.meta.url).pathname,
+    "utf8",
+  )
+
+  test("the two widths are one constant, not two matching literals", () => {
+    // The defect this replaced: a 20 px `<Separator>` floating in the middle of
+    // the bar, a gutter and a button's width from the left edge, while the
+    // rail's own right border began at 56 px directly below it. Two boundaries
+    // a few pixels apart at the same junction.
+    //
+    // The fix is a header cell of exactly the collapsed rail's width, so its
+    // right border continues into the rail's. That only holds while the two
+    // numbers are the *same* number — a cell at 56 px against a rail at 57
+    // leaves a visible step at the one place on the page where two borders
+    // meet, and nothing in a typecheck or a lint would say so. Hence a shared
+    // constant, and hence this test: the way the alignment breaks is someone
+    // inlining a literal back into one of the two files.
+    expect(sidebar).toMatch(/SIDEBAR_RAIL_WIDTH_CLASS/)
+    expect(header).toMatch(/SIDEBAR_RAIL_WIDTH_CLASS/)
+    expect(sidebar).not.toMatch(/"w-14"|expanded \? "w-64"/)
+  })
+
+  test("the shared width is spelled literally so Tailwind can find it", () => {
+    // Tailwind v4 extracts candidates from the raw *text* of scanned files. A
+    // class name built by concatenation compiles, typechecks, and emits no CSS
+    // at all — the rail and the cell would both collapse to zero width. The
+    // constants must therefore be literal strings.
+    expect(metrics).toMatch(/SIDEBAR_RAIL_WIDTH_CLASS = "w-14"/)
+    expect(metrics).toMatch(/SIDEBAR_EXPANDED_WIDTH_CLASS = "w-64"/)
+    // And the rem lengths the shell's inline style needs must agree with them.
+    expect(metrics).toMatch(/SIDEBAR_RAIL_WIDTH = "3\.5rem"/)
+    expect(metrics).toMatch(/SIDEBAR_EXPANDED_WIDTH = "16rem"/)
+    expect(shell).toMatch(/SIDEBAR_EXPANDED_WIDTH : SIDEBAR_RAIL_WIDTH/)
+  })
+
+  test("the cell draws a full-height border in the rail's own colour", () => {
+    // `border-r`, not a centred `<Separator>`: the line has to run the full
+    // height of the bar so it reaches the header's bottom border, where the
+    // rail's border picks it up and carries it to the foot of the page. A short
+    // rule optically centred in the bar is the defect, not a smaller version of
+    // the fix — so the separator import is gone rather than left unused.
+    expect(header).toMatch(/border-border\/60 border-r/)
+    expect(header).not.toMatch(/Separator/)
+    // Same token as the rail's own right border, or the one line changes colour
+    // halfway down.
+    expect(sidebar).toMatch(/border-border\/60 border-r/)
+  })
+
+  test("the bar stretches its cell rather than centring it", () => {
+    // `h-14` with no `items-center` on the row: the cell is a flex child that
+    // stretches to the bar's full height, which is what makes the border reach
+    // both edges. Adding `items-center` back to the row shrink-wraps the cell
+    // to the button and the line becomes a floating tick again — the exact
+    // defect, rebuilt.
+    expect(header).toMatch(/className="flex h-14 w-full">/)
+  })
+
+  test("the gutter moved inside, so the cell can start at the edge", () => {
+    // The cell has to begin at x=0 to be 56 px wide *from the viewport edge*,
+    // which is where the rail below it starts. So the page gutter belongs to
+    // the row beside the cell rather than to the bar. Below `lg` the cell is
+    // gone and that row is the whole bar, so a phone keeps its 16 px gutter.
+    expect(header).toMatch(/flex min-w-0 flex-1 items-center gap-2 px-4 sm:px-6/)
+  })
+})
+
 describe("the collapsed rail stays readable", () => {
   test("rows carry an accessible name when their label is not rendered", () => {
     // Collapsed, the `<span>` holding the label is not rendered at all — so
@@ -156,8 +224,14 @@ describe("the shell's controls are each in one place", () => {
     // Below `lg` the rail is `hidden`, so an enabled trigger would be a button
     // that toggles a thing that is not on screen. Paired with the rail's own
     // `lg:flex` and the drawer's `lg:hidden`, like every other breakpoint here.
-    expect(header).toMatch(/<SidebarToggle className="[^"]*\blg:inline-flex\b/)
-    expect(header).toMatch(/<SidebarToggle className="[^"]*\bhidden\b/)
+    //
+    // The breakpoint is on the *cell* rather than on the button now — the cell
+    // also draws the boundary line, and hiding only the button would leave a
+    // 56 px empty bordered box on a phone. So the assertion reads the wrapper,
+    // which is the element that has to carry both classes.
+    const cell = header.slice(0, header.indexOf("<SidebarToggle"))
+    expect(cell).toMatch(/\blg:flex\b/)
+    expect(cell).toMatch(/\bhidden\b/)
   })
 
   test("the toggle works without being handed the state", () => {
@@ -175,6 +249,24 @@ describe("the shell's controls are each in one place", () => {
     // do something that already exists" the protocol rules out.
     expect(header).not.toMatch(/UserMenu|SidebarAccount/)
     expect(drawer).toMatch(/<SidebarAccount expanded \/>/)
+  })
+
+  test("the header's sign-in disappears once there is a session", () => {
+    // The header carries a signed-out `Sign in` again — the half that went
+    // missing when `<UserMenu />` was deleted, leaving `/sign-in` reachable
+    // only from the foot of a rail that may be collapsed to 56 px of glyphs.
+    //
+    // What keeps that from being the duplicate account control the test above
+    // forbids is this early return: signed in, it renders nothing, so a reader
+    // with a session still has exactly one avatar and one way to sign out.
+    // Without it the header would grow a second, permanent account entry and
+    // the rule would be broken by the component that exists to respect it.
+    const signIn = strip(read("./header-sign-in.tsx"))
+    expect(signIn).toMatch(/if \(session\) return null/)
+    expect(signIn).toMatch(/href="\/sign-in"/)
+    // No avatar, no menu, no sign-out — those belong to `SidebarAccount`.
+    expect(signIn).not.toMatch(/Avatar|DropdownMenu|signOut/)
+    expect(header).toMatch(/<HeaderSignIn/)
   })
 
   test("the account routes to the real sign-in page rather than a new one", () => {

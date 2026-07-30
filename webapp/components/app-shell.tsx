@@ -1,6 +1,7 @@
 "use client"
 
 import { useSidebar } from "@/components/providers/sidebar-provider"
+import { SIDEBAR_EXPANDED_WIDTH, SIDEBAR_RAIL_WIDTH } from "@/lib/sidebar-metrics"
 import { cn } from "@/lib/utils"
 
 /**
@@ -61,7 +62,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           // override an inline declaration of the same custom property. Naming
           // the two separately is what lets the class below choose between
           // "no sidebar here" and "this much sidebar".
-          "--shell-inset-lg": expanded ? "16rem" : "3.5rem",
+          // The lengths come from lib/sidebar-metrics.ts, which is the same
+          // measurement the rail is drawn at and the header's toggle cell is
+          // sized to. Spelled as rem here rather than as the utility class the
+          // other two use, because this is an inline style and a class cannot
+          // go in one.
+          "--shell-inset-lg": expanded ? SIDEBAR_EXPANDED_WIDTH : SIDEBAR_RAIL_WIDTH,
         } as React.CSSProperties
       }
       className={cn(

@@ -5,13 +5,13 @@ import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
 import { BrandMark } from "@/components/brand-mark"
+import { HeaderSignIn } from "@/components/header-sign-in"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { NavMobile } from "@/components/nav-mobile"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
 import { SidebarToggle } from "@/components/sidebar-toggle"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
 import {
   isCurrentPeriod,
@@ -20,6 +20,7 @@ import {
   periodHref,
   resolvePeriod,
 } from "@/lib/period"
+import { SIDEBAR_RAIL_WIDTH_CLASS } from "@/lib/sidebar-metrics"
 import { cn } from "@/lib/utils"
 
 /**
@@ -160,25 +161,62 @@ export function SiteHeader() {
       {/* Full-bleed rather than the `max-w-6xl` this used to centre. The bar now
           sits above a sidebar and a content column rather than above one
           centred page, so a centred inner box would have floated the brand out
-          in the middle of the rail's width instead of over it. `px-4` matches
-          the pages' own gutter so the wordmark lines up with the sidebar's
-          left edge. */}
-      <div className="flex h-14 w-full items-center gap-2 px-4 sm:px-6">
-        {/* The shell's collapse control, first — before the brand, at the far
-            left of the bar. Fiscalis's placement
-            (frontend/components/atomic/organisms/header.tsx:28): the trigger,
-            a vertical rule, then everything else. `-ml-1` pulls it back into
-            the gutter so its optical left edge lines up with the rail's icons
-            below rather than sitting a button's worth of padding inside them.
+          in the middle of the rail's width instead of over it.
 
-            `hidden lg:inline-flex` — paired with the rail's own `lg:flex` and
-            the drawer's `lg:hidden` below. Below `lg` there is no sidebar to
-            collapse, and a control that toggles a thing that is not on screen
-            is a button that lies. The rule beside it goes with it. */}
-        <SidebarToggle className="-ml-1 hidden shrink-0 lg:inline-flex" />
-        <Separator orientation="vertical" className="mr-1 hidden h-5 lg:block" />
+          The gutter is on the *inner* row rather than here, because the cell
+          beside it has to start at the viewport's left edge — see below. No
+          `items-center` either: the children stretch, which is what lets the
+          cell be the bar's full height. */}
+      <div className="flex h-14 w-full">
+        {/* The shell's collapse control, in a cell exactly as wide as the
+            collapsed rail — and that width is the whole point of the cell.
 
-        {/* Truncates rather than `shrink-0`. At 320 px the brand's 112 px plus
+            This replaced a `<Separator>`: a 20 px vertical rule, optically
+            centred in a 56 px bar, sitting a gutter plus a button's width from
+            the left edge. It read as a short floating tick that lined up with
+            nothing, while the rail's own right border began at 56 px directly
+            below it. Two boundaries a few pixels apart at the same junction is
+            worse than one in the wrong place.
+
+            So the cell is `w-14` — `SIDEBAR_RAIL_WIDTH_CLASS`, the same
+            constant `components/nav-sidebar.tsx` draws the collapsed rail with
+            — and carries `border-r` in the same `border-border/60` as both the
+            rail's right border and this header's own bottom one. Full height of
+            the bar, so the line runs from the federal rule down to the header's
+            border and the rail's border continues it to the foot of the page:
+            one join, one line.
+
+            It is a shared constant rather than a matching literal because the
+            two numbers must be equal — a cell that is 56 px while the rail is
+            57 leaves a visible step at the one place on the page where two
+            borders meet, and nothing in a typecheck or a lint would say so.
+
+            Expanded, the rail is 256 px and this cell stays at 56. That is
+            correct rather than a limitation: the header does not move when the
+            rail does (the note above says why), so the cell marks the shell's
+            *fixed* left boundary. The rail simply extends past it below.
+
+            `hidden lg:flex` — paired with the rail's own `lg:flex` and the
+            drawer's `lg:hidden` below. Below `lg` there is no sidebar to
+            collapse, so the control, its cell and the boundary it draws all go
+            with it, and the bar is the padded row alone. */}
+        <div
+          className={cn(
+            "hidden shrink-0 items-center justify-center border-border/60 border-r lg:flex",
+            SIDEBAR_RAIL_WIDTH_CLASS,
+          )}
+        >
+          <SidebarToggle />
+        </div>
+
+        {/* Everything else, in the gutter the pages use. At `lg` with the cell
+            beside it the wordmark starts at 56 px + 24 px — which is exactly
+            where a page's own content begins under a collapsed rail, since the
+            content column is inset by the same 56 px and carries the same
+            `sm:px-6`. Below `lg` the cell is gone and this is the whole bar, so
+            a phone keeps the 16 px gutter it had. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-4 sm:px-6">
+          {/* Truncates rather than `shrink-0`. At 320 px the brand's 112 px plus
             the four controls' 187 px came to 307 px inside a 288 px content
             box, so the header — and with it every page, since the document
             scrolls as one — was 19 px wider than the viewport on every route.
@@ -192,11 +230,11 @@ export function SiteHeader() {
             It is also the route to `/`, the narrative home page, which is
             therefore not an entry in the navigation: a wordmark that goes home
             is the one convention every site on the web shares. */}
-        <Link
-          href="/"
-          className="mr-2 flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          {/* A ramp — 28 px, 32 px from `sm`, 36 px from `lg` — where this was a
+          <Link
+            href="/"
+            className="mr-2 flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {/* A ramp — 28 px, 32 px from `sm`, 36 px from `lg` — where this was a
               flat 28 (itself up from 20, when the mark was a gold dot rather
               than an eagle inside a ring with the flag's colours banded across
               the feathers).
@@ -214,8 +252,8 @@ export function SiteHeader() {
               optically centred against the 28 px line-box of the wordmark
               beside it. Anything larger starts setting the bar's height itself,
               which would move the search box and the three controls with it. */}
-          <BrandMark className="size-7 sm:size-8 lg:size-9" />
-          {/* The wordmark, and the two changes that make it one:
+            <BrandMark className="size-7 sm:size-8 lg:size-9" />
+            {/* The wordmark, and the two changes that make it one:
 
               — `text-lg`, up from `text-base`. The site's name should out-set
                 the utilities beside it; at 16 px it was the same size as the
@@ -237,25 +275,25 @@ export function SiteHeader() {
 
               `truncate` is what keeps a 320 px viewport from scrolling
               sideways, and it stays on the element carrying the text. */}
-          <span className="min-w-0 truncate font-bold text-lg tracking-[0.015em]">
-            {t("app.name")}
-          </span>
-        </Link>
+            <span className="min-w-0 truncate font-bold text-lg tracking-[0.015em]">
+              {t("app.name")}
+            </span>
+          </Link>
 
-        {/* Pushes the controls right and absorbs the slack. The search box sits
+          {/* Pushes the controls right and absorbs the slack. The search box sits
             inside it rather than in the control cluster: the slack is exactly
             the space a box wants, and `justify-end` keeps it against the
             controls instead of floating mid-bar. */}
-        <div className="flex min-w-0 flex-1 justify-end px-2">
-          {/* `md` rather than the `lg` it needed while this bar also carried the
+          <div className="flex min-w-0 flex-1 justify-end px-2">
+            {/* `md` rather than the `lg` it needed while this bar also carried the
               navigation. The box is the header's main job now, so it appears as
               soon as there is room for it — and below that the drawer carries a
               full-width one, so no width is ever without search. */}
-          <SearchBar className="hidden max-w-[16rem] md:flex" />
-        </div>
+            <SearchBar className="hidden max-w-[16rem] md:flex" />
+          </div>
 
-        <div className="flex shrink-0 items-center gap-1">
-          {/* The one fact every page on this site is scoped to and none of them
+          <div className="flex shrink-0 items-center gap-1">
+            {/* The one fact every page on this site is scoped to and none of them
               states in the chrome: which Bundestag you are looking at. Read
               from the URL and the roster rather than from `CURRENT_WAHLPERIODE`,
               for the reason `newestWahlperiode` gives — a constant keeps naming
@@ -268,18 +306,34 @@ export function SiteHeader() {
               rather than around the whole header so only the chip waits — and
               the fallback is nothing, because the chip already renders nothing
               while its query is in flight. */}
-          <Suspense>
-            <CurrentPeriodBadge />
-          </Suspense>
+            <Suspense>
+              <CurrentPeriodBadge />
+            </Suspense>
 
-          <LocaleToggle />
-          <ThemeToggle />
+            <LocaleToggle />
+            <ThemeToggle />
 
-          {/* Paired with the sidebar's own `lg:flex` — the two must flip at the
-              same width or the site has no navigation at all between 768 and
-              1024 px. Below `lg` this button is also the only route to the
-              account, which the drawer carries at its foot. */}
-          <NavMobile className="ml-1 lg:hidden" />
+            {/* "Sign in", for a reader who is not. It renders nothing once there
+              is a session, so this is *not* the second account control the
+              shell rules out — a signed-in reader still has exactly one avatar
+              and one way out, at the foot of the rail and of the drawer. See
+              components/header-sign-in.tsx.
+
+              It is here because removing the header's old `<UserMenu />` took
+              the signed-out half with it, leaving `/sign-in` reachable only
+              from the bottom of a rail that may be 56 px of glyphs. The
+              top-right corner is where every site on the web puts this, and it
+              is the one control whose entire audience has not learned this
+              site's chrome yet. `ml-1` sets it off from the two icon toggles
+              rather than reading as a third one. */}
+            <HeaderSignIn className="ml-1" />
+
+            {/* Paired with the sidebar's own `lg:flex` — the two must flip at the
+                same width or the site has no navigation at all between 768 and
+                1024 px. Below `lg` this button is also the only route to the
+                account, which the drawer carries at its foot. */}
+            <NavMobile className="ml-1 lg:hidden" />
+          </div>
         </div>
       </div>
     </header>
