@@ -1,4 +1,5 @@
 import { type ObjectType, v } from "convex/values"
+import { summarizeCommittees } from "../lib/committees"
 import { internalMutation, type MutationCtx, type QueryCtx, query } from "./_generated/server"
 import { assertBatchSize, emptyBatchResult, recordBatch, upsertRow, withId } from "./lib/ingest"
 import { mpLabel, requireMandate } from "./mps"
@@ -171,12 +172,8 @@ export const getCommittees = query({
       .query("committeeMemberships")
       .withIndex("by_wahlperiode_and_committeeName", (q) => q.eq("wahlperiode", args.wahlperiode))
       .collect()
-    const counts = new Map<string, number>()
-    for (const row of rows) {
-      counts.set(row.committeeName, (counts.get(row.committeeName) ?? 0) + 1)
-    }
-    return [...counts.entries()]
-      .map(([committeeName, memberCount]) => ({ committeeName, memberCount }))
-      .sort((a, b) => a.committeeName.localeCompare(b.committeeName, "de"))
+    // The reduction lives in lib/committees.ts so it can be unit-tested
+    // without a Convex handler — the read from the index stays here.
+    return summarizeCommittees(rows)
   },
 })
