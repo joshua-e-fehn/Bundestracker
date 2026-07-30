@@ -4,7 +4,8 @@ import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
 import { Seating } from "@/components/seating"
 import { SyntheticSeatingNotice } from "@/components/seating-notice"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/seating` — the hemicycle, for the Wahlperiode `?wp=` names.
@@ -30,13 +31,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * says so on the page rather than leaving a reader to assume the older one is
  * the worse of the two.
  *
- * German metadata, matching every other route here: `generateMetadata` cannot see
- * the client-side language toggle, so the tab title is the default locale's while
- * the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("seating.title", DEFAULT_LOCALE),
-  description: t("seating.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("seating.title", locale),
+    description: t("seating.subtitle", locale),
+  }
 }
 
 export default function SeatingPage() {

@@ -1,5 +1,5 @@
 import { type ObjectType, v } from "convex/values"
-import { internalMutation, type MutationCtx, query } from "./_generated/server"
+import { internalMutation, internalQuery, type MutationCtx, query } from "./_generated/server"
 import {
   assertBatchSize,
   emptyBatchResult,
@@ -196,11 +196,22 @@ export const hasAnyExplanationsForPeriod = query({
  * How many declarations a deployment holds for a period, and against how
  * many distinct procedures.
  *
- * Kept for **operator** callers — a dashboard-side "how much did this
- * period ingest" answer that `hasAnyExplanationsForPeriod` above cannot
- * give. The UI does NOT use this: every disclosure page-level read now
- * goes through the boolean, so the read cost of a browser page does not
- * grow with the size of a period.
+ * **Operator surface**, reached over `POST /api/pipeline/coverage/explanations`
+ * with the bearer key — see convex/http.ts and `scripts/verify-coverage.py`
+ * for how it is called. The UI never calls this: every disclosure's page-level
+ * read goes through `hasAnyExplanationsForPeriod` above so the read cost of
+ * a browser page does not grow with the size of a period. Kept separate from
+ * that boolean because a dashboard-side "how much did this period ingest"
+ * answer is a different question — and one an operator running a coverage
+ * check actually asks.
+ *
+ * Now an `internalQuery`, not a public one: the pattern the audit named
+ * (`webapp/convex/voteExplanations.ts:211`) had a public surface with no UI
+ * caller and no automated operator caller, which is worse than either — the
+ * `.collect()` and the whole read cost were reachable by anyone who knew the
+ * path. Internalising it moves the surface behind the same bearer gate the
+ * ingest routes carry, so the dashboard question stays answerable and the
+ * public API shrinks.
  *
  * Bounded read: `.collect()` over the period's declarations — the largest
  * measured is a low-thousands figure (WP19's busiest sitting alone carried 78,
@@ -208,7 +219,7 @@ export const hasAnyExplanationsForPeriod = query({
  * magnitude inside Convex's read cap, and the same range is used to build the
  * distinct-Vorgang count so both facts come out of one query rather than two.
  */
-export const getExplanationCoverage = query({
+export const getExplanationCoverage = internalQuery({
   args: { wahlperiode: v.number() },
   returns: v.object({ explanations: v.number(), motionsWithExplanations: v.number() }),
   handler: async (ctx, args) => {

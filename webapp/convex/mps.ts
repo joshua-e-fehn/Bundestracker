@@ -371,6 +371,17 @@ export const listPeriods = query({
     periods: v.array(
       v.object({
         wahlperiode: v.number(),
+        /**
+         * The count of raw `mps` mandate rows for the period, deliberately
+         * named `mandates` and not `seats`: WP21 holds 635 mandate rows for
+         * 630 statutory seats, and the two answer different questions. Seat
+         * count comes from `stats.getChamberStats.mps.count` (the peak-
+         * concurrent derivation, see `peakConcurrentMandates` in
+         * convex/stats.ts); this is the row count, which is what
+         * `getFractionSizes` and `generateSeating` also use — a period
+         * selector card that summed to 630 while the group cards summed to
+         * 635 would be a UI that could not add up.
+         */
         mandates: v.number(),
         scored: v.boolean(),
       }),
@@ -453,6 +464,19 @@ export const getMPMandates = query({
  * the take, what went missing was the tail of the alphabet rather than a
  * visibly short list. Paging belongs here eventually; until it does, the
  * ceiling has to sit above the real answer.
+ *
+ * ## Kept **public** deliberately: the pipeline scripts read it
+ *
+ * No browser caller consumes this — the `/mps` roster page uses
+ * `getMPsWithScores`, which joins the period score in one round-trip. The
+ * live callers are `scripts/verify-enrichment.py`, `scripts/score-period.py`
+ * and `scripts/verify-frontend-history.py`, all of which POST to
+ * `/api/query` from Python (Convex has no Python client, so the scripts
+ * reach public queries over HTTP with no auth) — the string form
+ * `"mps:getMPs"`, which `webapp/lib/reachability.test.ts` scans for
+ * alongside the TS `api.mps.getMPs` shape. Internalising this query would
+ * break those scripts without giving them a bearer-gated route to migrate
+ * to, and the fields it exposes are all public parliamentary data.
  */
 export const getMPs = query({
   args: {

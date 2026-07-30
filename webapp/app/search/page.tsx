@@ -2,7 +2,8 @@ import type { Metadata } from "next"
 import { Suspense } from "react"
 import { SearchPage } from "@/components/search-page"
 import { CURRENT_WAHLPERIODE } from "@/lib/bundestag"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * Keyword search over parliamentary records, answering with MPs.
@@ -21,9 +22,12 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * so there is no content-shaped skeleton worth drawing.
  */
 
-export const metadata: Metadata = {
-  title: t("search.title", DEFAULT_LOCALE),
-  description: t("search.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("search.title", locale),
+    description: t("search.subtitle", locale),
+  }
 }
 
 export default function Search() {

@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
 import { MPRoster } from "@/components/mp-roster"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 import { CURRENT_WAHLPERIODE } from "@/lib/period"
 
 /**
@@ -49,14 +50,18 @@ import { CURRENT_WAHLPERIODE } from "@/lib/period"
  *
  * `generateMetadata` cannot await a Convex query without blocking the document
  * head on an uncached read, and it cannot see `?wp=` in a way that would help —
- * the tab title is already approximate (German for a bilingual page, per
- * app/layout.tsx), and the page body corrects it. `CURRENT_WAHLPERIODE` is the
- * documented fallback for exactly this caller; see the note on it.
+ * `CURRENT_WAHLPERIODE` is the documented fallback for exactly this caller;
+ * see the note on it. The locale itself is negotiated per request via
+ * `resolveServerLocale` (see app/layout.tsx), so the tab title matches the
+ * reader's saved language rather than the site's default.
  */
 
-export const metadata: Metadata = {
-  title: t("mps.title", DEFAULT_LOCALE),
-  description: t("mps.subtitle", DEFAULT_LOCALE, { wahlperiode: CURRENT_WAHLPERIODE }),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("mps.title", locale),
+    description: t("mps.subtitle", locale, { wahlperiode: CURRENT_WAHLPERIODE }),
+  }
 }
 
 export default function MPsPage() {

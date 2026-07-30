@@ -3,19 +3,23 @@ import { Suspense } from "react"
 import { ActivityFeed } from "@/components/activity-feed"
 import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/feed` — the chamber-wide activity feed, for the Wahlperiode `?wp=` names.
  *
  * Same shape as `/rankings`: a server component wrapping client ones, so the
  * page itself ships no JS and the live Convex subscription lives below the
- * boundary. See app/rankings/page.tsx for the metadata-locale note and for why
- * the `Suspense` boundary is required rather than decorative.
+ * boundary. Locale-aware metadata via `resolveServerLocale` — see
+ * app/layout.tsx for the cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("feed.title", DEFAULT_LOCALE),
-  description: t("feed.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("feed.title", locale),
+    description: t("feed.subtitle", locale),
+  }
 }
 
 export default function FeedPage() {

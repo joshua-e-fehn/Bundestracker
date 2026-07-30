@@ -14,7 +14,7 @@ import { activityDates } from "./activities"
 import { committeeCount } from "./committees"
 import { pageLimit, upsertRow, withId } from "./lib/ingest"
 import { mpLabel, photoFields, requireMandate } from "./mps"
-import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
+import { activityScoreInput, scoreBreakdown } from "./schema"
 import { speechDates } from "./speeches"
 import { ballotDates, voteTallyByMonth } from "./votes"
 
@@ -787,10 +787,7 @@ export const getMonthlyScoresByMP = query({
   },
 })
 
-/** The default weights, so the browser can show what a score was computed with
- * and offer them as the reset for a custom set. */
-export const getDefaultWeights = query({
-  args: {},
-  returns: scoreWeights,
-  handler: async () => DEFAULT_WEIGHTS,
-})
+// The default weights used to be served from here; they are imported directly
+// from `lib/scoring.ts` by every consumer (the settings sliders, the
+// per-profile score panel, the /about page), so no server round-trip is
+// warranted for a compile-time constant. Removed to keep one source of truth.

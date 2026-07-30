@@ -5,13 +5,42 @@ import {
   DEFAULT_LOCALE,
   getTranslator,
   isLocale,
+  LOCALE_COOKIE,
+  LOCALE_COOKIE_MAX_AGE,
   type Locale,
+  localeCookieValue,
   localeFromNavigator,
   type TranslationKey,
   type TranslationValues,
 } from "@/lib/i18n"
 
 const STORAGE_KEY = "bundestrack.locale"
+
+/**
+ * Mirrors the pressed-toggle language into a cookie the *next* server render
+ * can read.
+ *
+ * `localStorage` is unreachable from the server, so a reader who pressed the
+ * toggle on their previous visit would otherwise get a German `<title>` above
+ * an English page for one paint on the next one, and every social-share
+ * preview would carry the wrong language. See `LOCALE_COOKIE` in lib/i18n.ts
+ * for the wider decision.
+ *
+ * Client-only writer (`document.cookie` is the DOM's own API), on a defensive
+ * `typeof document` guard so a preview-mode call from SSR does not throw.
+ * `SameSite=Lax` matches SIDEBAR_COOKIE. No `Secure` — dev serves over `http`,
+ * and this cookie carries no secret so a downgrade attack has nothing to
+ * steal. The `max-age` is a year; a language choice is not per-session.
+ */
+function writeLocaleCookie(locale: Locale): void {
+  if (typeof document === "undefined") return
+  // Cookie Store API is Chromium-only (no Safari/Firefox as of 2026-07),
+  // and the sibling `SIDEBAR_COOKIE` writer uses this same shape — using
+  // two mechanisms for the same purpose would give two opportunities to
+  // disagree about SameSite/Max-Age.
+  // biome-ignore lint/suspicious/noDocumentCookie: see above
+  document.cookie = `${LOCALE_COOKIE}=${localeCookieValue(locale)}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; samesite=lax`
+}
 
 type LocaleContextValue = {
   locale: Locale
@@ -107,6 +136,10 @@ export function LocaleProvider({
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next)
     window.localStorage.setItem(STORAGE_KEY, next)
+    // Mirror into the cookie so the next server render (metadata, <html
+    // lang>, first paint) already reflects this choice. See writeLocaleCookie
+    // for why localStorage alone was not enough.
+    writeLocaleCookie(next)
   }, [])
 
   /**

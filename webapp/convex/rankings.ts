@@ -847,24 +847,8 @@ export const getRankingFilterOptions = query({
   },
 })
 
-/**
- * The newest period on the roster.
- *
- * The same derivation as `scoreSweep.currentPeriod` and for the same reason
- * given there — a hardcoded 21 keeps scoring the previous Bundestag for months
- * after WP22 begins. That one is an `internalQuery` for the cron; this is the
- * public form, because every page here needs a period before it can ask for
- * anything and the URL should not have to carry one.
- */
-export const getCurrentWahlperiode = query({
-  args: {},
-  returns: v.union(v.null(), v.number()),
-  handler: async (ctx) => {
-    const newest = await ctx.db
-      .query("mps")
-      .withIndex("by_wahlperiode_and_fraktion")
-      .order("desc")
-      .first()
-    return newest?.wahlperiode ?? null
-  },
-})
+// A `getCurrentWahlperiode` used to live here, duplicating
+// `api.mps.getCurrentWahlperiode` byte for byte. Every reader in the app (the
+// homepage, the dashboard, the settings page) consumes the `mps.*` copy, so
+// this one had no callers and violated the "one source of truth for the
+// current period" invariant `convex/mps.ts` states explicitly. Removed.

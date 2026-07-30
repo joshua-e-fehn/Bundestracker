@@ -4,7 +4,8 @@ import { notFound } from "next/navigation"
 import { VoteDetail } from "@/components/vote-detail"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * One named ballot — `/votes/[id]`.
@@ -17,8 +18,11 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * key is a *triple* — `(wahlperiode, sitzungnr, abstimmnr)` — and a URL built
  * from three segments is one the list page would have to reassemble on every
  * row when it already holds the row's identity. So this routes by the Convex
- * id, and `getVoteSheet` keeps serving the natural key for callers that have
- * the sheet number from an official document.
+ * id, and `getVoteSheetsByKey` (convex/votes.ts) serves the natural-key form
+ * for callers with the sheet number from an official document — `/votes/own-
+ * resources` is the one today. An earlier single-row `getVoteSheet` query
+ * covered the same case with `.first()`; it was removed after no caller
+ * materialised, and its role sits with `getVoteSheetsByKey` now.
  *
  * ## Validating the id before the query
  *
@@ -53,11 +57,11 @@ async function loadSheet(rawId: string) {
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { id } = await params
+  const [{ id }, locale] = await Promise.all([params, resolveServerLocale()])
   const data = await loadSheet(decodeURIComponent(id))
-  // German, like every other page's metadata — `generateMetadata` cannot see
-  // the client-side language toggle. See the note in app/layout.tsx.
-  if (!data) return { title: t("common.notFound", DEFAULT_LOCALE) }
+  // The ballot's title is language-agnostic; only the not-found fallback needs
+  // a locale. See app/layout.tsx for the cookie → header → German precedence.
+  if (!data) return { title: t("common.notFound", locale) }
   return {
     title: data.sheet.title,
     description: [data.sheet.result, data.sheet.date].filter(Boolean).join(" · "),

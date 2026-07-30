@@ -645,11 +645,25 @@ export const purgeSeedData = internalMutation({
 /**
  * Whether this deployment still holds anything a seeder wrote.
  *
- * The check to run after a purge, and the one `scripts/seed-local.ts` runs
- * *before* it writes — which is how the seeder now refuses to touch a deployment
- * holding a real roster. Kept here rather than in the seeder so there is one
- * definition of "synthetic data is present"; the seeder cannot query Convex
- * directly, so it reaches this through the HTTP API (convex/http.ts).
+ * The post-purge invariant `runPurge` establishes is that a subsequent call
+ * here returns all-zeros — this is also the read operators run against
+ * production during a recovery to confirm no synthetic row survived. Kept
+ * here rather than in the seeder or the tests so there is one definition of
+ * "synthetic data is present", and marked `internalQuery` so it is reachable
+ * from `runPurge`, from the Convex dashboard (`bunx convex run
+ * purgeSeed:seedDataPresent`) and from tests, but not from any client: it is
+ * a diagnostic, not a public surface.
+ *
+ * ⚠ *Not* the gate that stops `scripts/seed-local.ts` from writing to a real
+ * deployment. That job belongs to `assertLocalDeployment` in the seeder,
+ * which parses the URL and refuses any hostname that is not loopback
+ * (localhost / 127.0.0.1 / 0.0.0.0 / ::1) unless `ALLOW_REMOTE_SEED=1` is
+ * set. The seeder deliberately does not run a Convex pre-check: a query
+ * against an unreachable or partially-configured deployment would look
+ * identical to `mps: 0` on a fresh one, so a hostname assertion is both
+ * stricter and more honest than a data check. An earlier docstring here
+ * claimed the opposite; it was wrong, and the check the seeder actually
+ * runs is what is described above.
  *
  * `seedEvents` counts the fabricated feed events still reachable from a
  * synthetic mandate, by the `referenceType` marker the seeder stamps. Zero

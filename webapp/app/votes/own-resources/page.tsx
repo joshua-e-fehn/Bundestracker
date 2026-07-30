@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { OwnResourcesVotes } from "@/components/own-resources-votes"
 import { PageHeading } from "@/components/page-heading"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/votes/own-resources` — ballots in which the Bundestag decided on its own
@@ -33,13 +34,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * `/votes` already prefix-matches this path in `isPublicPath`, so no new entry
  * in lib/auth-routes.ts is needed — that only applies to top-level routes.
  *
- * German metadata, matching every other route: `generateMetadata` cannot see
- * the client-side language toggle, so the tab title is the default locale's
- * while the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("votes.ownResources.title", DEFAULT_LOCALE),
-  description: t("votes.ownResources.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("votes.ownResources.title", locale),
+    description: t("votes.ownResources.subtitle", locale),
+  }
 }
 
 export default function OwnResourcesVotesPage() {

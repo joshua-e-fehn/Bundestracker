@@ -4,7 +4,8 @@ import { Suspense } from "react"
 import { PartyHeading } from "@/components/party-heading"
 import { PartyMembers } from "@/components/party-members"
 import { PeriodScope } from "@/components/period-scope"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 import { isPartyKey, partyByKey } from "@/lib/parties"
 
 /**
@@ -55,15 +56,15 @@ import { isPartyKey, partyByKey } from "@/lib/parties"
 type Params = { params: Promise<{ party: string }> }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { party } = await params
+  const [{ party }, locale] = await Promise.all([params, resolveServerLocale()])
   if (!isPartyKey(party)) {
-    return { title: t("common.notFound", DEFAULT_LOCALE) }
+    return { title: t("common.notFound", locale) }
   }
-  // German, like every other page's metadata — `generateMetadata` cannot see
-  // the client-side language toggle. See the note in app/layout.tsx.
+  // Locale-aware via `resolveServerLocale` — see app/layout.tsx for the cookie
+  // → header → German precedence.
   return {
-    title: t("parties.members.title", DEFAULT_LOCALE, { party: partyByKey(party).label }),
-    description: t("parties.members.subtitle", DEFAULT_LOCALE),
+    title: t("parties.members.title", locale, { party: partyByKey(party).label }),
+    description: t("parties.members.subtitle", locale),
   }
 }
 

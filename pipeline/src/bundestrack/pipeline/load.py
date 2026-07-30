@@ -467,7 +467,9 @@ class ConvexLoader:
 
         Returns the rows migrated. A second run returns 0, which is the signal
         that the period-scoped reads are now complete — confirm with
-        `votes:voteScopeCoverage`, which reads the same range.
+        `POST /api/pipeline/coverage/vote-scope` (the operator surface that
+        replaced the public `votes:voteScopeCoverage`; run through
+        `scripts/verify-coverage.py`).
         """
         migrated = 0
         for _ in range(max_slices):

@@ -3,7 +3,7 @@ import { type ObjectType, v } from "convex/values"
 import { layoutHemicycle, seatingRank } from "../lib/seating"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
 import { assertBatchSize, emptyBatchResult, recordBatch, upsertRow, withId } from "./lib/ingest"
-import { findMandate, mpLabel, photoFields, requireMandate } from "./mps"
+import { findMandate, photoFields, requireMandate } from "./mps"
 import { scoreBreakdown, seatingAssignmentInput } from "./schema"
 
 /**
@@ -107,6 +107,26 @@ export const upsertSeatingAssignments = internalMutation({
  * shuffle everyone's seat between page loads. Within a bloc, MPs are ordered by
  * surname — arbitrary, as §9 requires it to be, but stable and inspectable,
  * which "arbitrary" alone would not be.
+ *
+ * ## Seats the arc holds are mandate rows, not statutory seats
+ *
+ * The arc's cardinality is `|mandate rows|`, not `getChamberStats.mps.count`.
+ * A mid-period seat vacated and refilled generates *two* mandate rows and
+ * *one* statutory seat: the arc gets two arcs for it (the front-office
+ * departure and the back-office replacement, both with datesInOffice), while
+ * `peakConcurrentMandates` in convex/stats.ts:169 — the canonical seat-count
+ * derivation — reports one. WP21 sits 630 statutorily and generates ~635
+ * arcs; the divergence is disclosed in-UI by
+ * `protokoll.chapter1MandateNote` on components/home-protokoll/
+ * chapter-chamber.tsx, and the honest number for chamber-size questions is
+ * always `peakConcurrentMandates`.
+ *
+ * **Do not** substitute `getChamberStats.mps.count` for `ordered.length`
+ * below — that would drop the replacement arcs, and `getSeatingWithMPs`'s
+ * tooltip would then miss every mid-period succession's replacement row.
+ * The two counts answer different questions; this function needs the row
+ * count, not the seat count. See convex/stats.test.ts's "seats vs mandate
+ * rows" suite for the pinning arithmetic.
  */
 export const generateSeating = internalMutation({
   args: { wahlperiode: v.number() },
@@ -150,49 +170,10 @@ export const generateSeating = internalMutation({
 })
 
 // --- public queries -------------------------------------------------------
-
-/**
- * The arc for one period, optionally one bloc.
- *
- * Collects rather than pages: a hemicycle is drawn whole or not at all, and 630
- * rows is well inside the read limit. The MP's name and group ride along
- * because the alternative is 630 client queries to label the seats.
- */
-export const getSeatingAssignments = query({
-  args: { wahlperiode: v.number(), faction: v.optional(v.string()) },
-  returns: v.array(
-    v.object({
-      seat: seatingAssignmentDoc,
-      name: v.string(),
-      ...photoFields,
-    }),
-  ),
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("seatingAssignments")
-      .withIndex("by_wahlperiode_and_faction", (q) => {
-        const scoped = q.eq("wahlperiode", args.wahlperiode)
-        return args.faction === undefined ? scoped : scoped.eq("faction", args.faction)
-      })
-      .collect()
-
-    const joined = []
-    for (const row of rows) {
-      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
-      joined.push({
-        seat: toSeatDoc(row),
-        name: mp.name,
-        photoUrl: mp.photoUrl,
-        photoCredit: mp.photoCredit,
-      })
-    }
-    // Drawing order: row by row, left to right.
-    return joined.sort(
-      (a, b) =>
-        (a.seat.row ?? 0) - (b.seat.row ?? 0) || (a.seat.column ?? 0) - (b.seat.column ?? 0),
-    )
-  },
-})
+//
+// A name+photo-only variant used to live here (`getSeatingAssignments`) — the
+// seating page never used it (it needs the five colour-mode inputs
+// `getSeatingWithMPs` returns), so the thinner reader was removed.
 
 /**
  * The whole chamber, with everything the map colours by — one read.

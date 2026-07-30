@@ -38,10 +38,11 @@ pending:
   no person on the record and no field from which one could be derived. So it
   answers "where did this bill go" and never "what did this member do", and the
   committee component of the score stays structurally absent for WP14–20.
-  Referral coverage is its own question, reported by
-  `committeeReferrals:getReferralCoverage` — an empty answer there means the
-  period has not been backfilled, where an empty `committees:getCommittees`
-  means nothing was ever published. The two must not be read as one.
+  Referral coverage is its own question, answered by the operator-only
+  `POST /api/pipeline/coverage/referrals` route (bearer-gated; the wrapper is
+  `scripts/verify-coverage.py`) — an empty answer there means the period has
+  not been backfilled, where an empty `committees:getCommittees` means
+  nothing was ever published. The two must not be read as one.
 - **No period before WP18 can have speech data.** Word counts, speech counts
   and the speaking-time proxy are all derived from protocol XML. WP14–17 have
   the sittings but not the machine-readable transcripts.

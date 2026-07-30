@@ -3,7 +3,8 @@ import { Suspense } from "react"
 import { MotionList } from "@/components/motion-list"
 import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/motions` — the procedures and printed papers of the Wahlperiode `?wp=` names.
@@ -28,13 +29,15 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * deliberately has no `motions` member for that reason: a boundary that does not
  * exist should not be modelled as one.
  *
- * German metadata, matching the rest of the site: `generateMetadata` cannot see
- * the client-side language toggle, so the tab title is the default locale's
- * while the page content follows the reader's choice.
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence.
  */
-export const metadata: Metadata = {
-  title: t("motions.title", DEFAULT_LOCALE),
-  description: t("motions.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("motions.title", locale),
+    description: t("motions.subtitle", locale),
+  }
 }
 
 export default function MotionsPage() {

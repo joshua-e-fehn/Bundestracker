@@ -1063,7 +1063,8 @@ class Pipeline:
         which is what stopped the old form accumulating three ballots' reads into
         one transaction, and what stopped every ballot writing all ~630 tally
         rows. So the count below is what was *dispatched*; verify the outcome by
-        reading `votes:voteScopeCoverage` and the tallies rather than by trusting
+        running `scripts/verify-coverage.py` (or `POST /api/pipeline/coverage/vote-scope`
+        directly, with the bearer key) and the tallies, rather than by trusting
         this note.
         """
         stage = report.stage("dissent")

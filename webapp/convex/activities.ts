@@ -5,16 +5,8 @@ import {
   internalQuery,
   type MutationCtx,
   type QueryCtx,
-  query,
 } from "./_generated/server"
-import {
-  assertBatchSize,
-  emptyBatchResult,
-  pageLimit,
-  recordBatch,
-  upsertRow,
-  withId,
-} from "./lib/ingest"
+import { assertBatchSize, emptyBatchResult, pageLimit, recordBatch, upsertRow } from "./lib/ingest"
 import { requireMandate } from "./mps"
 import { activityInput } from "./schema"
 
@@ -41,12 +33,6 @@ import { activityInput } from "./schema"
  * counted `other`, and `listUnrecognisedActivityKinds` below runs §11.4's
  * census against live data. An unknown kind becomes a question, not a silence.
  */
-
-// --- read models ----------------------------------------------------------
-
-const activityDoc = v.object({ id: v.id("activities"), ...activityInput, createdAt: v.number() })
-
-const toActivityDoc = withId<"activities">
 
 // --- ingestion ------------------------------------------------------------
 
@@ -186,24 +172,7 @@ export const listUnrecognisedActivityKinds = internalQuery({
   },
 })
 
-// --- public queries -------------------------------------------------------
-
-/** One MP's activities, newest first. */
-export const getActivitiesByMP = query({
-  args: {
-    mpInternalId: v.string(),
-    wahlperiode: v.number(),
-    limit: v.optional(v.number()),
-  },
-  returns: v.array(activityDoc),
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("activities")
-      .withIndex("by_mpInternalId_and_wahlperiode_and_date", (q) =>
-        q.eq("mpInternalId", args.mpInternalId).eq("wahlperiode", args.wahlperiode),
-      )
-      .order("desc")
-      .take(pageLimit(args.limit, 50))
-    return rows.map(toActivityDoc)
-  },
-})
+// No public queries live in this module. The per-MP feed is served by
+// `activityEvents.getActivityCalendar` and the chamber-wide roll-up by
+// `activityScores.getRankings`; a per-MP list of raw `activities` rows was
+// never wired to a UI and was removed to keep the public surface honest.
