@@ -13,6 +13,10 @@ import {
 // `getNormalisedRankings`, which is the only board whose figure is not a stored
 // column and therefore the only one that could grow a second copy of a formula.
 import { normalisedScore, tenureDays } from "../lib/tenure"
+// The candidate-month enumerator, imported rather than restated — see
+// `getRankingFilterOptions`, the only caller that needs a date range turned
+// into a list of `YYYY-MM` strings.
+import { monthRange } from "../lib/trends"
 import type { Doc } from "./_generated/dataModel"
 import { type QueryCtx, query } from "./_generated/server"
 import { monthWindow } from "./activityScores"
@@ -782,8 +786,17 @@ async function windowDissent(
  * read as missing data. Reading the period's own rows is what makes one
  * component correct for every period.
  *
- * `months` comes from the score rows, not from a date range, because a month
- * with no scores is a month the ranking has nothing to say about.
+ * `months` comes from the score rows, not straight from a date range, because
+ * a month with no scores is a month the ranking has nothing to say about. But
+ * "which months" no longer reads every score row to find out: a closed
+ * period has tens of thousands of them (one per MP per month), and a
+ * `.collect()` over all of them here overran Convex's per-query document-read
+ * ceiling and 500'd this query for every historical Wahlperiode — the roster
+ * dropdown a visitor hits first on any WP14–20 page. Candidate months come
+ * instead from the roster's own mandate spans (`datesInOffice`, already read
+ * below for the other filters, so this adds no fetch), and each candidate is
+ * checked with one indexed `.first()` — the same "existence, not a count"
+ * pattern `listPeriods` in convex/mps.ts uses for the period-total row.
  */
 export const getRankingFilterOptions = query({
   args: { wahlperiode: v.number() },
@@ -794,23 +807,18 @@ export const getRankingFilterOptions = query({
     months: v.array(v.string()),
   }),
   handler: async (ctx, args) => {
-    const [mps, scores] = await Promise.all([
-      ctx.db
-        .query("mps")
-        .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
-        .collect(),
-      ctx.db
-        .query("activityScores")
-        .withIndex("by_wahlperiode_and_month_and_totalScore", (q) =>
-          q.eq("wahlperiode", args.wahlperiode),
-        )
-        .collect(),
-    ])
+    const mps = await ctx.db
+      .query("mps")
+      .withIndex("by_wahlperiode_and_fraktion", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .collect()
 
     const nowMs = Date.now()
+    const today = new Date(nowMs).toISOString().slice(0, 10)
     const fraktionen = new Map<string, number>()
     const states = new Map<string, number>()
     const ageGroups = new Map<AgeGroup, number>()
+    let periodStart: string | null = null
+    let periodEnd: string | null = null
 
     for (const mp of mps) {
       fraktionen.set(mp.fraktion, (fraktionen.get(mp.fraktion) ?? 0) + 1)
@@ -821,12 +829,31 @@ export const getRankingFilterOptions = query({
           ageGroups.set(group, (ageGroups.get(group) ?? 0) + 1)
         }
       }
+      if (mp.datesInOffice !== null) {
+        const { start, end } = mp.datesInOffice
+        // Open `end` means still serving (schema.ts's note on the field) —
+        // treated as running through today rather than left out of the range.
+        const resolvedEnd = end ?? today
+        if (periodStart === null || start < periodStart) periodStart = start
+        if (periodEnd === null || resolvedEnd > periodEnd) periodEnd = resolvedEnd
+      }
     }
 
-    const months = new Set<string>()
-    for (const score of scores) {
-      if (score.month !== null) months.add(score.month)
-    }
+    const candidateMonths =
+      periodStart !== null && periodEnd !== null
+        ? monthRange(periodStart.slice(0, 7), periodEnd.slice(0, 7))
+        : []
+    const monthRows = await Promise.all(
+      candidateMonths.map((month) =>
+        ctx.db
+          .query("activityScores")
+          .withIndex("by_wahlperiode_and_month_and_totalScore", (q) =>
+            q.eq("wahlperiode", args.wahlperiode).eq("month", month),
+          )
+          .first(),
+      ),
+    )
+    const months = candidateMonths.filter((_, index) => monthRows[index] !== null)
 
     const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count
     return {

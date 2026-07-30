@@ -1,6 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import type { Doc } from "./_generated/dataModel"
-import { passes } from "./rankings"
+import type { QueryCtx } from "./_generated/server"
+import { boundsOf, recordingCtx } from "./lib/readRecorder.testing"
+import { getRankingFilterOptions, passes } from "./rankings"
+
+/**
+ * Convex wraps a `query()` handler as `_handler`, invisible in the public
+ * type but present at runtime — the same cast `stats.test.ts` uses, restated
+ * here per that file's note that duplicating it beats a shared
+ * `*_Handler` refactor for a handful of read-only assertions.
+ */
+type QueryHandler<TArgs, TResult> = (ctx: QueryCtx, args: TArgs) => Promise<TResult>
+function handlerOf<TArgs, TResult>(fn: unknown): QueryHandler<TArgs, TResult> {
+  return (fn as { _handler: QueryHandler<TArgs, TResult> })._handler
+}
 
 /**
  * The federal-state filter, at the predicate every leaderboard runs it through.
@@ -103,5 +116,86 @@ describe("the federal-state filter", () => {
     const mp = mandate({ fraktion: "SPD", federalState: "BW" })
     expect(passes(mp, { state: "BW", fraktion: "SPD" }, NOW)).toBe(true)
     expect(passes(mp, { state: "BW", fraktion: "CDU/CSU" }, NOW)).toBe(false)
+  })
+})
+
+/**
+ * `getRankingFilterOptions`'s month list, at the read shape rather than the
+ * output.
+ *
+ * ## Why this file needs a cost assertion, not just a value one
+ *
+ * The bug this guards was invisible to a value assertion: for a small fixture
+ * the wrong query and the right one return the same `months` array. It only
+ * differed in production, where a closed Wahlperiode's `activityScores` table
+ * holds one row per MP per month — tens of thousands for WP14–20 — and reading
+ * all of them to find the distinct month strings overran Convex's per-query
+ * document-read ceiling and 500'd the roster dropdown for every historical
+ * period. `readRecorder.testing.ts` exists for exactly this class of bug (see
+ * its own header); `stats.test.ts` and `mps.ts`'s `listPeriods` are the
+ * established instances of the same "probe, don't collect" pattern.
+ */
+describe("getRankingFilterOptions' month list", () => {
+  test("probes each candidate month once, rather than reading every score row", async () => {
+    const { ctx, cost } = recordingCtx({
+      mps: [
+        {
+          _id: "mp1",
+          wahlperiode: 20,
+          fraktion: "SPD",
+          federalState: "BW",
+          birthDate: "1975-04-12",
+          datesInOffice: { start: "2021-11-01", end: "2021-12-31" },
+        },
+      ],
+      // Only November has a score row. December is still a candidate month —
+      // it falls inside the mandate span — but the sweep never scored it.
+      activityScores: [{ _id: "score1", wahlperiode: 20, month: "2021-11", totalScore: 10 }],
+    })
+
+    const handler = handlerOf<{ wahlperiode: number }, { months: string[] }>(
+      getRankingFilterOptions,
+    )
+    const result = await handler(ctx, { wahlperiode: 20 })
+
+    // The value the old, unbounded query also got right — asserted so a
+    // future change to the probing loop can't silently drop December's
+    // absence or invent a month outside the mandate span.
+    expect(result.months).toEqual(["2021-11"])
+
+    // The shape the old query got wrong: one bounded probe per candidate
+    // month, not a single `.collect()` over the whole period's rows.
+    const scoreReads = cost.reads.filter((read) => read.table === "activityScores")
+    expect(scoreReads).toHaveLength(2)
+    for (const read of scoreReads) {
+      expect(boundsOf(read)).toContain("month")
+      expect(read.returned).toBeLessThanOrEqual(1)
+    }
+  })
+
+  test("an mp with no datesInOffice contributes no candidate months", async () => {
+    // A row ingested before the field existed, or one the source publishes no
+    // mandate span for — `datesInOffice: null` (schema.ts). Must not throw
+    // and must not widen the range to `undefined`'s NaN-like comparisons.
+    const { ctx } = recordingCtx({
+      mps: [
+        {
+          _id: "mp1",
+          wahlperiode: 20,
+          fraktion: "SPD",
+          federalState: "BW",
+          birthDate: "1975-04-12",
+          datesInOffice: null,
+        },
+      ],
+      activityScores: [],
+    })
+
+    const handler = handlerOf<{ wahlperiode: number }, { months: string[] }>(
+      getRankingFilterOptions,
+    )
+    const result = await handler(ctx, { wahlperiode: 20 })
+
+    expect(result.months).toEqual([])
   })
 })
