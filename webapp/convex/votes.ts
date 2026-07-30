@@ -29,7 +29,7 @@ import { vote, voteSheetInput } from "./schema"
  * ballot has not "attended every vote", and no source can say whether they did.
  *
  * The published tallies live on the sheet and the rows in `voteRecords`,
- * deliberately un-derived from each other: `getVoteSheet` returns both, so a
+ * deliberately un-derived from each other: `getVoteSheetById` returns both, so a
  * half-finished ingest reads as a disagreement rather than a different result.
  * Which source a sheet came from matters for absences — the protocol XML lists
  * only MPs who *cast* a vote (§4.2), so only the XLSX supplies `absentCount`.
@@ -1798,14 +1798,16 @@ const MIN_REAL_CORPUS = 20
  * One ballot by its Convex id, with every record joined to its voter — what
  * `/votes/[id]` renders.
  *
- * ## Why an id, when `getVoteSheet` takes the natural key
+ * ## Why an id, when `getVoteSheetsByKey` takes the natural key
  *
  * Both identify the same row, and both stay. `(wahlperiode, sitzungnr,
  * abstimmnr)` is what the XLSX sheet name encodes, so it is the key the
  * *pipeline* has and the one a reader could reconstruct from an official
- * document. The id is what a *link* has: `getVoteSheetsPage` returns rows
- * carrying `id`, and a list that already holds the identity of each row should
- * not make its detail page re-derive a three-part key to look it up again.
+ * document — `getVoteSheetsByKey` below is what serves curated collections
+ * built from that key (`/votes/own-resources` is the one today). The id is
+ * what a *link* has: `getVoteSheetsPage` returns rows carrying `id`, and a
+ * list that already holds the identity of each row should not make its detail
+ * page re-derive a three-part key to look it up again.
  *
  * `ctx.db.get` returns null for a well-formed id that names no row; an id that
  * is not a `voteSheets` id at all throws, so the route validates before calling

@@ -145,7 +145,9 @@ export const getFeed = query({
   handler: async (ctx, args) => {
     // Bound to a local before the branch so the narrowing survives into the
     // index callback, where `args.eventType` is optional again — the same shape
-    // `activityEvents.getActivityFeed` uses, and for the same reason.
+    // `activityEvents.getChamberFeed` uses, and for the same reason. An
+    // earlier per-MP `activityEvents.getActivityFeed` shared this pattern too;
+    // it was removed after `getActivityCalendar` covered the profile heatmap.
     const kind = args.eventType
     const result =
       kind === undefined

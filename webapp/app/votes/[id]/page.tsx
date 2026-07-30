@@ -18,8 +18,11 @@ import { resolveServerLocale } from "@/lib/i18n-server"
  * key is a *triple* — `(wahlperiode, sitzungnr, abstimmnr)` — and a URL built
  * from three segments is one the list page would have to reassemble on every
  * row when it already holds the row's identity. So this routes by the Convex
- * id, and `getVoteSheet` keeps serving the natural key for callers that have
- * the sheet number from an official document.
+ * id, and `getVoteSheetsByKey` (convex/votes.ts) serves the natural-key form
+ * for callers with the sheet number from an official document — `/votes/own-
+ * resources` is the one today. An earlier single-row `getVoteSheet` query
+ * covered the same case with `.first()`; it was removed after no caller
+ * materialised, and its role sits with `getVoteSheetsByKey` now.
  *
  * ## Validating the id before the query
  *
