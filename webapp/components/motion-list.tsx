@@ -548,8 +548,13 @@ function MotionRow({
           skip-when-closed contract. Kept as its own slot rather than folded
           into sponsors because the two answer different questions and both
           have their own caveats — merging would be exactly the merge
-          convex/committeeReferrals.ts's boundary is written to prevent. */}
+          convex/committeeReferrals.ts's boundary is written to prevent.
+          `motionId` rather than the Vorgang id for the panel id — the
+          Vorgang can be null on any number of rows and a fallback
+          sentinel would collide across all of them; the motion id is
+          unique by construction. */}
       <CommitteeReferralsDisclosure
+        motionId={motion.id}
         dipVorgangId={motion.dipVorgangId}
         hasAnyForPeriod={hasAnyReferralsForPeriod}
       />

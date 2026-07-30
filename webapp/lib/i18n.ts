@@ -1981,8 +1981,6 @@ const de = {
   // Quelle unten führt zum Wortlaut im Protokoll. Siehe convex/voteExplanations.ts.
   "voteExplanations.sectionHeading": "Erklärungen nach §31 GO-BT",
   "voteExplanations.show": "§31-Erklärungen anzeigen",
-  "voteExplanations.showWithCount": "§31-Erklärungen anzeigen ({count})",
-  "voteExplanations.showUnlinked": "§31-Erklärungen — Verknüpfung fehlt",
   "voteExplanations.hide": "§31-Erklärungen ausblenden",
   "voteExplanations.loading": "Erklärungen werden geladen …",
   "voteExplanations.count": "{count} Erklärung(en) erfasst",
@@ -2005,7 +2003,13 @@ const de = {
   "voteExplanations.protocol": "Protokoll {number}",
   "voteExplanations.protocolLabel": "Plenarprotokoll {number}",
   "voteExplanations.sourceLink": "Zum Protokoll",
-  "voteExplanations.sourceLinkLabel": "Erklärung von {name} im Protokoll (öffnet neuen Tab)",
+  // The visible link text ("Zum Protokoll") is a load-bearing prefix here,
+  // not a repetition: WCAG 2.5.3 (Label in Name) requires the accessible
+  // name to start with the visible text so speech-input users can activate
+  // "Zum Protokoll" as spoken. `öffnet neuen Tab` names the affordance the
+  // `target="_blank"` link carries.
+  "voteExplanations.sourceLinkLabel":
+    "Zum Protokoll — Erklärung von {name} (öffnet neuen Tab)",
 
   // --- Ausschussüberweisungen (committeeReferrals) ------------------------
   // Auf der Drucksachenseite offengelegt: an welche Ausschüsse ein Vorgang
@@ -2014,8 +2018,6 @@ const de = {
   // werden. Siehe convex/committeeReferrals.ts für die vollständige
   // Grenzziehung.
   "referrals.show": "Ausschussüberweisungen anzeigen",
-  "referrals.showWithCount": "Ausschussüberweisungen anzeigen ({count})",
-  "referrals.showUnlinked": "Ausschussüberweisungen — Vorgang nicht verknüpft",
   "referrals.hide": "Ausschussüberweisungen ausblenden",
   "referrals.loading": "Überweisungen werden geladen …",
   "referrals.count": "{count} Überweisung(en) erfasst",
@@ -3364,8 +3366,6 @@ const en: Dictionary = {
   // --- §31 GO-BT declarations (voteExplanations) --------------------------
   "voteExplanations.sectionHeading": "Declarations under §31 GO-BT",
   "voteExplanations.show": "Show §31 declarations",
-  "voteExplanations.showWithCount": "Show §31 declarations ({count})",
-  "voteExplanations.showUnlinked": "§31 declarations — link missing",
   "voteExplanations.hide": "Hide §31 declarations",
   "voteExplanations.loading": "Loading declarations …",
   "voteExplanations.count": "{count} declaration(s) recorded",
@@ -3380,12 +3380,11 @@ const en: Dictionary = {
   "voteExplanations.protocol": "Protocol {number}",
   "voteExplanations.protocolLabel": "Plenary protocol {number}",
   "voteExplanations.sourceLink": "Open protocol",
-  "voteExplanations.sourceLinkLabel": "Declaration by {name} in the protocol (opens new tab)",
+  "voteExplanations.sourceLinkLabel":
+    "Open protocol — declaration by {name} (opens new tab)",
 
   // --- Committee referrals (committeeReferrals) ---------------------------
   "referrals.show": "Show committee referrals",
-  "referrals.showWithCount": "Show committee referrals ({count})",
-  "referrals.showUnlinked": "Committee referrals — procedure not linked",
   "referrals.hide": "Hide committee referrals",
   "referrals.loading": "Loading referrals …",
   "referrals.count": "{count} referral(s) recorded",
@@ -3393,7 +3392,7 @@ const en: Dictionary = {
   "referrals.consulted": "consulted",
   "referrals.abbreviationLabel": "Committee abbreviation {value}",
   "referrals.unlinked":
-    "This procedure was ingested by its Drucksache number only, without a DIP Vorgang id. Without that id, referrals cannot be fetched.",
+    "This procedure was ingested by its paper number only, without a DIP procedure id. Without that id, no committee referrals can be fetched.",
   "referrals.emptyNoReferral":
     "No committee referral is recorded for this procedure. DIP publishes referrals only for a fraction of procedures (in recent Wahlperioden roughly 5–10 %).",
   "referrals.emptyPeriodNotBackfilled":

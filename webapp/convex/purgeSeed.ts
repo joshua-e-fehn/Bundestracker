@@ -444,8 +444,15 @@ async function deleteSyntheticVoteSheets(
  */
 const SEED_VORGANG_PREFIX = "seed-"
 
-function isSyntheticVorgangId(id: string | null): boolean {
-  return id !== null && id.startsWith(SEED_VORGANG_PREFIX)
+/** Written as a user-defined type guard so callers filtering on it get back
+ * `dipVorgangId: string` — the null branch is provably unreachable
+ * downstream, and the traversal below reads it directly rather than
+ * re-narrowing per row (which read as handling a case that cannot
+ * happen). */
+function isSyntheticVorgangId<T extends { dipVorgangId: string | null }>(
+  row: T,
+): row is T & { dipVorgangId: string } {
+  return row.dipVorgangId !== null && row.dipVorgangId.startsWith(SEED_VORGANG_PREFIX)
 }
 
 /**
@@ -464,23 +471,23 @@ async function deleteSyntheticMotionsAndReferrals(
   counts: Counts,
 ): Promise<void> {
   // Referrals: keyed on Vorgang id, so a range read per seeded motion
-  // reaches exactly its rows without a table scan.
+  // reaches exactly its rows without a table scan. `isSyntheticVorgangId`
+  // is a type guard, so `motion.dipVorgangId` is narrowed to `string`
+  // inside the loop — no redundant null re-check needed.
   const motions = await ctx.db.query("motions").withIndex("by_dipVorgangId").collect()
-  const seedMotions = motions.filter((row) => isSyntheticVorgangId(row.dipVorgangId))
+  const seedMotions = motions.filter(isSyntheticVorgangId)
   for (const motion of seedMotions) {
     if (budget.remaining <= 0) break
-    if (motion.dipVorgangId !== null) {
-      const referrals = await ctx.db
-        .query("committeeReferrals")
-        .withIndex("by_dipVorgangId", (q) => q.eq("dipVorgangId", motion.dipVorgangId))
-        .take(budget.remaining)
-      for (const row of referrals) {
-        await ctx.db.delete(row._id)
-        budget.remaining--
-        bump(counts, "committeeReferrals")
-      }
-      if (budget.remaining <= 0) break
+    const referrals = await ctx.db
+      .query("committeeReferrals")
+      .withIndex("by_dipVorgangId", (q) => q.eq("dipVorgangId", motion.dipVorgangId))
+      .take(budget.remaining)
+    for (const row of referrals) {
+      await ctx.db.delete(row._id)
+      budget.remaining--
+      bump(counts, "committeeReferrals")
     }
+    if (budget.remaining <= 0) break
     await ctx.db.delete(motion._id)
     budget.remaining--
     bump(counts, "motions")
@@ -494,10 +501,9 @@ async function seedMotionsRemaining(
   ctx: QueryCtx,
 ): Promise<{ motions: number; referrals: number }> {
   const motions = await ctx.db.query("motions").withIndex("by_dipVorgangId").collect()
-  const seedMotions = motions.filter((row) => isSyntheticVorgangId(row.dipVorgangId))
+  const seedMotions = motions.filter(isSyntheticVorgangId)
   let referrals = 0
   for (const motion of seedMotions) {
-    if (motion.dipVorgangId === null) continue
     const rows = await ctx.db
       .query("committeeReferrals")
       .withIndex("by_dipVorgangId", (q) => q.eq("dipVorgangId", motion.dipVorgangId))

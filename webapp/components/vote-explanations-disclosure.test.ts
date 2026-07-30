@@ -104,11 +104,15 @@ describe("accessibility contract", () => {
     expect(disclosure).toMatch(/aria-controls=\{panelId\}/)
   })
 
-  test("the panel id is derived from the ballot's Vorgang so two disclosures do not collide", () => {
-    // A `useId` would work too, but the pattern components/motion-sponsors.tsx
-    // sets is to use a natural stable id — the id is unique across the
-    // corpus by construction, and the association is self-documenting.
-    expect(disclosure).toMatch(/vote-explanations-\$\{wahlperiode\}-\$\{dipVorgangId\s*\?\?\s*"unlinked"\}/)
+  test("the panel id is derived from the ballot's Convex id so multi-row pages cannot collide", () => {
+    // Keyed on the ballot's own Convex id, not the Vorgang id. The Vorgang
+    // is nullable, and a fallback sentinel (`unlinked`) would collide across
+    // every unlinked ballot on a page that ever renders more than one
+    // disclosure. Same class of defect this test would have caught on
+    // committee-referrals-disclosure — it did not, once, and the /motions
+    // list had three `id="committee-referrals-unlinked"` copies until the
+    // key was moved to the row's stable Convex id.
+    expect(disclosure).toMatch(/panelId\s*=\s*`vote-explanations-\$\{ballotId\}`/)
   })
 
   test("the panel is always mounted so aria-controls always resolves", () => {
@@ -130,12 +134,15 @@ describe("the section variant lives on the detail page", () => {
     expect(voteDetail).toMatch(/variant="section"/)
   })
 
-  test("the detail page threads the ballot's Wahlperiode through", () => {
-    // Not `?wp=` from the URL — the ballot's own period, so a WP19 ballot
-    // opened by a reader on the current period still asks the right
-    // coverage query. `PeriodProvider` uses the same field for the same
-    // reason at lines 132 of vote-detail.tsx.
+  test("the detail page threads the ballot's Wahlperiode and id through", () => {
+    // `sheet.wahlperiode` rather than a `?wp=` from the URL — the ballot's
+    // own period, so a WP19 ballot opened by a reader on the current period
+    // still asks the right coverage query. `sheet.id` rather than the
+    // Vorgang id — see the panel-id test above for the collision that key
+    // choice prevents. `PeriodProvider` uses the same field for the same
+    // reason at line 132 of vote-detail.tsx.
     expect(voteDetail).toMatch(/wahlperiode=\{sheet\.wahlperiode\}/)
     expect(voteDetail).toMatch(/dipVorgangId=\{sheet\.dipVorgangId\}/)
+    expect(voteDetail).toMatch(/ballotId=\{sheet\.id\}/)
   })
 })

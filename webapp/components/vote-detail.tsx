@@ -257,6 +257,7 @@ export function VoteDetail({
             to the page (above) and no explanation reads until the reader
             opens it. */}
         <VoteExplanationsDisclosure
+          ballotId={sheet.id}
           wahlperiode={sheet.wahlperiode}
           dipVorgangId={sheet.dipVorgangId}
           variant="section"

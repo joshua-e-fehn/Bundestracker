@@ -525,7 +525,7 @@ async function main() {
   // period, and nothing here pretends to that scale.
   const MOTION_COUNT = 60
   const motions = Array.from({ length: MOTION_COUNT }, (_unused, index) => ({
-    dipVorgangId: `vorgang-${index + 1}`,
+    dipVorgangId: `seed-vorgang-${index + 1}`,
     dipDrucksacheId: null,
     // Roughly a quarter, matching the sampled 178/700 — the rest render the
     // "no linkable document" state.
@@ -541,7 +541,7 @@ async function main() {
   await post("motions", { motions })
   for (const [index, seed] of MPS.slice(0, 8).entries()) {
     await post("motion-sponsors", {
-      dipVorgangId: `vorgang-${index + 1}`,
+      dipVorgangId: `seed-vorgang-${index + 1}`,
       dipDrucksacheId: null,
       wahlperiode: WP,
       sponsors: [

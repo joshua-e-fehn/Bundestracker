@@ -41,9 +41,15 @@ import { formatCount, formatDateShort } from "@/lib/format"
  * components/source-coverage-note.tsx.
  */
 export function CommitteeReferralsDisclosure({
+  motionId,
   dipVorgangId,
   hasAnyForPeriod,
 }: {
+  /** The motion's own Convex id. Threaded in for the panel id alone: the
+   * Vorgang id is null for Drucksache-only rows, and any number of such rows
+   * can sit on one page — a fallback sentinel would then collide across
+   * every one of them, so a per-motion stable value is required. */
+  motionId: string
   /** The motion's DIP procedure id. Null means the row was ingested via its
    * Drucksache alone and no procedure resolved — the referral index is keyed
    * by Vorgang, so there is no honest read to make. */
@@ -57,28 +63,38 @@ export function CommitteeReferralsDisclosure({
   const { t, locale } = useLocale()
   const [open, setOpen] = useState(false)
 
-  // Derived from the motion's Vorgang id, on the pattern motion-sponsors uses:
-  // an id already unique across the corpus, stable across renders, and
-  // self-documenting in the `aria-controls` string. When null we still need a
-  // stable id — using an unlinked sentinel keeps two disclosures on the same
-  // page distinguishable to a screen reader.
-  const panelId = `committee-referrals-${dipVorgangId ?? "unlinked"}`
+  // Keyed on the *motion's* Convex id, not the Vorgang id. The Vorgang id is
+  // null for Drucksache-only rows, and a nullable field cannot carry an id
+  // uniqueness invariant: three such rows on one page all fell back to the
+  // same `committee-referrals-unlinked` string, producing three
+  // `aria-controls="committee-referrals-unlinked"` buttons pointing at three
+  // `#committee-referrals-unlinked` panels — an HTML id-uniqueness violation
+  // and an ambiguous screen-reader association. `motionId` is unique across
+  // the corpus by construction (it is the Convex id the list row already
+  // holds), so this is collision-free without another lookup.
+  const panelId = `committee-referrals-${motionId}`
 
   const referrals = useQuery(
     api.committeeReferrals.getReferralsByMotion,
     open && dipVorgangId !== null ? { dipVorgangId } : "skip",
   )
 
-  const loading = dipVorgangId !== null && referrals === undefined
+  // `loading` covers both the per-motion referrals query AND the page-level
+  // coverage query while either is in flight — the empty state cannot
+  // render `emptyNoReferral` until both have resolved, because coverage is
+  // what tells "no referral for this motion" from "period not backfilled".
+  // A transient wrong claim about the motion was the failure mode this
+  // guard prevents. On the unlinked branch there is no per-motion query
+  // to wait on, so coverage alone gates the panel's readiness.
+  const loading =
+    (dipVorgangId !== null && referrals === undefined) || hasAnyForPeriod === undefined
   const list = referrals ?? []
 
-  const showLabel =
-    dipVorgangId === null
-      ? t("referrals.showUnlinked")
-      : loading || !open
-        ? t("referrals.show")
-        : t("referrals.showWithCount", { count: formatCount(list.length, locale) })
-
+  // One show label for both arms — the toggle names its subject
+  // ("committee referrals"), not its state, so a linked and an unlinked
+  // motion offer coherent show/hide labels rather than "link missing"
+  // toggling to "hide committee referrals". The unlinked panel body
+  // explains why there is nothing to list.
   return (
     <div className="flex flex-col gap-2">
       <button
@@ -93,7 +109,7 @@ export function CommitteeReferralsDisclosure({
         aria-controls={panelId}
         className="w-fit rounded-md text-muted-foreground text-xs underline decoration-border underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
       >
-        {open ? t("referrals.hide") : showLabel}
+        {open ? t("referrals.hide") : t("referrals.show")}
       </button>
 
       {/* Always mounted with the id so `aria-controls` above always resolves —

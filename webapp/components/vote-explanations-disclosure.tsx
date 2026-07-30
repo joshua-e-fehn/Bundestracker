@@ -48,11 +48,18 @@ import { formatCount, formatDateShort } from "@/lib/format"
  * Same distinction, and the same reasoning, as components/source-coverage-note.tsx.
  */
 export function VoteExplanationsDisclosure({
+  ballotId,
   wahlperiode,
   dipVorgangId,
   variant = "row",
   hasAnyForPeriod,
 }: {
+  /** The ballot's own Convex id. Threaded in as the panel-id key: the Vorgang
+   * id is nullable, so it cannot alone guarantee uniqueness across a page
+   * that ever renders more than one disclosure (a future list-row placement
+   * would collide across every unlinked ballot). The Convex id is unique by
+   * construction. */
+  ballotId: string
   wahlperiode: number
   /** The ballot's procedure id. Null means the XLSX has been ingested but its
    * DIP procedure has not resolved yet — see the schema note on
@@ -73,12 +80,12 @@ export function VoteExplanationsDisclosure({
   const mpHref = useMPHref()
   const [open, setOpen] = useState(false)
 
-  // Derived from the ballot's natural id rather than `useId`, on the pattern
-  // components/motion-sponsors.tsx sets. `dipVorgangId` is unique across the
-  // corpus so two disclosures on the same page cannot collide. When null we
-  // still need a stable id for the panel — a period suffix keeps a
-  // multi-ballot page's collapsed panels distinguishable to a screen reader.
-  const panelId = `vote-explanations-${wahlperiode}-${dipVorgangId ?? "unlinked"}`
+  // Keyed on the *ballot's* Convex id, not the Vorgang id. The Vorgang can
+  // be null, and a fallback sentinel would collide across every unlinked
+  // ballot rendered on one page (harmless today on the single-ballot detail
+  // page, but the failure mode has already bitten the referrals disclosure
+  // which sits on a multi-row list — same pattern here in advance).
+  const panelId = `vote-explanations-${ballotId}`
 
   const explanations = useQuery(
     api.voteExplanations.getExplanationsByMotion,
@@ -88,9 +95,11 @@ export function VoteExplanationsDisclosure({
   // The unlinked arm: DIP procedure not resolved for this ballot. Not "no
   // declarations" — a different claim, and the schema note on
   // `voteSheets.dipVorgangId` sets it out at length. Renders the honest empty
-  // state without any query. Both variants get the same wording — a reader
-  // opening the section on the detail page for a ballot Bundestrack has not
-  // linked deserves the same explanation the row would give.
+  // state without any query. The show/hide labels are the same as the linked
+  // case on purpose — the toggle names the *subject* (§31 declarations), not
+  // its state, so a screen reader hearing "expand" and then "collapse"
+  // announces one coherent thing rather than "link missing" toggling to
+  // "hide declarations".
   if (dipVorgangId === null) {
     return (
       <Shell
@@ -98,7 +107,7 @@ export function VoteExplanationsDisclosure({
         panelId={panelId}
         open={open}
         onToggle={() => setOpen((current) => !current)}
-        showLabel={t("voteExplanations.showUnlinked")}
+        showLabel={t("voteExplanations.show")}
         hideLabel={t("voteExplanations.hide")}
         heading={variant === "section" ? t("voteExplanations.sectionHeading") : null}
       >
@@ -109,12 +118,15 @@ export function VoteExplanationsDisclosure({
     )
   }
 
-  const loading = explanations === undefined
+  // `loading` covers both the per-ballot query still in flight AND the
+  // page-level coverage query still in flight — the empty state cannot
+  // safely render until both have resolved, because the coverage flag is
+  // what tells "none filed" from "not backfilled". Rendering `emptyNoneFiled`
+  // while coverage is still `undefined` would flash a positive claim about
+  // the ballot ("no §31 declaration was filed") for a period the deployment
+  // has not actually looked at yet.
+  const loading = explanations === undefined || hasAnyForPeriod === undefined
   const list = explanations ?? []
-  const showLabel =
-    loading || !open
-      ? t("voteExplanations.show")
-      : t("voteExplanations.showWithCount", { count: formatCount(list.length, locale) })
 
   return (
     <Shell
@@ -122,7 +134,7 @@ export function VoteExplanationsDisclosure({
       panelId={panelId}
       open={open}
       onToggle={() => setOpen((current) => !current)}
-      showLabel={showLabel}
+      showLabel={t("voteExplanations.show")}
       hideLabel={t("voteExplanations.hide")}
       heading={variant === "section" ? t("voteExplanations.sectionHeading") : null}
     >
@@ -132,11 +144,12 @@ export function VoteExplanationsDisclosure({
         </output>
       ) : list.length === 0 ? (
         // Two empty states, one component, two very different things being
-        // said. `hasAnyForPeriod === false` (or undefined-then-false) means
-        // this deployment holds no §31 declarations for the whole period —
-        // a not-backfilled fact, not a fact about this ballot. Otherwise
-        // the source itself filed none, which for §31 is the usual case
-        // (measured — see the header of convex/voteExplanations.ts).
+        // said. `hasAnyForPeriod === false` means this deployment holds no
+        // §31 declarations for the whole period — a not-backfilled fact,
+        // not a fact about this ballot. `true` means the source itself filed
+        // none for this Vorgang, which for §31 is the usual case (measured —
+        // see the header of convex/voteExplanations.ts). `undefined` is
+        // gated above by `loading`, so the two branches here are exhaustive.
         <p className="text-muted-foreground text-xs leading-relaxed">
           {hasAnyForPeriod === false
             ? t("voteExplanations.emptyPeriodNotBackfilled")

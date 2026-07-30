@@ -87,8 +87,15 @@ describe("accessibility contract", () => {
     expect(disclosure).toMatch(/aria-controls=\{panelId\}/)
   })
 
-  test("the panel id is derived from the motion's Vorgang so rows do not collide", () => {
-    expect(disclosure).toMatch(/committee-referrals-\$\{dipVorgangId\s*\?\?\s*"unlinked"\}/)
+  test("the panel id is derived from the motion's Convex id so rows cannot collide", () => {
+    // Keyed on the motion's own Convex id, not the Vorgang id. The Vorgang
+    // is nullable and can repeat as `null` across every Drucksache-only row
+    // on a page — any fallback sentinel produces
+    // `id="committee-referrals-unlinked"` on multiple panels, violating
+    // HTML id-uniqueness and making the aria-controls association
+    // ambiguous. The failure was measured against a page carrying three
+    // such rows before this key choice was fixed.
+    expect(disclosure).toMatch(/panelId\s*=\s*`committee-referrals-\$\{motionId\}`/)
   })
 
   test("the panel stays mounted with its id even while collapsed", () => {
@@ -104,10 +111,12 @@ describe("integration with motion-list", () => {
     expect(motionList).toMatch(/CommitteeReferralsDisclosure/)
   })
 
-  test("the row passes dipVorgangId to the disclosure", () => {
-    // A row without this prop would render the disclosure's unlinked arm
-    // for every motion, which is not what the schema is telling us. See
-    // the schema note on `motions`.
+  test("the row passes both motionId and dipVorgangId to the disclosure", () => {
+    // `motionId` for the panel id (collision-safe across Drucksache-only
+    // rows), `dipVorgangId` for the actual query. A row missing either
+    // would either collide with a sibling's panel or render the wrong
+    // linkage arm. See the schema note on `motions`.
+    expect(motionList).toMatch(/motionId=\{motion\.id\}/)
     expect(motionList).toMatch(/dipVorgangId=\{motion\.dipVorgangId\}/)
   })
 })
