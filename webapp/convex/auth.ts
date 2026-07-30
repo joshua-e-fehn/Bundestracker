@@ -9,6 +9,16 @@ import { authComponent } from "./betterAuth/auth"
  * signed out, so every consumer of this query has a signed-out rendering.
  * Returns the Better Auth user document (name, email, image) rather than the
  * raw identity token — the profile UI needs the stored fields.
+ *
+ * ## Kept public with no static `api.auth.getCurrentUser` reference in the tree
+ *
+ * The `@convex-dev/better-auth` React hooks (`useAuthActions`,
+ * `useConvexAuth`) reach this query during their own session hydration —
+ * that is the intended shape and is invisible to a `grep` for
+ * `api.auth.getCurrentUser`. So the reachability check treats it as an
+ * allowlisted "hydration-only" public export; see
+ * `webapp/convex/reachability.test.ts`. Removing it, or making it internal,
+ * would break the header's account state on the first paint.
  */
 export const getCurrentUser = query({
   args: {},
