@@ -341,8 +341,8 @@ def main() -> int:
             print(f"  [{index}/{len(months)}] {month} FAILED: {error}", flush=True)
             short.append(month)
             continue
-        flag = "" if rows >= roster else f"  ⚠ {rows}/{roster}"
-        if rows < roster:
+        flag = "" if rows >= len(roster) else f"  ⚠ {rows}/{len(roster)}"
+        if rows < len(roster):
             short.append(month)
         print(
             f"  [{index}/{len(months)}] {month}: {rows} rows in {time.time() - t0:.0f}s"
@@ -353,10 +353,10 @@ def main() -> int:
     totals = scored_rows(options.wp, None)
     print(
         f"WP{options.wp} DONE in {(time.time() - started) / 60:.1f}m — "
-        f"period total: {totals}/{roster} rows",
+        f"period total: {totals}/{len(roster)} rows",
         flush=True,
     )
-    if short or totals < roster:
+    if short or totals < len(roster):
         print(f"WP{options.wp} SHORT MONTHS: {' '.join(short) or '(none)'}", flush=True)
         return 1
     print(f"WP{options.wp} ALL MONTHS COMPLETE", flush=True)
