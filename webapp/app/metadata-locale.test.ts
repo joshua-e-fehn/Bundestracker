@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 
 /**
@@ -64,9 +64,7 @@ function pageFiles(dir: string): string[] {
  * not fail the "no DEFAULT_LOCALE in metadata" check. Same trick the sibling
  * source-scan tests use. */
 function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 }
 
 /** Where the metadata declaration ends, so subsequent handler code that
@@ -114,9 +112,10 @@ describe("every page negotiates its <title> per request", () => {
       // are fine; the scan is only for `page.tsx` files.
       const hasStatic = /^\s*export\s+const\s+metadata\b/m.test(source)
       const hasDynamic = /^\s*export\s+async\s+function\s+generateMetadata\b/m.test(source)
-      const hasAnyMetadata = /(?:^|\n)\s*export\s+(?:const\s+metadata|async\s+function\s+generateMetadata)\b/.test(
-        source,
-      )
+      const hasAnyMetadata =
+        /(?:^|\n)\s*export\s+(?:const\s+metadata|async\s+function\s+generateMetadata)\b/.test(
+          source,
+        )
       if (!hasAnyMetadata) return // a `page.tsx` that inherits everything from the layout
       expect({ path: _relative, hasStatic, hasDynamic }).toEqual({
         path: _relative,

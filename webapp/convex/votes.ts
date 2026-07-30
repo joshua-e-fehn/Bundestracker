@@ -16,7 +16,7 @@ import {
   upsertRow,
   withId,
 } from "./lib/ingest"
-import { findMandate, mpLabel, photoFields, requireMandate } from "./mps"
+import { findMandate, mpLabel, photoFields } from "./mps"
 import { vote, voteSheetInput } from "./schema"
 
 /**

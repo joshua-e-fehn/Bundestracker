@@ -17,7 +17,8 @@ let acceptLanguageHeader: string | null
 
 mock.module("next/headers", () => ({
   cookies: async () => ({
-    get: (name: string) => (name === LOCALE_COOKIE && cookieValue !== undefined ? { value: cookieValue } : undefined),
+    get: (name: string) =>
+      name === LOCALE_COOKIE && cookieValue !== undefined ? { value: cookieValue } : undefined,
   }),
   headers: async () => ({
     get: (name: string) => (name.toLowerCase() === "accept-language" ? acceptLanguageHeader : null),

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { useQuery } from "convex/react"
+import { useEffect, useState } from "react"
 import { useLocale } from "@/components/providers/locale-provider"
 import { api } from "@/convex/_generated/api"
 import { relativeTime } from "@/lib/relative-time"

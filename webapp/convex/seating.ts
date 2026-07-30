@@ -3,7 +3,7 @@ import { type ObjectType, v } from "convex/values"
 import { layoutHemicycle, seatingRank } from "../lib/seating"
 import { internalMutation, type MutationCtx, query } from "./_generated/server"
 import { assertBatchSize, emptyBatchResult, recordBatch, upsertRow, withId } from "./lib/ingest"
-import { findMandate, mpLabel, photoFields, requireMandate } from "./mps"
+import { findMandate, photoFields, requireMandate } from "./mps"
 import { scoreBreakdown, seatingAssignmentInput } from "./schema"
 
 /**

@@ -14,7 +14,7 @@ import { activityDates } from "./activities"
 import { committeeCount } from "./committees"
 import { pageLimit, upsertRow, withId } from "./lib/ingest"
 import { mpLabel, photoFields, requireMandate } from "./mps"
-import { activityScoreInput, scoreBreakdown, scoreWeights } from "./schema"
+import { activityScoreInput, scoreBreakdown } from "./schema"
 import { speechDates } from "./speeches"
 import { ballotDates, voteTallyByMonth } from "./votes"
 

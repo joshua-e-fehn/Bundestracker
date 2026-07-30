@@ -1,5 +1,11 @@
 import { cookies, headers } from "next/headers"
-import { DEFAULT_LOCALE, isLocale, LOCALE_COOKIE, type Locale, localeFromAcceptLanguage } from "./i18n"
+import {
+  DEFAULT_LOCALE,
+  isLocale,
+  LOCALE_COOKIE,
+  type Locale,
+  localeFromAcceptLanguage,
+} from "./i18n"
 
 /**
  * Server-side locale resolution — the one gate every page's `<title>` reads.

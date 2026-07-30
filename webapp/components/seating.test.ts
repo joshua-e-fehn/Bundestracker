@@ -56,7 +56,9 @@ function preSkeletonRegion(source: string): string {
   const start = stripped.search(/export function Seating\b/)
   const gate = stripped.search(/if\s*\(\s*seats\s*===\s*undefined\s*\)/)
   if (start < 0 || gate < 0) {
-    throw new Error("seating.tsx no longer opens with `function Seating` above the `seats === undefined` gate")
+    throw new Error(
+      "seating.tsx no longer opens with `function Seating` above the `seats === undefined` gate",
+    )
   }
   return stripped.slice(start, gate)
 }
@@ -115,7 +117,9 @@ describe("Seating cannot desync SSR from hydration above its skeleton gate", () 
     // `.toLocaleUpperCase()` — the Turkish-dotless-i class of desync. All
     // legitimate uses of these belong *below* the gate, after the arc has
     // arrived.
-    expect(region).not.toMatch(/\.toLocale(?:String|DateString|TimeString|LowerCase|UpperCase)\s*\(/)
+    expect(region).not.toMatch(
+      /\.toLocale(?:String|DateString|TimeString|LowerCase|UpperCase)\s*\(/,
+    )
   })
 
   test("no `typeof window` branching above the gate", () => {

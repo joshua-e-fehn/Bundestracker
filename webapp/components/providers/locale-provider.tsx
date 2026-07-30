@@ -5,9 +5,9 @@ import {
   DEFAULT_LOCALE,
   getTranslator,
   isLocale,
-  type Locale,
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
+  type Locale,
   localeCookieValue,
   localeFromNavigator,
   type TranslationKey,
@@ -34,6 +34,11 @@ const STORAGE_KEY = "bundestrack.locale"
  */
 function writeLocaleCookie(locale: Locale): void {
   if (typeof document === "undefined") return
+  // Cookie Store API is Chromium-only (no Safari/Firefox as of 2026-07),
+  // and the sibling `SIDEBAR_COOKIE` writer uses this same shape — using
+  // two mechanisms for the same purpose would give two opportunities to
+  // disagree about SameSite/Max-Age.
+  // biome-ignore lint/suspicious/noDocumentCookie: see above
   document.cookie = `${LOCALE_COOKIE}=${localeCookieValue(locale)}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; samesite=lax`
 }
 

@@ -224,7 +224,9 @@ describe("every public Convex function has a caller — or an allowlist reason",
     // allowlist becomes a graveyard that hides the next real unreached
     // function. Fails naming the stale keys so the fix is remove-from-list,
     // not rewrite-the-reason.
-    const stale = Object.keys(ALLOWLIST).filter((key) => references.has(key)).sort()
+    const stale = Object.keys(ALLOWLIST)
+      .filter((key) => references.has(key))
+      .sort()
     expect({
       staleAllowlistEntries: stale,
       hint:
@@ -239,7 +241,9 @@ describe("every public Convex function has a caller — or an allowlist reason",
     // allowlist mentioning a ghost, and the next PR that adds a real
     // unreached function might be silently accepted because someone read
     // the allowlist and assumed everything on it was still exported.
-    const ghosts = Object.keys(ALLOWLIST).filter((key) => !exportsByKey.has(key)).sort()
+    const ghosts = Object.keys(ALLOWLIST)
+      .filter((key) => !exportsByKey.has(key))
+      .sort()
     expect({ ghostAllowlistEntries: ghosts }).toEqual({ ghostAllowlistEntries: [] })
   })
 

@@ -9,8 +9,8 @@ import {
   upsertRow,
   withId,
 } from "./lib/ingest"
-import { findMandate, mpLabel, requireMandate } from "./mps"
-import { activityEventInput, eventType, searchText } from "./schema"
+import { findMandate, mpLabel } from "./mps"
+import { activityEventInput, searchText } from "./schema"
 
 /**
  * The unified feed: every kind of parliamentary record, on one timeline.
