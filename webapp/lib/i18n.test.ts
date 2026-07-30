@@ -41,6 +41,31 @@ describe("dictionaries", () => {
       }
     }
   })
+
+  test("every locale carries the same placeholders per key", () => {
+    // A key defined in both locales but with a placeholder mistyped in one
+    // (`{cout}` for `{count}`, or missing entirely) renders the wrong text
+    // with no runtime error — `interpolate` leaves an unknown token as
+    // literal `{cout}`. The type system cannot catch it: `t(key, "en", {
+    // count })` type-checks against the string type, not the string.
+    //
+    // Extracted with the same regex `interpolate` uses to match — see
+    // lib/i18n.ts. Both locales must present the same *set* of placeholders
+    // (order does not matter — different languages restructure sentences).
+    const placeholders = (template: string) =>
+      new Set(Array.from(template.matchAll(/\{([a-zA-Z0-9_]+)\}/g), (match) => match[1]))
+    const keys = Object.keys(dictionaries[DEFAULT_LOCALE]) as Array<keyof typeof dictionaries.de>
+    for (const key of keys) {
+      const expected = placeholders(dictionaries[DEFAULT_LOCALE][key])
+      for (const locale of LOCALES) {
+        const actual = placeholders(dictionaries[locale][key])
+        expect(
+          [...actual].sort(),
+          `${locale}.${key} placeholders (expected ${[...expected].sort().join(",")}, got ${[...actual].sort().join(",")})`,
+        ).toEqual([...expected].sort())
+      }
+    }
+  })
 })
 
 describe("t", () => {

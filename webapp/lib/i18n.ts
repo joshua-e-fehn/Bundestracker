@@ -1972,6 +1972,68 @@ const de = {
   "inquiry.home.body":
     "Ein Viertel der Mitglieder genügt — {threshold} von {total} Sitzen. Die Regierungsfraktionen erreichen es mühelos, aber sie untersuchen sich nicht selbst. Die Opposition erreicht es nur mit der AfD, deren Zusammenarbeit alle anderen ausgeschlossen haben.",
   "inquiry.home.cta": "Das Viertel nachrechnen",
+
+  // --- Erklärungen nach §31 GO-BT (voteExplanations) ----------------------
+  // Auf der Abstimmungsseite verlinkt: dass jemand nach §31 erklärt hat, worum
+  // es geht und wo die Worte gedruckt stehen. Was nicht hier steht, ist
+  // Absicht: der Bundestag veröffentlicht die Erklärungsprosa nicht als
+  // Datenfeld, und Bundestracker erfindet oder paraphrasiert keine — die
+  // Quelle unten führt zum Wortlaut im Protokoll. Siehe convex/voteExplanations.ts.
+  "voteExplanations.sectionHeading": "Erklärungen nach §31 GO-BT",
+  "voteExplanations.show": "§31-Erklärungen anzeigen",
+  "voteExplanations.hide": "§31-Erklärungen ausblenden",
+  "voteExplanations.loading": "Erklärungen werden geladen …",
+  "voteExplanations.count": "{count} Erklärung(en) erfasst",
+  // Die dritte Aussage. Nicht dass keine erklärt wurde, sondern dass die
+  // Ballot noch keinem DIP-Vorgang zugeordnet ist. §31-Erklärungen zeigen auf
+  // einen Vorgang — die Abstimmungsliste (XLSX) trägt keinen Vorgangs-Bezug
+  // (§4.1, §7), deshalb ist die Verknüpfung Sache eines späteren Backfill.
+  "voteExplanations.unlinked":
+    "Diese Abstimmung ist noch keinem DIP-Vorgang zugeordnet. Ohne diese Verknüpfung ist keine belastbare Aussage über §31-Erklärungen möglich — weder „keine erklärt“ noch „N erklärt“.",
+  // Zwei verschiedene Leerzustände, zwei verschiedene Aussagen.
+  "voteExplanations.emptyNoneFiled":
+    "Für diesen Vorgang wurde keine schriftliche Erklärung nach §31 GO-BT eingereicht. Die meisten namentlichen Abstimmungen haben keine.",
+  "voteExplanations.emptyPeriodNotBackfilled":
+    "Für diese Wahlperiode sind noch keine §31-Erklärungen eingelesen. Das heißt nicht, dass keine eingereicht wurden — es heißt, dieses Deployment hat sie noch nicht abgeholt.",
+  // Der wichtigste Satz. §31 ist die eigene Erklärung einer Person; die Prosa
+  // liegt im Protokoll, nicht in DIP als Feld — deshalb wird sie hier nicht
+  // wiedergegeben. Die Quelle ist der Weg zum Wortlaut.
+  "voteExplanations.caveat":
+    "Angezeigt werden erfasste Einreichungen nach §31 GO-BT — die Erklärung selbst wird nicht wiedergegeben oder zusammengefasst. Der Wortlaut steht im verlinkten Plenarprotokoll.",
+  "voteExplanations.protocol": "Protokoll {number}",
+  "voteExplanations.protocolLabel": "Plenarprotokoll {number}",
+  "voteExplanations.sourceLink": "Zum Protokoll",
+  // The visible link text ("Zum Protokoll") is a load-bearing prefix here,
+  // not a repetition: WCAG 2.5.3 (Label in Name) requires the accessible
+  // name to start with the visible text so speech-input users can activate
+  // "Zum Protokoll" as spoken. `öffnet neuen Tab` names the affordance the
+  // `target="_blank"` link carries.
+  "voteExplanations.sourceLinkLabel":
+    "Zum Protokoll — Erklärung von {name} (öffnet neuen Tab)",
+
+  // --- Ausschussüberweisungen (committeeReferrals) ------------------------
+  // Auf der Drucksachenseite offengelegt: an welche Ausschüsse ein Vorgang
+  // gegangen ist. Das ist eine Aussage über die Drucksache, nicht über
+  // einzelne Abgeordnete — und darf nie als Ausschussmitgliedschaft gelesen
+  // werden. Siehe convex/committeeReferrals.ts für die vollständige
+  // Grenzziehung.
+  "referrals.show": "Ausschussüberweisungen anzeigen",
+  "referrals.hide": "Ausschussüberweisungen ausblenden",
+  "referrals.loading": "Überweisungen werden geladen …",
+  "referrals.count": "{count} Überweisung(en) erfasst",
+  "referrals.lead": "federführend",
+  "referrals.consulted": "mitberatend",
+  "referrals.abbreviationLabel": "Ausschusskürzel {value}",
+  "referrals.unlinked":
+    "Dieser Vorgang ist ohne DIP-Vorgangs-ID erfasst (nur mit Drucksachennummer). Ohne diese ID ist kein Abruf von Ausschussüberweisungen möglich.",
+  "referrals.emptyNoReferral":
+    "Für diesen Vorgang ist keine Ausschussüberweisung erfasst. DIP führt Überweisungen nur für einen Teil der Vorgänge (in den jüngsten Wahlperioden rund 5–10 %).",
+  "referrals.emptyPeriodNotBackfilled":
+    "Für diese Wahlperiode sind noch keine Ausschussüberweisungen eingelesen. Das heißt nicht, dass keine ausgesprochen wurden — es heißt, dieses Deployment hat sie noch nicht abgeholt.",
+  // Die Grenze, die diese Offenlegung erst zulässig macht: der Vorgang ging
+  // an einen Ausschuss, nicht eine namentlich benannte Abgeordnete.
+  "referrals.caveat":
+    "Eine Überweisung nennt einen Ausschuss und ein Dokument, keine Person. Sie ist keine Ausschussmitgliedschaft und kein Beleg für die Ausschussarbeit einzelner Abgeordneter.",
 } as const
 
 /**
@@ -3300,6 +3362,43 @@ const en: Dictionary = {
   "inquiry.home.body":
     "A quarter of the members is enough — {threshold} of {total} seats. The governing groups clear it easily, but they do not investigate themselves. The opposition reaches it only with the AfD, whose cooperation every other group has ruled out.",
   "inquiry.home.cta": "Check the arithmetic",
+
+  // --- §31 GO-BT declarations (voteExplanations) --------------------------
+  "voteExplanations.sectionHeading": "Declarations under §31 GO-BT",
+  "voteExplanations.show": "Show §31 declarations",
+  "voteExplanations.hide": "Hide §31 declarations",
+  "voteExplanations.loading": "Loading declarations …",
+  "voteExplanations.count": "{count} declaration(s) recorded",
+  "voteExplanations.unlinked":
+    "This ballot has not yet been linked to a DIP procedure. Without that link no honest statement about §31 declarations is possible — neither \"none filed\" nor \"N filed\".",
+  "voteExplanations.emptyNoneFiled":
+    "No written declaration under §31 GO-BT was filed on this procedure. Most named ballots have none.",
+  "voteExplanations.emptyPeriodNotBackfilled":
+    "This deployment has not yet ingested §31 declarations for this electoral period. That does not mean none were filed — it means they have not been fetched here yet.",
+  "voteExplanations.caveat":
+    "The list records that a member filed a declaration under §31 GO-BT. The declaration itself is not reproduced or summarised — the wording lives in the linked plenary protocol.",
+  "voteExplanations.protocol": "Protocol {number}",
+  "voteExplanations.protocolLabel": "Plenary protocol {number}",
+  "voteExplanations.sourceLink": "Open protocol",
+  "voteExplanations.sourceLinkLabel":
+    "Open protocol — declaration by {name} (opens new tab)",
+
+  // --- Committee referrals (committeeReferrals) ---------------------------
+  "referrals.show": "Show committee referrals",
+  "referrals.hide": "Hide committee referrals",
+  "referrals.loading": "Loading referrals …",
+  "referrals.count": "{count} referral(s) recorded",
+  "referrals.lead": "lead",
+  "referrals.consulted": "consulted",
+  "referrals.abbreviationLabel": "Committee abbreviation {value}",
+  "referrals.unlinked":
+    "This procedure was ingested by its paper number only, without a DIP procedure id. Without that id, no committee referrals can be fetched.",
+  "referrals.emptyNoReferral":
+    "No committee referral is recorded for this procedure. DIP publishes referrals only for a fraction of procedures (in recent Wahlperioden roughly 5–10 %).",
+  "referrals.emptyPeriodNotBackfilled":
+    "This deployment has not yet ingested committee referrals for this electoral period. That does not mean none were made — it means they have not been fetched here yet.",
+  "referrals.caveat":
+    "A referral names a committee and a document, not a person. It is not committee membership and not evidence of an individual member's committee work.",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }

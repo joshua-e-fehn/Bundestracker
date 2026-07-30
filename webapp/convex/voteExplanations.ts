@@ -160,12 +160,47 @@ export const getExplanationsByMP = query({
 })
 
 /**
- * How many declarations a deployment holds for a period.
+ * Whether this deployment holds any §31 declaration for a period at all —
+ * the one-row form of `getExplanationCoverage` above.
  *
- * The query that tells "none was filed" from "not ingested yet", which
- * `getExplanationsByMotion` returning `[]` cannot. A period reporting zero here
- * has not been backfilled; a period reporting a positive count means an empty
- * per-ballot answer is the source's own answer.
+ * The UI needs a boolean, not a count: `hasAnyForPeriod` on the disclosure
+ * decides between the "none filed" and "not backfilled" empty messages, and
+ * nothing on the page renders a total. So this reads at most one row —
+ * `.take(1)` bounded by the period index — where the coverage query has to
+ * collect the whole period to build its count. Cheaper per page load, and
+ * safe against a future period that grew past the ~5 000-row soft cap that
+ * `getExplanationCoverage`'s `.collect()` sits on today.
+ *
+ * `getExplanationCoverage` stays for operators — the count and the
+ * `motionsWithExplanations` set are useful for a dashboard-side "how much
+ * did this period ingest" answer that the boolean cannot give.
+ *
+ * The read: a single indexed range on `by_wahlperiode_and_dipVorgangId`
+ * scoped to the period, `.first()` returning the first row it finds and
+ * no more. Convex charges by documents read, so this costs one document
+ * in a populated period and zero in an empty one.
+ */
+export const hasAnyExplanationsForPeriod = query({
+  args: { wahlperiode: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const first = await ctx.db
+      .query("voteExplanations")
+      .withIndex("by_wahlperiode_and_dipVorgangId", (q) => q.eq("wahlperiode", args.wahlperiode))
+      .first()
+    return first !== null
+  },
+})
+
+/**
+ * How many declarations a deployment holds for a period, and against how
+ * many distinct procedures.
+ *
+ * Kept for **operator** callers — a dashboard-side "how much did this
+ * period ingest" answer that `hasAnyExplanationsForPeriod` above cannot
+ * give. The UI does NOT use this: every disclosure page-level read now
+ * goes through the boolean, so the read cost of a browser page does not
+ * grow with the size of a period.
  *
  * Bounded read: `.collect()` over the period's declarations — the largest
  * measured is a low-thousands figure (WP19's busiest sitting alone carried 78,

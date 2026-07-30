@@ -10,6 +10,7 @@ import { useLocale } from "@/components/providers/locale-provider"
 import { PeriodProvider } from "@/components/providers/period-provider"
 import { Card } from "@/components/ui/card"
 import { VoteBar, type VoteCounts } from "@/components/vote-bar"
+import { VoteExplanationsDisclosure } from "@/components/vote-explanations-disclosure"
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { VoteTable, type VoteTableRow } from "@/components/vote-table"
 import { api } from "@/convex/_generated/api"
@@ -52,6 +53,12 @@ type Sheet = {
   absentCount: number
   totalEligible: number
   sourceUrl: string | null
+  /** The DIP procedure this ballot decided, when the pipeline has resolved
+   * it — the only route from a ballot to the §31 declarations filed on it.
+   * The XLSX sheet carries no procedure id (§4.1), so this arrives via a
+   * separate resolver and stays nullable. See the schema note on
+   * `voteSheets.dipVorgangId` for the three distinct states this represents. */
+  dipVorgangId: string | null
 }
 
 /** One labelled figure in the header strip. */
@@ -81,6 +88,17 @@ export function VoteDetail({
   // The sitting period, so a link back to a *current* page can stay bare. One
   // subscription for the whole ballot page, passed to `PeriodProvider` below.
   const periods = useQuery(api.mps.listPeriods, {})
+  // Coverage for the ballot's Wahlperiode — read once at page level and
+  // threaded into the disclosure. The UI needs only a boolean ("does this
+  // deployment hold any §31 declaration for this period"), so this reads
+  // the cheap `hasAnyExplanationsForPeriod` — one document at most — rather
+  // than the count-form `getExplanationCoverage`, which `.collect()`s the
+  // whole period to build a total no reader sees. That distinction is what
+  // stops the read cost of the page growing with a period's size. See the
+  // header on `convex/voteExplanations.ts:hasAnyExplanationsForPeriod`.
+  const hasAnyExplanations = useQuery(api.voteExplanations.hasAnyExplanationsForPeriod, {
+    wahlperiode: sheet.wahlperiode,
+  })
 
   // Through the locale formatter rather than printed raw: every other date on
   // this page is, and an ISO string beside "18. März 2025" reads as a machine
@@ -228,6 +246,22 @@ export function VoteDetail({
           </Card>
           <p className="text-muted-foreground text-xs leading-relaxed">{t("votes.rebelsNote")}</p>
         </section>
+
+        {/* The reader-side of the §31 feature — filed declarations against
+            this ballot, if any, disclosed on request. Positioned between the
+            group-line breakdown and the per-member table so it sits with the
+            other per-ballot context rather than beside the records table it
+            has nothing to do with. `useQuery` inside the disclosure is
+            `"skip"`ped while collapsed, so this section adds one coverage read
+            to the page (above) and no explanation reads until the reader
+            opens it. */}
+        <VoteExplanationsDisclosure
+          ballotId={sheet.id}
+          wahlperiode={sheet.wahlperiode}
+          dipVorgangId={sheet.dipVorgangId}
+          variant="section"
+          hasAnyForPeriod={hasAnyExplanations}
+        />
 
         <section aria-labelledby="vote-records-heading" className="flex flex-col gap-3">
           <h2 id="vote-records-heading" className="font-semibold text-lg">
