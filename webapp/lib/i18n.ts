@@ -1091,6 +1091,10 @@ const de = {
   "nav.dashboardHint": "Alle Kennzahlen auf einen Blick.",
   "nav.membersHint": "Alle Mitglieder des Bundestages, filterbar nach Fraktion und Land.",
   "nav.partiesHint": "Fraktionen im Vergleich — Größe, Aktivität, Geschlossenheit.",
+  // Der eine Satz, den das Verzeichnis selbst nicht wiederholt: dass die
+  // maschinenlesbare Quelle nur die laufende Wahlperiode kennt. Die
+  // Detailhinweise stehen dann auf der Seite; hier reicht der Anker.
+  "nav.committeesHint": "Ständige Ausschüsse der laufenden Wahlperiode und ihre Mitglieder.",
   "nav.seatingHint": "Der Plenarsaal, ein Punkt je Mandat.",
   "nav.votesHint": "Namentliche Abstimmungen und wie jede Fraktion gestimmt hat.",
   "nav.ownResourcesHint": "Wenn der Bundestag über eigene Mittel und das Wahlrecht entscheidet.",
@@ -1394,6 +1398,7 @@ const de = {
   // takes a bar for a party total has been misled by us.
 
   "nav.parties": "Fraktionen",
+  "nav.committees": "Ausschüsse",
 
   "parties.title": "Fraktionsvergleich",
   "parties.subtitle":
@@ -1550,6 +1555,69 @@ const de = {
   "parties.backToParties": "Zurück zum Fraktionsvergleich",
   "parties.notFound": "Diese Fraktion gibt es nicht.",
   "parties.viewMembers": "Abgeordnete ansehen",
+
+  // --- Ausschussverzeichnis (/committees) --------------------------------
+  //
+  // Die eine Fläche, auf der die WP21-Einschränkung aus
+  // convex/committees.ts sichtbar getragen werden muss: Ein Verzeichnis, das
+  // für WP19 leer bleibt, sagt sonst „keine Ausschüsse", was falsch ist. Der
+  // Caveat-Text kommt aus `period.source.committees.none`; die Strings hier
+  // stehen daneben.
+  "committees.title": "Ausschüsse",
+  "committees.subtitle":
+    "Ständige Ausschüsse des Bundestages und ihre Mitglieder — die einzige Aufgabe eines Mandats, die täglich stattfindet und selten in einer Schlagzeile steht.",
+  // Zählwerte einer geladenen laufenden Periode. Zwei Zahlen: wie viele
+  // Ausschüsse geführt werden und wie viele Sitze das insgesamt sind
+  // (Sitze, nicht Personen — Chairs zählen einfach, siehe committees.ts).
+  "committees.count": "{committees} Ausschüsse · {seats} Sitze",
+  "committees.memberCount": "{count} Sitze",
+  "committees.memberCountOne": "1 Sitz",
+  "committees.searchPlaceholder": "Nach Namen filtern …",
+  "committees.searchLabel": "Ausschuss suchen",
+  "committees.filteredCount": "{shown} von {total} sichtbar",
+  "committees.noMatch": "Kein Ausschuss passt zur Suche.",
+  // Wenn die Quelle für die gewählte Periode nichts veröffentlicht — der
+  // eigentliche Grund dieses Caveats. Der Detailsatz sitzt in
+  // `period.source.committees.none`; hier steht die Kurzfassung als
+  // Überschrift, damit ein leeres Verzeichnis nicht erst nach dem Scrollen
+  // erklärt wird.
+  "committees.unavailableTitle": "Für diese Wahlperiode nicht veröffentlicht",
+  // Ein tatsächlich leeres Verzeichnis der laufenden Periode — die
+  // maschinenlesbare Quelle existiert, führt aber keinen Ausschuss. Ein
+  // Zustand, in den WP21 real nicht kommt (§6.3 sagt 25 Ausschüsse), der
+  // aber ehrlich benannt werden muss, statt still zu bleiben.
+  "committees.emptyCurrent":
+    "Für die laufende Wahlperiode sind keine Ausschussmitgliedschaften geladen. Sobald der Sync die Stammdaten einliest, erscheinen sie hier.",
+
+  // --- eines Ausschusses Detailseite (/committees/[id]) -------------------
+  //
+  // Die Detailseite trägt den Ausschussnamen wörtlich als Titel — er kommt
+  // aus der Quelle und darf nicht übersetzt werden. Die Strings hier
+  // beschriften den Rahmen: den Rückweg, die Kopfzeile über der Liste, die
+  // beiden leeren Zustände (Quelle nicht veröffentlicht vs. tatsächlich
+  // niemand geführt).
+  "committees.backToCommittees": "Zurück zur Ausschussübersicht",
+  "committees.detail.subtitle":
+    "Mitglieder dieses Ausschusses in der {wahlperiode}. Wahlperiode, mit Funktion soweit die Quelle sie ausweist.",
+  "committees.detail.rosterTitle": "Mitglieder",
+  "committees.detail.column.member": "Abgeordnete",
+  "committees.detail.column.faction": "Fraktion",
+  "committees.detail.column.role": "Funktion",
+  // Wörtlich das, was in Stammdaten steht, wenn kein Rollenname vergeben
+  // ist. Statt „Mitglied" ein neutrales Zeichen: eine Rolle *nicht zu
+  // nennen* ist nicht dasselbe wie „Ordentliches Mitglied" — die Quelle
+  // sagt in diesen Fällen gar nichts.
+  "committees.detail.roleUnspecified": "—",
+  // Wenn die gewählte Periode keine Ausschüsse führt (WP19/WP20). Nicht
+  // 404 — die URL ist korrekt; die Quelle deckt sie nur nicht.
+  "committees.detail.unavailable":
+    "Für diese Wahlperiode werden keine Ausschussmitgliedschaften veröffentlicht. Der Ausschuss existierte, aber die maschinenlesbare Liste seiner Mitglieder liegt nur für die laufende Wahlperiode vor.",
+  // Wenn wir *in* der laufenden Periode sind und die Roster-Abfrage trotzdem
+  // leer zurückkommt — vermutlich ein Tippfehler in der URL oder ein
+  // Ausschussname, der sich mid-period geändert hat. Kein 404, weil die
+  // URL wohlgeformt ist, aber deutlich als „gibt es hier nicht" markiert.
+  "committees.detail.unknownCommittee":
+    "Kein Ausschuss dieses Namens ist für die laufende Wahlperiode erfasst. Der Name in der Adresse stimmt vielleicht nicht mit der aktuellen Bezeichnung überein.",
 
   // --- homepage card ---
   "home.partiesTitle": "Fraktionen im Vergleich",
@@ -2771,6 +2839,7 @@ const en: Dictionary = {
   "nav.dashboardHint": "Every figure on one screen.",
   "nav.membersHint": "Every member of the Bundestag, filterable by group and state.",
   "nav.partiesHint": "Parliamentary groups compared — size, activity, cohesion.",
+  "nav.committeesHint": "Standing committees of the sitting electoral period and their members.",
   "nav.seatingHint": "The chamber floor, one dot per mandate.",
   "nav.votesHint": "Recorded ballots and how each group voted.",
   "nav.ownResourcesHint": "When the Bundestag decides on its own funding and electoral law.",
@@ -2936,6 +3005,7 @@ const en: Dictionary = {
   // page title keeps "parliamentary groups" for the same reason.
 
   "nav.parties": "Groups",
+  "nav.committees": "Committees",
 
   "parties.title": "Group comparison",
   "parties.subtitle":
@@ -3059,6 +3129,35 @@ const en: Dictionary = {
   "parties.backToParties": "Back to the group comparison",
   "parties.notFound": "This parliamentary group does not exist.",
   "parties.viewMembers": "View members",
+
+  // --- committees directory (/committees) --------------------------------
+  "committees.title": "Committees",
+  "committees.subtitle":
+    "The standing committees of the Bundestag and their members — the work of a mandate that happens every day and rarely appears in a headline.",
+  "committees.count": "{committees} committees · {seats} seats",
+  "committees.memberCount": "{count} seats",
+  "committees.memberCountOne": "1 seat",
+  "committees.searchPlaceholder": "Filter by name…",
+  "committees.searchLabel": "Search committees",
+  "committees.filteredCount": "{shown} of {total} shown",
+  "committees.noMatch": "No committee matches this search.",
+  "committees.unavailableTitle": "Not published for this electoral period",
+  "committees.emptyCurrent":
+    "No committee memberships are loaded for the current electoral period. They will appear here once the sync ingests the master data.",
+
+  // --- one committee's detail page (/committees/[id]) --------------------
+  "committees.backToCommittees": "Back to the committee directory",
+  "committees.detail.subtitle":
+    "Members of this committee in electoral period {wahlperiode}, with role where the source records one.",
+  "committees.detail.rosterTitle": "Members",
+  "committees.detail.column.member": "Member",
+  "committees.detail.column.faction": "Group",
+  "committees.detail.column.role": "Role",
+  "committees.detail.roleUnspecified": "—",
+  "committees.detail.unavailable":
+    "No committee memberships are published for this electoral period. The committee existed, but the machine-readable member list is available for the current electoral period only.",
+  "committees.detail.unknownCommittee":
+    "No committee by this name is recorded for the current electoral period. The name in the address may not match the current spelling.",
 
   // --- homepage card ---
   "home.partiesTitle": "Groups compared",

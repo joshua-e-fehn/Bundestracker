@@ -113,6 +113,14 @@ export const PUBLIC_PATHS = [
   // like everything else: DIP's procedure records are open data, and the page
   // links out to the same PDFs anyone can fetch unauthenticated.
   "/motions",
+  // The committees directory (§6.3 of docs/api-research.md is the source
+  // reasoning; convex/committees.ts opens with the WP21-only caveat that
+  // reaches the reader here). Tenth time the filesystem check has demanded a
+  // line on this file. Public like everything else: Stammdaten publishes the
+  // membership list openly, and this route is the reachable rendering of it.
+  // The prefix covers `/committees/<name>` for the same reason `/mps` covers
+  // profile pages.
+  "/committees",
   // The reader's own saved choices — weights, language, follow list. The one
   // route on this site whose *contents* need an account, and still public,
   // because the page has a signed-out rendering that explains what an account

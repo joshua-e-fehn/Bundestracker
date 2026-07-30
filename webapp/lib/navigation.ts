@@ -11,6 +11,7 @@ import {
   SearchIcon,
   SettingsIcon,
   TrophyIcon,
+  Users2Icon,
   UsersIcon,
   VoteIcon,
 } from "lucide-react"
@@ -145,6 +146,21 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         labelKey: "nav.parties",
         icon: LandmarkIcon,
         descriptionKey: "nav.partiesHint",
+      },
+      // The standing committees. Sits in the *people* group rather than
+      // *decisions* because a committee is the room its members sit in, not the
+      // motions they refer to it — the WP21-only source (§6.3 of
+      // docs/api-research.md, and convex/committees.ts opens with the note) is a
+      // membership list, and the reader's question a page like this answers is
+      // "who is on which committee", not "what did the committee decide". The
+      // corresponding referrals are a fact about *bills*, are read from
+      // convex/committeeReferrals.ts, and belong on `/motions` and profile pages
+      // — not here.
+      {
+        href: "/committees",
+        labelKey: "nav.committees",
+        icon: Users2Icon,
+        descriptionKey: "nav.committeesHint",
       },
       {
         href: "/seating",
