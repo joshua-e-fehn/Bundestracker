@@ -870,10 +870,12 @@ class Pipeline:
 
             try:
                 protocol = self.protocols.fetch(url)
-            except BundestagAPIError as error:
+            except (BundestagAPIError, ValueError) as error:
                 # One unreadable sitting does not end the run; the rest of the
                 # period is still worth having, and the next sync retries it
-                # because its hash was never recorded.
+                # because its hash was never recorded. ValueError also covers
+                # malformed fields (e.g. an unparseable sitzung-datum) raised
+                # while parsing an otherwise-fetched document.
                 stage.notes.append(f"{protocol_meta.dokumentnummer}: {error}")
                 continue
 
