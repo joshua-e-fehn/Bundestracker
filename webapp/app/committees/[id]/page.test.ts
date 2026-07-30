@@ -74,7 +74,24 @@ describe("/committees/[id] page shell", () => {
     // A segment that cannot be a committee name still gets a tab title —
     // just the neutral "not found" one, matching how party/[party] handles
     // an unknown key. Silently letting the tab render as `undefined` would
-    // give browser history an empty entry.
-    expect(stripped).toContain('t("common.notFound", DEFAULT_LOCALE)')
+    // give browser history an empty entry. Since PR61 the locale reaches
+    // the fallback too, so a French reader on `/committees/` sees the
+    // English fallback rather than a German one above English body.
+    expect(stripped).toContain('t("common.notFound", locale)')
+  })
+
+  test("metadata reads locale via resolveServerLocale, not DEFAULT_LOCALE", () => {
+    // Site-wide invariant since PR61 (NEW-01): every page's <title>
+    // negotiates per request — cookie → Accept-Language → German. This
+    // dynamic route additionally has to await the locale alongside the
+    // route params, so the `Promise.all` shape is the specific spelling
+    // the sibling `/parties/[party]` uses and this file follows.
+    expect(stripped).toContain("resolveServerLocale")
+    expect(stripped).toMatch(/Promise\.all\(\[\s*params,\s*resolveServerLocale\(\)\s*\]/)
+    // The reader-facing keys pin to `locale`, never `DEFAULT_LOCALE` — the
+    // metadata-locale scan enforces that across the tree; this asserts the
+    // three specific keys this page emits so a refactor cannot swap them.
+    expect(stripped).toContain('t("committees.title", locale)')
+    expect(stripped).toContain('t("committees.subtitle", locale)')
   })
 })

@@ -5,7 +5,8 @@ import { CommitteeHeading } from "@/components/committee-heading"
 import { CommitteeMembers } from "@/components/committee-members"
 import { PeriodScope } from "@/components/period-scope"
 import { parseCommitteeParam } from "@/lib/committees"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 import { parsePeriodParam, PERIOD_PARAM } from "@/lib/period"
 
 /**
@@ -66,18 +67,18 @@ function backToListHref(searchParams: SearchParams): string {
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { id } = await params
+  const [{ id }, locale] = await Promise.all([params, resolveServerLocale()])
   const committeeName = parseCommitteeParam(id)
   if (committeeName === null) {
-    return { title: t("common.notFound", DEFAULT_LOCALE) }
+    return { title: t("common.notFound", locale) }
   }
-  // German metadata, like every other page on the site: `generateMetadata`
-  // cannot see the client-side language toggle. The tab title carries the
-  // committee's own name — it is a proper noun in either language, and
-  // Stammdaten prints only the German form.
+  // Locale-aware via `resolveServerLocale` — see app/layout.tsx for the cookie
+  // → header → German precedence. The committee's own name rides the title
+  // untranslated: it is a proper noun in either language, and Stammdaten prints
+  // only the German form.
   return {
-    title: `${committeeName} — ${t("committees.title", DEFAULT_LOCALE)}`,
-    description: t("committees.subtitle", DEFAULT_LOCALE),
+    title: `${committeeName} — ${t("committees.title", locale)}`,
+    description: t("committees.subtitle", locale),
   }
 }
 

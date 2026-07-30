@@ -72,18 +72,43 @@ describe("parseCommitteeParam", () => {
   })
 
   test("returns the trimmed name for a well-formed segment", () => {
-    // The router already decoded the segment before it reached here — Next.js
-    // does that for both `useParams` and server-side `params.id`. So the
-    // callers pass through the decoded form, not `%C3%BC`.
-    expect(parseCommitteeParam("Auswärtiger Ausschuss")).toBe("Auswärtiger Ausschuss")
+    // A raw ASCII name from the URL segment. Round-trips through both
+    // encode+decode (via `committeeHref`) unchanged.
+    expect(parseCommitteeParam("Auswaertiger Ausschuss")).toBe("Auswaertiger Ausschuss")
     expect(parseCommitteeParam("  Haushaltsausschuss  ")).toBe("Haushaltsausschuss")
   })
 
+  test("decodes percent-encoded URL segments — the App Router leaves them raw", () => {
+    // The regression the browser smoke caught after the rebase: Next 16's
+    // App Router `params` hands over the raw segment — no auto-decode —
+    // so a page hydrated from `/committees/Ausschuss%20f%C3%BCr%20Digitales`
+    // rendered `Ausschuss%20f%C3%BCr%20Digitales` in the `<h1>` while the
+    // `<title>` (built via template literal) coerced the same value into
+    // the decoded form and disagreed with the body. `app/mps/[id]/page.tsx`
+    // already carries `decodeURIComponent(id)` for the same reason; folding
+    // the decode into this helper is what stops the next detail route from
+    // making the same mistake.
+    expect(parseCommitteeParam("Ausschuss%20f%C3%BCr%20Digitales")).toBe(
+      "Ausschuss für Digitales",
+    )
+    expect(parseCommitteeParam("A%2FB")).toBe("A/B")
+  })
+
   test("preserves diacritics — the caller needs the exact source spelling", () => {
-    // `foldName`-style normalisation would break the round-trip with
-    // `committeeHref` and it would break the Convex query: `getCommitteeMembers`
-    // matches `committeeName` verbatim on the index.
+    // A pre-decoded segment stays as it is. `foldName`-style normalisation
+    // would break the round-trip with `committeeHref` and it would break
+    // the Convex query: `getCommitteeMembers` matches `committeeName`
+    // verbatim on the index.
     expect(parseCommitteeParam("Ausschuss für Digitales")).toBe("Ausschuss für Digitales")
+  })
+
+  test("returns null for a malformed URL escape", () => {
+    // `decodeURIComponent("%zz")` throws `URIError`. Rather than let a
+    // stray `%` in a mis-typed URL crash the page render, the helper
+    // treats it as "not a valid segment" — the caller then renders the
+    // "unknown committee" body, which is the honest answer.
+    expect(parseCommitteeParam("%zz")).toBeNull()
+    expect(parseCommitteeParam("Ausschuss%")).toBeNull()
   })
 })
 

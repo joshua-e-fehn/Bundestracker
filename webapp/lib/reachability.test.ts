@@ -92,17 +92,21 @@ const USAGE_ROOTS: string[] = [
 const ALLOWLIST: Record<string, string> = {
   "auth.getCurrentUser":
     "read by the @convex-dev/better-auth React hooks during session hydration — no static api.auth.getCurrentUser reference exists in the tree",
-  // The four rows below are the 'backend built, no UI' shape the 2026-07-30
-  // audit called out (RES-01, RES-02, RES-03). Each has a UI it was
-  // designed for — /committees drilldown, per-MP §31 declarations,
-  // per-sitting speech view — that has not been built yet. Kept public
-  // because the intent is genuinely to wire them, not to keep the surface;
-  // an audit run in Q4 2026 that still finds them here should treat that
-  // as evidence to delete rather than to renew the exception.
-  "committees.getCommittees":
-    "reserved for the /committees index page (RES-01); delete this entry and the export when the /committees route ships, or delete both if the page is dropped from scope",
-  "committees.getCommitteeMembers":
-    "reserved for the /committees drilldown (RES-01, pairs with getCommittees); same disposition as above — wire or delete together",
+  // The two rows below are the 'backend built, no UI' shape the 2026-07-30
+  // reachability audit called out (RES-02, RES-03). Each has a UI it was
+  // designed for — per-MP §31 declarations, per-sitting speech view — that
+  // has not been built yet. Kept public because the intent is genuinely to
+  // wire them, not to keep the surface; an audit run in Q4 2026 that still
+  // finds them here should treat that as evidence to delete rather than to
+  // renew the exception.
+  //
+  // RES-01 (the committees drilldown, `committees.getCommittees` and
+  // `committees.getCommitteeMembers`) came off this list when the
+  // `/committees` and `/committees/[id]` routes shipped — the callers now
+  // live in `components/committee-directory.tsx` and
+  // `components/committee-members.tsx`, so the "no static caller" claim is
+  // no longer true. Removing the entries is what turned the exception into
+  // an assertion that both functions have callers rather than reasons.
   "voteExplanations.getExplanationsByMP":
     "reserved for a per-MP §31 declarations tab on the profile (RES-02); if the tab does not ship in the next audit cycle, delete both this export and the entry",
   "speeches.getSpeechesBySitting":

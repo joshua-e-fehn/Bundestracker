@@ -3,7 +3,8 @@ import { Suspense } from "react"
 import { CommitteeDirectory } from "@/components/committee-directory"
 import { PageHeading } from "@/components/page-heading"
 import { PeriodScope } from "@/components/period-scope"
-import { DEFAULT_LOCALE, t } from "@/lib/i18n"
+import { t } from "@/lib/i18n"
+import { resolveServerLocale } from "@/lib/i18n-server"
 
 /**
  * `/committees` — the directory of standing committees for the Wahlperiode
@@ -37,10 +38,17 @@ import { DEFAULT_LOCALE, t } from "@/lib/i18n"
  * `PeriodScope` reads `useSearchParams`, which opts its subtree out of static
  * prerender and fails the build without a boundary above it — the same note
  * `app/rankings/page.tsx` and `app/search/page.tsx` carry.
+ *
+ * Locale-aware metadata via `resolveServerLocale` — see app/layout.tsx for the
+ * cookie → header → German precedence, and app/metadata-locale.test.ts for the
+ * scan that refuses a page that ships static metadata or forgets the helper.
  */
-export const metadata: Metadata = {
-  title: t("committees.title", DEFAULT_LOCALE),
-  description: t("committees.subtitle", DEFAULT_LOCALE),
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveServerLocale()
+  return {
+    title: t("committees.title", locale),
+    description: t("committees.subtitle", locale),
+  }
 }
 
 export default function CommitteesPage() {

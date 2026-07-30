@@ -55,13 +55,15 @@ describe("/committees page shell", () => {
     expect(stripped).toMatch(/subtitleKey="committees\.subtitle"/)
   })
 
-  test("metadata carries the same German title and description", () => {
-    // Mirrors app/parties/page.tsx and app/motions/page.tsx: `generateMetadata`
-    // cannot see the client-side language toggle, so the tab is German and
-    // the page body switches. Anything else here would ship a page whose tab
-    // renames itself when the reader changes language, or whose tab differs
-    // from the h1 in both languages.
-    expect(stripped).toContain('t("committees.title", DEFAULT_LOCALE)')
-    expect(stripped).toContain('t("committees.subtitle", DEFAULT_LOCALE)')
+  test("metadata negotiates locale per request via resolveServerLocale", () => {
+    // Since PR61 (NEW-01), every page's <title> reads the reader's chosen
+    // language — cookie set by the toggle, `Accept-Language` on a first
+    // visit, German only as final fallback. `app/metadata-locale.test.ts`
+    // enforces this across the whole tree; the two assertions here pin the
+    // *specific* keys this page passes, so a refactor cannot silently
+    // change the tab title to a different string in either language.
+    expect(stripped).toMatch(/generateMetadata\s*\(/)
+    expect(stripped).toContain('t("committees.title", locale)')
+    expect(stripped).toContain('t("committees.subtitle", locale)')
   })
 })

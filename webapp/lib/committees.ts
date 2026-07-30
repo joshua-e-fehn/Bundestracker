@@ -49,11 +49,18 @@ export function committeeHref(committeeName: string): string {
 /**
  * The committee name from a route param, decoded and normalised.
  *
- * `params.id` in Next.js is already `decodeURIComponent`-ed for the caller
- * (`useParams` and `params.id` in a server page both yield the decoded form),
- * so this function does not decode a second time. It exists to *validate*: an
- * empty segment is not a committee, and a segment that reads as a control
- * character (a leftover from a mis-encoded link) is not one either.
+ * ⚠ `params.id` in the Next.js App Router is **not** decoded for the caller —
+ * both `params` in a server `page.tsx` and `useParams()` in a client one hand
+ * over the raw URL segment. `app/mps/[id]/page.tsx` (`decodeURIComponent(id)`
+ * on both metadata and body sides) is the precedent, and this function does
+ * the same thing so callers do not have to remember to. Before this landed,
+ * the metadata block ran the ID through a template literal that coerced the
+ * decoded value and the page body handed the raw segment straight to the
+ * client heading — so the `<title>` said "Ausschuss für Digitales…" while
+ * the `<h1>` rendered `Ausschuss%20f%C3%BCr%20Digitales%2E…`, one page.
+ *
+ * `decodeURIComponent` on malformed input (`%zz`) throws — the try/catch
+ * folds that into `null`, matching the empty-segment and control-char cases.
  *
  * Returns `null` when the segment cannot name a committee — the caller decides
  * whether that is a 404 or an unavailable state. It is not a 404 today: an
@@ -65,12 +72,22 @@ export function parseCommitteeParam(raw: string | undefined | null): string | nu
   if (typeof raw !== "string") return null
   const trimmed = raw.trim()
   if (trimmed.length === 0) return null
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(trimmed)
+  } catch {
+    // A malformed escape (`%zz`, a stray `%` at the end). Not a name.
+    return null
+  }
   // Rejects a segment made entirely of ASCII control characters. Real
   // committee names have at least one printable character; a segment that has
-  // none is a stray escape rather than a name.
+  // none is a stray escape rather than a name. Checked on the *decoded* value
+  // so a real name that happened to include a printable `%` character (none
+  // do today, but the check should be about content, not encoding shape) is
+  // not filtered out.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: this is the check
-  if (!/[^\x00-\x1f\x7f]/.test(trimmed)) return null
-  return trimmed
+  if (!/[^\x00-\x1f\x7f]/.test(decoded)) return null
+  return decoded
 }
 
 /**
