@@ -1554,6 +1554,48 @@ export const getVoteSheets = query({
 })
 
 /**
+ * Every named ballot cast in one sitting, ordered by `abstimmnr`.
+ *
+ * The read the sitting-detail page pairs with `getSpeechesBySitting`. Bounded
+ * by the corpus: §4.4 records single-digit ballots per sitting even in the
+ * busiest divisions, well under a screenful.
+ *
+ * ## Sorted by ballot number rather than by date
+ *
+ * A sitting happens on one day — the ballots in it share the same `date` — so
+ * a date-ordered scan cannot order two of them relative to each other. The
+ * ballot number is what §4.1 encodes into the sheet name and is what a
+ * sitting-scoped reader will expect: "Abstimmung 1" comes before "Abstimmung
+ * 2", not "the one recorded first at ingest time".
+ *
+ * ## Which index, and why not the date one
+ *
+ * Uses `by_wahlperiode_and_sitzungnr_and_abstimmnr`, the natural-key index
+ * that `findSheet` above already walks: its `(wahlperiode, sitzungnr)` prefix
+ * is exactly the sitting-wide range, and the trailing `abstimmnr` column
+ * gives the caller-order sort for free. The date index would work but would
+ * scan the whole period and filter — pointless when a two-column prefix
+ * already selects the sitting.
+ */
+export const getVoteSheetsBySitting = query({
+  args: { wahlperiode: v.number(), sitzungnr: v.number() },
+  returns: v.array(voteSheetDoc),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("voteSheets")
+      .withIndex("by_wahlperiode_and_sitzungnr_and_abstimmnr", (q) =>
+        q.eq("wahlperiode", args.wahlperiode).eq("sitzungnr", args.sitzungnr),
+      )
+      .collect()
+    // `.collect()` on this index returns ascending `abstimmnr` order, which is
+    // the reading order for a sitting. Sorted defensively rather than trusted:
+    // an index scan's ordering is a documented Convex guarantee, but a caller
+    // relying on it belongs to a query that says so.
+    return rows.sort((a, b) => a.abstimmnr - b.abstimmnr).map(toVoteSheetDoc)
+  },
+})
+
+/**
  * A page of a period's ballots, with the values its filters can select — the
  * `/votes` list.
  *

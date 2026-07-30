@@ -121,6 +121,14 @@ export const PUBLIC_PATHS = [
   // The prefix covers `/committees/<name>` for the same reason `/mps` covers
   // profile pages.
   "/committees",
+  // The plenary sitting detail — `/sittings/[wp]/[nr]`. Eleventh time the
+  // filesystem check has demanded a line, and the ⚠ above applies here too:
+  // the sitting page is linked from every ballot's sitting label
+  // (components/vote-detail.tsx), so a missing entry would send every reader
+  // who clicked "Sitzung 21/90" to a sign-in prompt for a page that is a
+  // read-through of the plenary protocol XML — open data that requires no
+  // account.
+  "/sittings",
   // The reader's own saved choices — weights, language, follow list. The one
   // route on this site whose *contents* need an account, and still public,
   // because the page has a signed-out rendering that explains what an account

@@ -9,7 +9,8 @@ import { api } from "@/convex/_generated/api"
 import { drucksachePdfUrl, formatDate, formatNumber, protocolPdfUrl } from "@/lib/bundestag"
 
 /**
- * The four "latest five" panels: speeches, motions, written questions, votes.
+ * The five "latest five" panels: speeches, motions, written questions, votes,
+ * §31 declarations.
  *
  * Five each, not fifty. This is a summary beside the score, and the queries
  * behind it are the profile-page reads their own docstrings name — a longer
@@ -18,10 +19,11 @@ import { drucksachePdfUrl, formatDate, formatNumber, protocolPdfUrl } from "@/li
  * Every row that can link to its source document does. `drucksachePdfUrl` and
  * `protocolPdfUrl` reconstruct the address from the deterministic patterns in
  * §8 of docs/api-research.md, which is why no URL is stored per row. Questions
- * are the exception and say why at `RecentQuestions`.
+ * are the exception and say why at `RecentQuestions`; §31 declarations link to
+ * their page-anchored protocol PDF, which is a stored field.
  *
  * The questions panel is in this file rather than beside it, which is a
- * deliberate reversal of the obvious split: it is a fourth instance of the same
+ * deliberate reversal of the obvious split: it is a fifth instance of the same
  * thing — same `Panel` chrome, same `LIMIT`, same three-state loading rule — and
  * a `mp-recent-questions.tsx` would have carried its own copy of all three. The
  * panels are siblings on one page; the moment they stop sharing a definition of
@@ -35,14 +37,17 @@ export function MPRecentRecords({
   mpInternalId: string
   wahlperiode: number
   /**
-   * The sitting period, so two of these four panels can say why they are empty.
+   * The sitting period, so two of these panels can say why they are empty.
    *
    * Speeches and votes are the panels with a source boundary: protocol XML
    * begins at WP18 and roll-call sheets at 2019-09-26, so an empty list in an
    * earlier period is "never published" rather than "this member never spoke or
    * voted" (`docs/historical-coverage.md`). Motions and questions come from
    * DIP, which covers every tracked period, so their empty states are already
-   * honest as they stand.
+   * honest as they stand. §31 declarations are on the same DIP feed as the
+   * questions, so they carry no source boundary either — the emptiness they
+   * *do* have to distinguish is not-yet-backfilled from none-filed, and
+   * `RecentExplanations` resolves that with the period-level coverage query.
    */
   current?: number | null
 }) {
@@ -55,6 +60,13 @@ export function MPRecentRecords({
           initiated — where a vote is a response to someone else's. */}
       <RecentQuestions mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
       <RecentVotes mpInternalId={mpInternalId} wahlperiode={wahlperiode} current={current} />
+      {/* §31 declarations, immediately after votes because they are *about*
+          votes: a member's own on-the-record reason for the way they voted.
+          Kept below the ballot list — not folded into it — because a
+          declaration exists as its own DIP record with its own protocol page,
+          and treating it as a footnote on a vote row would drop the deep link
+          into the protocol PDF that is the only route to the wording. */}
+      <RecentExplanations mpInternalId={mpInternalId} wahlperiode={wahlperiode} />
     </div>
   )
 }
@@ -314,6 +326,147 @@ function RecentVotes({
             </li>
           ))}
         </ul>
+      )}
+    </Panel>
+  )
+}
+
+/**
+ * The MP's own §31 declarations in this Wahlperiode.
+ *
+ * ## What is shown, and what is not
+ *
+ * A §31 declaration is a member's on-the-record reason for their vote. DIP
+ * publishes the *existence* — who filed it, which procedure it concerns, which
+ * protocol page it is printed on — but never the prose (§3.4 of
+ * convex/voteExplanations.ts). So every row here is one of those four facts
+ * passed through and none of them synthesised: the referenced procedure's
+ * title, the date, the protocol reference, and a deep link into the page
+ * anchored PDF. Nothing on this panel invents, paraphrases, summarises or
+ * labels the reason itself — the words live in the linked protocol, which is
+ * exactly where the caveat below points.
+ *
+ * ## The three empty states
+ *
+ * `getExplanationsByMP` returning `[]` is ambiguous: it may mean the source
+ * filed none for this member, or it may mean the deployment has not backfilled
+ * §31 declarations for this period yet. `hasAnyExplanationsForPeriod` is the
+ * cheap boolean that tells them apart (one document read per page load,
+ * bounded on the period index — the header of the query in
+ * convex/voteExplanations.ts explains why the count form is not used here).
+ * Same distinction, and the same reasoning, as
+ * components/vote-explanations-disclosure.tsx uses per-ballot; scoped here to
+ * the member rather than to a Vorgang.
+ *
+ * Loading covers both queries: rendering "no declaration was filed" while
+ * coverage is still resolving would flash a positive claim about the member
+ * that a page hasn't yet checked.
+ *
+ * ## Positioned below the vote list, not above it
+ *
+ * Below because it is the *further-detail* signal: a member typically files a
+ * declaration on a ballot they voted against their group's line, so this panel
+ * is the tail on the vote list rather than a peer of it. Above the section
+ * boundary — this is not a floor of the page, and the panel has to compete for
+ * a reader's attention with the vote list beside it.
+ */
+function RecentExplanations({
+  mpInternalId,
+  wahlperiode,
+}: {
+  mpInternalId: string
+  wahlperiode: number
+}) {
+  const { t, locale } = useLocale()
+  const explanations = useQuery(api.voteExplanations.getExplanationsByMP, {
+    mpInternalId,
+    wahlperiode,
+    limit: LIMIT,
+  })
+  // Period-level coverage: is any §31 declaration ingested for this WP at all?
+  // Reading the boolean rather than the count form because the UI needs only a
+  // yes/no here — see the header on `hasAnyExplanationsForPeriod` for why the
+  // page cost of a populated period is one document, not thousands.
+  const hasAnyForPeriod = useQuery(api.voteExplanations.hasAnyExplanationsForPeriod, {
+    wahlperiode,
+  })
+
+  const loading = explanations === undefined || hasAnyForPeriod === undefined
+
+  return (
+    <Panel title={t("mp.latestExplanations")} loading={loading}>
+      {explanations?.length === 0 ? (
+        <div className="flex flex-col gap-2">
+          {/* Two empty states, one wording of each, one query result. Same
+              exhaustiveness `vote-explanations-disclosure` documents: `false`
+              means the deployment has not yet ingested §31 for this period,
+              `true` means the source filed none for this MP. The
+              undefined-while-loading arm is gated above. */}
+          <Empty>
+            {hasAnyForPeriod === false
+              ? t("mp.explanationsPeriodNotBackfilled")
+              : t("mp.noExplanations")}
+          </Empty>
+        </div>
+      ) : (
+        <>
+          <ul className="flex flex-col divide-y">
+            {explanations?.map((row) => (
+              // The DIP activity id is the natural key (`upsertVoteExplanations`
+              // upserts on it), so it is unique across the list — the panel is
+              // per-MP, but the ids are global.
+              <li
+                key={row.dipAktivitaetId}
+                className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  {/* `subject` is the *procedure's* title — what was voted on
+                      — never the member's reason. The schema note on
+                      `voteExplanations.subject` and the header of
+                      convex/voteExplanations.ts are explicit about this
+                      distinction, and it is why the field is not called
+                      `title`. Falls back to a synthesised label if the
+                      referenced Vorgang was published with none. */}
+                  <span className="font-medium text-sm leading-snug">
+                    {row.subject ?? t("mp.explanationSubjectMissing")}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground text-xs">
+                    {formatDate(row.date, locale)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs">
+                  {row.protocolNumber !== null ? (
+                    <span
+                      className="tabular-nums"
+                      // The visible label already reads correctly to a screen
+                      // reader ("Protokoll 21/90"); `title` provides the long
+                      // form on hover for a pointer user. Same trade-off as
+                      // vote-explanations-disclosure.tsx.
+                      title={t("voteExplanations.protocolLabel", {
+                        number: row.protocolNumber,
+                      })}
+                    >
+                      {t("voteExplanations.protocol", { number: row.protocolNumber })}
+                    </span>
+                  ) : null}
+                  {row.sourceUrl !== null ? (
+                    <SourceLink href={row.sourceUrl}>
+                      {t("voteExplanations.sourceLink")}
+                    </SourceLink>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {/* The rule the whole feature turns on, restated in the reader's
+              language. Present whenever the list is — a reader who scanned the
+              rows should not be able to leave without having read what a §31
+              row is and is not. Same wording, same reason, as
+              vote-explanations-disclosure.tsx. */}
+          <p className="mt-3 text-muted-foreground text-xs leading-relaxed">
+            {t("voteExplanations.caveat")}
+          </p>
+        </>
       )}
     </Panel>
   )

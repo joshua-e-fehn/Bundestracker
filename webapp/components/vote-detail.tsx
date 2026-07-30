@@ -162,12 +162,30 @@ export function VoteDetail({
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
               <span className="tabular-nums">{formatDate(sheet.date, locale)}</span>
-              <span className="tabular-nums">
+              {/* The sitting label — unchanged in wording — becomes a link to
+                  the sitting page. `(wahlperiode, sitzungnr)` names a real
+                  page for every ballot (both fields are required on
+                  `voteSheets`), so this is unconditional; the sitting page
+                  itself decides how to render an unbackfilled or empty
+                  sitting. Link kept on the ballot label only, not on the
+                  vote-number half — a reader who clicked "Abstimmung 3"
+                  would not expect the whole sitting, only that ballot.
+                  `periodLink` scopes the URL to the ballot's own
+                  Wahlperiode, matching the "back to /votes" link two rows
+                  up. */}
+              <Link
+                href={periodLink(
+                  `/sittings/${sheet.wahlperiode}/${sheet.sitzungnr}`,
+                  sheet.wahlperiode,
+                  periods?.current ?? null,
+                )}
+                className="tabular-nums underline underline-offset-4 hover:text-foreground"
+              >
                 {t("votes.sitting", {
                   sitzungnr: sheet.sitzungnr,
                   abstimmnr: sheet.abstimmnr,
                 })}
-              </span>
+              </Link>
               <VoteOutcomeBadge result={sheet.result} locale={locale} />
               {/* Full label here, unlike the list's compact mark: this is the page
                 about this one ballot, so there is room for the word and a
