@@ -2323,7 +2323,7 @@ const en: Dictionary = {
   "event.committee": "Committee",
   "event.activity": "Activity",
 
-  "time.justNow": "just now",
+  "time.justNow": "moments ago",
   "time.minuteAgo": "a minute ago",
   "time.minutesAgo": "{count} minutes ago",
   "time.hourAgo": "an hour ago",
@@ -2886,7 +2886,7 @@ const en: Dictionary = {
   "footer.builtBy": "Built by Joshua Fehn",
   "footer.disclaimer":
     "Not an official service of the German Bundestag. All figures come from publicly available official data.",
-  "footer.dataAsOf": "Data as of {when}",
+  "footer.dataAsOf": "Data as of: {when}",
   "footer.dataAsOfUnknown": "Data as of: unknown",
 
   // --- seating map ---

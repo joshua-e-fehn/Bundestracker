@@ -44,17 +44,28 @@ describe("DataAsOf widget", () => {
     expect(i18n).toMatch(/"footer\.dataAsOfUnknown":\s*"Data as of: unknown"/)
   })
 
-  test("wraps the phrase in a <time> with dateTime and title", () => {
-    // The vague reading is always paired with the exact one — a screen
-    // reader, a browser 'reveal date' gesture and a hovering mouse all reach
-    // the same ISO string. Without `dateTime` the `<time>` is decoration;
-    // without `title` a mouse reader has to click to know.
-    expect(WIDGET).toMatch(/<time[\s\S]{0,200}dateTime=\{iso\}/)
-    expect(WIDGET).toMatch(/<time[\s\S]{0,200}title=\{iso\}/)
-    // ISO string is what dateTime expects; the loose match tolerates the
-    // exact shape the implementation may take, as long as it comes from a
-    // `Date(...).toISOString()`.
+  test("wraps the phrase in a <time> with dateTime and a human-readable title", () => {
+    // The vague reading is always paired with two exact ones, targeting
+    // different audiences:
+    //  - `dateTime={isoUtc}` — the machine-readable ISO in UTC. A screen
+    //    reader that announces dates from `<time>`, a Selenium check, a
+    //    browser's built-in "reveal date" gesture all reach it.
+    //  - `title={humanAbsolute}` — the locale-formatted absolute string
+    //    for the mouse-hover tooltip. A raw ISO with milliseconds is
+    //    technically correct and practically unreadable; the reader who
+    //    hovers wants a date, not a serialised timestamp.
+    expect(WIDGET).toMatch(/<time[\s\S]{0,400}dateTime=\{isoUtc\}/)
+    expect(WIDGET).toMatch(/<time[\s\S]{0,400}title=\{humanAbsolute\}/)
+    // ISO comes from `toISOString()` and stays UTC — the two are the
+    // whole point of splitting the attributes.
     expect(WIDGET).toMatch(/toISOString\(\)/)
+    // The human-readable form uses Intl.DateTimeFormat in the reader's
+    // locale, spelled out with dateStyle + timeStyle so a tooltip reads
+    // as a sentence rather than a serialisation. A regression that put
+    // the ISO into `title` would drop these two markers together.
+    expect(WIDGET).toMatch(/Intl\.DateTimeFormat\(locale/)
+    expect(WIDGET).toMatch(/dateStyle:\s*"long"/)
+    expect(WIDGET).toMatch(/timeStyle:\s*"short"/)
   })
 
   test("does not fabricate a timestamp — no Date.now for the datum itself", () => {
@@ -83,9 +94,18 @@ describe("DataAsOf widget", () => {
     expect(WIDGET).toMatch(/footer\.dataAsOf(?!Unknown|Label)/)
     const i18n = readFileSync(join(import.meta.dir, "../lib/i18n.ts"), "utf8")
     // Both dictionaries carry the labelled phrase — the German "Daten
-    // Stand" prefix and the English "Data as of" prefix. A future edit
-    // that flipped `footer.dataAsOf` to a bare `{when}` would fail here.
+    // Stand" prefix and the English "Data as of" prefix — and *both* use
+    // the same colon punctuation, so a screen reader hears the label as a
+    // noun-phrase followed by a value. A future edit that flipped
+    // `footer.dataAsOf` to a bare `{when}` (or dropped the colon on one
+    // locale) would fail here.
     expect(i18n).toMatch(/"footer\.dataAsOf":\s*"Daten Stand: \{when\}"/)
-    expect(i18n).toMatch(/"footer\.dataAsOf":\s*"Data as of \{when\}"/)
+    expect(i18n).toMatch(/"footer\.dataAsOf":\s*"Data as of: \{when\}"/)
+    // …and the sibling `footer.dataAsOfUnknown` uses the same colon
+    // punctuation in both. If a future edit added a colon to one and
+    // removed it from the other, the widget would render two visually
+    // different shapes for the same slot.
+    expect(i18n).toMatch(/"footer\.dataAsOfUnknown":\s*"Daten Stand: unbekannt"/)
+    expect(i18n).toMatch(/"footer\.dataAsOfUnknown":\s*"Data as of: unknown"/)
   })
 })

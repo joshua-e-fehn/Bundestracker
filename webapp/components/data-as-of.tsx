@@ -87,20 +87,37 @@ export function DataAsOf() {
     return <span className="text-muted-foreground text-xs">{t("footer.dataAsOfUnknown")}</span>
   }
 
-  const iso = new Date(latest).toISOString()
+  const isoUtc = new Date(latest).toISOString()
   const phrase = relativeTime(latest, now, locale)
-  // `t` interpolates a string, not a React element — so the whole line
-  // renders as text, and the `<time>` wrapper provides the machine-readable
-  // datetime beside it. `dateTime` is the SSR-safe way for a screen reader
-  // or a browser's "date on hover" gesture to reach the exact moment; the
-  // `title` gives a mouse reader the same.
+  // Two different consumers, two different formats:
   //
-  // The line itself carries the label "Daten Stand: …" — so the visible
-  // text already tells a screen reader what the number is about. No
-  // aria-label on the `<time>` (Biome's role model rejects it there); the
-  // one already-announced label is enough.
+  //  - `dateTime={isoUtc}` is what a machine reads — a screen reader that
+  //    announces dates from `<time>` on request, a Selenium check, or the
+  //    browser's built-in "reveal date" gesture. The ISO string is the
+  //    unambiguous serialisation, so this stays as-is.
+  //
+  //  - `title={humanAbsolute}` is what a mouse reader hovers over. A raw
+  //    ISO with milliseconds ("2026-07-30T14:23:45.123Z") is technically
+  //    correct and practically unreadable — an ordinary reader sees an
+  //    error string rather than a date. `Intl.DateTimeFormat` in the
+  //    reader's own locale, spelled out with `dateStyle: "long"` and
+  //    `timeStyle: "short"`, renders as "30. Juli 2026 um 14:23" /
+  //    "July 30, 2026 at 2:23 PM" — the same information, in the shape
+  //    the tooltip's audience expects to read.
+  //
+  //  The locale-formatted string is time-zone-aware (uses the reader's
+  //  own zone), so a German visitor in Berlin sees Berlin time and an
+  //  American visitor sees Eastern; the ISO in `dateTime` stays UTC so
+  //  the two are reconcilable. `absoluteDateTime` is the same shape
+  //  `lib/relative-time.ts:absoluteDate` uses for feed tooltips, kept
+  //  local to this component because that helper is date-only and this
+  //  needs the time-of-day.
+  const humanAbsolute = new Intl.DateTimeFormat(locale, {
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(new Date(latest))
   return (
-    <time dateTime={iso} title={iso} className="text-muted-foreground text-xs">
+    <time dateTime={isoUtc} title={humanAbsolute} className="text-muted-foreground text-xs">
       {t("footer.dataAsOf", { when: phrase })}
     </time>
   )
