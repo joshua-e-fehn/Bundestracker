@@ -57,12 +57,21 @@ describe("the three empty states are three different sentences", () => {
 
   test("coverage decides between the last two arms — read from the prop, not fetched here", () => {
     // The coverage query is called *once at the caller's level* and threaded
-    // in as `hasAnyForPeriod`. A per-row `useQuery(api.voteExplanations.getExplanationCoverage, …)`
+    // in as `hasAnyForPeriod`. A per-row `useQuery(api.voteExplanations.hasAnyExplanationsForPeriod, …)`
     // inside this file would multiply into as many reads as there are
-    // ballots on the page. Grep for the coverage query name being absent from
-    // this file; the caller has it.
+    // ballots on the page. Grep for the coverage query name being absent
+    // from this file; the caller has it.
+    //
+    // Two family names are excluded here, not one. `hasAnyExplanationsForPeriod`
+    // is the cheap boolean the UI uses. `getExplanationCoverage` is the
+    // count form kept for operators — a caller reintroducing *either* here
+    // would be a regression.
+    expect(disclosure).not.toMatch(/api\.voteExplanations\.hasAnyExplanationsForPeriod/)
     expect(disclosure).not.toMatch(/api\.voteExplanations\.getExplanationCoverage/)
-    expect(voteDetail).toMatch(/api\.voteExplanations\.getExplanationCoverage/)
+    expect(voteDetail).toMatch(/api\.voteExplanations\.hasAnyExplanationsForPeriod/)
+    // And the UI must not accidentally revert to the count form, whose
+    // `.collect()` cost was the whole reason the boolean was added.
+    expect(voteDetail).not.toMatch(/api\.voteExplanations\.getExplanationCoverage/)
   })
 })
 

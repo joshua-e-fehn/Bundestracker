@@ -249,12 +249,16 @@ export function MotionList({ wahlperiode }: { wahlperiode: number }) {
   // Coverage for referrals — read **once at the page level** so the row
   // disclosure can distinguish an unbackfilled period from a motion that had
   // no referral. Same shape and reasoning as the explanation coverage query
-  // on components/vote-detail.tsx. This is the read that makes the empty
-  // state honest; per-row fetches would multiply into `results.length` reads
-  // of the same period-wide answer.
-  const referralCoverage = useQuery(api.committeeReferrals.getReferralCoverage, { wahlperiode })
-  const hasAnyReferrals =
-    referralCoverage === undefined ? undefined : referralCoverage.referrals > 0
+  // on components/vote-detail.tsx. The cheap boolean form: `.first()` on
+  // the period index, one document read at most — the count-form
+  // `getReferralCoverage` is kept for operators (dashboard-side breakdown),
+  // but the UI needs only whether the period holds anything at all, so
+  // paying for a `.collect()` here would be a whole period's read for a
+  // single bit. Per-row fetches would multiply into `results.length`
+  // reads of the same answer.
+  const hasAnyReferrals = useQuery(api.committeeReferrals.hasAnyReferralsForPeriod, {
+    wahlperiode,
+  })
 
   const searching = urlQuery !== ""
   const pageSize = searching ? SEARCHED_PAGE_SIZE : PAGE_SIZE

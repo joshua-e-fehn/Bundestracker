@@ -89,17 +89,16 @@ export function VoteDetail({
   // subscription for the whole ballot page, passed to `PeriodProvider` below.
   const periods = useQuery(api.mps.listPeriods, {})
   // Coverage for the ballot's Wahlperiode — read once at page level and
-  // threaded into the disclosure so a per-row coverage fetch is avoided (there
-  // is only one row on this page, but the shape stays symmetric with the list
-  // and, more importantly, an empty answer from `getExplanationsByMotion` can
-  // be interpreted honestly: "not backfilled" vs "none filed" is the
-  // distinction convex/voteExplanations.ts's coverage query exists for. Also
-  // see components/source-coverage-note.tsx for the pattern.
-  const explanationCoverage = useQuery(api.voteExplanations.getExplanationCoverage, {
+  // threaded into the disclosure. The UI needs only a boolean ("does this
+  // deployment hold any §31 declaration for this period"), so this reads
+  // the cheap `hasAnyExplanationsForPeriod` — one document at most — rather
+  // than the count-form `getExplanationCoverage`, which `.collect()`s the
+  // whole period to build a total no reader sees. That distinction is what
+  // stops the read cost of the page growing with a period's size. See the
+  // header on `convex/voteExplanations.ts:hasAnyExplanationsForPeriod`.
+  const hasAnyExplanations = useQuery(api.voteExplanations.hasAnyExplanationsForPeriod, {
     wahlperiode: sheet.wahlperiode,
   })
-  const hasAnyExplanations =
-    explanationCoverage === undefined ? undefined : explanationCoverage.explanations > 0
 
   // Through the locale formatter rather than printed raw: every other date on
   // this page is, and an ISO string beside "18. März 2025" reads as a machine

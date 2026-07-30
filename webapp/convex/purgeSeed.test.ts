@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isSyntheticId, isSyntheticVoteSheet } from "./purgeSeed"
+import { isSyntheticId, isSyntheticVorgangId, isSyntheticVoteSheet } from "./purgeSeed"
 
 /**
  * The id rule that decides what gets deleted from production.
@@ -133,5 +133,133 @@ describe("isSyntheticVoteSheet", () => {
     // row shape nobody has described — the same conservatism `isSyntheticId`
     // applies to an unprefixed id.
     expect(isSyntheticVoteSheet(sheet(12, ""))).toBe(false)
+  })
+
+  /**
+   * ## seedDev's ballots escape the electorate check, and the branch's added
+   *    invariant fails silently until this passes.
+   *
+   * `FRAKTIONEN` in `convex/seedDev.ts` sums to `40+28+24+18+13+2 = 125`
+   * seats. `seedDev` writes six `voteSheets` with `totalEligible: roster.length`
+   * (125) and `sourceUrl: null`; the original rule needed `< 100 AND
+   * sourceUrl === null` and quietly reported those six as *not synthetic*, so
+   * `deleteSyntheticVoteSheets` skipped them and `seedDataPresent`
+   * reported `voteSheets: 0` while `Namentliche Abstimmung 1..6 (Testdaten)`
+   * stayed in the corpus. The branch's added
+   * `deleteSyntheticMotionsAndReferrals` docstring says "after purgeSeedData
+   * reports done, nothing a seeder wrote is left in any table" — the
+   * invariant contradicted by exactly this L1 defect.
+   *
+   * The tests below pin the exact `seedDev` shape (125 seats, `(Testdaten)`
+   * title, `seed-vorgang-N` id, `sourceUrl: null`) so a future roster edit
+   * or title reshape does not silently reintroduce the omission.
+   */
+  describe("catches seedDev's sheets — the L1 finding", () => {
+    /** A sheet as `seedDev` writes it (odd-numbered = linked, even = null-Vorgang). */
+    const seedDevSheet = (sitting: number, withVorgang: boolean) => ({
+      totalEligible: 125, // FRAKTIONEN sums to 40+28+24+18+13+2 — do not "fix" this
+      sourceUrl: null,
+      dipVorgangId: withVorgang ? `seed-vorgang-${sitting}` : null,
+      title: `Namentliche Abstimmung ${sitting} (Testdaten)`,
+    })
+
+    test("catches every one of seedDev's six ballots at their real roster size", () => {
+      for (let sitting = 1; sitting <= 6; sitting++) {
+        const withVorgang = sitting % 2 === 1
+        expect(
+          isSyntheticVoteSheet(seedDevSheet(sitting, withVorgang)),
+          `seedDev ballot ${sitting} (${withVorgang ? "linked" : "unlinked"})`,
+        ).toBe(true)
+      }
+    })
+
+    test("the seed-Vorgang marker alone is enough, regardless of electorate", () => {
+      // A future seed roster growing past 100 must not silently reintroduce
+      // the omission — the marker carries the claim on its own for the
+      // ballots that carry a Vorgang.
+      expect(
+        isSyntheticVoteSheet({
+          totalEligible: 630,
+          sourceUrl: null,
+          dipVorgangId: "seed-vorgang-42",
+          title: "some other title",
+        }),
+      ).toBe(true)
+    })
+
+    test("the (Testdaten) suffix is only synthetic under the source-url guard", () => {
+      // A real ballot titled `… (Testdaten)` (satirical Antrag, editorial
+      // gloss) that carries an XLSX is not synthetic. The suffix on its own
+      // is a title, not a marker; the guard is what makes it safe.
+      expect(
+        isSyntheticVoteSheet({
+          totalEligible: 630,
+          sourceUrl: "https://www.bundestag.de/resource/blob/x/data.xlsx",
+          title: "Etwas Groteskes (Testdaten)",
+        }),
+      ).toBe(false)
+    })
+  })
+
+  describe("does not clip a real ballot that carries a real Vorgang id", () => {
+    test("digit-string Vorgang ids never match the seed prefix range", () => {
+      // Real DIP Vorgang ids are digit strings ("333135", "217890", …).
+      // Digits sort at 0x30-0x39, well below `s` at 0x73 — no real id can
+      // fall in `[seed-, seed.)`. Asserted here so a future rename of the
+      // seed prefix that breaks this invariant fails loudly.
+      for (const realId of ["333135", "217890", "999999", "1", "12"]) {
+        expect(
+          isSyntheticVoteSheet({
+            totalEligible: 630,
+            sourceUrl: "https://www.bundestag.de/resource/blob/x/data.xlsx",
+            dipVorgangId: realId,
+            title: "Reales Gesetz zur Reform",
+          }),
+        ).toBe(false)
+      }
+    })
+  })
+})
+
+/**
+ * The `SEED_VORGANG_PREFIX` decides which motions and referrals get
+ * deleted from production, so it needs to catch both seeders — and only
+ * those — no matter what shape their ids take.
+ */
+describe("isSyntheticVorgangId", () => {
+  test("catches every prefix both seeders mint", () => {
+    // Enumerated against `seedDev.ts` (line 259: `seed-vorgang-${sitting}`,
+    // line 361: `seed-motion-N`) and `seed-local.ts` (the `seed-vorgang-*`
+    // spellings across the file after the L1 fix).
+    for (const id of [
+      "seed-vorgang-1",
+      "seed-vorgang-42",
+      "seed-vorgang-klimaschutz",
+      "seed-motion-1",
+      "seed-motion-3",
+    ]) {
+      expect(isSyntheticVorgangId({ dipVorgangId: id }), id).toBe(true)
+    }
+  })
+
+  test("leaves real DIP Vorgang ids and unrelated prefixes alone", () => {
+    for (const id of [
+      "333135", // measured real DIP id
+      "217890",
+      "vorgang-1", // the old seed-local prefix that leaked the L1 seed-local defect
+      "seedling", // any string not starting with `seed-` proper
+      "",
+    ]) {
+      expect(isSyntheticVorgangId({ dipVorgangId: id }), id).toBe(false)
+    }
+  })
+
+  test("leaves a null dipVorgangId alone (the schema-nullable case)", () => {
+    // A motion ingested by its Drucksache alone carries `dipVorgangId: null`
+    // by design (schema.ts). The predicate must not fire on it — the
+    // downstream `.gte("dipVorgangId", "seed-")` range naturally excludes
+    // nulls (Convex sorts null below every value), but the type-guard
+    // narrows to `dipVorgangId: string` which the traversal needs.
+    expect(isSyntheticVorgangId({ dipVorgangId: null })).toBe(false)
   })
 })

@@ -114,13 +114,55 @@ export const getReferralsByMotion = query({
 })
 
 /**
+ * Whether this deployment holds any committee referral for a period at all —
+ * the one-row form of `getReferralCoverage` below.
+ *
+ * The `/motions` disclosure needs a boolean, not a count: `hasAnyForPeriod`
+ * on each row decides between the "no referral for this motion" and the
+ * "not backfilled" empty messages, and nothing on the page renders a total.
+ * So this reads at most one row — `.first()` bounded by the period index —
+ * where the coverage query has to collect the whole period to build its
+ * per-committee counts. Cheaper per page load, and safe against a future
+ * period that grew past the ~few-hundred rows `getReferralCoverage`'s
+ * `.collect()` sits on today.
+ *
+ * `getReferralCoverage` stays for **operators** — the per-committee
+ * breakdown is a useful dashboard-side answer that the boolean cannot
+ * give. The UI does NOT call it any more.
+ *
+ * The read: a single indexed range on
+ * `by_wahlperiode_and_committeeName_and_date` scoped to the period,
+ * `.first()` returning the first row it finds and no more. Convex charges
+ * by documents read, so this costs one document in a populated period and
+ * zero in an empty one.
+ */
+export const hasAnyReferralsForPeriod = query({
+  args: { wahlperiode: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const first = await ctx.db
+      .query("committeeReferrals")
+      .withIndex("by_wahlperiode_and_committeeName_and_date", (q) =>
+        q.eq("wahlperiode", args.wahlperiode),
+      )
+      .first()
+    return first !== null
+  },
+})
+
+/**
  * What referral data a deployment holds for a period, per committee.
  *
- * The query the coverage question needs: an empty answer here means *this
- * period has not been backfilled*, which is a different statement from
- * `getCommittees` returning empty — that one means *nothing was ever
- * published* (§6.4). Keeping them as separate queries on separate tables is
- * what lets the UI say which.
+ * Kept for **operator** callers — a dashboard-side "how many referrals in
+ * this period, how many lead, which committees" answer that
+ * `hasAnyReferralsForPeriod` above cannot give. The UI does NOT use this:
+ * every disclosure page-level read now goes through the boolean, so the
+ * read cost of a `/motions` load does not grow with the size of a period.
+ *
+ * An empty answer here means *this period has not been backfilled*, which
+ * is a different statement from `getCommittees` returning empty — that
+ * one means *nothing was ever published* (§6.4). Keeping them as separate
+ * queries on separate tables is what lets the UI say which.
  *
  * `.collect()` over one period: WP21 holds a few hundred referrals against a
  * ~23 800-position corpus of which under 5 % refer anything, an order of

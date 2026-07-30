@@ -437,22 +437,47 @@ async function deleteSyntheticVoteSheets(
 }
 
 /**
- * The Vorgang-id prefix seedDev mints for the synthetic motions and
- * referrals — a real DIP id is a bare integer, so this cannot collide.
+ * The Vorgang-id prefix seedDev and seed-local mint for the synthetic motions
+ * and referrals — a real DIP id is a bare integer (measured, e.g. `"333135"`),
+ * so this cannot collide.
+ *
  * Kept separate from `isSyntheticVoteSheet` because these tables carry no
  * electorate and no XLSX URL; the prefix is the only honest marker.
+ *
+ * The prefix is **the whole reason** the traversal is bounded: `SEED_RANGE_START`
+ * and `SEED_RANGE_END` below name the contiguous index slice `[seed-, seed.)`
+ * that contains every seeded row and nothing else. Without those bounds the
+ * traversal `.collect()`s the whole `motions` table — 37 726 rows for one WP19
+ * period, well past Convex's 16 384-doc per-query cap — so `purgeSeedData`
+ * throws exactly on the production data set the module was rewritten to
+ * recover.
  */
 const SEED_VORGANG_PREFIX = "seed-"
+
+/**
+ * The exclusive upper bound of the seeded slice on `by_dipVorgangId`.
+ *
+ * String comparison is lexicographic byte-order, so the range
+ * `[seed-, seed.)` selects exactly the ids beginning with `seed-`:
+ * `-` is 0x2D and `.` is 0x2E, so `seed-<anything>` sorts strictly below
+ * `seed.` (a two-character prefix compare — `seed-` vs `seed.` — decides
+ * it at the fifth byte). Real DIP Vorgang ids are digit strings, which
+ * sort at 0x30-0x39 — well above the `s` (0x73) that opens the seed
+ * range — so this bound cannot clip a real motion. Verified by
+ * `purgeSeed.test.ts`.
+ */
+const SEED_RANGE_END = "seed."
 
 /** Written as a user-defined type guard so callers filtering on it get back
  * `dipVorgangId: string` — the null branch is provably unreachable
  * downstream, and the traversal below reads it directly rather than
  * re-narrowing per row (which read as handling a case that cannot
- * happen). */
-function isSyntheticVorgangId<T extends { dipVorgangId: string | null }>(
+ * happen). Kept as a belt over the range's braces: a row that reached
+ * memory outside the range would still be rejected here. */
+export function isSyntheticVorgangId<T extends { dipVorgangId: string | null }>(
   row: T,
 ): row is T & { dipVorgangId: string } {
-  return row.dipVorgangId !== null && row.dipVorgangId.startsWith(SEED_VORGANG_PREFIX)
+  return row.dipVorgangId?.startsWith(SEED_VORGANG_PREFIX) ?? false
 }
 
 /**
@@ -470,11 +495,22 @@ async function deleteSyntheticMotionsAndReferrals(
   budget: { remaining: number },
   counts: Counts,
 ): Promise<void> {
-  // Referrals: keyed on Vorgang id, so a range read per seeded motion
-  // reaches exactly its rows without a table scan. `isSyntheticVorgangId`
-  // is a type guard, so `motion.dipVorgangId` is narrowed to `string`
-  // inside the loop — no redundant null re-check needed.
-  const motions = await ctx.db.query("motions").withIndex("by_dipVorgangId").collect()
+  // Bounded to the contiguous seed slice on the index — a full-table
+  // `.collect()` here would read every motion in the deployment, which for
+  // production means throwing on Convex's 16 384-doc per-query cap the very
+  // first time this runs (WP19 alone carries 37 726 motions —
+  // motion-list.tsx:40). `[seed-, seed.)` selects exactly the seeded rows;
+  // real DIP ids are digit strings and sort well below `seed`. See the note
+  // on SEED_RANGE_END for the byte-order argument that stops this ever
+  // clipping a real Vorgang. `isSyntheticVorgangId` is a belt-and-braces
+  // filter that also narrows the type — a row that ever reached memory
+  // outside the range would still be rejected.
+  const motions = await ctx.db
+    .query("motions")
+    .withIndex("by_dipVorgangId", (q) =>
+      q.gte("dipVorgangId", SEED_VORGANG_PREFIX).lt("dipVorgangId", SEED_RANGE_END),
+    )
+    .collect()
   const seedMotions = motions.filter(isSyntheticVorgangId)
   for (const motion of seedMotions) {
     if (budget.remaining <= 0) break
@@ -500,7 +536,17 @@ async function deleteSyntheticMotionsAndReferrals(
 async function seedMotionsRemaining(
   ctx: QueryCtx,
 ): Promise<{ motions: number; referrals: number }> {
-  const motions = await ctx.db.query("motions").withIndex("by_dipVorgangId").collect()
+  // Same bounded slice as `deleteSyntheticMotionsAndReferrals` — this query
+  // runs from `seedDataPresent`, which operators call *against production*
+  // after a re-run of the seed-in-prod incident to check the deployment is
+  // clean. An unbounded `.collect()` here would throw on the very corpus
+  // this check exists to inspect.
+  const motions = await ctx.db
+    .query("motions")
+    .withIndex("by_dipVorgangId", (q) =>
+      q.gte("dipVorgangId", SEED_VORGANG_PREFIX).lt("dipVorgangId", SEED_RANGE_END),
+    )
+    .collect()
   const seedMotions = motions.filter(isSyntheticVorgangId)
   let referrals = 0
   for (const motion of seedMotions) {
@@ -663,6 +709,15 @@ export const seedDataPresent = internalQuery({
 const MIN_REAL_ELECTORATE = 100
 
 /**
+ * The title suffix `seedDev` stamps on every ballot it writes
+ * (`convex/seedDev.ts:270`). Deliberately explicit rather than deriving
+ * something like "any title with brackets" — a real ballot title is free
+ * text, so anything narrower than a literal suffix under a source-url
+ * guard could clip a real division.
+ */
+const SEED_TESTDATEN_SUFFIX = "(Testdaten)"
+
+/**
  * Whether a ballot was invented by a seeder rather than held by the Bundestag.
  *
  * ## Why sheets need their own predicate at all
@@ -680,37 +735,65 @@ const MIN_REAL_ELECTORATE = 100
  * fabricated division on a public site, its twelve votes purged, publishing a
  * 6/3/1 tally that nobody cast above an empty table.
  *
- * ## What identifies one, and why it is not the natural key
+ * ## What identifies one — three markers, each safe alone
  *
- * **Both** an electorate below `MIN_REAL_ELECTORATE` and a null `sourceUrl`.
- * Across the 254 ballots in production every real sheet carries the chamber
- * *and* its bundestag.de XLSX, and the seed row is the only one failing either.
+ * A sheet is synthetic if **any** of the following holds:
  *
- * Two conditions rather than one because each alone has a real counterexample.
- * A low electorate is not by itself synthetic: `totalEligible` is the number of
- * rows on the sheet (`total_eligible` in pipeline models/votes.py), and a ballot
- * reconstructed from the protocol XML lists only the MPs who cast a vote (§4.2)
- * — the same case where `sourceUrl` is null and `absentCount` cannot be trusted,
- * per the schema note. A null `sourceUrl` is not by itself synthetic either, for
- * exactly that reason. Only the conjunction — a chamber of a dozen *and* no
- * published sheet — describes something no Bundestag division can be. A
- * historical backfill (WP19–WP14) is precisely the traffic that lands XML-route
- * sheets, so the narrower rule is not hypothetical.
+ * 1. **`dipVorgangId` starts with `seed-`.** Real DIP procedure ids are
+ *    digit strings; the `seed-` prefix is minted only by `seedDev` and
+ *    `seed-local` (schema note on `voteSheets.dipVorgangId` records the
+ *    real shape). Safe alone: no real ballot can carry a Vorgang id in
+ *    the `seed-` range.
+ * 2. **Title ends with `(Testdaten)` AND `sourceUrl === null`.**
+ *    `seedDev` writes `Namentliche Abstimmung N (Testdaten)` on every
+ *    ballot; the source-url guard is what stops a real division ever
+ *    titled with a bracketed word (a satirical Antrag title, say) from
+ *    matching. Both halves are needed because the title is free text.
+ * 3. **`totalEligible < MIN_REAL_ELECTORATE` AND `sourceUrl === null`.**
+ *    The original rule that catches `seed-local`'s twelve-seat sheets
+ *    and the `(21, 91, 2)` incident row; kept for the case the seeder's
+ *    roster stays small and neither of the two markers above lands.
+ *    Both halves are needed because a protocol-XML-reconstructed ballot
+ *    legitimately lists only the MPs who cast a vote (§4.2) and carries
+ *    `sourceUrl: null` — the historical backfill (WP19–WP14) is exactly
+ *    that traffic. Only the conjunction describes something no Bundestag
+ *    division can be.
  *
- * A hard-coded `(21, 91, 2)` would be the more obvious rule and is the wrong
- * one, for the reason that key is dangerous in the first place: the Bundestag
- * may yet hold a real sitting 91, vote 2, and `upsertVoteSheet` would patch this
- * row into a genuine ballot. A delete keyed on the triple would then destroy
- * real data, while one keyed on the row's own implausibility stops matching the
- * moment the row becomes real — the safe direction to fail.
+ * Three markers rather than one because `seedDev`'s 125-seat roster
+ * (`FRAKTIONEN` sums to 40+28+24+18+13+2 = 125) escaped the original
+ * electorate check — the guard was 100 and the roster was 125, so all
+ * six ballots looked real to the purge and `seedDataPresent` reported
+ * `voteSheets: 0` while the six `(Testdaten)` sheets stayed live. The
+ * L1 finding from the independent review made that concrete; markers 1
+ * and 2 close it without weakening marker 3 or lowering the guard
+ * (which would visibly reshape the seeded party mix).
  *
- * Exported and pure for the same reason `isSyntheticId` is: it is the predicate
- * an irreversible delete runs over every ballot in the corpus, and it can be
- * tested exhaustively without a database.
+ * A hard-coded `(21, 91, 2)` would be the more obvious rule and is the
+ * wrong one, for the reason that key is dangerous in the first place:
+ * the Bundestag may yet hold a real sitting 91, vote 2, and
+ * `upsertVoteSheet` would patch this row into a genuine ballot. A delete
+ * keyed on the triple would then destroy real data, while one keyed on
+ * the row's own implausibility stops matching the moment the row becomes
+ * real — the safe direction to fail.
+ *
+ * Exported and pure for the same reason `isSyntheticId` is: it is the
+ * predicate an irreversible delete runs over every ballot in the corpus,
+ * and it can be tested exhaustively without a database.
  */
 export function isSyntheticVoteSheet(sheet: {
   totalEligible: number
   sourceUrl: string | null
+  dipVorgangId?: string | null
+  title?: string
 }): boolean {
+  // Order the checks cheapest-first: the two prefix/suffix tests are
+  // short-circuiting string operations, the electorate compare is a
+  // single integer read.
+  if (sheet.dipVorgangId?.startsWith(SEED_VORGANG_PREFIX) === true) {
+    return true
+  }
+  if (sheet.sourceUrl === null && sheet.title?.endsWith(SEED_TESTDATEN_SUFFIX) === true) {
+    return true
+  }
   return sheet.totalEligible < MIN_REAL_ELECTORATE && sheet.sourceUrl === null
 }

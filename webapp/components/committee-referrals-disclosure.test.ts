@@ -35,12 +35,20 @@ describe("the disclosure never fetches while collapsed", () => {
 })
 
 describe("coverage is read once at the page level, threaded down", () => {
-  test("the disclosure never fetches getReferralCoverage — the page does", () => {
+  test("the disclosure never fetches coverage — the page does, through the cheap boolean", () => {
     // A per-row coverage fetch would run the same period-wide read once per
     // motion. Reading it in the caller and passing `hasAnyForPeriod` down
     // is the same shape components/vote-detail.tsx uses for §31.
+    //
+    // Two family names are excluded here, not one. `hasAnyReferralsForPeriod`
+    // is the cheap boolean the UI uses. `getReferralCoverage` is the count
+    // form kept for operators — a caller reintroducing *either* here would
+    // be a regression, and the caller must stay on the boolean rather than
+    // reverting to the count form whose `.collect()` grows with the period.
+    expect(disclosure).not.toMatch(/api\.committeeReferrals\.hasAnyReferralsForPeriod/)
     expect(disclosure).not.toMatch(/api\.committeeReferrals\.getReferralCoverage/)
-    expect(motionList).toMatch(/api\.committeeReferrals\.getReferralCoverage/)
+    expect(motionList).toMatch(/api\.committeeReferrals\.hasAnyReferralsForPeriod/)
+    expect(motionList).not.toMatch(/api\.committeeReferrals\.getReferralCoverage/)
   })
 
   test("the empty state branches on hasAnyForPeriod", () => {
