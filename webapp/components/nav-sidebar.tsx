@@ -15,6 +15,7 @@ import {
   type NavItem,
   navCurrent,
 } from "@/lib/navigation"
+import { SIDEBAR_EXPANDED_WIDTH_CLASS, SIDEBAR_RAIL_WIDTH_CLASS } from "@/lib/sidebar-metrics"
 import { cn } from "@/lib/utils"
 
 /**
@@ -110,7 +111,12 @@ export function NavSidebar() {
         // transition rather than the collapse — a reader who asked for less
         // motion still gets both states, they just arrive instantly.
         "transition-[width] duration-200 ease-out motion-reduce:transition-none",
-        expanded ? "w-64" : "w-14",
+        // From lib/sidebar-metrics.ts rather than spelled here. The collapsed
+        // width in particular is no longer this component's own business: the
+        // header draws its toggle cell at exactly that width so the two right
+        // borders form one line, and a number that two files must agree on
+        // belongs in neither of them.
+        expanded ? SIDEBAR_EXPANDED_WIDTH_CLASS : SIDEBAR_RAIL_WIDTH_CLASS,
       )}
     >
       {/* `aria-label` rather than a heading: this is a landmark, and a page with
