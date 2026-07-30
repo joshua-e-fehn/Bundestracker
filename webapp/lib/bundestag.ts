@@ -177,6 +177,64 @@ export function protocolPdfUrl(wahlperiode: number, sitzungnr: number): string {
   return `${DOCUMENT_SERVER}/btp/${wahlperiode}/${wahlperiode}${String(sitzungnr).padStart(3, "0")}.pdf`
 }
 
+/**
+ * Render-time scheme allowlist for a URL that came from *storage*, not from
+ * the source-file constant above.
+ *
+ * ## The one URL this is actually for
+ *
+ * `voteExplanations.sourceUrl` is a DIP `pdf_url` pass-through — the pipeline
+ * cleans whitespace and asserts every stored value starts with
+ * `https://dserver.bundestag.de/` (see pipeline/src/bundestrack/pipeline/
+ * transform.py + test_pipeline_sync.py). That test lives on the *ingest* side.
+ * The rendering side has no equivalent, so a `javascript:` or `data:` URL
+ * making it into the column — a DIP regression, a bad backfill, a rogue write
+ * from another agent — would render as a working `<a href>` and React would
+ * only warn (React does not strip these). This is the rendering-side guard
+ * for that class of bug: `safeExternalUrl` returns the URL only when its
+ * scheme is `http:` or `https:`, and `null` otherwise so the caller renders
+ * no link at all rather than a dangerous one.
+ *
+ * ## Fragment preservation is load-bearing
+ *
+ * The `#P.11246` on a §31 declaration URL anchors the reader to the exact
+ * page in the plenary protocol where the declaration is printed. That is the
+ * *whole* value of the deep link — a plain protocol URL (`protocolPdfUrl`)
+ * already exists elsewhere. So this helper cannot use a scheme check that
+ * silently truncates the fragment; it round-trips through `new URL(...)` and
+ * returns the un-normalised original string when the scheme is allowed. The
+ * behavioural tests pin this: `#fragment` must survive.
+ *
+ * ## Deliberately narrow
+ *
+ * `mailto:`, `tel:`, `ftp:` etc. are rejected — not because they are
+ * dangerous, but because *this* helper is for one shape of link (external
+ * document viewer). A caller with a different need should pass its own
+ * allowlist rather than widening this one. Same argument as `drucksachePdfUrl`
+ * refusing to guess: a fallback that widens over time is a fallback that
+ * eventually lets through the thing it was written to reject.
+ *
+ * Callers must still emit `rel="noopener noreferrer"` and `target="_blank"`
+ * around the returned href; those are cross-cutting `<a>` attributes,
+ * unrelated to whether the URL scheme is safe. See F-01/F-02 of the review
+ * for why `noreferrer` alone was not enough.
+ */
+export function safeExternalUrl(url: string | null | undefined): string | null {
+  if (typeof url !== "string") return null
+  const trimmed = url.trim()
+  if (trimmed.length === 0) return null
+  // `URL.canParse` short-circuits without throwing for anything that is not a
+  // resolvable URL — an empty string, whitespace, bare fragment, garbage.
+  if (!URL.canParse(trimmed)) return null
+  const parsed = new URL(trimmed)
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null
+  // Return the *trimmed original*, not `parsed.toString()`: URL parsing
+  // percent-encodes and normalises path segments (e.g. `#P.11246` survives
+  // both ways, but `?query=%C3%A4` becomes `?query=ä` in some browsers). The
+  // scheme check is what this function is for; the string round-trip is not.
+  return trimmed
+}
+
 // --- Fraktion identity ----------------------------------------------------
 
 /**

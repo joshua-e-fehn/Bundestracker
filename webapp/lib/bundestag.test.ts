@@ -7,6 +7,7 @@ import {
   occupationFields,
   occupationOf,
   protocolPdfUrl,
+  safeExternalUrl,
   stateOf,
 } from "./bundestag"
 import { partyColor, partyFor } from "./parties"
@@ -357,5 +358,109 @@ describe("stateOf", () => {
     // caller is reading the wrong column.
     expect(stateOf("Ludwigsburg (BW)")).toBe("Ludwigsburg (BW)")
     expect(stateOf("Brand (Fulda)")).toBe("Brand (Fulda)")
+  })
+})
+
+/**
+ * `safeExternalUrl` is the render-time scheme guard for stored URLs (see the
+ * header of the helper). Each test names a specific way a URL from storage
+ * could be dangerous or wrong, and asserts the helper drops it — or, for the
+ * one case that matters most, preserves it.
+ */
+describe("safeExternalUrl", () => {
+  test("passes an https URL through unchanged", () => {
+    // The common case, and the shape every DIP `pdf_url` has today. The
+    // helper is not a URL normaliser; it is a scheme allowlist.
+    expect(safeExternalUrl("https://dserver.bundestag.de/btp/21/21090.pdf")).toBe(
+      "https://dserver.bundestag.de/btp/21/21090.pdf",
+    )
+  })
+
+  test("preserves the fragment identifier — the whole point of the §31 URL", () => {
+    // `#P.11246` anchors a reader to the page in the plenary protocol where
+    // the declaration is printed. If this helper stripped it, the deep link
+    // would degrade to a whole-document link — which `protocolPdfUrl` already
+    // provides. Fragment preservation is what makes storing `sourceUrl`
+    // separately from `(wp, sitzungnr)` worth doing. See the helper header.
+    const withFragment = "https://dserver.bundestag.de/btp/21/21090.pdf#P.11246"
+    expect(safeExternalUrl(withFragment)).toBe(withFragment)
+  })
+
+  test("allows http as well as https", () => {
+    // Not all DIP endpoints are https in every environment; the helper
+    // enforces "browsable URL", not "TLS URL". A caller that wants TLS can
+    // check separately.
+    expect(safeExternalUrl("http://example.com/paper.pdf")).toBe("http://example.com/paper.pdf")
+  })
+
+  test("rejects javascript: URLs — the XSS shape this helper exists to block", () => {
+    // The DIP pipeline check (test_pipeline_sync.py:1374) asserts stored
+    // URLs start with `https://dserver.bundestag.de/`, but that runs on
+    // *ingest*. A regression on that side, a bad backfill, or a rogue write
+    // could land a `javascript:` URL in the column, and React does not strip
+    // it — `<a href="javascript:...">` renders as a working link. Returning
+    // null here is what makes the render side refuse to emit the anchor.
+    expect(safeExternalUrl("javascript:alert(1)")).toBeNull()
+    expect(safeExternalUrl("JAVASCRIPT:alert(1)")).toBeNull()
+    // Mixed case with whitespace — the pipeline trims whitespace but a
+    // regression on the trim step should not defeat the render guard.
+    expect(safeExternalUrl("  javascript:alert(1)  ")).toBeNull()
+  })
+
+  test("rejects data: URLs — the exfiltration/payload shape", () => {
+    // `data:text/html,<script>...</script>` is the same category of failure
+    // as `javascript:`, in a browser attribute context.
+    expect(safeExternalUrl("data:text/html,<script>alert(1)</script>")).toBeNull()
+    expect(safeExternalUrl("data:image/svg+xml;base64,PHN2Zy8+")).toBeNull()
+  })
+
+  test("rejects other schemes (mailto, tel, ftp, file, chrome)", () => {
+    // These are not necessarily dangerous, but they are not what this helper
+    // is for — external-document viewing over http(s). A caller with a
+    // mailto or tel need should build its own attribute. See the "narrow"
+    // section of the helper's header.
+    expect(safeExternalUrl("mailto:someone@example.com")).toBeNull()
+    expect(safeExternalUrl("tel:+491234567")).toBeNull()
+    expect(safeExternalUrl("ftp://ftp.example.com/paper.pdf")).toBeNull()
+    expect(safeExternalUrl("file:///etc/passwd")).toBeNull()
+    expect(safeExternalUrl("chrome://settings")).toBeNull()
+  })
+
+  test("rejects null, undefined, empty and whitespace-only strings", () => {
+    // The stored column is `v.union(v.null(), v.string())` — null is a
+    // legitimate absence, not a bug. Empty and whitespace-only are the two
+    // near-null values that would render `<a href="">` and `<a href=" ">`
+    // — both broken links pointing at the current page. Returning null
+    // keeps the caller's `if (href)` guard honest.
+    expect(safeExternalUrl(null)).toBeNull()
+    expect(safeExternalUrl(undefined)).toBeNull()
+    expect(safeExternalUrl("")).toBeNull()
+    expect(safeExternalUrl("   ")).toBeNull()
+  })
+
+  test("rejects malformed URLs — anything URL cannot parse", () => {
+    // Missing scheme, missing host, garbage text. `URL.canParse` short-circuits
+    // without throwing, which is what lets this be a pure predicate.
+    expect(safeExternalUrl("not a url")).toBeNull()
+    expect(safeExternalUrl("//host/path")).toBeNull()
+    expect(safeExternalUrl("bundestag.de/paper.pdf")).toBeNull()
+    expect(safeExternalUrl("#anchor-only")).toBeNull()
+  })
+
+  test("does not strip a query string", () => {
+    // A query on a DIP URL is unusual but a caller may legitimately pass
+    // one. The helper is a scheme check, nothing else.
+    expect(safeExternalUrl("https://example.com/paper.pdf?page=5")).toBe(
+      "https://example.com/paper.pdf?page=5",
+    )
+  })
+
+  test("trims surrounding whitespace before parsing", () => {
+    // Storage cannot round-trip a value with leading spaces, but a caller
+    // might. Trim once so the helper does not reject a URL that would work
+    // if the caller had trimmed itself.
+    expect(safeExternalUrl("  https://example.com/paper.pdf  ")).toBe(
+      "https://example.com/paper.pdf",
+    )
   })
 })

@@ -222,30 +222,112 @@ export const getSpeechesByMP = query({
   },
 })
 
+/**
+ * A hard ceiling on how many speech segments one sitting may contain.
+ *
+ * ## Where the number comes from, and why it fails loud
+ *
+ * Measured in `docs/api-research.md §5.2` against real protocols:
+ * - WP21 21/90 → 197 raw segments, 108 unique speakers, 125 `(rede, redner)` units
+ * - WP20 20/177 → 247 raw segments, 96 unique speakers
+ *
+ * Peak in evidence is 247; a generous 2× safety margin sits at ~500 and a 4×
+ * margin at 1000. `getSpeechesBySitting` previously did `.collect()` with no
+ * ceiling, which passes today (`247 * 1 mpLabel-lookup ≈ 250 documents`, well
+ * under Convex's 16k transaction cap) but has no *guarantee* under a
+ * pathologically long sitting.
+ *
+ * This constant is the guarantee. `.take(MAX + 1)` is an explicit ceiling; a
+ * result of exactly `MAX + 1` rows means "there are at least MAX+1 speeches
+ * in this sitting", and we throw rather than silently truncate — because a
+ * page rendered from a truncated set of speeches would break the "in
+ * document order" contract without any signal that it had (the page has no
+ * count column to compare against). A soft cap that silently drops the tail
+ * would corrupt the promise of `speechIndex`-ordered reading.
+ *
+ * The 4× margin over evidence is what makes this an accident of a
+ * pathological sitting rather than a design constraint on normal ones —
+ * every WP19–21 sitting the corpus has ever held is comfortably under it.
+ * If the ceiling is ever hit, the error message names the (wp, sitzungnr)
+ * so the reader knows which sitting outgrew the cap.
+ */
+export const MAX_SPEECHES_PER_SITTING = 1000
+
+/**
+ * The `getSpeechesBySitting` handler body, extracted so read-cost tests can
+ * call it with a fake `ctx` without going through the query wrapper — same
+ * pattern as `voteSheetsMissingVorgangHandler` in convex/votes.ts.
+ */
+export async function getSpeechesBySittingHandler(
+  ctx: QueryCtx,
+  args: { wahlperiode: number; sitzungnr: number },
+): Promise<Array<{ speech: Doc<"speeches">; name: string; fraktion: string }>> {
+  // `.take(MAX + 1)` is the explicit ceiling — see `MAX_SPEECHES_PER_SITTING`.
+  // Taking one more than the cap is what lets us tell "exactly at the cap"
+  // from "over the cap"; the `.length > MAX` check below is the fail-loud.
+  const rows = await ctx.db
+    .query("speeches")
+    .withIndex("by_wahlperiode_and_sitzungnr_and_mpInternalId_and_speechIndex", (q) =>
+      q.eq("wahlperiode", args.wahlperiode).eq("sitzungnr", args.sitzungnr),
+    )
+    .take(MAX_SPEECHES_PER_SITTING + 1)
+
+  if (rows.length > MAX_SPEECHES_PER_SITTING) {
+    // Silent truncation would break the document-order contract without any
+    // signal that it had. Throwing surfaces the outgrown sitting in the
+    // error boundary rather than in a subtly-wrong page — see the header of
+    // `MAX_SPEECHES_PER_SITTING` for why the ceiling is set where it is.
+    throw new Error(
+      `Sitting WP${args.wahlperiode}/${args.sitzungnr} exceeded the ${MAX_SPEECHES_PER_SITTING}-segment cap ` +
+        `(measured peak: 247, WP20 20/177). Raise the cap after re-measuring, or paginate the sitting read.`,
+    )
+  }
+
+  // Batch the `mpLabel` join by unique MP id: a sitting where one speaker
+  // gives 5 segments collapses from 5 lookups to 1. Measured against
+  // 21/90 in `docs/api-research.md §5.2`: 197 rows across 108 unique
+  // speakers — a ~45% reduction in indexed reads on the sitting page's
+  // hottest join. Same pattern as `feed.ts` but keyed by dedup rather
+  // than by a full roster read: the sitting is at most a few hundred
+  // segments, and the roster is ~630 — walking the smaller set is the
+  // cheaper choice when we know its size.
+  const uniqueIds = new Set(rows.map((row) => row.mpInternalId))
+  const labels = new Map<string, Awaited<ReturnType<typeof mpLabel>>>()
+  for (const id of uniqueIds) {
+    labels.set(id, await mpLabel(ctx, id, args.wahlperiode))
+  }
+
+  const joined = rows.map((row) => {
+    // The label is guaranteed to exist for every id we just resolved —
+    // `labels.get(row.mpInternalId)` cannot be `undefined` here because we
+    // just walked `uniqueIds` which was built from these very rows. The
+    // `??` fallback is a belt-and-braces guard against a future change to
+    // this handler that broke the invariant, keeping the type honest.
+    const mp = labels.get(row.mpInternalId)
+    return {
+      speech: row,
+      name: mp?.name ?? row.mpInternalId,
+      fraktion: mp?.fraktion ?? "",
+    }
+  })
+  // Document order, which is what `speechIndex` is for — the index sorts by
+  // MP first, so the rows arrive grouped by speaker rather than as the
+  // sitting unfolded.
+  return joined.sort((a, b) => (a.speech.speechIndex ?? 0) - (b.speech.speechIndex ?? 0))
+}
+
 /** Every speech in one sitting, in document order — the sitting view. */
 export const getSpeechesBySitting = query({
   args: { wahlperiode: v.number(), sitzungnr: v.number() },
   returns: v.array(v.object({ speech: speechDoc, name: v.string(), fraktion: v.string() })),
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("speeches")
-      .withIndex("by_wahlperiode_and_sitzungnr_and_mpInternalId_and_speechIndex", (q) =>
-        q.eq("wahlperiode", args.wahlperiode).eq("sitzungnr", args.sitzungnr),
-      )
-      .collect()
-
-    const joined = []
-    for (const row of rows) {
-      const mp = await mpLabel(ctx, row.mpInternalId, args.wahlperiode)
-      joined.push({
-        speech: toSpeechDoc(row),
-        name: mp.name,
-        fraktion: mp.fraktion,
-      })
-    }
-    // Document order, which is what `speechIndex` is for — the index sorts by
-    // MP first, so the rows arrive grouped by speaker rather than as the
-    // sitting unfolded.
-    return joined.sort((a, b) => (a.speech.speechIndex ?? 0) - (b.speech.speechIndex ?? 0))
+    // The handler runs the bounded read; here we adapt each row through
+    // `toSpeechDoc` for the on-the-wire shape (system fields stripped).
+    const joined = await getSpeechesBySittingHandler(ctx, args)
+    return joined.map((entry) => ({
+      speech: toSpeechDoc(entry.speech),
+      name: entry.name,
+      fraktion: entry.fraktion,
+    }))
   },
 })

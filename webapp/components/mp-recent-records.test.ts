@@ -21,7 +21,10 @@ describe("the §31 declarations panel", () => {
     // A per-MP, per-period read — not a period-wide `getExplanationsByMotion`
     // that would sweep every declaration of the Bundestag and filter. The
     // profile page is one member; the query is designed for exactly that
-    // shape (25-row cap in convex/voteExplanations.ts).
+    // shape. Cap is Math.max(1, Math.min(100, floor(limit ?? 25))) —
+    // hard ceiling 100, default 25 — verified in convex/voteExplanations.ts.
+    // F-11 fix: this comment used to say "25-row cap", which is the
+    // *default*, not the ceiling.
     expect(records).toMatch(/api\.voteExplanations\.getExplanationsByMP/)
   })
 
@@ -82,8 +85,68 @@ describe("the panel never generates or paraphrases a reason", () => {
     // `sourceUrl` is the deep link into the protocol PDF, per the schema.
     // A `href={protocolPdfUrl(...)}` here would build a URL to the *sitting*
     // rather than to the declaration's page, which is a different — and
-    // worse — reference.
+    // worse — reference. `SourceLink` accepts the raw `row.sourceUrl` and
+    // routes it through `safeExternalUrl` internally (see the F-10 guard),
+    // so the panel row still names the stored value on the surface.
     expect(records).toMatch(/href=\{row\.sourceUrl\}/)
+  })
+
+  test("SourceLink routes the href through safeExternalUrl before rendering", () => {
+    // The F-01/F-10 render-time guard: a `javascript:` or `data:` URL that
+    // landed in `voteExplanations.sourceUrl` — a data-side regression — must
+    // not reach `<a href>`. `SourceLink` calls `safeExternalUrl(href)` and
+    // returns null when it returns null. The behavioural tests for the
+    // helper live in `lib/bundestag.test.ts`; this asserts the wiring.
+    expect(records).toMatch(/safeExternalUrl\(href\)/)
+  })
+
+  test("SourceLink emits rel='noopener noreferrer' (not just noreferrer)", () => {
+    // F-01: `noreferrer` alone leaks `window.opener` on stale WebView /
+    // ancient Chromium. Every other outbound link on the site pairs both;
+    // this was the last one that did not, and now does.
+    expect(records).toMatch(/rel="noopener noreferrer"/)
+    // Guard against a regression to the old form. `noopener noreferrer` may
+    // legitimately appear in a docstring — narrow the negation to actual
+    // JSX attributes on `<a>` in this file.
+    const badPattern = /<a\b[^>]*\brel="noreferrer"(?!\s*noopener)/
+    expect(records).not.toMatch(badPattern)
+  })
+})
+
+describe("panel headings sit inside the h1 hierarchy (F-05)", () => {
+  test("the shared Panel renders its title as an <h2>, not a bare <div>", () => {
+    // F-05: `CardTitle` used to be a `<div>`, so the MP profile's heading
+    // list had exactly one entry (the member's name) and a screen-reader
+    // reader could not jump between the five landmark panels. `Panel` in
+    // this file wraps all five, and `CardTitle as="h2"` is what lifts them
+    // into the heading hierarchy under the profile's `<h1>`.
+    expect(records).toMatch(/CardTitle as="h2">\{title\}<\/CardTitle>/)
+  })
+
+  test("no Panel CardTitle drops the `as` prop — regression guard", () => {
+    // If a future edit split `Panel` into a per-panel variant that lost
+    // `as="h2"`, the five panels would silently regress to `<div>`. The
+    // grep pins the shape: every CardTitle in this file must carry `as=`.
+    const allCardTitles = records.match(/<CardTitle\b[^>]*>/g) ?? []
+    expect(allCardTitles.length).toBeGreaterThan(0)
+    for (const opener of allCardTitles) {
+      expect(opener).toMatch(/\bas="h[2-6]"/)
+    }
+  })
+})
+
+describe("the CardTitle primitive accepts `as` — F-05 support", () => {
+  const card = stripComments(read("./ui/card.tsx"))
+
+  test("CardTitle accepts an `as` prop typed to h2-h6 or div", () => {
+    // The primitive is what makes the callers above work. Guarding the
+    // signature here rather than trusting typescript alone because a
+    // future refactor that widened `as` to `keyof JSX.IntrinsicElements`
+    // would trade the deliberate closed union for an accidental
+    // "anything goes"; and one that narrowed it below `h2` would silently
+    // undo the fix.
+    expect(card).toMatch(/type CardTitleAs = "h2" \| "h3" \| "h4" \| "h5" \| "h6" \| "div"/)
+    expect(card).toMatch(/as: As = "div"/)
   })
 })
 

@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { activityDates } from "./activities"
 import { boundsOf, recordingCtx } from "./lib/readRecorder.testing"
-import { speechDates } from "./speeches"
+import {
+  getSpeechesBySittingHandler,
+  MAX_SPEECHES_PER_SITTING,
+  speechDates,
+} from "./speeches"
+import {
+  getExplanationsByMotionHandler,
+  hasAnyExplanationsForPeriodHandler,
+} from "./voteExplanations"
 import { ballotDates, voteParticipation, voteTallyByMonth } from "./votes"
 
 /**
@@ -319,6 +327,296 @@ describe("the whole scoring gather, as the sweep performs it", () => {
       expect(read.index).toBeTruthy()
       expect(read.eq.length).toBeGreaterThan(0)
     }
+  })
+})
+
+/**
+ * Read-cost guards for the personal / sitting-context feature.
+ *
+ * ## What these pin, and why
+ *
+ * The independent review (F-03, F-04) flagged that `readCost.test.ts` covered
+ * the scoring inputs but none of the queries the report leaned on for its
+ * "trivially bounded" claim. That is the exact class of bug the sweep test
+ * fixture exists to catch — a query whose *answer* is right and whose *cost*
+ * degrades silently under a later edit.
+ *
+ * Each test below asserts:
+ *  - **the index bounds** so a future edit cannot drop a column and
+ *    accidentally read the whole period (the `wahlperiode` regression that
+ *    took the sweep down),
+ *  - **the number of index reads** so a `for (const row of rows) { await ... }`
+ *    N+1 that batching removed cannot silently reappear, and
+ *  - **`cost.gets` = 0** so no per-row `db.get` slips in — Convex charges
+ *    each `get` separately.
+ *
+ * ## Fixture MPs are cross-period on purpose (§7.3)
+ *
+ * Same reason as the scoring fixture above: an `internalId` is stable across
+ * periods by construction, so a single-period fixture would let a query that
+ * accidentally read the whole career pass. The MP fixture below has a WP20
+ * mandate for every WP21 mandate.
+ */
+
+/** Two MPs on a WP21 roster, one also on WP20. `mpLabel` needs `internalId`,
+ * `wahlperiode`, `name` and `fraktion` — the rest of the mandate shape is
+ * optional and omitted so the fixture stays readable. */
+function rosterFixture() {
+  return [
+    { _id: "mp-1-21", internalId: "bt-0001", wahlperiode: WP21, name: "Ada Lovelace", fraktion: "SPD" },
+    { _id: "mp-2-21", internalId: "bt-0002", wahlperiode: WP21, name: "Grace Hopper", fraktion: "GRÜNE" },
+    { _id: "mp-1-20", internalId: "bt-0001", wahlperiode: WP20, name: "Ada Lovelace", fraktion: "SPD" },
+  ]
+}
+
+describe("getSpeechesBySitting: bounded reads, batched labels, no silent truncation", () => {
+  const WP_SITZUNG = { wahlperiode: WP21, sitzungnr: 90 }
+
+  /** Six segments across three distinct speakers — the shape that catches the
+   * per-row N+1: unbatched would be 6 label lookups, batched is 3. */
+  function threeSpeakerFixture() {
+    return {
+      speeches: [
+        { _id: "sp-1", wahlperiode: WP21, sitzungnr: 90, mpInternalId: "bt-0001", speechIndex: 1 },
+        { _id: "sp-2", wahlperiode: WP21, sitzungnr: 90, mpInternalId: "bt-0002", speechIndex: 2 },
+        { _id: "sp-3", wahlperiode: WP21, sitzungnr: 90, mpInternalId: "bt-0001", speechIndex: 3 },
+        { _id: "sp-4", wahlperiode: WP21, sitzungnr: 90, mpInternalId: "bt-0002", speechIndex: 4 },
+        { _id: "sp-5", wahlperiode: WP21, sitzungnr: 90, mpInternalId: "bt-0001", speechIndex: 5 },
+        { _id: "sp-6", wahlperiode: WP21, sitzungnr: 90, mpInternalId: "bt-0002", speechIndex: 6 },
+      ],
+      mps: rosterFixture(),
+    }
+  }
+
+  test("the index bounds are exactly (wahlperiode, sitzungnr)", async () => {
+    const { ctx, cost } = recordingCtx(threeSpeakerFixture())
+    await getSpeechesBySittingHandler(ctx, WP_SITZUNG)
+
+    const speechRead = cost.reads.find((r) => r.table === "speeches")
+    expect(speechRead).toBeTruthy()
+    expect(speechRead?.index).toBe(
+      "by_wahlperiode_and_sitzungnr_and_mpInternalId_and_speechIndex",
+    )
+    // Only the two-column prefix is bound — the sitting-wide range is exactly
+    // this index's leading pair. A future edit that dropped `sitzungnr` from
+    // the `.eq` chain would silently read the whole period. Fixing the
+    // regression requires the bound to stay here.
+    expect(boundsOf(speechRead as NonNullable<typeof speechRead>)).toEqual([
+      "wahlperiode",
+      "sitzungnr",
+    ])
+  })
+
+  test("the take ceiling is set (no unbounded .collect)", async () => {
+    const { ctx, cost } = recordingCtx(threeSpeakerFixture())
+    await getSpeechesBySittingHandler(ctx, WP_SITZUNG)
+
+    const speechRead = cost.reads.find((r) => r.table === "speeches")
+    // `.take(MAX_SPEECHES_PER_SITTING + 1)` — the "+1" is what lets the
+    // handler tell "exactly at the cap" from "over the cap". A regression to
+    // `.collect()` (`take === null`) would pass every existing correctness
+    // test today and fail the day a pathological sitting arrives.
+    expect(speechRead?.take).toBe(MAX_SPEECHES_PER_SITTING + 1)
+  })
+
+  test("mpLabel is called once per unique MP, not once per row (F-04 fix)", async () => {
+    const { ctx, cost } = recordingCtx(threeSpeakerFixture())
+    await getSpeechesBySittingHandler(ctx, WP_SITZUNG)
+
+    // 1 speech read + 2 mpLabel reads (one per unique MP), not 1 + 6.
+    // `findMandate` uses `.unique()` on `by_internalId_and_wahlperiode` and
+    // may fall back to `by_dipPersonId_and_wahlperiode` on a miss — both
+    // fixture ids resolve on the first index, so 2 label lookups.
+    const mpReads = cost.reads.filter((r) => r.table === "mps")
+    expect(mpReads).toHaveLength(2)
+    for (const read of mpReads) {
+      expect(read.index).toBe("by_internalId_and_wahlperiode")
+      expect(boundsOf(read)).toEqual(["internalId", "wahlperiode"])
+    }
+  })
+
+  test("no document is fetched by id — mpLabel goes through the index, not db.get", async () => {
+    const { ctx, cost } = recordingCtx(threeSpeakerFixture())
+    await getSpeechesBySittingHandler(ctx, WP_SITZUNG)
+
+    // Convex charges every `db.get` separately (there is no per-transaction
+    // document cache) — the class of regression this counter guards against
+    // is the same one that took the deployment's spend past its limit in
+    // 2026-07-27.
+    expect(cost.gets).toBe(0)
+  })
+
+  test("labels for a Stammdaten miss fall back to the internalId (§7.3)", async () => {
+    // The stammdaten lag: a speech references an MP whose mandate row has
+    // not landed yet. `mpLabel` returns `{name: mpInternalId, fraktion: ""}`;
+    // the batched handler must preserve that fallback, not drop the row.
+    const fixture = threeSpeakerFixture()
+    fixture.speeches.push({
+      _id: "sp-7",
+      wahlperiode: WP21,
+      sitzungnr: 90,
+      mpInternalId: "bt-9999-unknown",
+      speechIndex: 7,
+    })
+    const { ctx } = recordingCtx(fixture)
+    const result = await getSpeechesBySittingHandler(ctx, WP_SITZUNG)
+
+    const unknown = result.find((r) => r.speech.mpInternalId === "bt-9999-unknown")
+    expect(unknown?.name).toBe("bt-9999-unknown")
+    expect(unknown?.fraktion).toBe("")
+  })
+
+  test("the cap failure is loud — a pathological sitting throws, not truncates", async () => {
+    // Fixture just above the cap. A silent truncation would return
+    // MAX_SPEECHES_PER_SITTING rows in document order and the reader would
+    // see a subtly-shortened sitting with no signal. The throw is what
+    // surfaces the outgrown sitting to the error boundary instead.
+    const cap = MAX_SPEECHES_PER_SITTING
+    const overflow = Array.from({ length: cap + 5 }, (_, i) => ({
+      _id: `sp-${i}`,
+      wahlperiode: WP21,
+      sitzungnr: 90,
+      mpInternalId: "bt-0001",
+      speechIndex: i,
+    }))
+    const { ctx } = recordingCtx({ speeches: overflow, mps: rosterFixture() })
+    await expect(getSpeechesBySittingHandler(ctx, WP_SITZUNG)).rejects.toThrow(
+      /exceeded the .*-segment cap/,
+    )
+  })
+})
+
+describe("hasAnyExplanationsForPeriod: one document at most, on the period index", () => {
+  test("populated period costs exactly one document — .first() on the period index", async () => {
+    const { ctx, cost } = recordingCtx({
+      voteExplanations: [
+        { _id: "e1", wahlperiode: WP21, dipVorgangId: "vorgang-1", mpInternalId: "bt-0001" },
+        { _id: "e2", wahlperiode: WP21, dipVorgangId: "vorgang-2", mpInternalId: "bt-0002" },
+      ],
+    })
+    const answer = await hasAnyExplanationsForPeriodHandler(ctx, { wahlperiode: WP21 })
+
+    expect(answer).toBe(true)
+    // `.first()` stops after one — the whole point of not using the count
+    // form `getExplanationCoverage`. Documented in
+    // convex/voteExplanations.ts on the handler.
+    expect(cost.documents).toBe(1)
+    expect(cost.gets).toBe(0)
+    const [read] = cost.reads
+    expect(read.index).toBe("by_wahlperiode_and_dipVorgangId")
+    // The period is the only bound. A future edit that added `.eq("dipVorgangId", …)`
+    // would answer a different question (does *this Vorgang* have any?).
+    expect(boundsOf(read)).toEqual(["wahlperiode"])
+    expect(read.take).toBeNull()
+  })
+
+  test("empty period costs zero documents", async () => {
+    const { ctx, cost } = recordingCtx({
+      voteExplanations: [
+        { _id: "e1", wahlperiode: WP20, dipVorgangId: "vorgang-old", mpInternalId: "bt-0001" },
+      ],
+    })
+    const answer = await hasAnyExplanationsForPeriodHandler(ctx, { wahlperiode: WP21 })
+
+    expect(answer).toBe(false)
+    // The WP20 row is outside the index range and is never read.
+    expect(cost.documents).toBe(0)
+    expect(cost.gets).toBe(0)
+  })
+})
+
+describe("getExplanationsByMotion: bounded read, batched labels (F-18 fix)", () => {
+  const ARGS = { wahlperiode: WP21, dipVorgangId: "vorgang-42" }
+
+  function explanationFixture() {
+    return {
+      voteExplanations: [
+        // Three declarations on the target Vorgang, two distinct MPs.
+        // Reproducing the "same MP files a second activity per Vorgang" case
+        // — rare but possible — so the batching's benefit shows up.
+        {
+          _id: "e1",
+          dipAktivitaetId: "act-1",
+          wahlperiode: WP21,
+          dipVorgangId: "vorgang-42",
+          mpInternalId: "bt-0001",
+          date: "2026-07-03",
+        },
+        {
+          _id: "e2",
+          dipAktivitaetId: "act-2",
+          wahlperiode: WP21,
+          dipVorgangId: "vorgang-42",
+          mpInternalId: "bt-0002",
+          date: "2026-07-03",
+        },
+        {
+          _id: "e3",
+          dipAktivitaetId: "act-3",
+          wahlperiode: WP21,
+          dipVorgangId: "vorgang-42",
+          mpInternalId: "bt-0001",
+          date: "2026-07-04",
+        },
+        // A declaration on a *different* Vorgang, same period — must not leak.
+        {
+          _id: "e4",
+          dipAktivitaetId: "act-4",
+          wahlperiode: WP21,
+          dipVorgangId: "vorgang-other",
+          mpInternalId: "bt-0001",
+          date: "2026-07-03",
+        },
+      ],
+      mps: rosterFixture(),
+    }
+  }
+
+  test("the index bounds fix (wahlperiode, dipVorgangId)", async () => {
+    const { ctx, cost } = recordingCtx(explanationFixture())
+    await getExplanationsByMotionHandler(ctx, ARGS)
+
+    const explanationRead = cost.reads.find((r) => r.table === "voteExplanations")
+    expect(explanationRead?.index).toBe("by_wahlperiode_and_dipVorgangId")
+    // Both index columns are `.eq`, matching how the disclosure asks about
+    // one Vorgang. Dropping `dipVorgangId` here would read every declaration
+    // in the period.
+    expect(boundsOf(explanationRead as NonNullable<typeof explanationRead>)).toEqual([
+      "wahlperiode",
+      "dipVorgangId",
+    ])
+  })
+
+  test("mpLabel is called once per unique MP, not once per row (F-18 fix)", async () => {
+    const { ctx, cost } = recordingCtx(explanationFixture())
+    await getExplanationsByMotionHandler(ctx, ARGS)
+
+    // Three explanation rows on this Vorgang, two unique MPs. Unbatched
+    // would be 3 label lookups; batched is 2.
+    const mpReads = cost.reads.filter((r) => r.table === "mps")
+    expect(mpReads).toHaveLength(2)
+    for (const read of mpReads) {
+      expect(boundsOf(read)).toEqual(["internalId", "wahlperiode"])
+    }
+  })
+
+  test("no db.get: the join goes through the index only", async () => {
+    const { ctx, cost } = recordingCtx(explanationFixture())
+    await getExplanationsByMotionHandler(ctx, ARGS)
+
+    expect(cost.gets).toBe(0)
+  })
+
+  test("the wrong-Vorgang row is outside the range, not filtered afterwards", async () => {
+    const { ctx, cost } = recordingCtx(explanationFixture())
+    const result = await getExplanationsByMotionHandler(ctx, ARGS)
+
+    // Three, not four — the `vorgang-other` row is *not read*, not read and
+    // dropped. If the fixture returned it, `boundsOf` would still pass; the
+    // documents counter is what catches a broken bound at the row level.
+    expect(result).toHaveLength(3)
+    const explanationRead = cost.reads.find((r) => r.table === "voteExplanations")
+    expect(explanationRead?.returned).toBe(3)
   })
 })
 

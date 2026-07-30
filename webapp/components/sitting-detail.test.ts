@@ -140,6 +140,16 @@ describe("the protocol PDF is always reachable", () => {
   })
 })
 
+describe("no cosmetic-only DOM is emitted (F-08)", () => {
+  test("SpeechesSection does not emit an empty data-current-period placeholder", () => {
+    // F-08 of the review: the section used to end with an empty
+    // `<p sr-only data-current-period>` shim that existed only to keep an
+    // unused prop reachable. It rendered nothing observable and existed
+    // only to satisfy TypeScript. Removed; the file must not carry it.
+    expect(detail).not.toMatch(/data-current-period/)
+  })
+})
+
 describe("the vote-detail sitting label links to the sitting page", () => {
   test("vote-detail wraps t('votes.sitting') in a Link to /sittings/{wp}/{sitzungnr}", () => {
     // The one edge on `/votes/[id]` that names the sitting — until this

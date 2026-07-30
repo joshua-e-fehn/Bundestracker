@@ -432,10 +432,6 @@ function SpeechesSection({
           </CardContent>
         </Card>
       )}
-      {/* `current` is unused if we did not render the empty state above, but
-          the prop is kept in the signature so a future filter that renders a
-          state note per row can reach it without a second query. */}
-      <p className="sr-only" data-current-period={current ?? ""} />
     </section>
   )
 }

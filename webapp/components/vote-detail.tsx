@@ -14,6 +14,7 @@ import { VoteExplanationsDisclosure } from "@/components/vote-explanations-discl
 import { VoteOutcomeBadge } from "@/components/vote-outcome-badge"
 import { VoteTable, type VoteTableRow } from "@/components/vote-table"
 import { api } from "@/convex/_generated/api"
+import { safeExternalUrl } from "@/lib/bundestag"
 import { formatDate, formatPercent } from "@/lib/format"
 import { isLameDuckVote, LAME_DUCK_MAINTAINED_AS_OF } from "@/lib/lame-duck"
 import { periodLink } from "@/lib/period"
@@ -241,18 +242,26 @@ export function VoteDetail({
 
           {/* The XLSX this ballot was parsed from. Null when it was reconstructed
             from the protocol XML instead, which is also the case where
-            `absentCount` cannot be trusted (schema note on `sourceUrl`). */}
-          {sheet.sourceUrl !== null ? (
-            <a
-              href={sheet.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-fit items-center gap-1.5 text-sm underline underline-offset-4 hover:text-foreground"
-            >
-              {t("votes.sourceSheet")}
-              <ExternalLink className="size-3.5" aria-hidden="true" />
-            </a>
-          ) : null}
+            `absentCount` cannot be trusted (schema note on `sourceUrl`).
+            `safeExternalUrl` guards the render side against a `javascript:` or
+            `data:` URL landing in `voteSheets.sourceUrl` — the ingest check
+            catches this on write, but a stored value from a bad backfill would
+            otherwise render as a working link (React does not strip these).
+            See F-10 of the review. */}
+          {(() => {
+            const safeSourceUrl = safeExternalUrl(sheet.sourceUrl)
+            return safeSourceUrl ? (
+              <a
+                href={safeSourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-fit items-center gap-1.5 text-sm underline underline-offset-4 hover:text-foreground"
+              >
+                {t("votes.sourceSheet")}
+                <ExternalLink className="size-3.5" aria-hidden="true" />
+              </a>
+            ) : null
+          })()}
         </Card>
 
         <section aria-labelledby="vote-breakdown-heading" className="flex flex-col gap-3">

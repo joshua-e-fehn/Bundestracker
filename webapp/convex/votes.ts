@@ -1557,8 +1557,11 @@ export const getVoteSheets = query({
  * Every named ballot cast in one sitting, ordered by `abstimmnr`.
  *
  * The read the sitting-detail page pairs with `getSpeechesBySitting`. Bounded
- * by the corpus: §4.4 records single-digit ballots per sitting even in the
- * busiest divisions, well under a screenful.
+ * by the corpus: `docs/api-research.md §4.5` records single-digit ballots
+ * per sitting even in the busiest divisions (8, 1, 1, 2, 1, 2 across six
+ * sittings sampled), well under a screenful. F-14 fix: this used to cite
+ * §4.4, which is about non-named votes; §4.5's table is where those
+ * per-sitting counts actually live.
  *
  * ## Sorted by ballot number rather than by date
  *

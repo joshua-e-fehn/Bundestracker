@@ -103,7 +103,9 @@ export function TrendGraphs({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t("trends.title")}</CardTitle>
+          {/* `as="h2"` — F-05: sibling landmark of the recent-records
+              panels and the sidebar cards on the MP profile. */}
+          <CardTitle as="h2">{t("trends.title")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Skeleton className="h-8 w-full max-w-md rounded-md" />
@@ -116,7 +118,8 @@ export function TrendGraphs({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("trends.title")}</CardTitle>
+        {/* `as="h2"` — see the note on the loading-state sibling above. */}
+        <CardTitle as="h2">{t("trends.title")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {points.length === 0 ? (

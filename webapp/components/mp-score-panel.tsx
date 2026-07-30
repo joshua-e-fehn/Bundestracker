@@ -120,7 +120,9 @@ export function MPScorePanel({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t("mp.activityScore")}</CardTitle>
+          {/* `as="h2"` — F-05 fix, matching the recent-records panels and
+              the sidebar cards. */}
+          <CardTitle as="h2">{t("mp.activityScore")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {/* Not a zero. No row means the cron has not scored this MP for this
@@ -156,7 +158,8 @@ export function MPScorePanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("mp.activityScore")}</CardTitle>
+        {/* `as="h2"` — see the note on the sibling `CardTitle` above. */}
+        <CardTitle as="h2">{t("mp.activityScore")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-1">

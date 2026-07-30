@@ -7,6 +7,7 @@ import { FraktionBadge } from "@/components/fraktion-badge"
 import { useLocale } from "@/components/providers/locale-provider"
 import { useMPHref } from "@/components/providers/period-provider"
 import { api } from "@/convex/_generated/api"
+import { safeExternalUrl } from "@/lib/bundestag"
 import { formatCount, formatDateShort } from "@/lib/format"
 
 /**
@@ -195,22 +196,39 @@ export function VoteExplanationsDisclosure({
                     {t("voteExplanations.protocol", { number: row.protocolNumber })}
                   </span>
                 ) : null}
-                {row.sourceUrl !== null ? (
-                  <a
-                    href={row.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    // The accessible name is the source-link phrase plus the
-                    // member's name, so a screen reader hearing a list of
-                    // link items can tell whose PDF a "Zum Protokoll" link
-                    // opens without the surrounding row context.
-                    aria-label={t("voteExplanations.sourceLinkLabel", { name: row.name })}
-                    className="inline-flex items-center gap-1 rounded-md underline decoration-border underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-                  >
-                    {t("voteExplanations.sourceLink")}
-                    <ExternalLink className="size-3" aria-hidden="true" />
-                  </a>
-                ) : null}
+                {(() => {
+                  // Same render-time scheme guard as `SourceLink` in
+                  // components/mp-recent-records.tsx: null href, a scheme
+                  // outside {http, https}, or a value URL cannot parse all
+                  // collapse to *no anchor*. See F-10 of the review — the
+                  // ingest-side check (test_pipeline_sync.py) is not a
+                  // render-side guard, so this is that guard.
+                  //
+                  // Fragment preservation matters here: the URL is a
+                  // page-anchored `…/21090.pdf#P.11246` and losing the
+                  // `#P.…` would degrade to a whole-document link
+                  // (which `protocolPdfUrl` already exists to produce).
+                  // `safeExternalUrl` returns the trimmed original string
+                  // for that reason.
+                  const safe = safeExternalUrl(row.sourceUrl)
+                  return safe ? (
+                    <a
+                      href={safe}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      // The accessible name is the source-link phrase plus
+                      // the member's name, so a screen reader hearing a
+                      // list of link items can tell whose PDF a "Zum
+                      // Protokoll" link opens without the surrounding row
+                      // context.
+                      aria-label={t("voteExplanations.sourceLinkLabel", { name: row.name })}
+                      className="inline-flex items-center gap-1 rounded-md underline decoration-border underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      {t("voteExplanations.sourceLink")}
+                      <ExternalLink className="size-3" aria-hidden="true" />
+                    </a>
+                  ) : null
+                })()}
               </li>
             ))}
           </ul>

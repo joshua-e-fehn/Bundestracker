@@ -6,7 +6,13 @@ import { SourceCoverageNote } from "@/components/source-coverage-note"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { VoteResultBadge } from "@/components/vote-result-badge"
 import { api } from "@/convex/_generated/api"
-import { drucksachePdfUrl, formatDate, formatNumber, protocolPdfUrl } from "@/lib/bundestag"
+import {
+  drucksachePdfUrl,
+  formatDate,
+  formatNumber,
+  protocolPdfUrl,
+  safeExternalUrl,
+} from "@/lib/bundestag"
 
 /**
  * The five "latest five" panels: speeches, motions, written questions, votes,
@@ -517,6 +523,24 @@ function PartyLine({
   )
 }
 
+/**
+ * The chrome every "latest five" panel shares — one place that owns the
+ * heading semantics all five inherit.
+ *
+ * ## Why `CardTitle as="h2"` here in particular
+ *
+ * The MP profile's `<h1>` is the member's name. The five panels — speeches,
+ * motions, questions, votes, §31 declarations — are the primary landmark
+ * sections *below* that heading, and a screen-reader reader navigating by
+ * heading should be able to jump between them. Before F-05 was addressed
+ * `CardTitle` was a `<div>`, so the profile's heading list had exactly one
+ * entry (the name); five sections could only be reached by scrolling or
+ * tabbing through content.
+ *
+ * Passing `as="h2"` here fixes it for all five panels in one place. The
+ * primitive default remains `div` — see the note on `CardTitle` — so this
+ * does not accidentally promote any other card on the site.
+ */
 function Panel({
   title,
   loading,
@@ -529,7 +553,7 @@ function Panel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle as="h2">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {loading ? <div className="h-24 animate-pulse rounded-md bg-muted" /> : children}
@@ -542,17 +566,44 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-muted-foreground text-sm">{children}</p>
 }
 
-/** A link to the source document, or nothing. Null rather than a disabled link
- * when the URL cannot be built — see `drucksachePdfUrl`, which refuses to guess
- * for a Bundesrat-numbered paper rather than produce an address pointing at a
- * different document. */
+/**
+ * A link to the source document, or nothing.
+ *
+ * ## Three ways this returns null, not one
+ *
+ * `href` is null — the caller could not build the URL (a Bundesrat paper
+ * with no `wp/` prefix, a §31 declaration with no stored `sourceUrl`). That
+ * is what `drucksachePdfUrl` and the ingest layer already communicate: a
+ * disabled anchor is worse than no anchor, because it looks like a bug.
+ *
+ * `safeExternalUrl(href)` returns null — the URL parses but its scheme is
+ * neither `http:` nor `https:`. A `javascript:` or `data:` URL landing in
+ * `voteExplanations.sourceUrl` would be a data-side regression the ingest
+ * pipeline is meant to catch (test_pipeline_sync.py:1374) but does not
+ * catch on the render side; this is that guard. See F-01/F-02/F-10 of the
+ * review — the ingest check is not a rendering-side guard.
+ *
+ * `href` did not survive URL parsing — it was empty, whitespace, or
+ * malformed. Same reason as the scheme case: an `<a href="">` renders as a
+ * link that reloads the current page, which is a broken outcome the caller
+ * cannot see. `safeExternalUrl` folds all three into one null.
+ *
+ * ## `rel="noopener noreferrer"` matches every other outbound link on the site
+ *
+ * Was `rel="noreferrer"` alone. `noreferrer` in modern browsers implies
+ * `noopener`, but stale WebView / very old Chromium still leak
+ * `window.opener` under `noreferrer` alone (F-01 of the review). The other
+ * 11 `target="_blank"` sites on this codebase carry both — this is the last
+ * one that did not, and now does.
+ */
 function SourceLink({ href, children }: { href: string | null; children: React.ReactNode }) {
-  if (!href) return null
+  const safe = safeExternalUrl(href)
+  if (!safe) return null
   return (
     <a
-      href={href}
+      href={safe}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       className="underline underline-offset-2 hover:text-foreground"
     >
       {children}

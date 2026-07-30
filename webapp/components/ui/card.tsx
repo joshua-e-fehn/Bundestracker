@@ -33,15 +33,48 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+/**
+ * Card title.
+ *
+ * ## Why this accepts an `as` element
+ *
+ * The card was originally a chrome-only primitive: the caller placed a title
+ * inside, and the surrounding page owned heading order. In practice most
+ * cards on `/mps/[id]` and `/feed` render a title that IS the primary label
+ * of a landmark region — the "Latest speeches" panel, the biography panel,
+ * the ballot list — and a `<div>` there leaves screen-reader landmark
+ * navigation with only the page's `<h1>` to jump to. F-05 of the review
+ * (2026-07-30) flagged this on the MP profile: five panel titles, none of
+ * them announced as headings.
+ *
+ * `as` accepts any of `h2` through `h6` (or `div`, the default). Callers
+ * inside a page whose top heading is the `<h1>` should pass `as="h2"`; the
+ * default stays `div` for the many existing call sites where the surrounding
+ * page owns heading order or the card is a leaf (a tooltip preview, a nested
+ * card inside a section already headed by an `h2`).
+ *
+ * ## Why not always `h2`
+ *
+ * A default of `h2` would silently promote every existing CardTitle on the
+ * site and, in several places, would land two `h2`s inside one `<section>`
+ * already headed by an `h2`. The opt-in shape puts the decision at the call
+ * site — the same argument `CardTitle` originally made for keeping heading
+ * order out of the primitive.
+ */
+type CardTitleAs = "h2" | "h3" | "h4" | "h5" | "h6" | "div"
+function CardTitle({
+  className,
+  as: As = "div",
+  ...props
+}: React.ComponentProps<"div"> & { as?: CardTitleAs }) {
   return (
-    <div
+    <As
       data-slot="card-title"
       className={cn(
         "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
         className,
       )}
-      {...props}
+      {...(props as React.ComponentProps<typeof As>)}
     />
   )
 }
