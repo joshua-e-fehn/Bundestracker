@@ -174,13 +174,41 @@ describe("every /seating subtree component is deterministic before its data gate
     // Not every file uses `useQuery` — the notice for instance is pure prose.
     // For files that do, the "pre-gate" region is everything before the first
     // Convex-dependent branch; for the rest, the whole file is the region.
+    //
+    // The gate matcher accepts BOTH `=== undefined` and `=== null`: the
+    // `useQuery` return convention is `undefined` while loading and a
+    // real value otherwise, but `seating-preview.tsx:72` gates on
+    // `arc === null` (a derived value that is null before the arc is
+    // built). An `undefined`-only pattern silently returned `-1` for
+    // that file — `slice(0, -1)` returns the whole file minus one
+    // character, so the entire body was scanned as the "pre-gate"
+    // region and any deterministic violation below the gate would have
+    // failed here alongside legitimate ones above it.
     const hasQuery = /useQuery\s*\(/.test(stripped)
-    const region = hasQuery
-      ? stripped.slice(0, stripped.search(/if\s*\(\s*\w+\s*===\s*undefined\s*\)/))
-      : stripped
+    const gateIndex = stripped.search(/if\s*\(\s*\w+\s*===\s*(?:undefined|null)\s*\)/)
+    const region = hasQuery && gateIndex >= 0 ? stripped.slice(0, gateIndex) : stripped
     // Same set of triggers as the primary suite above — the whole tree
     // sharing one gate is what keeps hydration coherent.
     expect({ file: name, offenders: forbidden(region) }).toEqual({ file: name, offenders: [] })
+  })
+
+  test("test-of-the-test: seating-preview's `arc === null` gate is actually located", () => {
+    // Directly guards the L3 defect the independent review caught: the
+    // earlier `\w+ === undefined` pattern missed `seating-preview.tsx:72`'s
+    // `arc === null` gate, so `.search()` returned `-1` and `slice(0, -1)`
+    // returned the whole file minus one character. The whole preview was
+    // then scanned as pre-gate — any deterministic violation below the
+    // gate would have failed here alongside the ones above. This asserts
+    // the gate is found (returned index is non-negative) for a preview
+    // file that uses the `null` shape rather than `undefined`.
+    const preview = join(dir, "seating-preview.tsx")
+    if (!files.includes("seating-preview.tsx")) return
+    const stripped = stripComments(readFileSync(preview, "utf8"))
+    const gateIndex = stripped.search(/if\s*\(\s*\w+\s*===\s*(?:undefined|null)\s*\)/)
+    expect(gateIndex).toBeGreaterThan(0)
+    // And the region actually stops at the gate rather than running to
+    // the end of the file — the failure the L3 defect described.
+    expect(gateIndex).toBeLessThan(stripped.length - 1)
   })
 
   function forbidden(region: string): string[] {

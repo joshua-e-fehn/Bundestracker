@@ -171,6 +171,69 @@ describe("Contact renders the card in both branches", () => {
     expect(html).not.toMatch(/href="[^"]*@[^"]*"/)
   })
 
+  test("attacker-controlled mailto:/tel: URLs in socials[] are refused, not rendered", () => {
+    // `socials[].url` is scraped from external HTML by
+    // `pipeline/.../bio.py`, which means an operator who owns a
+    // bundestag.de page — or a compromised source hop — could feed the
+    // pipeline arbitrary strings. `isLinkableUrl` in lib/contact.ts is
+    // the sole guard (`SAFE_SCHEMES = {http:, https:}`), and rejecting a
+    // hostile URL there is what stops it reaching a rendered `href`. The
+    // fabricated-mailto test above only covers well-formed input; this
+    // one is the adversarial half — malicious inputs that would parse as
+    // URLs but that the guard is meant to drop.
+    //
+    // The Contact card would render each of these as an `<a href>` if
+    // the guard were lifted, so an attacker who got them past the
+    // pipeline could put a live `mailto:` next to every MP name. The
+    // assertions below say: not rendered, no matter how they were sent.
+    const html = renderContact({
+      ...MP_STUB,
+      contact: {
+        formUrl: null,
+        homepage: null,
+        constituencyOffice: null,
+        socials: [
+          // The classic mailto injection — a URL that parses fine and
+          // whose scheme would open the reader's mail client.
+          { platform: "Kontakt", url: "mailto:evil@example.com" },
+          // Same shape, phone dialler.
+          { platform: "Anrufen", url: "tel:+491234567890" },
+          // `javascript:` — the reason `isLinkableUrl` needs the scheme
+          // allowlist rather than a `URL.canParse` boolean.
+          { platform: "Script", url: "javascript:alert('xss')" },
+          // `data:` — another usable-in-href scheme the allowlist drops.
+          { platform: "Data", url: "data:text/html,<script>alert(1)</script>" },
+          // A well-formed https: link, to prove the row is dropped by
+          // scheme rather than by "socials is empty".
+          { platform: "Mastodon", url: "https://social.bund.de/@muster" },
+        ],
+      },
+    })
+
+    // None of the hostile schemes make it into a rendered attribute or
+    // as visible text — the `<a href>` guard drops the row entirely, so
+    // even the platform label ("Kontakt", "Anrufen") should be absent:
+    // rendering the label without the link would make the row look
+    // populated while offering no way to reach anybody.
+    //
+    // Regexes anchor on the scheme (`href="mailto:` etc) rather than on
+    // bare substrings, because a legitimate Mastodon URL like
+    // `https://social.bund.de/@muster` contains `@` and would false-
+    // positive an "email in href" check. The point is to refuse the
+    // *scheme*, not to reject every character mail addresses happen to
+    // share with usernames.
+    expect(html).not.toMatch(/href="mailto:/)
+    expect(html).not.toMatch(/href="tel:/)
+    expect(html).not.toMatch(/href="javascript:/)
+    expect(html).not.toMatch(/href="data:/)
+    expect(html).not.toContain("evil@example.com")
+    expect(html).not.toContain("+491234567890")
+    // The one safe-scheme row survives — proof the drop is
+    // per-scheme, not "socials is refused entirely".
+    expect(html).toContain(`href="https://social.bund.de/@muster"`)
+    expect(html).toContain("Mastodon")
+  })
+
   test("a social with a blank `platform` still renders — falls back to the host", () => {
     // The platform is free text (the pipeline preserves what the Bundestag
     // sends), and a blank one must not silently drop the row: an
