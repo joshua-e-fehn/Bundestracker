@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDate } from "@/lib/bundestag"
 import { CONTACT_ANCHOR, type ContactBlock, contactChannels, hostOf } from "@/lib/contact"
 import type { Locale } from "@/lib/i18n"
-import { BUNDESTAG_MPS_URL } from "@/lib/links"
+import { BUNDESTAG_MPS_URL, BUNDESTAG_SWITCHBOARD, BUNDESTAG_SWITCHBOARD_TEL } from "@/lib/links"
 import { periodLink } from "@/lib/period"
 
 /**
@@ -83,10 +83,11 @@ export type MPDoc = {
   /**
    * How to reach the MP, as the Bundestag actually publishes it.
    *
-   * ⚠ No email and no phone, and that is a fact about the sources rather than a
-   * gap here: `MDB_STAMMDATEN.DTD` declares no contact elements and the
-   * biography pages carry no `mailto:` or `tel:` links. `formUrl` is the
-   * Bundestag's own substitute. See the note on `contact` in convex/schema.ts.
+   * ⚠ No per-member address and no direct dial, and that is a fact about the
+   * sources rather than a gap here: `MDB_STAMMDATEN.DTD` declares no contact
+   * element, and 110 biography pages audited on 2026-07-31 carried neither.
+   * `formUrl` is the Bundestag's own substitute. See the note on `contact` in
+   * convex/schema.ts.
    *
    * The shape lives in lib/contact.ts, with the rule for reading it — one
    * definition, so the card and its tests cannot disagree about what "has
@@ -367,15 +368,25 @@ function ContactJumpLink() {
 /**
  * How to reach this member.
  *
- * ## There is no email address, and saying so is part of the card
+ * ## There is no per-member address, and saying so is part of the card
  *
- * ⚠ The Bundestag publishes none — `MDB_STAMMDATEN.DTD` declares no contact
- * elements at all, and the biography pages carry no `mailto:` or `tel:` link.
- * The contact *form* is its own substitute, so the form link carries a line
- * saying why it is a form. Without it the card reads as though an address had
- * been left out; the note is what makes the absence a fact about the source
- * rather than a gap in the pipeline. See the note on `contact` in
+ * ⚠ The member directory publishes none — `MDB_STAMMDATEN.DTD` declares no
+ * contact element at all, and an audit of 110 biography pages on 2026-07-31
+ * found not one address or direct dial on any of them (docs/api-research.md
+ * §6.6). The contact *form* is the Bundestag's own substitute, so the form link
+ * carries a line saying why it is a form. Without it the card reads as though an
+ * address had been left out; the note is what makes the absence a fact about the
+ * source rather than a gap in the pipeline. See the note on `contact` in
  * convex/schema.ts, which this card is the reader-facing half of.
+ *
+ * ⚠ The claim is deliberately about the **directory**, not about the
+ * parliament. An earlier version of this copy said the Bundestag published no
+ * addresses or numbers at all, which the same audit refuted: it prints its own
+ * switchboard on its imprint, and roughly 70 % of members publish an
+ * `@bundestag.de` address on their own website. Those member sites are linked,
+ * never harvested — one lists four staff addresses with nothing marking which
+ * is the member's, and some obfuscate theirs precisely to stop collection, so
+ * picking one would be inventing an answer the source did not give.
  *
  * ## It renders even when the source published nothing
  *
@@ -387,20 +398,21 @@ function ContactJumpLink() {
  * it. `grep "E-Mail-Adressen"` on Habeck's live page returned zero.
  *
  * So the absence is now a state of the card, not the absence of the card. It
- * says what the Bundestag does and does not publish, prints the Berlin office —
- * which reaches every member and is true regardless of what the pipeline
- * holds — and links the Bundestag's own directory as the place to look next.
- * Nothing in it is invented: there is no fabricated address, no guessed
- * per-member URL, and no email or phone, because none exists.
+ * says what the directory does and does not publish, prints the Berlin office
+ * and the switchboard — both of which reach every member and are true
+ * regardless of what the pipeline holds — and links the Bundestag's own
+ * directory as the place to look next. Nothing in it is invented: there is no
+ * fabricated address, no guessed per-member URL, and no personal address or
+ * direct dial, because the source publishes none.
  *
- * ## The Berlin office is a constant, not a row
+ * ## The Berlin office and the switchboard are constants, not rows
  *
- * `Platz der Republik 1` is the same for all 630 members, so the schema
- * deliberately does not store it 630 times and this prints it from the
- * dictionary. It is what makes the card useful for the roughly half of the
- * roster that lists no constituency office, and it is the substitute the empty
- * state leans on — but it is deliberately *not* counted as contact data by
- * `contactChannels`, or every row would look populated.
+ * `Platz der Republik 1` and the switchboard are the same for all 630 members,
+ * so the schema deliberately does not store either 630 times and this prints
+ * them from the dictionary. They are what make the card useful for the roughly
+ * half of the roster that lists no constituency office, and they are the
+ * substitute the empty state leans on — but they are deliberately *not* counted
+ * as contact data by `contactChannels`, or every row would look populated.
  *
  * Within the populated state it still renders only what exists, like `Biography`
  * above and for the same reason: printing four labelled blanks looks like a
@@ -466,6 +478,27 @@ function Contact({ mp }: { mp: MPDoc }) {
               dictionary holds it with the newline in it — the same treatment
               the constituency office below needs, and for the same reason. */}
           <p className="whitespace-pre-line text-sm leading-snug">{t("mp.berlinAddress")}</p>
+        </div>
+
+        {/* The switchboard, beside the postal address because it is the same
+            kind of fact: the institution's own, true for all 630, and printed
+            from the dictionary rather than stored per row. It renders in both
+            branches for the same reason the address does — it reaches this
+            member whatever the pipeline holds.
+
+            The hint is not decoration. A phone number under a person's name
+            reads as their direct line, and this one is not: it is the house
+            switchboard, which connects onward. Saying so is what keeps the
+            card's promise the size of the source. */}
+        <div className="flex flex-col gap-1">
+          <span className="text-muted-foreground text-xs">{t("mp.switchboard")}</span>
+          <a
+            href={BUNDESTAG_SWITCHBOARD_TEL}
+            className="inline-flex w-fit items-center rounded-md text-sm underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {BUNDESTAG_SWITCHBOARD}
+          </a>
+          <p className="text-muted-foreground text-xs">{t("mp.switchboardHint")}</p>
         </div>
 
         {contact.constituencyOffice ? (

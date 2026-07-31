@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Contact, type MPDoc } from "@/components/mp-profile"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { dictionaries } from "@/lib/i18n"
-import { BUNDESTAG_MPS_URL } from "@/lib/links"
+import { BUNDESTAG_MPS_URL, BUNDESTAG_SWITCHBOARD, BUNDESTAG_SWITCHBOARD_TEL } from "@/lib/links"
 
 /**
  * Rendered-DOM assertions for the Contact card — Acceptance Criterion AC-6.
@@ -79,6 +79,16 @@ function renderContact(mp: MPDoc): string {
 
 const de = dictionaries.de
 
+/** A block with every channel the source publishes, for the branch where the
+ * card is populated. The switchboard must render here too — it is a constant of
+ * the institution, not a fallback for members the pipeline missed. */
+const POPULATED = {
+  formUrl: "https://bundestag.de/webarchiv/kontakt/muster",
+  homepage: "https://muster-beispiel.de/",
+  constituencyOffice: "Musterstraße 1\n12345 Musterhausen",
+  socials: [{ platform: "Instagram", url: "https://www.instagram.com/muster/" }],
+} as const
+
 describe("Contact renders the card in both branches", () => {
   test("an MP with no contact block still gets the card, the anchor, and the empty-state copy", () => {
     // GAP-003 was a `return null` here. Every assertion below fails under
@@ -145,15 +155,27 @@ describe("Contact renders the card in both branches", () => {
     // MP still gets the fallback sentence.
     expect(html).not.toContain(de["mp.noContact"])
     expect(html).not.toContain(de["mp.noContactExplain"])
-    expect(html).not.toContain(de["mp.officialDirectory"])
     expect(html).not.toContain(de["mp.postalSubstitute"])
+    // The directory link, by its href rather than its label: the label is the
+    // phrase "Abgeordnetenverzeichnis des Bundestages", which `mp.contactFormHint`
+    // now also contains — naming the directory is how that sentence states
+    // *which* source publishes no address. Asserting on the link is what the
+    // test meant in the first place; asserting on the words made an honest
+    // sentence look like a leaked fallback.
+    expect(html).not.toContain(`href="${BUNDESTAG_MPS_URL}"`)
   })
 
-  test("no fabricated mailto: or tel: link — the Bundestag publishes neither", () => {
-    // `lib/i18n.test.ts` guards the dictionary against phone/email
-    // literals; this guards the rendered HTML. GAP-004 documents that the
-    // Bundestag publishes no per-MP email and no per-MP phone number, so
-    // neither may ever appear in the page — even for a "populated" contact.
+  test("no fabricated mailto:, and the only tel: is the switchboard's", () => {
+    // `lib/i18n.test.ts` guards the dictionary against phone/email literals;
+    // this guards the rendered HTML. The member directory publishes no per-MP
+    // address and no per-MP direct dial (110 pages audited 2026-07-31), so
+    // neither may ever appear — even for a "populated" contact.
+    //
+    // ⚠ This assertion used to be `not.toMatch(/href="tel:/)`, i.e. *no* phone
+    // link at all, on the premise that the Bundestag published no number
+    // whatsoever. That premise was wrong: it prints its own switchboard on its
+    // imprint. So the rule is now the one that was always meant — exactly one
+    // number, the institution's, and never a member's.
     const html = renderContact({
       ...MP_STUB,
       contact: {
@@ -164,11 +186,26 @@ describe("Contact renders the card in both branches", () => {
       },
     })
     expect(html).not.toMatch(/mailto:/)
-    expect(html).not.toMatch(/href="tel:/)
+    expect(html.match(/href="tel:[^"]*"/g)).toEqual([`href="${BUNDESTAG_SWITCHBOARD_TEL}"`])
     expect(html).not.toMatch(/href="\+/)
     // The DE stub above has no `@` in the address; the check is on the
     // rendered attribute, so a `mailto:someone@example.com` would show up.
     expect(html).not.toMatch(/href="[^"]*@[^"]*"/)
+  })
+
+  test("the switchboard renders in both branches — it reaches every member", () => {
+    // It is a constant of the institution, like the Berlin address beside it,
+    // so it does not depend on what the pipeline resolved for this member. In
+    // the empty state it is most of what the card has to offer, which is
+    // exactly when it must not be missing.
+    for (const contact of [null, POPULATED]) {
+      const html = renderContact({ ...MP_STUB, contact })
+      expect(html).toContain(BUNDESTAG_SWITCHBOARD)
+      expect(html).toContain(`href="${BUNDESTAG_SWITCHBOARD_TEL}"`)
+      // The number is labelled as the switchboard's rather than left to read as
+      // this member's direct line.
+      expect(html).toContain(de["mp.switchboardHint"])
+    }
   })
 
   test("attacker-controlled mailto:/tel: URLs in socials[] are refused, not rendered", () => {
@@ -223,7 +260,11 @@ describe("Contact renders the card in both branches", () => {
     // *scheme*, not to reject every character mail addresses happen to
     // share with usernames.
     expect(html).not.toMatch(/href="mailto:/)
-    expect(html).not.toMatch(/href="tel:/)
+    // Exactly one phone link, and it is the constant from lib/links.ts — the
+    // attacker's `tel:` is dropped, not merely outnumbered. Asserting the whole
+    // set rather than "no tel: at all" is what lets the switchboard exist
+    // without opening the door to a scraped number beside it.
+    expect(html.match(/href="tel:[^"]*"/g)).toEqual([`href="${BUNDESTAG_SWITCHBOARD_TEL}"`])
     expect(html).not.toMatch(/href="javascript:/)
     expect(html).not.toMatch(/href="data:/)
     expect(html).not.toContain("evil@example.com")

@@ -192,9 +192,10 @@ def contact_payload(contact: MPContact | None) -> Payload | None:
     stage's notes are what tell the two apart.
 
     ⚠ No `email` and no `phone` key, because neither exists to fill: the
-    Stammdaten DTD declares no contact elements and the biography pages carry
-    no `mailto:` or `tel:` links (models/enrichment.py). `formUrl` is the
-    Bundestag's own substitute — a form a reader submits, not an address.
+    Stammdaten DTD declares no contact elements, and 110 biography pages audited
+    on 2026-07-31 carry no address and no number (models/enrichment.py).
+    `formUrl` is the Bundestag's own substitute — a form a reader submits, not an
+    address.
 
     The Berlin office is omitted for a different reason: it is the same
     building for all 630 MPs, so it belongs in the UI as a constant rather than
