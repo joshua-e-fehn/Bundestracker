@@ -1461,6 +1461,76 @@ Measured coverage:
 This P528/P972 property is also the **cleanest available broker** between
 Wikidata and Stammdaten IDs, if you want external enrichment.
 
+### 6.6 MP email addresses and telephone numbers — measured, 2026-07-31
+
+**Question.** Does any authoritative Bundestag source publish an MP's email
+address or telephone number, in a form a pipeline could ingest without guessing?
+
+**Answer.** The member directory publishes **neither**. Members' own websites —
+which the directory itself links — publish both, and are still not ingestible.
+
+#### Method
+
+Fetched sequentially through `api.base.BundestagClient`, so the Enodia WAF
+(§2.6) was never at risk. Two independent samples of biography pages, because a
+run from offset 0 reads a purely alphabetical slice:
+
+- **60 consecutive** members from `Abdi, Sanae` to `Bilger, Steffen`.
+- **Every 13th of all 639** (50 members), which covers CDU/CSU, SPD,
+  Bündnis 90/Die Grünen, AfD and Die Linke.
+
+Each page was scanned **whole** — not just the `<aside>` the parser scopes to —
+for `mailto:`, `tel:`, bare addresses, `+49`/`0…` numbers, and the German
+obfuscations (`name (at) domain`).
+
+#### Result
+
+| Source | Sample | Email | Phone |
+| --- | --- | --- | --- |
+| `MDB_STAMMDATEN.XML` (15.3 MB) | all WP21 | **0** — one `@` in the whole file | **0** |
+| `MDB_STAMMDATEN.DTD` | — | declares no contact element | — |
+| Biography pages, consecutive | 60 | **0** | **0** |
+| Biography pages, spread | 50 | **0** | **0** |
+| bundestag.de imprint (institutional) | 1 | `mail@bundestag.de` | **+49 (0)30 227-0** |
+| Members' **linked own websites** | 53 reachable | **69.8 %** carry ≥1 `@bundestag.de` | **50.9 %** |
+
+Coverage of what the directory *does* publish, from the same 60-page sample:
+`form_url` 98.3 %, `homepage` 91.7 %, a social profile 86.7 %,
+`constituency_office` 70.0 %; 1.7 % published nothing at all.
+
+> ⚠ **The one false positive.** All 110 pages carry
+> `data-share-mail='mailto:?subject=Empfehlung…'` — the share-this-article
+> control, with an **empty recipient**. It is the only `mailto:` on any of them.
+> A grep for `mailto:` therefore "finds an address" on every page and finds
+> nothing real. Pinned by `tests/test_mp_profiles.py`.
+
+#### Why the linked websites are not ingested
+
+They are authoritative in the weak sense that the Bundestag links them, and they
+do carry genuine parliamentary addresses and `030 227-xxxxx` extensions off the
+switchboard above. Ingesting them would still require **inventing an answer the
+source did not give**:
+
+1. **Ambiguity.** 20 of the 53 list *several* `@bundestag.de` addresses —
+   `.wk` (constituency office) and `.maNN` (named staffers; one member lists
+   four) — with no marker for which is the member's.
+2. **Misattribution.** A sweep also collects `presse@gruene.de`,
+   `info@dielinke-ma.de`, and vendor addresses like `support@fb.com` and
+   `DPO@adobe.com`, all of which sit in the same markup.
+3. **Explicit opt-out.** 14 of 53 publish no address at all, and some
+   **ROT13-obfuscate** theirs (`qvrgzne.onegfpu@ohaqrfgnt.qr` decodes to
+   `dietmar.bartsch@bundestag.de`) precisely to defeat automated collection.
+
+So the product stores no per-member address or number. What it *does* now print
+is the switchboard — institutional, constant for all 630, attributed to nobody —
+beside the Berlin postal address it already showed.
+
+> ⚠ **Do not restate this as "the Bundestag publishes no contact details."** It
+> publishes its own, and its members publish theirs. The true claim is narrower:
+> *the member directory does not publish them per member, and this project does
+> not harvest members' own sites.* Shipped copy asserted the broader version
+> until this audit; correcting it is what motivated §6.6.
+
 ---
 
 ## 7. ⚠ The join problem — three incompatible ID spaces

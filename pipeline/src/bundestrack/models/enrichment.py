@@ -20,13 +20,20 @@ pages could not be reached at all:
   with the URL as one value. Splitting them would make it possible to render a
   face with nobody's name against it.
 
-- **There is no email address and no telephone number.** Not in this model
-  because they are not in the sources: `MDB_STAMMDATEN.DTD` declares no contact
-  elements at all, and thirteen sampled biography pages carry zero `mailto:`
-  and zero `tel:` links. What the Bundestag publishes is a *contact form*, and
-  `MPContact.form_url` is that — a URL a reader follows, not an address anything
-  can send to. A model with an `email` field would imply the pipeline had simply
-  failed to fill it.
+- **There is no per-member email address and no telephone number.** Not in this
+  model because they are not in the source: `MDB_STAMMDATEN.DTD` declares no
+  contact elements at all, and **110 biography pages** audited on 2026-07-31 —
+  60 consecutive plus every 13th of all 639, covering every Fraktion — carry zero
+  addresses and zero numbers. What the Bundestag publishes is a *contact form*,
+  and `MPContact.form_url` is that — a URL a reader follows, not an address
+  anything can send to. A model with an `email` field would imply the pipeline
+  had simply failed to fill it.
+
+  ⚠ Members' own websites, which this model *links* as `homepage`, are a
+  different matter: 69.8 % of them publish an `@bundestag.de` address. They are
+  deliberately not read for it — the addresses are ambiguous between member,
+  constituency office and staffers, and some are obfuscated against exactly that.
+  See `api.mp_profiles` and docs/api-research.md §6.6.
 
 ⚠ **No MP id is published on either source.** The listing prints
 `"Nachname, Vorname"` and nothing else, so joining is by name via §7.1's
@@ -150,9 +157,9 @@ class SocialProfile(BaseModel):
 class MPContact(BaseModel):
     """How an MP can be reached, as the Bundestag actually publishes it.
 
-    Note what is absent, and why it is absent rather than unfilled: **no email
-    address and no telephone number are published anywhere** — see the module
-    docstring. `form_url` is the substitute the Bundestag itself offers.
+    Note what is absent, and why it is absent rather than unfilled: **the member
+    directory publishes no email address and no telephone number** — see the
+    module docstring. `form_url` is the substitute the Bundestag itself offers.
     """
 
     model_config = ConfigDict(frozen=True)

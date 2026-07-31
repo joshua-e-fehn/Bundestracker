@@ -1,16 +1,3 @@
-# Make MP contact details visible and honest (GAP-002, GAP-003)
+# Task — phone-contact-details
 
-Read `docs/implementation-gap-audit-2026-07-29.md` and inspect the current MP profile implementation and existing design system. Implement the user-facing contact-quality fixes only; do not change the Python pipeline or production data.
-
-Acceptance criteria:
-- When populated, the Kontakt/Contact surface is visible near the top of an MP profile rather than ~1.5 viewports down. Target heading offset <800px on desktop 1440x900 and mobile 390x844.
-- Add a clear contact affordance/anchor in the profile header if appropriate to the existing visual language.
-- When official source contact data is absent/null, render an honest bilingual empty state explaining that Bundestag does not publish direct email/phone and provide any valid official substitute available from existing fields; never silently hide the entire contact surface.
-- Preserve rendering of contact form, homepage, Berlin/constituency offices, and all social links when data exists.
-- Do not invent email addresses, phone numbers, or external social URLs.
-- Add/update tests for populated and absent contact states.
-- Verify responsive behavior in a browser at desktop and mobile widths using representative fixtures/local data. Check console errors and links.
-- Write `/tmp/contact-profile-visibility-report.md` with screenshots/measurements or exact browser evidence.
-- Commit all changes. Do not push, deploy, or open a PR. Stop idle with the commit SHA.
-
-Avoid unrelated redesign. Do not ask questions; proceed autonomously.
+Close the remaining MP contact-detail promise end-to-end. First audit authoritative Bundestag member/contact pages and explicitly linked official MP websites to determine whether email addresses and telephone numbers are actually published, quantify coverage, and document provenance. Never infer or fabricate an email or phone number. If authoritative fields are available, implement an additive, source-provenanced, period-safe data model and ingestion path for published phone numbers and explicit email addresses, preserve existing contact/enrichment on partial runs, render them accessibly and bilingually on MP detail pages, and add parser, transformation, Convex, UI, safety, and regression tests. If the Bundestag does not publish either field in a reliable authoritative form, prove that from sampled/current source data and implement only the truthful UI/documentation contract rather than scraping arbitrary third-party pages. Rebase on current main, run all CI gates, browser-test desktop/mobile DE/EN with real source examples, write a report at /tmp/phone-contact-details-report.md, commit and push, then open a reviewable PR. Do not deploy or mutate production.

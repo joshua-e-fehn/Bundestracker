@@ -32,11 +32,33 @@ missing or stale.
 
 ## What is not here, because it is not published
 
-**No MP email address and no telephone number exist in any Bundestag source.**
-`MDB_STAMMDATEN.DTD` declares `BIOGRAFISCHE_ANGABEN` with no contact elements at
-all — the 15 MB dump contains one `@` character in total — and thirteen sampled
-biography pages carried zero `mailto:` and zero `tel:` links. What the Bundestag
-offers instead is a web contact form, which `MPContact.form_url` records.
+**No per-member email address and no telephone number is published by the member
+directory.** `MDB_STAMMDATEN.DTD` declares `BIOGRAFISCHE_ANGABEN` with no contact
+elements at all — the 15.3 MB dump contains one `@` character in total — and an
+audit on 2026-07-31 read **110 biography pages** (60 consecutive from `Abdi`,
+plus every 13th of all 639 so that every Fraktion is covered): zero addresses and
+zero numbers on every one. What the Bundestag offers instead is a web contact
+form, which `MPContact.form_url` records.
+
+⚠ **The only `mailto:` on a biography page is not a contact.** Every page carries
+`data-share-mail='mailto:?subject=Empfehlung…'` in the page chrome — the
+share-this-article control, with an **empty recipient**. It is on all 110 sampled
+pages and it is the one thing here that a `mailto:` grep will find, so anyone
+re-testing this claim should expect it. `tests/test_mp_profiles.py` pins that the
+parser does not read it.
+
+⚠ **The claim is about this source, not about the parliament.** The same audit
+followed the *officially linked* member websites — the `Homepage` this parser
+collects — and found `@bundestag.de` addresses on 69.8 % of 53 reachable sites
+and telephone numbers on 50.9 %; the Bundestag also prints its own switchboard,
+`+49 (0)30 227-0`, on its imprint. None of that is ingested, and deliberately so:
+20 of those 53 sites list *several* `@bundestag.de` addresses — constituency
+office (`.wk`), individual staffers (`.maNN`; one member lists four) — with
+nothing marking which belongs to the member, a naive sweep also picks up party
+press and vendor addresses, and some members ROT13-obfuscate theirs precisely to
+defeat collection. Choosing one would be inventing an answer the source did not
+give, against members who signalled they did not want it collected. See
+docs/api-research.md §6.6.
 
 ⚠ **The listing publishes no MP id.** It prints `"Nachname, Vorname"` and
 nothing else, so this joins to the roster by name (§7.1) —

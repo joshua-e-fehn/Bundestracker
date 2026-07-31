@@ -516,14 +516,27 @@ const de = {
 
   // --- contact ---
   //
-  // ⚠ There is deliberately no email and no phone key. Neither is published
-  // anywhere — `MDB_STAMMDATEN.DTD` declares no contact elements and the
-  // biography pages carry no `mailto:` or `tel:` links — so `mp.contactForm` is
-  // the Bundestag's own substitute. A label for an address the app never has
-  // would read as a value the pipeline failed to fetch.
+  // ⚠ There is deliberately no *per-member* email or direct-dial key. Neither
+  // is published: `MDB_STAMMDATEN.DTD` declares no contact element, and an
+  // audit of 110 biography pages on 2026-07-31 — 60 consecutive and 50 spread
+  // across all 639 members and all five Fraktionen — found zero `mailto:` and
+  // zero `tel:` links (docs/api-research.md §6.6). So `mp.contactForm` is the
+  // Bundestag's own substitute; a label for an address the app never has would
+  // read as a value the pipeline failed to fetch.
+  //
+  // `mp.switchboard` is the deliberate exception and not a counter-example: it
+  // is the *institution's* number from bundestag.de's imprint, a constant like
+  // `mp.berlinAddress`, and it is attributed to no individual member.
   "mp.contact": "Kontakt",
   "mp.contactForm": "Kontaktformular",
-  "mp.contactFormHint": "Der Bundestag veröffentlicht keine E-Mail-Adressen.",
+  // ⚠ This used to read "Der Bundestag veröffentlicht keine E-Mail-Adressen."
+  // — which is false as stated. The Bundestag publishes `mail@bundestag.de` on
+  // its own imprint, and members publish `@bundestag.de` addresses on their own
+  // websites (69.8 % of a 53-site sample). What is true is the narrower claim:
+  // the member directory does not print one *per member*, which is why this
+  // link is a form. Saying more than the source supports is the bug this fixes.
+  "mp.contactFormHint":
+    "Das Abgeordnetenverzeichnis des Bundestages veröffentlicht keine persönlichen E-Mail-Adressen.",
   "mp.constituencyOffice": "Wahlkreisbüro",
   "mp.homepage": "Webseite",
   "mp.socials": "Soziale Netzwerke",
@@ -532,6 +545,15 @@ const de = {
   // convex/schema.ts.
   "mp.berlinOffice": "Bundestagsbüro",
   "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
+  /** The house's own switchboard, from bundestag.de's imprint. Printed beside
+   * the Berlin address because it is the same kind of fact: one true constant
+   * that reaches all 630, rather than a number attributed to this member. Every
+   * member's direct dial is an extension of it. See `BUNDESTAG_SWITCHBOARD` in
+   * lib/links.ts. */
+  "mp.switchboard": "Telefonzentrale des Bundestages",
+  /** Why the number above is not this member's own — without it, a phone number
+   * under a member's name reads as their direct line, which it is not. */
+  "mp.switchboardHint": "Vermittlung zu allen Abgeordnetenbüros.",
   "mp.noContact": "Für diese Abgeordnete oder diesen Abgeordneten sind keine Kontaktdaten erfasst.",
   // The empty state, spelled out. `mp.noContact` above says *that* nothing is
   // recorded; these two say *what that means* — which is the whole difference
@@ -539,12 +561,15 @@ const de = {
   // at all in this state, so a reader could not tell an absent source from a
   // failed fetch (GAP-003 of docs/implementation-gap-audit-2026-07-29.md).
   //
-  // The second line is the same fact `mp.contactFormHint` states beside the
-  // form link, said where there is no form link to attach it to — and it is
-  // stated as the Bundestag's practice rather than as this site's shortfall,
-  // because that is what it is.
+  // ⚠ This used to open "Der Bundestag veröffentlicht weder E-Mail-Adressen
+  // noch Telefonnummern von Abgeordneten", which the 2026-07-31 audit refuted
+  // twice over: the Bundestag publishes its own switchboard on its imprint, and
+  // members publish `@bundestag.de` addresses and `030 227-…` extensions on
+  // their own websites (69.8 % / 50.9 % of a 53-site sample). The true claim is
+  // about *the directory*, not about the parliament — and it now points the
+  // reader at the two channels that do exist rather than at a dead end.
   "mp.noContactExplain":
-    "Der Bundestag veröffentlicht weder E-Mail-Adressen noch Telefonnummern von Abgeordneten — auch nicht dort, wo Kontaktdaten vorliegen. Für diese Abgeordnete oder diesen Abgeordneten ist zudem kein Kontaktformular, keine Webseite und kein Wahlkreisbüro hinterlegt.",
+    "Das Abgeordnetenverzeichnis des Bundestages führt für die Abgeordneten keine persönlichen E-Mail-Adressen und keine Durchwahlen. Für diese Abgeordnete oder diesen Abgeordneten ist dort zudem kein Kontaktformular, keine Webseite und kein Wahlkreisbüro hinterlegt. Schriftlich und telefonisch erreichbar ist sie oder er über den Bundestag; viele Abgeordnete veröffentlichen weitere Kontaktdaten auf ihrer eigenen Webseite.",
   /** The substitute that always exists: the postal address of the Bundestag
    * itself, which reaches every member. Says what the address is *for* — the
    * `mp.berlinOffice` label directly above already names it, so repeating the
@@ -1907,8 +1932,13 @@ const de = {
   "about.privacy.account.body":
     "Alle Daten sind ohne Anmeldung vollständig einsehbar. Ein Konto speichert drei Dinge: eigene Gewichtungen des Aktivitätswerts, die Liste der gefolgten Abgeordneten und — sofern Sie das wählen — Ihre Sprache.",
   "about.privacy.mpData.title": "Zu den Abgeordneten selbst",
+  // ⚠ Der Schlusssatz lautete "der Bundestag veröffentlicht keine" — das ist so
+  // nicht haltbar (Prüfung vom 31.07.2026, siehe docs/api-research.md §6.6).
+  // Richtig ist die Aussage über *diese Seite*: private Kontaktdaten werden
+  // hier nicht erhoben, auch nicht von den verlinkten eigenen Webseiten der
+  // Abgeordneten, auf denen viele durchaus Adressen veröffentlichen.
   "about.privacy.mpData.body":
-    "Über Abgeordnete werden ausschließlich Angaben angezeigt, die der Bundestag oder abgeordnetenwatch selbst veröffentlichen und die ihr Mandat betreffen. Private Kontaktdaten sind nicht enthalten — der Bundestag veröffentlicht keine.",
+    "Über Abgeordnete werden ausschließlich Angaben angezeigt, die der Bundestag oder abgeordnetenwatch selbst veröffentlichen und die ihr Mandat betreffen. Persönliche Kontaktdaten werden nicht erhoben: Das Abgeordnetenverzeichnis führt keine, und die eigenen Webseiten der Abgeordneten werden dafür nicht ausgewertet.",
 
   // --- Schluss ---
   "about.questions.title": "Etwas fehlt oder ist falsch?",
@@ -2139,8 +2169,7 @@ const de = {
   // name to start with the visible text so speech-input users can activate
   // "Zum Protokoll" as spoken. `öffnet neuen Tab` names the affordance the
   // `target="_blank"` link carries.
-  "voteExplanations.sourceLinkLabel":
-    "Zum Protokoll — Erklärung von {name} (öffnet neuen Tab)",
+  "voteExplanations.sourceLinkLabel": "Zum Protokoll — Erklärung von {name} (öffnet neuen Tab)",
 
   // --- Sitzung (sitting detail page) --------------------------------------
   // Der Titel benennt die Sitzung im Bundestagsformat: "Sitzung 21/90" ist
@@ -2512,21 +2541,27 @@ const en: Dictionary = {
 
   // --- contact ---
   //
-  // ⚠ No email or phone key, deliberately — neither is published anywhere. See
-  // the German entries.
+  // ⚠ No *per-member* email or direct-dial key, deliberately — the member
+  // directory publishes neither. See the German entries. `mp.switchboard` is
+  // the institution's own number and is not attributed to any member.
   "mp.contact": "Contact",
   "mp.contactForm": "Contact form",
-  "mp.contactFormHint": "The Bundestag publishes no email addresses.",
+  "mp.contactFormHint": "The Bundestag's member directory publishes no personal email addresses.",
   "mp.constituencyOffice": "Constituency office",
   "mp.homepage": "Website",
   "mp.socials": "Social media",
   "mp.berlinOffice": "Bundestag office",
   "mp.berlinAddress": "Platz der Republik 1\n11011 Berlin",
+  /** The house's own switchboard. See the German entry: a constant that reaches
+   * all 630, not this member's direct line. */
+  "mp.switchboard": "Bundestag switchboard",
+  "mp.switchboardHint": "Connects to any member's office.",
   "mp.noContact": "No contact details are recorded for this member.",
   /** The empty state, spelled out. See the German entries: the point is that a
-   * reader can tell an absent source from a failed fetch. */
+   * reader can tell an absent source from a failed fetch, and that the claim is
+   * about the *directory* rather than about the parliament. */
   "mp.noContactExplain":
-    "The Bundestag publishes neither email addresses nor telephone numbers for members — not even where contact details are available. For this member it also lists no contact form, no website and no constituency office.",
+    "The Bundestag's member directory lists no personal email addresses and no direct dial numbers for members. For this member it also lists no contact form, no website and no constituency office. They can still be reached in writing and by phone via the Bundestag, and many members publish further contact details on their own website.",
   "mp.postalSubstitute": "Reachable in writing at the Bundestag's address:",
   "mp.officialDirectory": "The Bundestag's own directory of members",
   /** Names the destination rather than repeating `mp.contact`, the heading it
@@ -3423,8 +3458,11 @@ const en: Dictionary = {
   "about.privacy.account.body":
     "All the data is fully viewable without signing in. An account stores three things: your own activity-score weightings, the list of members you follow, and — if you choose — your language.",
   "about.privacy.mpData.title": "About the members themselves",
+  /** ⚠ The closing clause used to read "the Bundestag publishes none", which the
+   * 2026-07-31 audit refuted. See the German entry: the honest claim is about
+   * what *this site* collects. */
   "about.privacy.mpData.body":
-    "Only information the Bundestag or abgeordnetenwatch publish themselves, and that concerns the mandate, is shown about a member. No private contact details are included — the Bundestag publishes none.",
+    "Only information the Bundestag or abgeordnetenwatch publish themselves, and that concerns the mandate, is shown about a member. Personal contact details are not collected: the member directory lists none, and members' own websites are not harvested for them.",
 
   // --- closing ---
   "about.questions.title": "Something missing or wrong?",
@@ -3572,7 +3610,7 @@ const en: Dictionary = {
   "voteExplanations.loading": "Loading declarations …",
   "voteExplanations.count": "{count} declaration(s) recorded",
   "voteExplanations.unlinked":
-    "This ballot has not yet been linked to a DIP procedure. Without that link no honest statement about §31 declarations is possible — neither \"none filed\" nor \"N filed\".",
+    'This ballot has not yet been linked to a DIP procedure. Without that link no honest statement about §31 declarations is possible — neither "none filed" nor "N filed".',
   "voteExplanations.emptyNoneFiled":
     "No written declaration under §31 GO-BT was filed on this procedure. Most named ballots have none.",
   "voteExplanations.emptyPeriodNotBackfilled":
@@ -3582,8 +3620,7 @@ const en: Dictionary = {
   "voteExplanations.protocol": "Protocol {number}",
   "voteExplanations.protocolLabel": "Plenary protocol {number}",
   "voteExplanations.sourceLink": "Open protocol",
-  "voteExplanations.sourceLinkLabel":
-    "Open protocol — declaration by {name} (opens new tab)",
+  "voteExplanations.sourceLinkLabel": "Open protocol — declaration by {name} (opens new tab)",
 
   // --- Sitting detail page ------------------------------------------------
   "sitting.metaTitle": "Sitting {wahlperiode}/{sitzungnr}",

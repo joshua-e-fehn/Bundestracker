@@ -211,6 +211,27 @@ clobber" hazard, now realised.
 
 ### 2.5 Email and phone: genuinely impossible
 
+> **Superseded in part, 2026-07-31.** The conclusion below — do not implement a
+> per-member email or phone field — was re-tested at scale and **stands**: 110
+> biography pages (60 consecutive + every 13th of all 639) carry zero addresses
+> and zero numbers, and the full 15.3 MB Stammdaten dump contains one `@`.
+>
+> Two claims in this section were nevertheless **wrong as written**, and are
+> corrected in docs/api-research.md §6.6:
+>
+> 1. *"the Bundestag publishes none"* is too broad. It publishes its own
+>    switchboard (`+49 (0)30 227-0`) on its imprint, and **69.8 %** of members'
+>    officially linked websites carry an `@bundestag.de` address. The accurate
+>    claim is about the **member directory**, not the parliament.
+> 2. The German copy quoted approvingly below was therefore factually false and
+>    has been rewritten in both locales. The switchboard is now printed on the
+>    card as an institutional constant, beside the Berlin address.
+>
+> The linked member sites are still **not** ingested: their addresses are
+> ambiguous between member, constituency office and named staffers, some are
+> ROT13-obfuscated against collection, and a sweep also picks up party and
+> vendor addresses. See §6.6 for the numbers.
+
 `MDB_STAMMDATEN.DTD` declares no contact elements, and the biography pages
 carry zero `mailto:` and zero `tel:` links (established in commit `429ae2d`).
 The Bundestag publishes a **contact form** instead, which is what `formUrl`

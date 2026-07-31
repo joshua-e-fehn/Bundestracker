@@ -273,12 +273,20 @@ export const mpInput = {
   /**
    * How to reach the MP, as the Bundestag actually publishes it.
    *
-   * ⚠ **There is no email address and no phone number**, and that is a fact
-   * about the sources rather than a gap in the pipeline: `MDB_STAMMDATEN.DTD`
-   * declares no contact elements at all, and the biography pages carry no
-   * `mailto:` or `tel:` links. `formUrl` is the Bundestag's own substitute — a
-   * web form, not an address. An `email` field here would read as one the
+   * ⚠ **There is no per-member email address and no phone number**, and that is
+   * a fact about the source rather than a gap in the pipeline:
+   * `MDB_STAMMDATEN.DTD` declares no contact elements at all, and 110 biography
+   * pages audited on 2026-07-31 — 60 consecutive plus every 13th of all 639 —
+   * carry no address and no number. `formUrl` is the Bundestag's own substitute
+   * — a web form, not an address. An `email` field here would read as one the
    * pipeline had failed to fill.
+   *
+   * ⚠ Members' own websites (`homepage` below) *do* publish addresses — 69.8 %
+   * of 53 sampled — and are deliberately not read for them: the addresses are
+   * ambiguous between the member, their constituency office and named staffers,
+   * and some are obfuscated specifically to prevent collection. Storing a
+   * guessed one would be this schema asserting a fact no source stated. See
+   * docs/api-research.md §6.6.
    *
    * The Berlin office is not stored: it is `Platz der Republik 1` for all 630,
    * so it belongs in the UI as a constant, not in 630 rows.

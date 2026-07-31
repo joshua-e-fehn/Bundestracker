@@ -164,12 +164,30 @@ describe("the empty state is honest and invents nothing", () => {
     expect(code).toContain("BUNDESTAG_MPS_URL")
   })
 
-  test("no email address or phone number is constructed anywhere", () => {
-    // Neither exists in any source (`MDB_STAMMDATEN.DTD` declares no contact
-    // elements; the biography pages carry zero `mailto:` and zero `tel:`), so a
-    // link of either kind on this page could only have been invented.
-    expect(code).not.toContain("mailto:")
-    expect(code).not.toContain("tel:")
+  test("no per-member email address or direct dial is constructed anywhere", () => {
+    // Neither exists in the member directory (`MDB_STAMMDATEN.DTD` declares no
+    // contact element; 110 audited biography pages carried no address and no
+    // number), so a per-member link of either kind could only have been
+    // invented — from a member's own website, say, where roughly 70 % do
+    // publish one but where nothing marks which of several belongs to the
+    // member rather than to a staffer or a party office.
+    //
+    // The switchboard is the one exception and is exempt by construction rather
+    // than by wording: it is imported from lib/links.ts, so the assertion below
+    // is that no phone URI is *built here* out of member data. A literal
+    // per-member one would still fail.
+    const withoutImports = code.slice(code.indexOf("export"))
+    expect(withoutImports).not.toContain("mailto:")
+    expect(withoutImports).not.toMatch(/["'`]tel:/)
+  })
+
+  test("the one phone number on the page is the institution's, imported", () => {
+    // It reaches every member and belongs to none of them, exactly like the
+    // Berlin address beside it. Pinning the *import* is what keeps it a
+    // constant: a number typed into this component would be a fact this file
+    // asserts, and the next one could be a member's.
+    expect(code).toContain("BUNDESTAG_SWITCHBOARD_TEL")
+    expect(code).toContain('t("mp.switchboardHint")')
   })
 
   test("every outbound href comes from the data or from lib/links.ts", () => {
@@ -197,7 +215,15 @@ describe("both locales carry the contact strings", () => {
     "mp.jumpToContact",
     "mp.berlinOffice",
     "mp.berlinAddress",
+    "mp.switchboard",
+    "mp.switchboardHint",
   ] as const
+
+  /** The postal code in `mp.berlinAddress` is the one run of digits any of
+   * these strings may legitimately carry — it is part of an address, not a
+   * number to dial. Every other key must stay digit-free so that no phone
+   * number can live in the dictionary. */
+  const DIGITS_ALLOWED = new Set(["mp.berlinAddress"])
 
   for (const locale of LOCALES) {
     test(`${locale} defines every contact string, non-empty`, () => {
@@ -217,15 +243,23 @@ describe("both locales carry the contact strings", () => {
     expect(untranslated).toEqual([])
   })
 
-  test("neither locale promises an email address or a phone number", () => {
+  test("neither locale promises a member's email address or direct dial", () => {
     // The strings are where this promise would most plausibly creep back in —
     // a label is cheaper to write than a pipeline stage. `E-Mail`/`email` may
-    // appear only in the sentences that say the Bundestag publishes none.
+    // appear only in the sentences that say the directory publishes none.
+    //
+    // No number is allowed in *any* of these keys, including the switchboard's
+    // labels: the number itself lives in lib/links.ts as a constant, and the
+    // dictionary holds only the words around it. That split is what stops a
+    // future "Durchwahl: 030 227-…" from being one careless edit away.
     for (const locale of LOCALES) {
       for (const key of KEYS) {
         const value = dictionaries[locale][key]
         expect(value, `${locale}.${key}`).not.toMatch(/@/)
         expect(value, `${locale}.${key}`).not.toMatch(/\+49|tel:|mailto:/)
+        if (!DIGITS_ALLOWED.has(key)) {
+          expect(value, `${locale}.${key}`).not.toMatch(/\d{3,}/)
+        }
       }
     }
   })

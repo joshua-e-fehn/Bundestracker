@@ -1,11 +1,18 @@
 /**
  * What "how to reach this MP" amounts to, once the source has been read.
  *
- * ⚠ **There is no email address and no phone number, for anyone.** That is a
- * fact about the sources rather than a gap in the pipeline: `MDB_STAMMDATEN.DTD`
- * declares no contact elements at all, and the biography pages carry zero
- * `mailto:` and zero `tel:` links. The Bundestag publishes a web *form* instead,
- * which is what `formUrl` holds. See the note on `contact` in convex/schema.ts.
+ * ⚠ **There is no per-member email address and no direct dial, for anyone.**
+ * That is a fact about the source rather than a gap in the pipeline:
+ * `MDB_STAMMDATEN.DTD` declares no contact elements at all, and 110 biography
+ * pages audited on 2026-07-31 carry zero addresses and zero numbers. The
+ * Bundestag publishes a web *form* instead, which is what `formUrl` holds. See
+ * the note on `contact` in convex/schema.ts.
+ *
+ * ⚠ The card does print one telephone number — the Bundestag's own switchboard,
+ * from `lib/links.ts`. It is not a member's and is not stored here: it is a
+ * constant of the institution, exactly like the Berlin address, and it is
+ * therefore deliberately **not** counted by `any` below. Counting it would make
+ * every member look populated, which is the bug this module exists to prevent.
  *
  * ## Why this is a module and not four `Boolean(…)` calls in the card
  *
