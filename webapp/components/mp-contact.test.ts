@@ -79,9 +79,14 @@ function renderContact(mp: MPDoc): string {
 
 const de = dictionaries.de
 
-/** A block with every channel the source publishes, for the branch where the
- * card is populated. The switchboard must render here too — it is a constant of
- * the institution, not a fallback for members the pipeline missed. */
+/**
+ * A block with every channel the source publishes — the populated branch.
+ *
+ * One definition rather than an inline literal per test: three tests below need
+ * "a member with contact data" and differ only in what they *assert* about it,
+ * so three copies would be three chances for one to drift into a shape the card
+ * never sees. `socials` is overridden where a test needs particular platforms.
+ */
 const POPULATED = {
   formUrl: "https://bundestag.de/webarchiv/kontakt/muster",
   homepage: "https://muster-beispiel.de/",
@@ -127,9 +132,9 @@ describe("Contact renders the card in both branches", () => {
     const html = renderContact({
       ...MP_STUB,
       contact: {
-        formUrl: "https://bundestag.de/webarchiv/kontakt/muster",
-        homepage: "https://muster-beispiel.de/",
-        constituencyOffice: "Musterstraße 1\n12345 Musterhausen",
+        ...POPULATED,
+        // Two platforms, one of them carrying an `@` in its URL — the Mastodon
+        // handle is what makes the "no email in an href" check below meaningful.
         socials: [
           { platform: "Mastodon", url: "https://social.bund.de/@muster" },
           { platform: "Bluesky", url: "https://bsky.app/profile/muster.example" },
@@ -176,15 +181,10 @@ describe("Contact renders the card in both branches", () => {
     // whatsoever. That premise was wrong: it prints its own switchboard on its
     // imprint. So the rule is now the one that was always meant — exactly one
     // number, the institution's, and never a member's.
-    const html = renderContact({
-      ...MP_STUB,
-      contact: {
-        formUrl: "https://bundestag.de/webarchiv/kontakt/muster",
-        homepage: "https://muster-beispiel.de/",
-        constituencyOffice: "Musterstraße 1\n12345 Musterhausen",
-        socials: [],
-      },
-    })
+    // No socials: the point is that the *card's own* markup fabricates nothing,
+    // so the scraped-link path is deliberately empty here. The test below
+    // covers what happens when that path carries an attack.
+    const html = renderContact({ ...MP_STUB, contact: { ...POPULATED, socials: [] } })
     expect(html).not.toMatch(/mailto:/)
     expect(html.match(/href="tel:[^"]*"/g)).toEqual([`href="${BUNDESTAG_SWITCHBOARD_TEL}"`])
     expect(html).not.toMatch(/href="\+/)

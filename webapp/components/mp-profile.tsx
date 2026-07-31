@@ -492,10 +492,10 @@ function Contact({ mp }: { mp: MPDoc }) {
             card's promise the size of the source. */}
         <div className="flex flex-col gap-1">
           <span className="text-muted-foreground text-xs">{t("mp.switchboard")}</span>
-          <a
-            href={BUNDESTAG_SWITCHBOARD_TEL}
-            className="inline-flex w-fit items-center rounded-md text-sm underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
+          {/* Not `ExternalLink`: a `tel:` is not an outbound *page*, so it takes
+              neither `target="_blank"` nor the external-link icon. It shares the
+              appearance and nothing else. */}
+          <a href={BUNDESTAG_SWITCHBOARD_TEL} className={cardLinkClass()}>
             {BUNDESTAG_SWITCHBOARD}
           </a>
           <p className="text-muted-foreground text-xs">{t("mp.switchboardHint")}</p>
@@ -550,13 +550,29 @@ function Contact({ mp }: { mp: MPDoc }) {
  * way, and these ones go to personal sites and social networks, where passing a
  * referrer says which MP's page the reader was on.
  */
+/**
+ * How a link inside the contact card looks.
+ *
+ * Shared by `ExternalLink` and the switchboard's `tel:` anchor, which are two
+ * different elements for good reasons — a phone number opens no tab and takes
+ * no external-link icon — but must not be two different *appearances*. They sit
+ * four lines apart in the same card, so a class list copied between them is one
+ * a later edit changes in one place only.
+ */
+const cardLinkClass = (gap = "") =>
+  `inline-flex w-fit items-center ${gap}rounded-md text-sm underline decoration-border ` +
+  `underline-offset-4 outline-none transition-colors hover:decoration-foreground ` +
+  `focus-visible:ring-3 focus-visible:ring-ring/50`
+
 function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer noopener"
-      className="inline-flex w-fit items-center gap-1.5 rounded-md text-sm underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+      // `gap-1.5` is this variant's own: it is the space before the icon below,
+      // and a link with no icon has nothing to space.
+      className={cardLinkClass("gap-1.5 ")}
     >
       {children}
       <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden="true" />
