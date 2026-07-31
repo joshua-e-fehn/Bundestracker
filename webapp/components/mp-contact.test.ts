@@ -208,6 +208,34 @@ describe("Contact renders the card in both branches", () => {
     }
   })
 
+  test("the rendered link dials the number it displays", () => {
+    // ⚠ The assertions above pin the href *to the constant*, which is the right
+    // check for "exactly one phone link" and no check at all on whether that
+    // link is correct: a wrong constant satisfies them, and one did — the URI
+    // shipped as `tel:+493022770`, an extra `7`, reading as extension `227-70`.
+    //
+    // So this reads both halves out of the **rendered DOM** and compares them to
+    // each other, mentioning neither literal. `lib/links.test.ts` holds the same
+    // invariant on the constants; this holds it on what a reader actually taps,
+    // so a future card that formats the number before printing it cannot drift
+    // the two apart unnoticed.
+    const html = renderContact({ ...MP_STUB, contact: null })
+
+    const link = html.match(/<a href="tel:\+(\d+)"[^>]*>([^<]+)<\/a>/)
+    expect(link, "expected exactly one rendered tel: link").not.toBeNull()
+    const [, dialled, displayed] = link as RegExpMatchArray
+
+    // The visible text, reduced to what a phone would actually dial: the `(0)`
+    // trunk is domestic-only and is dropped when dialling `+49`, everything else
+    // that is not a digit is grouping for the eye.
+    const expected = displayed.replace(/\((\d)\)/, "").replace(/\D/g, "")
+    expect(dialled).toBe(expected)
+
+    // And the displayed text is the switchboard rather than some extension —
+    // otherwise both halves could agree on the wrong number.
+    expect(displayed.trim()).toMatch(/-0$/)
+  })
+
   test("attacker-controlled mailto:/tel: URLs in socials[] are refused, not rendered", () => {
     // `socials[].url` is scraped from external HTML by
     // `pipeline/.../bio.py`, which means an operator who owns a

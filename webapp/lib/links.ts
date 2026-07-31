@@ -62,12 +62,26 @@ export const BUNDESTAG_MPS_URL = "https://www.bundestag.de/abgeordnete"
  * 630 rows. It is not personal data, it is not inferred, and it is not
  * attributed to any individual member.
  *
- * ## Two constants, because the printed form and the dialled form differ
+ * ## Two constants, and a test that makes them agree
  *
- * `-0` is how the Bundestag prints it and how a reader recognises a switchboard;
- * `tel:` wants an unpunctuated, fully-qualified number. Keeping the pair here
- * rather than deriving one from the other means neither is a regex away from
- * being wrong — and the display string stays the source's, verbatim.
+ * `-0` is how the Bundestag prints it and how a reader recognises a
+ * switchboard; `tel:` wants an unpunctuated, fully-qualified number. They are
+ * written out separately so the display string stays the source's, verbatim.
+ *
+ * ⚠ **An earlier version of this comment argued that writing both by hand meant
+ * "neither is a regex away from being wrong". That was exactly backwards, and it
+ * shipped a wrong number.** `BUNDESTAG_SWITCHBOARD_TEL` was `tel:+493022770` —
+ * one `7` too many, i.e. local `22770`, which reads as extension `227-70` rather
+ * than the switchboard. Nothing caught it, because every test that pinned the
+ * URI pinned it *to this constant*: the pair was self-consistent and jointly
+ * wrong. Two hand-written values with no rule tying them together are not two
+ * independent facts, they are one fact and one opportunity for a typo.
+ *
+ * So `lib/links.test.ts` now derives the digits from the *printed* string and
+ * compares — dropping the German trunk `0`, which is written `(0)` precisely
+ * because it is omitted when dialling internationally. The printed form is the
+ * source of truth because it is the one copied from the imprint; the URI has to
+ * answer to it.
  *
  * ⚠ Note `lib/bundestag.ts`'s `safeExternalUrl` rejects `tel:` by design. That
  * is correct and stays: it guards URLs that arrived from a *scraped page*, and
@@ -77,8 +91,16 @@ export const BUNDESTAG_MPS_URL = "https://www.bundestag.de/abgeordnete"
  */
 export const BUNDESTAG_SWITCHBOARD = "+49 (0)30 227-0"
 
-/** The dialable form of {@link BUNDESTAG_SWITCHBOARD}. */
-export const BUNDESTAG_SWITCHBOARD_TEL = "tel:+493022770"
+/**
+ * The dialable form of {@link BUNDESTAG_SWITCHBOARD}.
+ *
+ * `+49` `30` `227` `0` — country code, Berlin area code without its trunk `0`,
+ * the Bundestag stem, and the `-0` that reaches the switchboard rather than an
+ * extension. The stem is a *number*, not a prefix pattern: the digits after the
+ * hyphen concatenate onto it, which is why the imprint's petitions line
+ * `+49 (0)30 227-35257` dials `+493022735257`.
+ */
+export const BUNDESTAG_SWITCHBOARD_TEL = "tel:+49302270"
 
 /** abgeordnetenwatch, the non-profit whose CC0 data supplements the official
  * roster (§4.3, §10 of docs/api-research.md). */
