@@ -56,6 +56,8 @@
  * fail open.
  */
 
+import { LIMITS } from "@/lib/feedback"
+
 /** Marks a region for redaction. Public so components can be marked without
  * importing a string literal. */
 export const REDACT_ATTRIBUTE = "data-feedback-redact"
@@ -182,15 +184,17 @@ const REDACTION_FILL = "#6b7280"
 /**
  * Copies computed style from every live node onto its clone.
  *
- * Walks both trees in lockstep with two `TreeWalker`s rather than by index:
- * the clone has had nodes removed by `stripClone`, so indices diverge. This is
- * why removal happens *after* styling — the trees must be structurally
- * identical while they are being walked together.
+ * Pairs through `pairTrees` rather than by index, because the two trees are
+ * only structurally identical *here*: `stripClone` removes nodes from the clone
+ * afterwards, which is why removal happens after styling and not before.
+ *
+ * This function only sets attributes, so it never moved a cursor and was never
+ * subject to the desync `pairTrees` was extracted to fix. It shares the pairing
+ * anyway — one traversal rule for both passes is one rule to get right, and
+ * leaving a second hand-rolled lockstep loop in the file is how the next person
+ * concludes the pattern is fine.
  */
 function inlineComputedStyles(live: Element, clone: Element): void {
-  const liveWalker = document.createTreeWalker(live, NodeFilter.SHOW_ELEMENT)
-  const cloneWalker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT)
-
   const apply = (from: Element, to: Element) => {
     const computed = window.getComputedStyle(from)
     const declarations: string[] = []
@@ -202,13 +206,8 @@ function inlineComputedStyles(live: Element, clone: Element): void {
     to.setAttribute("style", declarations.join(";"))
   }
 
-  apply(live, clone)
-  let liveNode = liveWalker.nextNode()
-  let cloneNode = cloneWalker.nextNode()
-  while (liveNode && cloneNode) {
-    apply(liveNode as Element, cloneNode as Element)
-    liveNode = liveWalker.nextNode()
-    cloneNode = cloneWalker.nextNode()
+  for (const [from, to] of pairTrees(live, clone)) {
+    apply(from, to)
   }
 }
 
@@ -238,42 +237,92 @@ function redactNode(clone: HTMLElement, rect: DOMRect): void {
 }
 
 /**
+ * The minimum a node must offer to be paired. Declared structurally so
+ * `pairTrees` can be exercised against a hand-built tree in a test process with
+ * no DOM — which is the only way this function's correctness was ever going to
+ * be checked. See the note on the two passes below.
+ */
+export type WalkableNode = {
+  /** `ArrayLike` rather than an array, so a real `Element`'s live
+   * `HTMLCollection` satisfies it without conversion and the same function
+   * serves both the DOM and a hand-built test tree. */
+  children: ArrayLike<WalkableNode>
+}
+
+/**
+ * Pairs two structurally identical trees in pre-order, **without mutating
+ * either**.
+ *
+ * ## Why this is a separate, pure function
+ *
+ * It used to be a loop that advanced two live `TreeWalker`s and redacted as it
+ * went, and that was a silent privacy hole. A `TreeWalker` is live over its
+ * document: the moment `redactNode` emptied a clone node's subtree, the clone
+ * walker's next `nextNode()` skipped to that node's *sibling* while the live
+ * walker descended into the live node's N children. **From the first redaction
+ * onward the two walkers were offset by N** — every later pairing matched one
+ * element and blanked an unrelated one, and the clone walk exhausted early so
+ * the tail of the page was never examined at all.
+ *
+ * Concretely, on the real page: the sidebar account button redacted correctly,
+ * and the Radix-portalled account menu holding the reader's **name and email**
+ * — which mounts last in `<body>` and has no other backstop — did not. An
+ * innocent `<span>` was blacked out in its place, and `redactedCount` still
+ * read "2 regions redacted" because it counts calls, not correct coverage.
+ *
+ * The fix is to separate traversal from mutation. Pairing happens here, over an
+ * untouched pair of trees, so no mutation can move a cursor. Mutation happens
+ * afterwards over the collected pairs, by which time the traversal is a fixed
+ * list rather than a live cursor.
+ *
+ * Pre-order, children in document order — the same order `TreeWalker` yields
+ * with `SHOW_ELEMENT`, so the pairing is identical to what the correct version
+ * of the old loop would have produced.
+ */
+export function pairTrees<A extends WalkableNode, B extends WalkableNode>(
+  live: A,
+  clone: B,
+): Array<[A, B]> {
+  const pairs: Array<[A, B]> = []
+  const visit = (from: A, to: B): void => {
+    pairs.push([from, to])
+    // Structurally identical by construction (`cloneNode(true)`), but a
+    // defensive `min` rather than an assumption: a length mismatch must
+    // truncate the pairing rather than pair a node with `undefined` and throw
+    // in the middle of a capture.
+    const count = Math.min(from.children.length, to.children.length)
+    for (let i = 0; i < count; i++) {
+      visit(from.children[i] as A, to.children[i] as B)
+    }
+  }
+  visit(live, clone)
+  return pairs
+}
+
+/**
  * Applies the redaction rules to the clone.
  *
- * Queries the **live** tree for matches and maps each to its clone counterpart
- * by walking both in lockstep — the same technique and the same reason as
- * `inlineComputedStyles`. Matching on the clone directly would work too, but
- * the rect must come from the live element (a detached clone has no layout, so
- * every `getBoundingClientRect` on it is zero), so the live node is needed
- * regardless and pairing them once is simpler than twice.
+ * Two passes, for the reason `pairTrees` documents at length: pairing must
+ * finish before any mutation begins, or the mutation moves the cursor that is
+ * still being read.
+ *
+ * The rect comes from the **live** element because a detached clone has no
+ * layout — every `getBoundingClientRect` on it returns zero — and a redaction
+ * box sized zero would collapse and reflow the page it is meant to depict.
  */
 function applyRedactions(live: Element, clone: Element): number {
   const selector = ALWAYS_REDACT.join(",")
-  const liveWalker = document.createTreeWalker(live, NodeFilter.SHOW_ELEMENT)
-  const cloneWalker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT)
   let redacted = 0
 
-  const consider = (from: Element, to: Element): boolean => {
-    if (!from.matches(selector)) return false
-    if (to instanceof HTMLElement) {
-      redactNode(to, from.getBoundingClientRect())
-      redacted++
-      return true
-    }
-    return false
-  }
-
-  consider(live, clone)
-  let liveNode = liveWalker.nextNode()
-  let cloneNode = cloneWalker.nextNode()
-  while (liveNode && cloneNode) {
-    // A redacted node's subtree is already gone from the clone, but the walkers
-    // must stay in step, so both continue walking the live subtree and the
-    // (now childless) clone advances past it naturally — hence no skipping
-    // here: `consider` empties the clone node rather than removing it.
-    consider(liveNode as Element, cloneNode as Element)
-    liveNode = liveWalker.nextNode()
-    cloneNode = cloneWalker.nextNode()
+  for (const [from, to] of pairTrees(live, clone)) {
+    if (!from.matches(selector)) continue
+    if (!(to instanceof HTMLElement)) continue
+    // A node inside an already-redacted ancestor is gone from the clone
+    // anyway; redacting it again would double-count and would size a box from
+    // a rect whose container no longer renders.
+    if (to.parentElement?.closest("[data-redacted]")) continue
+    redactNode(to, from.getBoundingClientRect())
+    redacted++
   }
   return redacted
 }
@@ -407,7 +456,11 @@ export async function captureScreenshot(): Promise<ScreenshotResult | null> {
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
 
     const blob = await canvasToBlob(canvas)
-    if (!blob || blob.size > 1_500_000) return null
+    // `LIMITS.screenshotBytes`, not a literal repeating it — a second copy of a
+    // bound is a bound that drifts. This is the courteous check that avoids a
+    // pointless upload; `claimScreenshot` in convex/feedback.ts is the one that
+    // actually enforces it, since a hand-written caller never runs this file.
+    if (!blob || blob.size > LIMITS.screenshotBytes) return null
 
     return { blob, width: canvas.width, height: canvas.height, redactedCount }
   } catch {
