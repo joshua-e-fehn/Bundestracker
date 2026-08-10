@@ -59,7 +59,7 @@ Run from a clean worktree, after `bun install` and copying `convex/_generated`.
 
 ```
 $ pixi run typecheck   → tsc --noEmit, no output (pass)
-$ pixi run test        → 1387 pass, 0 fail, 16896 expect() calls, 84 files
+$ pixi run test        → 1402 pass, 0 fail, 16925 expect() calls, 84 files
 $ pixi run lint        → Checked 344 files, 10 warnings
 $ pixi run build       → compiled, 25 routes emitted
 $ bun run check:codegen → ✓ api.d.ts lists all 29 Convex modules
@@ -69,12 +69,12 @@ The 10 lint warnings are the **pre-existing** count. Measured directly by
 stashing this branch's changes and re-running: baseline `Found 10 warnings`,
 with the feature `Found 10 warnings`. This branch adds none.
 
-Test count moved 1268 → 1387, i.e. **119 new tests** (78 in the original pass,
-41 added for the review findings).
+Test count moved 1268 → 1402, i.e. **134 new tests** — 78 in the original pass,
+41 for the first review, 15 for the second.
 
 ## 2. The privacy boundary — behavioural tests
 
-`webapp/lib/feedback.test.ts` (40 tests). Every test is a negative: a sentinel
+`webapp/lib/feedback.test.ts` (46 tests). Every test is a negative: a sentinel
 is fed in and asserted absent from the output, because a positive test passes
 just as happily when the sanitizer is deleted.
 
@@ -110,7 +110,7 @@ redaction walk, against a hand-built tree shaped like the real page — a
 ordering rather than in the DOM API. **7 of the 9 fail against the pre-fix
 algorithm**, replayed as a faithful live `TreeWalker`.
 
-`webapp/lib/feedback-boundaries.test.ts` (28 tests) asserts guarantees that are
+`webapp/lib/feedback-boundaries.test.ts` (37 tests) asserts guarantees that are
 properties of the *source*, because no function returns them:
 
 - the `safeDiagnostics` validator contains no `v.any()` / `v.record()` / `v.bytes()`
@@ -123,10 +123,16 @@ properties of the *source*, because no function returns them:
 - `getReportForPublication` does not select `contact` or `screenshotId`
 - minting an upload writes a row the orphan sweep can find; the mint gate counts
   mints rather than reports; the size ceiling is enforced against stored metadata
-- `findDuplicates` consults the budget *before* reaching GitHub
+- the mint returns its row id, and `bindUpload` distrusts it — an already-claimed
+  or already-bound row is not re-bound (the binding is exact, not a guess)
+- report retention deletes the claimed upload row, in file → record → row order
+- `findDuplicates` **charges** the budget before reaching GitHub, and that budget
+  counts `feedbackSearches` rows rather than reports
+- `claimSearchBudget` is a mutation, because counting a search means recording it
+- search records are reaped rather than accumulating forever
 - `publishReport` searches for an existing issue before re-POSTing on a retry
 - `recordPublication` cannot overwrite `duplicateCandidates`
-- both sweeps delete the file before the row (no orphaned storage)
+- all three sweeps delete the file before the row (no orphaned storage)
 
 ⚠ These are source assertions and they are the weaker kind. Where the review
 found one standing in for a behavioural test that *was* available — redaction
@@ -363,6 +369,78 @@ contact email present              : False
 were still on the row after it published — the column was previously emptied by
 `recordPublication` on every write.
 
+## 5d. The second review pass
+
+Four further items, each verified against the live backend rather than by
+reading.
+
+**The first-party check now works in the runtime that matters.** With only
+`SITE_URL` set — exactly the Convex deployment's configuration — a report
+carrying a first-party URL, a first-party URL inside an error message, and a
+third-party URL with a path secret:
+
+```
+| Page | `https://bundestracker.de/rankings?wp=20&metric=speeches` |
+- **+0.0s** — `Cannot load https://bundestracker.de/api/mps/bt-0007 in list`
+  - on `https://bundestracker.de/mps/bt-0007`
+| +0.0s | `GET` | 500 | 1 ms | `https://api.evil.com/…` |
+
+first-party path preserved server-side : True
+first-party path in error text         : True
+token still stripped                   : True
+fragment still dropped                 : True
+foreign path still reduced             : True
+```
+
+The reproduction survives and nothing that should be stripped is kept. Two tests
+in `lib/feedback.test.ts` fail against the single-variable version.
+
+**The duplicate search is bounded on searches.** The gate previously counted
+*reports*, which a search does not create — so a caller rotating `clientKey` was
+never bounded, and a quiet deployment's total was permanently zero.
+`claimSearchBudget` records each search before the outbound call:
+
+```
+searches recorded after 60 rotating-key calls : 60 rows, 60 distinct keys
+served from a single key                      : 30 / 40   (client cap 30)
+rotating-key calls served past the cap        : 10 / 30   (1990 + 10 = 2000)
+total rows                                    : 2000      (hard ceiling)
+outbound GitHub calls the mock saw            : 100       (only the served ones)
+```
+
+Key rotation no longer defeats the bound, and a refused search never reaches
+GitHub.
+
+**An upload is bound to its file exactly, not guessed.** `generateUploadUrl`
+returns its own row id and the client hands it back at submission:
+
+```
+mint returned uploadId : k57ck2ns0e6ahnqpyp9yw87a3s8c79zb
+uploaded storageId     : kg25a2cyw96j4599a29s9b4hhn8c6zsd
+upload row  → { claimed: true, storageId: "kg25a2cyw96j4599a29s9b4hhn8c6zsd" }
+report row  → screenshotId: "kg25a2cyw96j4599a29s9b4hhn8c6zsd"
+```
+
+The previous version looked up by `storageId` and fell back to "the newest
+unclaimed row" — but a mint row never carries the id on a first claim, so the
+fallback was the *only* path that ever ran while the comment called it the rare
+branch.
+
+**A claimed upload row dies with its report.** Retention previously deleted the
+file and the report and left the mint row forever, one per screenshot ever
+uploaded:
+
+```
+before sweep : reports 2, uploadRows 1, files 1
+after  sweep : reports 0, uploadRows 0, files 0
+```
+
+**Browser checks re-run: 21/21, plus the account-redaction check 3/3.** One
+transient failure during this pass was the duplicate-check step returning
+nothing — caused by the 2000-row search budget this very section had just
+exhausted. That is the designed degradation (a refused search returns `[]` and
+the reporter files as normal); it passed once the budget was cleared.
+
 ---
 
 ## Cost
@@ -408,11 +486,33 @@ cd webapp
 bunx convex env set --prod GITHUB_FEEDBACK_TOKEN "github_pat_…"
 bunx convex env set --prod GITHUB_FEEDBACK_REPO  "joshua-e-fehn/Bundestracker"
 # GITHUB_API_BASE is optional — unset means api.github.com.
+
+# Already set for Better Auth. Verify it, because the feedback feature now
+# reads it too:
+bunx convex env get --prod SITE_URL      # → https://bundestracker.de
 ```
 
-Until both are set, `feedback:isConfigured` returns `false` and **the trigger
-does not render at all**. Offering a form that queues into a deployment which
-will never publish is worse than offering nothing, so the widget hides itself.
+Until the first two are set, `feedback:isConfigured` returns `false` and **the
+trigger does not render at all**. Offering a form that queues into a deployment
+which will never publish is worse than offering nothing, so the widget hides
+itself.
+
+> [!IMPORTANT]
+> **`SITE_URL` must name the real deployed origin, or every report loses its
+> page path.**
+>
+> `sanitizeUrl` keeps the path and the allowlisted query for *this app's* URLs
+> and reduces a foreign URL to its origin. It decides which is which from
+> `NEXT_PUBLIC_SITE_URL` (the browser's build-time variable) **or** `SITE_URL`
+> (the one the Convex deployment carries, for Better Auth).
+>
+> Both are consulted because `sanitizeUrl` runs in both runtimes — the server
+> deliberately re-sanitizes what the browser sent. Reading only the Next.js
+> variable meant the server, which does not have it, classified the app's own
+> URL as foreign and stored `https://bundestracker.de/…` for every report. It
+> failed safe and silently, and cost exactly what `ALLOWED_QUERY_KEYS` calls the
+> difference between a reproduction and no reproduction. With neither variable
+> set, everything is treated as foreign — over-redaction, never a leak.
 
 ### Step 3 — create the labels
 
@@ -499,3 +599,19 @@ Stated plainly rather than left to be discovered.
    pass and still the honest summary in item 3 — what changed is that being
    *refused* can no longer inflate the deployment counter, which had turned the
    strongest control into the cheapest attack.
+10. **A saturated deployment still writes one `rejected` row per refused
+    submission.** Reaching saturation now costs 200 *accepted* reports (each
+    filing a real public issue) rather than 200 free POSTs, and the rows carry no
+    text — so this is strictly weaker than the original defect, but the "no
+    ceiling on inserts" property is reduced rather than eliminated. Bounded in
+    practice by the 90-day sweep.
+11. **`SITE_URL` is now load-bearing for report quality, not only for auth.** If
+    it is ever changed to something other than the deployed origin, every report
+    silently loses its page path — the same failure the first-party fix closed,
+    reintroduced by configuration rather than by code. The Step 2 note says so;
+    there is no runtime assertion, because the value that would prove it correct
+    is the one being checked.
+12. **`feedbackSearches` grows with search volume** and is reaped two days
+    after the 24-hour counting window. That reaper has been executed
+    (`{deleted: 0}` on fresh rows) but not observed deleting a genuinely aged
+    row, which would need a backdated timestamp or a two-day wait.
