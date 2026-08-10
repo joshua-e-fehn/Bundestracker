@@ -1,7 +1,7 @@
 # Website feedback reporting — verification report
 
 **Branch:** `website-feedback-intake`
-**Date:** 2026-08-10
+**Date:** 2026-08-10 (revised after independent review)
 **Verified by:** running the feature, not by reading it.
 
 Every claim below is followed by the command that produced it and the output
@@ -9,6 +9,27 @@ that came back. Where something was **not** verified, or cannot be done without
 a credential this branch does not hold, it says so under
 [What is not done here](#what-is-not-done-here) rather than being quietly
 omitted.
+
+> [!IMPORTANT]
+> **An earlier revision of this document overstated one result, and the mistake
+> is worth recording rather than editing away.**
+>
+> §5 called `13-captured-image-redacted.png` "the whole redaction claim, verified
+> on real pixels". It was not. That test filled only `<input>` elements — and
+> form controls are saved by `assertFormControlsRedacted`, a **separate**
+> backstop that removes any control lacking `data-redacted`. So the image proved
+> the backstop worked and said nothing about the redaction walk itself, which
+> was broken: a live `TreeWalker` advanced while the clone was being mutated
+> desynchronised from the first redaction onward, and the **account surfaces —
+> which have no backstop — were never covered**. A signed-in reader's name and
+> email address would have entered the stored image, while the reporter's own
+> preview and the "2 Bereiche wurden automatisch geschwärzt" counter both read
+> as confirmation.
+>
+> The lesson generalises: a test that exercises a path protected by a *different*
+> mechanism proves nothing about the mechanism under test. §2 and §5 now assert
+> coverage of *specific nodes*, and §5b photographs the case that has no
+> backstop. See [What is not done here](#what-is-not-done-here) item 7.
 
 ---
 
@@ -38,8 +59,8 @@ Run from a clean worktree, after `bun install` and copying `convex/_generated`.
 
 ```
 $ pixi run typecheck   → tsc --noEmit, no output (pass)
-$ pixi run test        → 1346 pass, 0 fail, 16771 expect() calls, 83 files
-$ pixi run lint        → Checked 343 files, 10 warnings
+$ pixi run test        → 1387 pass, 0 fail, 16896 expect() calls, 84 files
+$ pixi run lint        → Checked 344 files, 10 warnings
 $ pixi run build       → compiled, 25 routes emitted
 $ bun run check:codegen → ✓ api.d.ts lists all 29 Convex modules
 ```
@@ -48,18 +69,22 @@ The 10 lint warnings are the **pre-existing** count. Measured directly by
 stashing this branch's changes and re-running: baseline `Found 10 warnings`,
 with the feature `Found 10 warnings`. This branch adds none.
 
-Test count moved 1268 → 1346, i.e. **78 new tests**.
+Test count moved 1268 → 1387, i.e. **119 new tests** (78 in the original pass,
+41 added for the review findings).
 
 ## 2. The privacy boundary — behavioural tests
 
-`webapp/lib/feedback.test.ts` (34 tests). Every test is a negative: a sentinel
+`webapp/lib/feedback.test.ts` (40 tests). Every test is a negative: a sentinel
 is fed in and asserted absent from the output, because a positive test passes
 just as happily when the sanitizer is deleted.
 
 | Vector | Rule asserted |
 | --- | --- |
 | URL fragment | Dropped entirely and always (`#access_token=…` cannot survive) |
-| URL query | Allowlist of six keys; `token`, `code`, `session` dropped |
+| URL query (first-party) | Allowlist of six keys; `token`, `code`, `session` dropped |
+| **URL path (foreign)** | **Reduced to origin — a secret in any path position cannot survive** |
+| **URL query (foreign)** | **The first-party allowlist does not apply; `?q=` is not kept** |
+| **Origin confusion** | **`localhost.evil.com` is foreign, not localhost** |
 | URL authority | `https://user:pass@host` credentials stripped by reconstruction |
 | URL scheme | `javascript:`, `data:`, `file:` return `null` |
 | Error message | Embedded URLs sanitized in place; capped at 300 chars |
@@ -71,9 +96,21 @@ just as happily when the sanitizer is deleted.
 | Environment | `locale`/`colorScheme`/`timeZone` shape-matched or `"unknown"` |
 | `signedIn` | Coerced to boolean — a user id cannot survive as one |
 
-`webapp/lib/feedback-issue.test.ts` (20 tests) covers the GitHub payload; see §4.
+`webapp/lib/feedback-issue.test.ts` (30 tests) covers the GitHub payload; see
+§4. Six of them are Markdown-injection tests over a report whose `userAgent`,
+`error.message`, `error.stack`, `request.url` and `breadcrumb.target` each carry
+a fence, a pipe, a newline and a `> [!NOTE]`. They assert exactly one banner is
+*rendered*, that no forged block marker reaches column zero, and that no payload
+can close the fence containing it. **All six fail against the pre-fix renderer**,
+which protected only the title and description.
 
-`webapp/lib/feedback-boundaries.test.ts` (17 tests) asserts guarantees that are
+`webapp/lib/screenshot.test.ts` (9 tests) is the behavioural counterpart to the
+redaction walk, against a hand-built tree shaped like the real page — a
+`happy-dom` dependency would be large for one traversal, and the bug was in the
+ordering rather than in the DOM API. **7 of the 9 fail against the pre-fix
+algorithm**, replayed as a faithful live `TreeWalker`.
+
+`webapp/lib/feedback-boundaries.test.ts` (28 tests) asserts guarantees that are
 properties of the *source*, because no function returns them:
 
 - the `safeDiagnostics` validator contains no `v.any()` / `v.record()` / `v.bytes()`
@@ -81,14 +118,30 @@ properties of the *source*, because no function returns them:
   `sessionStorage`, `init.headers`, `response.body`, `response.json()`,
   `event.key`, `.value`, `textContent`, `aria-label` — with comments stripped
   first, since those modules *document* what they refuse to read
-- redaction precedes `drawImage` in `captureScreenshot`
+- no `createTreeWalker` survives in `lib/screenshot.ts` (the desync pattern)
+- the screenshot ceiling is `LIMITS.screenshotBytes`, not a duplicated literal
 - `getReportForPublication` does not select `contact` or `screenshotId`
-- the retention sweep is registered in `convex/crons.ts`
-- the sweep deletes the file before the row (no orphaned storage)
+- minting an upload writes a row the orphan sweep can find; the mint gate counts
+  mints rather than reports; the size ceiling is enforced against stored metadata
+- `findDuplicates` consults the budget *before* reaching GitHub
+- `publishReport` searches for an existing issue before re-POSTing on a retry
+- `recordPublication` cannot overwrite `duplicateCandidates`
+- both sweeps delete the file before the row (no orphaned storage)
+
+⚠ These are source assertions and they are the weaker kind. Where the review
+found one standing in for a behavioural test that *was* available — redaction
+coverage — the behavioural test now exists (`screenshot.test.ts`) and the source
+assertion was kept only as a guard against the pattern reappearing.
 
 ## 3. The abuse gate
 
-`webapp/convex/feedback.test.ts` (7 tests) over the pure `rejectionFor`.
+`webapp/convex/feedback.test.ts` (12 tests) over the pure `rejectionFor`,
+`persistsRejection` and `consumesDeploymentQuota`. The last two exist because
+the original suite tested the *rule* while the defect was in its **caller** —
+each rejection inserted a row that the deployment counter then counted, so being
+refused made the next refusal more likely. That invariant is now stated as two
+pure functions and asserted directly, and confirmed live in §5c.
+
 Confirmed live against a local Convex backend:
 
 ```
@@ -195,15 +248,120 @@ Playwright + Chromium against `next dev` wired to the local backend.
 | Localised end to end (en) | pass |
 | No horizontal overflow at 390 px and 320 px | pass |
 
-### The decisive image
+### Images
 
-`docs/screenshots/feedback/13-captured-image-redacted.png` is the **actual
-WebP the widget produced**, extracted from the DOM and converted. Before
-capture, every `<input>` on the page was filled with `SENSITIVE-TYPED-SECRET`.
-In the produced image both fields are solid grey blocks; the page layout is
-otherwise faithful, and the report widget itself is absent.
+`13-captured-image-redacted.png` is the **actual WebP the widget produced**,
+after every `<input>` on the page was filled with `SENSITIVE-TYPED-SECRET`. Both
+fields are solid grey blocks and the layout is otherwise faithful.
 
-That is the whole redaction claim, verified on real pixels rather than asserted.
+⚠ That image is **not** the whole redaction claim — see the note at the top of
+this document. Form controls are covered by a second, independent backstop, so
+this photograph could not have failed even while the redaction walk was broken.
+The case that actually tests the walk is below.
+
+## 5b. Redaction of the surfaces that have no backstop
+
+The check the earlier revision never ran, and the one that would have caught the
+P0.
+
+A `[data-feedback-account]` region carrying a display name, a second one
+carrying a name **and an email address** mounted last in `<body>` inside a portal
+wrapper (as Radix mounts the real account menu), and a `[data-feedback-redact]`
+region were injected into a live page, alongside the page's own filled inputs.
+The widget was opened and the WebP it produced was extracted from the DOM.
+
+```
+redaction caption: 5 Bereiche wurden automatisch geschwärzt.
+PASS a screenshot was produced
+PASS account/marked regions exist on the live page — 3 found
+PASS every sensitive region was redacted — reported 5, expected >= 3
+live page still intact (INNOCENT present): True
+live page still holds account name       : True
+```
+
+`15-captured-account-redaction.png` is that image. All five regions are solid
+grey blocks — the account trigger at the top, the marked region and the account
+menu at the bottom, and both search inputs. **No sentinel text appears
+anywhere.** The last two lines confirm the live DOM was never mutated: redaction
+happens on the detached clone, so the page the reader is looking at is untouched.
+
+Replayed against the pre-fix algorithm (a faithful live-`TreeWalker` model, in
+`lib/screenshot.test.ts`), the same tree yields `account menu redacted? false`
+with the name and email intact, and an innocent sibling blacked out in their
+place. 7 of the 9 tests in that file fail against it.
+
+## 5c. Abuse and lifecycle, against a live backend
+
+Each of these ran against the local Convex deployment and is the *behavioural*
+counterpart to a source-level assertion.
+
+**A rejection flood no longer closes the form.** 220 forged submissions carrying
+`honeypot: "spam"`, each from a distinct `clientKey`, then one genuine report
+from a fresh browser:
+
+```
+=== 220 forged rejections sent ===
+{"accepted":true,"reportId":"jx7dm428tz74cztvp9z8p781718c607e"}
+
+rows written by the whole exercise:
+{ "byStatus": { "published": 1 }, "total": 1 }
+```
+
+Zero rows from 220 forged rejections, and the genuine reporter is served. Before
+the fix this wrote 220 counted rows and refused every real report for 24 hours.
+
+**An abandoned upload is now reclaimed.** A URL was minted, a file uploaded, and
+no report filed — the orphan case:
+
+```
+feedbackUploads row: { storageId: null, claimed: false, clientKey: "orphan-maker" }
+after backdating past the TTL and running the sweep:
+  sweepOrphanedUploads → { "deleted": 1, "hasMore": false }
+  storage: { files: 0, uploadRows: 0 }
+```
+
+Before the fix that file was unreachable from any query and was never deleted by
+anything, ever.
+
+**An oversized screenshot is refused server-side.** A 3 MB file was uploaded
+directly to a minted URL and named in a submission:
+
+```
+attaching storageId=kg2ansrk… size=3000000
+{"accepted":true,"reportId":"jx7fhvap…"}
+report row → screenshotId: null      storage → storedFiles: 0
+```
+
+The report is accepted without the picture; the file is deleted. The ceiling was
+previously enforced only in the browser, against a duplicated literal.
+
+**A retry after a lost response files no duplicate.** A published report was
+marked `failed` (what a dropped response produces) and re-queued:
+
+```
+republishFailed → { "requeued": 1 }
+  searches performed : 2
+  NEW issue POSTs    : 0
+row → { status: "published", url: ".../issues/777" }
+```
+
+**The published body survives an injection attempt.** A report whose
+`userAgent`, `error.message`, `error.stack`, `request.url` and
+`breadcrumb.target` each carried ``` ``` ```, `|`, a newline and `> [!NOTE]`,
+with a secret in a third-party URL path:
+
+```
+rendered '> [!NOTE]' at line start : 1
+forged banner at column zero       : False
+PATHSECRET present (foreign path)  : False
+contact email present              : False
+   - on `https://api.evil.com/…`
+   | +0.1s | `POST` | 500 | 10 ms | `https://api.evil.com/…` |
+```
+
+**`duplicateCandidates` survives publication.** `[42, 43]` sent with a report
+were still on the row after it published — the column was previously emptied by
+`recordPublication` on every write.
 
 ---
 
@@ -324,4 +482,20 @@ Stated plainly rather than left to be discovered.
    to that list.**
 6. **Retention is 90 days**, enforced by a daily cron. It has been executed
    (returning `{deleted: 0}` on fresh rows) but not observed deleting a real
-   expired row, which would require waiting 90 days or backdating a row.
+   expired *report*, which would require waiting 90 days. The **orphan-upload**
+   sweep beside it *was* observed deleting a real row and its file, by
+   backdating the row past its one-hour TTL (§5c).
+7. **The first revision of this document asserted a guarantee it had not
+   tested.** Recorded at the top rather than silently corrected. The specific
+   failure — photographing a path protected by a different mechanism than the
+   one under test — is the reason §5b exists and the reason the redaction tests
+   now assert coverage of named nodes instead of "the function ran".
+8. **Foreign URLs keep only their origin**, so a third-party path is no longer
+   published. That is a deliberate loss of diagnostic detail: a maintainer sees
+   `https://api.example.com/…` and not which endpoint failed. The alternative
+   was publishing path segments from servers whose URL conventions this project
+   does not control, where a session token or reset nonce in a path is ordinary.
+9. **The anti-abuse controls remain resettable per browser.** Unchanged by this
+   pass and still the honest summary in item 3 — what changed is that being
+   *refused* can no longer inflate the deployment counter, which had turned the
+   strongest control into the cheapest attack.
