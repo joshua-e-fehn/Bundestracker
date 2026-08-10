@@ -1352,12 +1352,7 @@ const schema = defineSchema({
     /** Which of the four kinds the reporter chose. Not a free string: it
      * selects a GitHub label, and an unknown value would silently produce an
      * unlabelled issue. */
-    kind: v.union(
-      v.literal("bug"),
-      v.literal("feature"),
-      v.literal("data"),
-      v.literal("other"),
-    ),
+    kind: v.union(v.literal("bug"), v.literal("feature"), v.literal("data"), v.literal("other")),
     title: v.string(),
     description: v.string(),
     /** The reporter's reply address, or null. **Private.** Never rendered into
@@ -1394,9 +1389,17 @@ const schema = defineSchema({
      * to the reporter, who gets a generic message — an upstream error string is
      * not something to render to the public. */
     failureReason: v.union(v.null(), v.string()),
-    /** Candidate duplicates found before filing, as issue numbers. Recorded
-     * even when the reporter filed anyway: "they were shown these three and
-     * filed regardless" is the useful signal for triage. */
+    /**
+     * Candidate duplicates the reporter was shown before filing, as issue
+     * numbers. Recorded precisely *because* they filed anyway: "they saw these
+     * three and went ahead" is the useful signal for triage.
+     *
+     * Sent by the widget, bounded on the way in, and written once at
+     * submission. `recordPublication` deliberately cannot touch it — it used
+     * to, passing `[]` from all five of its call sites, which emptied the
+     * column the moment a report was published and left this comment
+     * describing behaviour the code did not have.
+     */
     duplicateCandidates: v.array(v.number()),
     /**
      * The Better Auth user id, when the reporter happened to be signed in.
@@ -1425,10 +1428,55 @@ const schema = defineSchema({
   })
     // The rate-limit read: this browser's reports, newest first.
     .index("by_clientKey_and_createdAt", ["clientKey", "createdAt"])
-    // The per-deployment daily cap, and the retention sweep's cursor.
+    // The retention sweep's cursor.
     .index("by_createdAt", ["createdAt"])
-    // The publisher's retry queue.
+    // The publisher's retry queue, and — since a Convex index cannot express
+    // "any status but rejected" — the per-deployment daily cap, which reads it
+    // once per cap-consuming status. See `CAP_CONSUMING_STATUSES`.
     .index("by_status_and_createdAt", ["status", "createdAt"]),
+
+  /**
+   * A screenshot upload URL that has been handed out, and the file it produced.
+   *
+   * ## Why a table rather than nothing
+   *
+   * `generateUploadUrl` mints a URL that stores a file in Convex's `_storage`
+   * with no row referencing it. If the reporter then closes the tab, that file
+   * is unreachable: `sweepExpiredReports` walks `feedbackReports` and can only
+   * delete a `screenshotId` it finds on a row, so a file with no row was never
+   * deleted — **ever**. Anonymous, unauthenticated, and permanent, which is the
+   * combination that turns a courtesy feature into a storage bill.
+   *
+   * This table is the reference that makes an orphan reachable. A row is
+   * written when the URL is minted, `claimed` is set when a report adopts the
+   * file, and the sweep deletes anything still unclaimed after
+   * `UPLOAD_ORPHAN_TTL_MS`.
+   *
+   * It also gives the mint gate something real to count. The old gate counted
+   * *reports*, and minting a URL creates none — so on a quiet deployment it
+   * read `0 >= 200` forever and bounded nothing at all.
+   */
+  feedbackUploads: defineTable({
+    /** The file this URL was minted for, once the client has uploaded and named
+     * it. Null between minting and submission — the window in which an
+     * abandoned upload is invisible from the report side. */
+    storageId: v.union(v.null(), v.id("_storage")),
+    /** The same anonymous per-browser key `feedbackReports` carries. */
+    clientKey: v.string(),
+    /** Set once a report references this file. A claimed row's lifetime then
+     * belongs to the report, and the sweep leaves it alone. */
+    claimed: v.boolean(),
+    createdAt: v.number(),
+  })
+    // The mint-volume cap.
+    .index("by_createdAt", ["createdAt"])
+    .index("by_clientKey_and_createdAt", ["clientKey", "createdAt"])
+    // Finding the row to claim, at submission time.
+    .index("by_storageId", ["storageId"])
+    // The orphan sweep's cursor, and the unclaimed-row lookup at claim time.
+    // `claimed` leads so the range is exactly the unclaimed rows — the sweep
+    // must never scan claimed ones, which outnumber them.
+    .index("by_claimed_and_createdAt", ["claimed", "createdAt"]),
 })
 
 export default schema

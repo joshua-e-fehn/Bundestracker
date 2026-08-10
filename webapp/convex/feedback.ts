@@ -26,6 +26,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  type MutationCtx,
   mutation,
   type QueryCtx,
   query,
@@ -75,6 +76,13 @@ import { preferredLocale, safeDiagnostics } from "./schema"
  *     determined attacker, because it does not depend on the caller
  *     cooperating. Once `DAILY_DEPLOYMENT_CAP` reports exist in 24 hours,
  *     everything is rejected until the window rolls.
+ *
+ *     ⚠ It only holds if being refused cannot raise it. It did not, once:
+ *     every rejection inserted a counted row, so ~200 forged requests closed
+ *     the form for a day and each further one wrote another row. See
+ *     `CAP_CONSUMING_STATUSES` and the two-branch rejection in `submitReport`
+ *     — a control that the caller can inflate is an attack surface wearing a
+ *     defence's name.
  *  2. **A per-browser cap**, keyed on a random identifier the client generates
  *     and stores. Resettable by clearing storage, and stated as such — it stops
  *     double-submits and casual repetition, nothing more.
@@ -109,6 +117,28 @@ const DAILY_DEPLOYMENT_CAP = 200
 /** A form submitted faster than this was not filled in by a human. Two seconds
  * is below any real reporter and above any plausible clock skew. */
 const MIN_DWELL_MS = 2000
+
+/**
+ * Upload URLs one browser, and the whole deployment, may mint in a rolling day.
+ *
+ * Higher than the report caps because minting is not filing: the widget mints
+ * on submission and a reporter may retake a screenshot or abandon a draft. Low
+ * enough that an anonymous caller cannot mint unbounded blob storage, which is
+ * what the previous gate — counting *reports*, of which minting creates none —
+ * failed to bound at all.
+ */
+const DAILY_CLIENT_UPLOAD_CAP = 20
+const DAILY_DEPLOYMENT_UPLOAD_CAP = 500
+
+/**
+ * How long an unclaimed upload lives before the sweep reclaims it.
+ *
+ * An hour is far longer than the seconds between minting a URL and submitting
+ * the report it belongs to, so a slow connection is never punished; and short
+ * enough that abandoned files are not storage anyone pays for. Claimed rows are
+ * untouched by this — their lifetime belongs to the report.
+ */
+const UPLOAD_ORPHAN_TTL_MS = 60 * 60 * 1000
 
 /** How long a report is kept. Long enough to act on and reply to; short enough
  * that this table is not an accumulating store of strangers' email addresses.
@@ -172,13 +202,75 @@ async function clientReportsSince(
   return rows.length
 }
 
-/** Reports from everyone inside the rolling window. */
+/**
+ * The statuses a row must be in to count against the *deployment* ceiling.
+ *
+ * Deliberately excludes `rejected`, and that exclusion is a security property
+ * rather than an accounting nicety.
+ *
+ * ⚠ Counting every row by `createdAt` — which this used to do — made the
+ * deployment cap the cheapest attack on the feature instead of its strongest
+ * control. A rejection is free and unconditional to the caller (`honeypot` and
+ * `dwellMs` are checked before the caps and are both caller-supplied), so ~200
+ * requests carrying `honeypot: "x"` inserted 200 counted rows and every genuine
+ * reporter was then refused `too-many-for-deployment` for a rolling day. Worse,
+ * each further request was itself rejected and inserted *another* row: there was
+ * a ceiling on acceptance and none at all on writes.
+ *
+ * The invariant now, stated so a test can assert it: **being refused can never
+ * raise the number that causes refusals.**
+ */
+export const CAP_CONSUMING_STATUSES = ["pending", "published", "failed"] as const
+
+/**
+ * Whether a refused submission leaves a row behind.
+ *
+ * The other half of the same invariant, pulled out as a pure function so
+ * convex/feedback.test.ts can pin it without a deployment — the defect it
+ * encodes lived in the *caller* of `rejectionFor`, which is precisely the place
+ * a pure-function test could not previously reach.
+ *
+ * `honeypot` and `too-fast` are decided entirely from caller-supplied
+ * arguments, so an attacker produces them at will and for free. Writing a row
+ * for those made refusal the attack. The cap rejections are different: they are
+ * evidence of real quota pressure from a browser that has already been counted,
+ * and recording them is what keeps a repeat offender's own limit ticking.
+ */
+export function persistsRejection(reason: RejectionReason): boolean {
+  return reason === "too-many-from-client" || reason === "too-many-for-deployment"
+}
+
+/**
+ * Whether a stored row counts against the deployment ceiling.
+ *
+ * Exported for the same reason as `persistsRejection`, and asserted against
+ * `CAP_CONSUMING_STATUSES` so the two cannot drift: a `rejected` row that
+ * started counting would restore the denial of service in one character.
+ */
+export function consumesDeploymentQuota(status: string): boolean {
+  return (CAP_CONSUMING_STATUSES as readonly string[]).includes(status)
+}
+
+/**
+ * Reports from everyone inside the rolling window that actually consumed quota.
+ *
+ * Three index reads rather than one, because `by_createdAt` cannot express
+ * "any status but rejected" — Convex indexes have no negation. `take` bounds
+ * each read, so the cost is bounded by the cap regardless of how many rows the
+ * window holds.
+ */
 async function deploymentReportsSince(ctx: QueryCtx, since: number): Promise<number> {
-  const rows = await ctx.db
-    .query("feedbackReports")
-    .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
-    .take(DAILY_DEPLOYMENT_CAP + 1)
-  return rows.length
+  let total = 0
+  for (const status of CAP_CONSUMING_STATUSES) {
+    const rows = await ctx.db
+      .query("feedbackReports")
+      .withIndex("by_status_and_createdAt", (q) => q.eq("status", status).gte("createdAt", since))
+      .take(DAILY_DEPLOYMENT_CAP + 1)
+    total += rows.length
+    // Short-circuit: the answer is only ever compared against the cap.
+    if (total > DAILY_DEPLOYMENT_CAP) return total
+  }
+  return total
 }
 
 // --- submission -----------------------------------------------------------
@@ -202,6 +294,16 @@ const submissionArgs = {
   /** The honeypot. A real reporter never sees this field, so a non-empty value
    * is a bot that filled every input it found. */
   honeypot: v.string(),
+  /**
+   * Issue numbers the reporter was shown as possible duplicates and filed
+   * anyway.
+   *
+   * Sent by the widget rather than re-derived here, because it records what the
+   * reporter actually saw — a second search from the server could return a
+   * different set and would be recording something else. Purely a triage
+   * signal: it never gates the submission.
+   */
+  duplicateCandidates: v.array(v.number()),
 }
 
 /**
@@ -236,10 +338,35 @@ export const submitReport = mutation({
       honeypot: args.honeypot,
     })
 
-    // A rejected report is stored — with its text dropped — so the limiter can
-    // see it next time. Storing the text would make the table a place to write
-    // arbitrary content by being refused, which is the opposite of the point.
     if (rejection) {
+      // An uploaded screenshot belonging to a refused report is deleted rather
+      // than orphaned in storage — whichever branch below is taken.
+      if (args.screenshotId) await ctx.storage.delete(args.screenshotId)
+
+      // ⚠ The two kinds of rejection are recorded differently, and the
+      // difference is the fix for a denial-of-service this once had.
+      //
+      // `honeypot` and `too-fast` are decided entirely from caller-supplied
+      // arguments, so an attacker can produce them at will and for free.
+      // Writing a row for those made refusal itself the attack: 200 requests
+      // carrying `honeypot: "x"` inserted 200 rows, the deployment cap counted
+      // them, and every genuine reporter was refused for a rolling day — while
+      // each further request inserted another row, unbounded.
+      //
+      // So a forgeable rejection now leaves **no trace at all**. Nothing is
+      // lost by that: the row it used to write was blank, and the per-client
+      // limiter it was supposedly feeding is keyed on a value the same
+      // attacker chooses.
+      if (!persistsRejection(rejection)) {
+        return { accepted: false, reportId: null, reason: rejection }
+      }
+
+      // A cap rejection is real quota pressure and is recorded, so a repeat
+      // offender's own limit keeps counting. It is written as `rejected`, which
+      // `CAP_CONSUMING_STATUSES` deliberately excludes from the deployment
+      // total — being refused must never raise the number that causes refusals.
+      // Text is dropped: storing it would make the table a place to write
+      // arbitrary content by being refused.
       await ctx.db.insert("feedbackReports", {
         kind: "other",
         title: "",
@@ -259,9 +386,6 @@ export const submitReport = mutation({
         createdAt: now,
         updatedAt: now,
       })
-      // An uploaded screenshot belonging to a refused report is deleted rather
-      // than orphaned in storage.
-      if (args.screenshotId) await ctx.storage.delete(args.screenshotId)
       return { accepted: false, reportId: null, reason: rejection }
     }
 
@@ -285,12 +409,20 @@ export const submitReport = mutation({
       pageUrl: sanitizeUrl(args.pageUrl),
       locale: args.locale === "de" || args.locale === "en" ? args.locale : null,
       diagnostics: args.diagnostics ? resanitize(args.diagnostics) : null,
-      screenshotId: args.screenshotId,
+      // Not `args.screenshotId` directly: the file is size-checked against
+      // `LIMITS.screenshotBytes` server-side and its mint row is claimed, so an
+      // oversized upload degrades to no screenshot instead of being stored.
+      screenshotId: await claimScreenshot(ctx, args.screenshotId),
       status: "pending",
       githubIssueNumber: null,
       githubIssueUrl: null,
       failureReason: null,
-      duplicateCandidates: [],
+      // Bounded and coerced like every other wire value: a caller could
+      // otherwise post a thousand numbers into a triage field.
+      duplicateCandidates: args.duplicateCandidates
+        .slice(0, 10)
+        .map((n) => Math.trunc(Number(n)))
+        .filter((n) => Number.isFinite(n) && n > 0),
       // Read from the session, never accepted as an argument — the rule
       // convex/userPreferences.ts states and for the same reason.
       userId: await getUserId(ctx),
@@ -339,27 +471,116 @@ function resanitize(diagnostics: SafeDiagnostics): SafeDiagnostics {
 }
 
 /**
- * An upload URL for the screenshot.
+ * An upload URL for the screenshot, and the row that makes the file reclaimable.
  *
  * A mutation because `generateUploadUrl` is only available on a writer context.
- * Public and unauthenticated, like the submission itself — and bounded by the
- * same daily caps, which are checked here too so a caller cannot mint unlimited
- * upload URLs without ever filing a report.
+ * Public and unauthenticated, like the submission itself.
  *
- * An orphaned upload (a URL minted, a file stored, no report filed) is swept by
- * `sweepExpiredReports` below.
+ * ## Two things this gets right that it previously did not
+ *
+ * **The file is now reachable if it is abandoned.** A minted URL used to
+ * produce a file with nothing pointing at it, and `sweepExpiredReports` walks
+ * `feedbackReports` — so an upload with no report was never deleted, by
+ * anything, ever. A `feedbackUploads` row is written here so the orphan sweep
+ * has a cursor to find it by.
+ *
+ * **The gate now counts what it is gating.** It used to check the *report*
+ * caps, and minting a URL files no report — so on a quiet deployment the
+ * deployment gate read `0 >= 200` permanently and bounded nothing at all. Mint
+ * volume is what is capped now, which is the quantity an attacker consumes.
  */
 export const generateScreenshotUploadUrl = mutation({
   args: { clientKey: v.string() },
   returns: v.union(v.null(), v.string()),
   handler: async (ctx, args) => {
-    const since = Date.now() - DAY_MS
+    const now = Date.now()
+    const since = now - DAY_MS
     const clientKey = truncate(args.clientKey.trim(), 64) || "unknown"
-    if ((await clientReportsSince(ctx, clientKey, since)) >= DAILY_CLIENT_CAP) return null
-    if ((await deploymentReportsSince(ctx, since)) >= DAILY_DEPLOYMENT_CAP) return null
+
+    const clientMints = await ctx.db
+      .query("feedbackUploads")
+      .withIndex("by_clientKey_and_createdAt", (q) =>
+        q.eq("clientKey", clientKey).gte("createdAt", since),
+      )
+      .take(DAILY_CLIENT_UPLOAD_CAP + 1)
+    if (clientMints.length >= DAILY_CLIENT_UPLOAD_CAP) return null
+
+    const deploymentMints = await ctx.db
+      .query("feedbackUploads")
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
+      .take(DAILY_DEPLOYMENT_UPLOAD_CAP + 1)
+    if (deploymentMints.length >= DAILY_DEPLOYMENT_UPLOAD_CAP) return null
+
+    await ctx.db.insert("feedbackUploads", {
+      // Null until the client uploads and names the id at submission. The row
+      // exists from *minting* precisely so that gap is accounted for.
+      storageId: null,
+      clientKey,
+      claimed: false,
+      createdAt: now,
+    })
     return await ctx.storage.generateUploadUrl()
   },
 })
+
+/**
+ * Adopts an uploaded file into a report, or refuses it.
+ *
+ * Refuses — by deleting the file and returning null — when it is larger than
+ * `LIMITS.screenshotBytes`. That ceiling existed as a constant and was enforced
+ * **only in the browser**, against a hardcoded literal, which is no enforcement
+ * at all against the hand-written caller this file assumes: the upload URL
+ * accepts whatever is POSTed to it. `ctx.db.system.get("_storage", id)` is the
+ * server's own view of what actually landed.
+ *
+ * A refused screenshot degrades the report to one without a picture rather than
+ * failing it. The reporter's words are the valuable part.
+ */
+async function claimScreenshot(
+  ctx: MutationCtx,
+  storageId: Id<"_storage"> | null,
+): Promise<Id<"_storage"> | null> {
+  if (!storageId) return null
+
+  const metadata = await ctx.db.system.get("_storage", storageId)
+  if (!metadata || metadata.size > LIMITS.screenshotBytes) {
+    await ctx.storage.delete(storageId).catch(() => {})
+    await markUploadClaimed(ctx, storageId)
+    return null
+  }
+
+  await markUploadClaimed(ctx, storageId)
+  return storageId
+}
+
+/**
+ * Marks the mint row for a file as claimed, so the orphan sweep leaves it to
+ * the report's own retention.
+ *
+ * A mint row is created with `storageId: null` — the id does not exist until
+ * the client has uploaded — so where no row names this file, the newest
+ * unclaimed row is adopted instead. Imprecise by construction and harmless: the
+ * rows are indistinguishable, and the only consequence of adopting a different
+ * one is which row the sweep expires first.
+ */
+async function markUploadClaimed(ctx: MutationCtx, storageId: Id<"_storage">): Promise<void> {
+  const existing = await ctx.db
+    .query("feedbackUploads")
+    .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
+    .first()
+  if (existing) {
+    await ctx.db.patch(existing._id, { claimed: true })
+    return
+  }
+  const unclaimed = await ctx.db
+    .query("feedbackUploads")
+    .withIndex("by_claimed_and_createdAt", (q) => q.eq("claimed", false))
+    .order("desc")
+    .first()
+  if (unclaimed) {
+    await ctx.db.patch(unclaimed._id, { storageId, claimed: true })
+  }
+}
 
 // --- duplicate detection --------------------------------------------------
 
@@ -372,6 +593,29 @@ const duplicateCandidate = v.object({
 })
 
 /**
+ * Whether this browser may spend another outbound GitHub call.
+ *
+ * An internal query because `findDuplicates` is an action and an action has no
+ * `ctx.db`. Counts *searches* against the same window everything else uses, and
+ * counts them by writing nothing — the row it reads is the reporter's own
+ * report history, so a caller cannot inflate it.
+ */
+export const withinSearchBudget = internalQuery({
+  args: { clientKey: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const since = Date.now() - DAY_MS
+    const clientKey = truncate(args.clientKey.trim(), 64) || "unknown"
+    // The mint table doubles as the per-browser activity record: a browser that
+    // has already filed its daily allowance of reports has no business
+    // spending the deployment's GitHub quota on more searches.
+    if ((await clientReportsSince(ctx, clientKey, since)) >= DAILY_CLIENT_CAP) return false
+    if ((await deploymentReportsSince(ctx, since)) >= DAILY_DEPLOYMENT_CAP) return false
+    return true
+  },
+})
+
+/**
  * Likely duplicates of a report that has not been filed yet.
  *
  * An **action**, called from the widget before submission, because it reaches
@@ -381,17 +625,32 @@ const duplicateCandidate = v.object({
  * reduced to bare words by `duplicateSearchTerms` so a caller cannot inject
  * GitHub's own search qualifiers and redirect the query.
  *
- * Returns an empty list on any failure. A duplicate check is an assist, and a
- * GitHub outage must not block a bug report — which is precisely when people
- * are most likely to be reporting one.
+ * ## Why it is capped, which it was not
+ *
+ * This is a public, unauthenticated function that performs an outbound request
+ * **on the deployment's own GitHub credential**, and it used to carry no cap at
+ * all — no client check, no deployment check, no dwell gate. GitHub allows an
+ * authenticated token 30 searches a minute; exhausting that is trivial, and the
+ * failure is silent in the worst direction: `response.ok` goes false and every
+ * genuine reporter's duplicate check returns `[]` while looking like it ran.
+ *
+ * So it goes through the same gate as its siblings. Refusal returns `[]` rather
+ * than throwing, which preserves the "a duplicate check never blocks a report"
+ * contract — a refused search and an outage are the same thing to the widget.
  */
 export const findDuplicates = action({
-  args: { title: v.string(), description: v.string() },
+  args: { title: v.string(), description: v.string(), clientKey: v.string() },
   returns: v.array(duplicateCandidate),
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
     const token = process.env.GITHUB_FEEDBACK_TOKEN
     const repo = process.env.GITHUB_FEEDBACK_REPO
     if (!token || !repo) return []
+
+    if (
+      !(await ctx.runQuery(internal.feedback.withinSearchBudget, { clientKey: args.clientKey }))
+    ) {
+      return []
+    }
 
     const terms = duplicateSearchTerms(
       truncate(args.title, LIMITS.title),
@@ -459,6 +718,41 @@ function githubHeaders(token: string): Record<string, string> {
 }
 
 /**
+ * Finds an issue already filed for this report id, if one exists.
+ *
+ * The idempotency key is the report id printed in every body. `in:body` with a
+ * quoted phrase matches it exactly, and the id is a Convex document id —
+ * opaque, unique, and not a word that occurs in prose.
+ *
+ * Returns `null` on any failure, including a rate-limited search. Deliberate:
+ * an unavailable search must not block publication, so the caller proceeds to
+ * POST exactly as it did before. The cost of the rare wrong answer is the
+ * duplicate this usually prevents, never a lost report.
+ */
+async function findIssueForReport(
+  repo: string,
+  token: string,
+  reportId: string,
+): Promise<{ number: number; url: string } | null> {
+  try {
+    const query = `repo:${repo} is:issue in:body "${reportId}"`
+    const response = await fetch(
+      `${githubApiBase()}/search/issues?per_page=1&q=${encodeURIComponent(query)}`,
+      { headers: githubHeaders(token) },
+    )
+    if (!response.ok) return null
+    const body = (await response.json()) as {
+      items?: { number?: number; html_url?: string }[]
+    }
+    const hit = body.items?.[0]
+    if (typeof hit?.number !== "number" || typeof hit.html_url !== "string") return null
+    return { number: hit.number, url: hit.html_url }
+  } catch {
+    return null
+  }
+}
+
+/**
  * The report as the publisher needs it.
  *
  * The returned shape is spelled out rather than being `v.any()`, and names only
@@ -507,7 +801,17 @@ export const getReportForPublication = internalQuery({
   },
 })
 
-/** Records the outcome of a publication attempt. */
+/**
+ * Records the outcome of a publication attempt.
+ *
+ * ⚠ Deliberately does **not** take `duplicateCandidates`. It used to, and every
+ * one of its five call sites passed `[]` — so the column the schema documents
+ * as a triage signal ("they were shown these three and filed regardless") was
+ * overwritten with an empty array the instant a report was published, whatever
+ * the reporter had actually been shown. A publication outcome has nothing to
+ * say about what the reporter saw before filing; the field is written once, at
+ * submission, and left alone here.
+ */
 export const recordPublication = internalMutation({
   args: {
     reportId: v.id("feedbackReports"),
@@ -515,7 +819,6 @@ export const recordPublication = internalMutation({
     githubIssueNumber: v.union(v.null(), v.number()),
     githubIssueUrl: v.union(v.null(), v.string()),
     failureReason: v.union(v.null(), v.string()),
-    duplicateCandidates: v.array(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -565,9 +868,34 @@ export const publishReport = internalAction({
         githubIssueNumber: null,
         githubIssueUrl: null,
         failureReason: "github-not-configured",
-        duplicateCandidates: [],
       })
       return null
+    }
+
+    // ⚠ A retry must not file a second issue for the same report.
+    //
+    // The `catch` below marks a row `failed` for *any* thrown error, including
+    // a network failure that happens **after** GitHub accepted the POST and
+    // created the issue. `republishFailed` then re-queues it, and the only
+    // guard is `status === "published"`, which is false — so the outcome of one
+    // dropped response was two identical public issues.
+    //
+    // Every body prints its report id (`| Report id |`), so the already-created
+    // issue is findable. Searching for it is cheap, runs only on a retry, and
+    // fails safe: a search that errors leaves `null` and the POST proceeds,
+    // which is the old behaviour rather than a new failure mode.
+    if (report.status === "failed") {
+      const already = await findIssueForReport(repo, token, args.reportId)
+      if (already) {
+        await ctx.runMutation(internal.feedback.recordPublication, {
+          reportId: args.reportId,
+          status: "published",
+          githubIssueNumber: already.number,
+          githubIssueUrl: already.url,
+          failureReason: null,
+        })
+        return null
+      }
     }
 
     const publicReport: PublicReport = {
@@ -603,7 +931,6 @@ export const publishReport = internalAction({
           // request contains the reporter's text — storing it would duplicate
           // the report into a field nothing sanitizes.
           failureReason: `github-http-${response.status}`,
-          duplicateCandidates: [],
         })
         return null
       }
@@ -614,7 +941,6 @@ export const publishReport = internalAction({
         githubIssueNumber: typeof created.number === "number" ? created.number : null,
         githubIssueUrl: typeof created.html_url === "string" ? created.html_url : null,
         failureReason: null,
-        duplicateCandidates: [],
       })
     } catch (error) {
       await ctx.runMutation(internal.feedback.recordPublication, {
@@ -623,7 +949,6 @@ export const publishReport = internalAction({
         githubIssueNumber: null,
         githubIssueUrl: null,
         failureReason: truncate(error instanceof Error ? error.name : "unknown", 60),
-        duplicateCandidates: [],
       })
     }
     return null
@@ -707,8 +1032,62 @@ export const sweepExpiredReports = internalMutation({
     const hasMore = expired.length === BATCH
     if (hasMore) {
       await ctx.scheduler.runAfter(0, internal.feedback.sweepExpiredReports, {})
+    } else {
+      // Only once the report backlog is clear, so a long retention run does not
+      // also carry the orphan sweep's writes in the same transaction.
+      await ctx.scheduler.runAfter(0, internal.feedback.sweepOrphanedUploads, {})
     }
     return { deleted: expired.length, hasMore }
+  },
+})
+
+/**
+ * Deletes uploaded screenshots that no report ever claimed.
+ *
+ * ## The hole this closes
+ *
+ * `generateScreenshotUploadUrl` hands out a URL; the browser POSTs a file to it;
+ * a report then names the resulting id. If the reporter closes the tab in
+ * between, the file exists and **nothing references it**. `sweepExpiredReports`
+ * above walks `feedbackReports` and can only delete a `screenshotId` it finds on
+ * a row, so an unclaimed file was never deleted by anything, ever — anonymous,
+ * unauthenticated, permanent storage growth.
+ *
+ * The `feedbackUploads` row written at mint time is what makes the file
+ * reachable. Rows are selected through `by_claimed_and_createdAt` with
+ * `claimed: false` leading, so this reads exactly the unclaimed range rather
+ * than scanning past the claimed rows that outnumber it.
+ *
+ * A row whose `storageId` is still null is a URL that was minted and never
+ * uploaded to. There is no file to delete, but the row itself must go or it
+ * would accumulate and inflate the mint cap forever.
+ */
+export const sweepOrphanedUploads = internalMutation({
+  args: {},
+  returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - UPLOAD_ORPHAN_TTL_MS
+    const BATCH = 100
+    const orphans = await ctx.db
+      .query("feedbackUploads")
+      .withIndex("by_claimed_and_createdAt", (q) => q.eq("claimed", false).lt("createdAt", cutoff))
+      .take(BATCH)
+
+    for (const row of orphans) {
+      if (row.storageId) {
+        // File first, row second — the same ordering and the same reason as the
+        // report sweep: a crash between the two must not leave a live file with
+        // nothing pointing at it.
+        await ctx.storage.delete(row.storageId).catch(() => {})
+      }
+      await ctx.db.delete(row._id)
+    }
+
+    const hasMore = orphans.length === BATCH
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.feedback.sweepOrphanedUploads, {})
+    }
+    return { deleted: orphans.length, hasMore }
   },
 })
 

@@ -257,7 +257,9 @@ export function FeedbackWidget() {
     setError(null)
     setCheckingDuplicates(true)
     try {
-      const found = await findDuplicates({ title, description })
+      // `clientKey` so the search is capped like every other public call —
+      // it reaches GitHub on the deployment's own credential.
+      const found = await findDuplicates({ title, description, clientKey: clientKey() })
       if (found.length > 0) {
         setDuplicates(found)
         setStep("duplicates")
@@ -289,6 +291,9 @@ export function FeedbackWidget() {
         clientKey: clientKey(),
         dwellMs: Date.now() - openedAt.current,
         honeypot,
+        // What the reporter was shown and filed anyway. Empty when the check
+        // found nothing or never ran — a triage signal, never a gate.
+        duplicateCandidates: duplicates.map((duplicate) => duplicate.number),
       })
       if (!result.accepted) {
         setError(t(rejectionKey(result.reason)))
