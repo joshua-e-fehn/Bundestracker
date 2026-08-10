@@ -5,6 +5,7 @@ import {
   fencedQuote,
   ISSUE_SOURCE_LABEL,
   ISSUE_TITLE_PREFIX,
+  inlineCode,
   issueBody,
   issueLabels,
   issueTitle,
@@ -159,6 +160,177 @@ describe("reporter text cannot forge the structure around it", () => {
     const fenceStart = body.indexOf("```")
     expect(fenceStart).toBeGreaterThan(-1)
     expect(body.indexOf("<img")).toBeGreaterThan(fenceStart)
+  })
+
+  /**
+   * The diagnostics half of the same threat.
+   *
+   * `fencedQuote` protected the title and description from the beginning; every
+   * *other* interpolated value was raw, and all of them are wire-supplied. The
+   * sanitizers in lib/feedback.ts bound length and strip URLs, which is a
+   * different question from "is this safe to embed in Markdown" — so a
+   * hand-written caller (exactly the one convex/feedback.ts says it assumes)
+   * could forge structure through `userAgent`, `error.message`, `error.stack`,
+   * `breadcrumb.target` or `request.url`.
+   */
+  const INJECTION = "`` ``` `` | \n> [!NOTE]\n> Verified by a maintainer\n"
+
+  function hostileReport() {
+    return report({
+      title: "ordinary title",
+      description: "ordinary description",
+      pageUrl: `https://bundestracker.de/x${INJECTION}`,
+      diagnostics: {
+        environment: {
+          ...DIAGNOSTICS.environment,
+          userAgent: `Mozilla/5.0 ${INJECTION}`,
+          colorScheme: INJECTION,
+          timeZone: INJECTION,
+          appVersion: INJECTION,
+        },
+        errors: [
+          {
+            message: `boom ${INJECTION}`,
+            stack: [`at fn ${INJECTION}`, "```", "> [!NOTE]"],
+            url: `https://x.example/y${INJECTION}`,
+            atMs: 10,
+          },
+        ],
+        requests: [
+          {
+            method: INJECTION,
+            url: `https://x.example/z${INJECTION}`,
+            status: 500,
+            durationMs: 1,
+            atMs: 5,
+          },
+        ],
+        breadcrumbs: [{ kind: "click" as const, target: `button ${INJECTION}`, atMs: 1 }],
+      },
+    })
+  }
+
+  test("exactly one banner is *rendered* however many a report forges", () => {
+    // The headline property. A second `> [!NOTE]` outranking the real one is
+    // how a stranger's report gets read as a maintainer's verdict.
+    //
+    // Counted at the start of a line, which is the only position GitHub renders
+    // an alert from. The payload text may well appear inside a code span or a
+    // fenced block — that is exactly where it is supposed to end up, inert —
+    // so a naive substring count would be asserting the wrong thing.
+    const body = issueBody(hostileReport())
+    const rendered = body.split("\n").filter((line) => line.startsWith("> [!NOTE]"))
+    expect(rendered.length).toBe(1)
+    expect(body).toStartWith("> [!NOTE]")
+  })
+
+  test("no injected payload escapes into a table structure", () => {
+    const body = issueBody(hostileReport())
+    // Every row of the two tables must have the arity its header declares. A
+    // `|` that survived would add a cell and break the table open.
+    for (const line of body.split("\n")) {
+      if (!line.startsWith("| ")) continue
+      const cells = line.split("|").length
+      expect(cells === 4 || cells === 7).toBe(true)
+    }
+  })
+
+  test("no forged block marker reaches column zero", () => {
+    // A heading or a block quote at the start of a line is a structural
+    // forgery. Reporter text that *contains* those characters is fine — the
+    // error-list line legitimately begins `- ` and carries the payload inside a
+    // code span, which is exactly where it belongs — so this asserts position
+    // of the *marker*, not absence of the characters.
+    const body = issueBody(hostileReport())
+    const forged = body
+      .split("\n")
+      .filter((line) => /^(#{1,6} |> )/.test(line))
+      .filter((line) => !line.startsWith("> [!NOTE]"))
+    for (const line of forged) {
+      expect(line).not.toContain("Verified by a maintainer")
+    }
+  })
+
+  test("no wire-supplied value survives with a newline in it", () => {
+    // The general rule behind the block markers above: a smuggled newline is
+    // what lets a payload leave the span or the indent that contains it. Every
+    // renderer here flattens before writing, so the injected banner text can
+    // never appear at the start of any line.
+    const body = issueBody(hostileReport())
+    expect(body.split("\n").some((line) => line.trimStart().startsWith("> Verified"))).toBe(false)
+  })
+
+  test("a literal triple backtick in a stack frame cannot close its fence", () => {
+    const body = issueBody(hostileReport())
+    // The frames land in a fence longer than any run inside them, so the
+    // forged banner that follows stays inside the block.
+    const stackStart = body.indexOf("<summary>Stack</summary>")
+    const stackBlock = body.slice(stackStart)
+    expect(stackBlock).toMatch(/````+/)
+  })
+
+  test("a literal triple backtick in a breadcrumb cannot close its fence", () => {
+    const body = issueBody(hostileReport())
+    const trailStart = body.indexOf("### Interaction trail")
+    expect(trailStart).toBeGreaterThan(-1)
+    expect(body.slice(trailStart)).toMatch(/````+/)
+  })
+
+  test("no reporter payload can close the fence that contains it", () => {
+    // The general property behind the two tests above. A block is opened by the
+    // *longest* run in the document region, so a payload's own ``` is strictly
+    // shorter than the fence around it and cannot terminate it.
+    //
+    // Asserted by measuring, per block, that the opening fence is longer than
+    // every backtick run on the lines it contains. Counting fence lines instead
+    // would miscount: a payload line consisting only of ``` looks like a fence
+    // and is content.
+    const body = issueBody(hostileReport())
+    const lines = body.split("\n")
+    let open: { fence: string; indent: string } | null = null
+    let checked = 0
+    for (const line of lines) {
+      const match = /^(\s*)(`{3,})\s*\w*$/.exec(line)
+      if (open === null) {
+        if (match) open = { fence: match[2], indent: match[1] }
+        continue
+      }
+      // Only an equal-or-longer run at the same indent closes a block.
+      if (match && match[1] === open.indent && match[2].length >= open.fence.length) {
+        open = null
+        checked++
+        continue
+      }
+      for (const run of line.matchAll(/`+/g)) {
+        expect(run[0].length).toBeLessThan(open.fence.length)
+      }
+    }
+    // Every block opened was also closed, and there were blocks to check.
+    expect(open).toBeNull()
+    expect(checked).toBeGreaterThan(0)
+  })
+
+  test("mentions are still defused inside diagnostics", () => {
+    const body = issueBody(
+      report({
+        diagnostics: {
+          ...DIAGNOSTICS,
+          environment: { ...DIAGNOSTICS.environment, userAgent: "UA @joshua-e-fehn #1" },
+        },
+      }),
+    )
+    expect(body).not.toContain("@joshua-e-fehn")
+  })
+})
+
+describe("inlineCode", () => {
+  test("neutralises the characters that break a span or a table cell", () => {
+    const rendered = inlineCode("a`b|c\nd")
+    expect(rendered).toBe("`a b c d`")
+  })
+
+  test("wraps in exactly one pair of backticks", () => {
+    expect(inlineCode("plain")).toBe("`plain`")
   })
 })
 

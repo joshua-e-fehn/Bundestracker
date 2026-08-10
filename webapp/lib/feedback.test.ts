@@ -32,6 +32,22 @@ import {
 
 const SECRET = "s3cr3t-token-value"
 
+/**
+ * The deployed origin, as `sanitizeUrl` reads it to tell first-party from
+ * foreign.
+ *
+ * Set here rather than mocked, because it is exactly the configuration the
+ * function consults in production and a test that bypassed it would not be
+ * testing the branch. Assigned before any import-time work runs — `sanitizeUrl`
+ * reads `process.env` per call, not at module load, so this is sufficient.
+ *
+ * ⚠ A deployment with this variable unset treats *everything* as foreign, which
+ * is the conservative direction: reports keep their origin and lose their path
+ * rather than the reverse. `lib/convex-url.ts` documents the same preference
+ * for failing closed on missing configuration.
+ */
+process.env.NEXT_PUBLIC_SITE_URL = "https://bundestracker.de"
+
 describe("sanitizeUrl", () => {
   test("drops the fragment entirely", () => {
     // The fragment is where an OAuth implicit-flow token lives. On this site it
@@ -85,6 +101,65 @@ describe("sanitizeUrl", () => {
   test("bounds the result", () => {
     const long = `https://bundestracker.de/${"a".repeat(1000)}`
     expect((sanitizeUrl(long) ?? "").length).toBeLessThanOrEqual(LIMITS.url)
+  })
+
+  /**
+   * Foreign URLs, which the query allowlist was never written for.
+   *
+   * The collectors record **every failed request**, third-party ones included,
+   * and `issueBody` publishes `requests[].url` into a public GitHub issue. The
+   * path used to be reconstructed wholesale for any origin — fine for
+   * `/mps/bt-0007`, whose segments are public identifiers, and not fine at all
+   * for somebody else's server, where a path segment is an ordinary place to
+   * put a session token or a reset nonce.
+   */
+  describe("foreign origins", () => {
+    test("keeps the origin and drops the path", () => {
+      const url = sanitizeUrl(`https://api.example.com/v1/session/${SECRET}`)
+      expect(url).not.toContain(SECRET)
+      expect(url).not.toContain("session")
+      // The origin survives, because "the call to api.example.com failed" is
+      // the entire diagnostic value of the record.
+      expect(url).toContain("https://api.example.com")
+    })
+
+    test("drops a secret in any path position", () => {
+      for (const path of [
+        `/reset/${SECRET}`,
+        `/${SECRET}/profile`,
+        `/a/b/c/${SECRET}`,
+        `/download/${SECRET}/file.pdf`,
+      ]) {
+        expect(sanitizeUrl(`https://files.example.com${path}`)).not.toContain(SECRET)
+      }
+    })
+
+    test("does not apply the first-party query allowlist to a stranger", () => {
+      // `?q=` is kept on this site because it is the search box, reasoned about
+      // for this site's URL space. A third-party `q` is somebody else's field.
+      const url = sanitizeUrl(`https://search.example.com/x?q=${SECRET}&wp=21`)
+      expect(url).not.toContain(SECRET)
+      expect(url).not.toContain("wp=21")
+    })
+
+    test("marks that something was removed", () => {
+      // A bare origin would read as the whole URL to whoever triages the issue.
+      expect(sanitizeUrl("https://api.example.com/v1/thing")).toBe("https://api.example.com/…")
+    })
+
+    test("keeps the path for localhost, so development reports stay useful", () => {
+      expect(sanitizeUrl("http://localhost:3000/rankings?wp=21")).toBe(
+        "http://localhost:3000/rankings?wp=21",
+      )
+    })
+
+    test("a hostname merely containing 'localhost' is still foreign", () => {
+      // `localhost.evil.com` is not localhost. A substring check here would be
+      // an origin-confusion bug.
+      const url = sanitizeUrl(`https://localhost.evil.com/steal/${SECRET}`)
+      expect(url).not.toContain(SECRET)
+      expect(url).toBe("https://localhost.evil.com/…")
+    })
   })
 })
 

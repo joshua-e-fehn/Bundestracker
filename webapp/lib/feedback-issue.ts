@@ -146,6 +146,63 @@ function defuseMentions(text: string): string {
   return text.replace(/([@#])(?=[A-Za-z0-9_-])/g, "$1​")
 }
 
+/**
+ * Renders a value inside a single-backtick code span, safely.
+ *
+ * ## The hole this closes
+ *
+ * `fencedQuote` above protected the two fields a reporter obviously controls —
+ * the title and the description — and everything else was interpolated raw.
+ * That was most of the body: `userAgent`, `error.message`, `request.url`,
+ * `pageUrl`, `appVersion`. Every one of them is caller-supplied over the wire,
+ * because the sanitizers in lib/feedback.ts bound *length* and strip *URLs*
+ * but were never asked to make text safe for **Markdown** — a different
+ * question that nothing was answering.
+ *
+ * `userAgent` was the cleanest vector: 350 characters of arbitrary text landing
+ * inside a one-backtick span inside a table cell. A backtick escapes the span,
+ * a `|` breaks the table, and a newline followed by `> [!NOTE]` forges a second
+ * banner that outranks the real one — which is precisely the "fake 'verified by
+ * maintainer' banner" the `fencedQuote` comment names as the threat it exists
+ * to stop, arriving through the door beside it.
+ *
+ * Backticks, pipes and newlines become spaces rather than being escaped:
+ * escaping is context-dependent (a `\|` is right in a table and wrong in a
+ * span) and this one function serves both. A user agent with a backtick in it
+ * is not information anyone needs preserved exactly.
+ */
+export function inlineCode(text: string): string {
+  const cleaned = defuseMentions(text).replace(/[`|\r\n]/g, " ")
+  return `\`${cleaned}\``
+}
+
+/**
+ * Renders lines inside a fenced block whose fence cannot be closed from within.
+ *
+ * The block equivalent of `inlineCode`, and the fix for the same class of bug:
+ * stack frames and breadcrumb targets were written into **fixed three-backtick
+ * fences**, so a literal ``` in either closed the block and everything after it
+ * rendered as Markdown. Reuses `fencedQuote`'s dynamic-fence rule, which is
+ * what makes the fence uncloseable.
+ */
+function fencedBlock(lines: string[], indent = ""): string[] {
+  // ⚠ Each entry is flattened to a single line *first*. A wire-supplied value
+  // can contain newlines — `sanitizeError` and `sanitizeBreadcrumb` bound
+  // length and strip URLs but never touched them — and inside an **indented**
+  // block a smuggled newline puts the text that follows at column zero, outside
+  // the indent that makes it part of the block. The fence would still be
+  // balanced and the payload would still render as Markdown.
+  const flattened = lines.map((line) => line.replace(/[\r\n]+/g, " "))
+  const text = flattened.join("\n")
+  const longestRun = [...text.matchAll(/`+/g)].reduce((max, m) => Math.max(max, m[0].length), 0)
+  const fence = "`".repeat(Math.max(3, longestRun + 1))
+  return [
+    `${indent}${fence}`,
+    ...flattened.map((line) => `${indent}${defuseMentions(line)}`),
+    `${indent}${fence}`,
+  ]
+}
+
 /** Renders a millisecond offset as `+1.2s`, the form a reader of a timeline
  * wants. Offsets rather than timestamps is a privacy decision — see
  * `SafeError.atMs` in lib/feedback.ts. */
@@ -198,13 +255,16 @@ export function issueBody(report: PublicReport): string {
 
   lines.push(`### Context`, "")
   lines.push(`| | |`, `| --- | --- |`)
-  lines.push(`| Page | ${report.pageUrl ? `\`${report.pageUrl}\`` : "_not recorded_"} |`)
-  lines.push(`| Language | \`${report.locale}\` |`)
+  // Every interpolated value from here down goes through `inlineCode`. These
+  // are wire-supplied strings, and length-bounding them is not the same as
+  // making them safe to embed in Markdown — see the note on that function.
+  lines.push(`| Page | ${report.pageUrl ? inlineCode(report.pageUrl) : "_not recorded_"} |`)
+  lines.push(`| Language | ${inlineCode(report.locale)} |`)
   lines.push(`| Screenshot | ${report.hasScreenshot ? "attached (stored privately)" : "none"} |`)
   lines.push(
     `| Reply address | ${report.hasContact ? "provided (stored privately)" : "not provided"} |`,
   )
-  lines.push(`| Report id | \`${report.reportId}\` |`)
+  lines.push(`| Report id | ${inlineCode(report.reportId)} |`)
   lines.push("")
 
   const diagnostics = report.diagnostics
@@ -219,26 +279,30 @@ export function issueBody(report: PublicReport): string {
   const env = diagnostics.environment
   lines.push(`### Environment`, "")
   lines.push(`| | |`, `| --- | --- |`)
-  lines.push(`| User agent | \`${env.userAgent || "unknown"}\` |`)
+  lines.push(`| User agent | ${inlineCode(env.userAgent || "unknown")} |`)
+  // The three numbers are coerced by `sanitizeEnvironment` and cannot carry
+  // markup; the strings below all can, so they are all code-spanned.
   lines.push(
     `| Viewport | ${env.viewport.width}×${env.viewport.height} @ ${env.devicePixelRatio}× |`,
   )
-  lines.push(`| Colour scheme | ${env.colorScheme} |`)
-  lines.push(`| Time zone | ${env.timeZone} |`)
+  lines.push(`| Colour scheme | ${inlineCode(env.colorScheme)} |`)
+  lines.push(`| Time zone | ${inlineCode(env.timeZone)} |`)
   lines.push(`| Signed in | ${env.signedIn ? "yes" : "no"} |`)
-  if (env.appVersion) lines.push(`| App build | \`${env.appVersion}\` |`)
+  if (env.appVersion) lines.push(`| App build | ${inlineCode(env.appVersion)} |`)
   lines.push("")
 
   if (diagnostics.errors.length > 0) {
     lines.push(`### Application errors (${diagnostics.errors.length})`, "")
     for (const error of diagnostics.errors) {
-      lines.push(`- **${offset(error.atMs)}** — \`${defuseMentions(error.message)}\``)
-      if (error.url) lines.push(`  - on \`${error.url}\``)
+      lines.push(`- **${offset(error.atMs)}** — ${inlineCode(error.message)}`)
+      if (error.url) lines.push(`  - on ${inlineCode(error.url)}`)
       if (error.stack.length > 0) {
         lines.push(`  <details><summary>Stack</summary>`, "")
-        lines.push("  ```")
-        for (const frame of error.stack) lines.push(`  ${frame}`)
-        lines.push("  ```", "  </details>")
+        // A dynamic fence, not a fixed ```: a frame containing a literal
+        // three-backtick run would otherwise close the block and render
+        // everything after it as Markdown.
+        lines.push(...fencedBlock(error.stack, "  "))
+        lines.push("  </details>")
       }
     }
     lines.push("")
@@ -249,7 +313,7 @@ export function issueBody(report: PublicReport): string {
     lines.push(`| At | Method | Status | Duration | URL |`, `| --- | --- | --- | --- | --- |`)
     for (const request of diagnostics.requests) {
       lines.push(
-        `| ${offset(request.atMs)} | ${request.method} | ${request.status ?? "no response"} | ${request.durationMs} ms | ${request.url ? `\`${request.url}\`` : "_not recorded_"} |`,
+        `| ${offset(request.atMs)} | ${inlineCode(request.method)} | ${request.status ?? "no response"} | ${request.durationMs} ms | ${request.url ? inlineCode(request.url) : "_not recorded_"} |`,
       )
     }
     lines.push("")
@@ -261,11 +325,16 @@ export function issueBody(report: PublicReport): string {
       `<details><summary>${diagnostics.breadcrumbs.length} steps before the report</summary>`,
       "",
     )
-    lines.push("```")
-    for (const crumb of diagnostics.breadcrumbs) {
-      lines.push(`${offset(crumb.atMs).padStart(8)}  ${crumb.kind.padEnd(8)}  ${crumb.target}`)
-    }
-    lines.push("```", "</details>", "")
+    // Dynamic fence, for the reason the stack block gives: `crumb.target` is
+    // wire-supplied and a literal ``` in it would close a fixed fence.
+    lines.push(
+      ...fencedBlock(
+        diagnostics.breadcrumbs.map(
+          (crumb) => `${offset(crumb.atMs).padStart(8)}  ${crumb.kind.padEnd(8)}  ${crumb.target}`,
+        ),
+      ),
+    )
+    lines.push("</details>", "")
   }
 
   lines.push(

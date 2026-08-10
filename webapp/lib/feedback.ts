@@ -9,15 +9,22 @@
  * quietly carries a reader's session token into a public issue tracker, and
  * nothing about the page looks wrong while it happens.
  *
- * ## The rule is an allowlist, everywhere, without exception
+ * ## The rule is an allowlist, and it is scoped to this app's own URL space
  *
  * Every function below names the fields it keeps and drops the rest. Not one of
  * them names fields to *remove*, because a denylist is a promise about a set
  * that grows: the day a new query parameter, a new header or a new Error
  * subclass appears, a denylist silently starts passing it through and no test
- * fails. `sanitizeUrl` keeps a fixed set of query keys; `sanitizeError` keeps a
- * message it has already stripped URLs out of; `describeElement` keeps a tag
- * name and a role. Anything unrecognised does not survive.
+ * fails. `sanitizeError` keeps a message it has already stripped URLs out of;
+ * `describeElement` keeps a tag name and a role. Anything unrecognised does not
+ * survive.
+ *
+ * ⚠ For URLs the allowlist governs the query **and only on first-party URLs**.
+ * This paragraph used to say "everywhere, without exception", which was false
+ * and was load-bearing in the wrong direction — the path was reconstructed
+ * wholesale for every origin, and the collectors record failed requests to
+ * *third-party* servers, where a path segment is an ordinary place to keep a
+ * secret. A foreign URL is now reduced to its origin; see `sanitizeUrl`.
  *
  * ## What is never collected, at any layer
  *
@@ -125,19 +132,61 @@ export const ALLOWED_QUERY_KEYS = ["wp", "metric", "month", "fraktion", "land", 
 const VALUE_REDACTED_QUERY_KEYS: readonly string[] = []
 
 /**
- * A URL reduced to what is safe to publish: origin, path, and the allowlisted
- * query parameters.
+ * Whether a URL belongs to this app.
+ *
+ * The distinction matters because `sanitizeUrl`'s allowlist was written for
+ * *this site's* URL space — six known navigation parameters, and a path built
+ * from route segments that are public identifiers. Neither claim holds for
+ * somebody else's server.
+ *
+ * `NEXT_PUBLIC_SITE_URL` is the deployed origin. It is read defensively: in a
+ * Convex action `process.env` exists but that variable does not, and a missing
+ * value must mean "treat everything as foreign" — the conservative direction.
+ */
+function isFirstParty(url: URL): boolean {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL
+  if (configured) {
+    try {
+      if (url.origin === new URL(configured).origin) return true
+    } catch {
+      // A malformed variable is not a reason to trust a foreign origin.
+    }
+  }
+  // Localhost, so a development report is not reduced to an origin and made
+  // useless. Never a wildcard: a hostname *containing* "localhost" is not it.
+  return url.hostname === "localhost" || url.hostname === "127.0.0.1"
+}
+
+/**
+ * A URL reduced to what is safe to publish.
+ *
+ * ## First-party: origin, path, and the allowlisted query
  *
  * The hash is dropped **entirely and always**. On this site a fragment is an
  * anchor (`#contact`, `#data`), which is worth nothing in a report, and the
  * fragment is also where OAuth implicit-flow tokens live in the general case.
  * Trading a jump-link for a class of credential leak is not a close call.
  *
- * The origin is kept because a report from a preview deployment and a report
- * from production are different reports. Credentials in the authority component
- * (`https://user:pass@host`) are stripped — `URL` parses them into their own
- * fields, so reassembling from `origin` drops them by construction rather than
- * by a rule that could be forgotten.
+ * Credentials in the authority component (`https://user:pass@host`) are
+ * stripped — `URL` parses them into their own fields, so reassembling from
+ * `origin` drops them by construction rather than by a rule to remember.
+ *
+ * ## Foreign: the origin, and nothing else
+ *
+ * ⚠ This is the part that used to be wrong, and the module header used to claim
+ * otherwise: the path was reconstructed wholesale for *every* origin. That is
+ * fine for `/mps/bt-0007`, whose segments are public identifiers — and not fine
+ * at all for somebody else's server, where a path segment is a perfectly normal
+ * place to put a secret (`/v1/session/<token>`, `/reset/<nonce>`, the signature
+ * component of a pre-signed URL).
+ *
+ * It matters because these URLs are not hypothetical. The fetch wrapper in
+ * lib/diagnostics.ts records **every failed request**, third-party ones
+ * included, and `issueBody` publishes `requests[].url` into a public GitHub
+ * issue. So a foreign URL keeps its origin — which is the whole diagnostic
+ * value, "the call to api.example.com failed" — and loses the path and the
+ * query. The `?q=` judgement call in `ALLOWED_QUERY_KEYS` was reasoned about
+ * for this site's search box, and stops applying here for the same reason.
  *
  * A string that does not parse returns `null` rather than being passed through:
  * an unparseable URL is not something to publish on the theory that it is
@@ -154,6 +203,12 @@ export function sanitizeUrl(raw: string | null | undefined): string | null {
   // Anything that is not the web. `javascript:` and `data:` carry their whole
   // payload in the URL, and a `file:` path names the reader's disk.
   if (url.protocol !== "https:" && url.protocol !== "http:") return null
+
+  if (!isFirstParty(url)) {
+    // The ellipsis says "there was more here", so a maintainer reading the
+    // issue does not take the bare origin for the whole URL.
+    return truncate(`${url.origin}/…`, LIMITS.url)
+  }
 
   const kept = new URLSearchParams()
   for (const key of ALLOWED_QUERY_KEYS) {

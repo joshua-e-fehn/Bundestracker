@@ -150,6 +150,24 @@ describe("the screenshot redacts before it rasterises", () => {
     expect(draw).toBeGreaterThan(redact)
   })
 
+  test("traversal is separated from mutation", () => {
+    // The structural half of the P0 fixed in lib/screenshot.test.ts. A live
+    // `TreeWalker` advanced while the clone is being mutated desynchronises
+    // from the first redaction onward — so the file must not hold one at all.
+    // Behavioural coverage is in lib/screenshot.test.ts; this is the guard
+    // against the pattern being reintroduced somewhere new in the file.
+    const code = screenshotSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    expect(code).not.toContain("createTreeWalker")
+    expect(code).toContain("pairTrees")
+  })
+
+  test("the screenshot size ceiling is the shared constant, not a copy", () => {
+    // A second copy of a bound is a bound that drifts. The literal was
+    // `1_500_000` while `LIMITS.screenshotBytes` sat unread beside it.
+    expect(screenshotSource).toContain("LIMITS.screenshotBytes")
+    expect(screenshotSource).not.toContain("1_500_000")
+  })
+
   test("the report widget itself is dropped from the capture", () => {
     expect(screenshotSource).toContain("data-feedback-widget")
   })
@@ -172,12 +190,13 @@ describe("the publishing path cannot read the private half", () => {
 
   test("a rejected report stores no reporter text", () => {
     // Otherwise being refused becomes a way to write arbitrary content into
-    // the table.
+    // the table. The slice runs to the end of the rejection branch, which now
+    // has two exits — the forgeable one writes nothing at all, and the cap one
+    // writes the blank row asserted here.
     const start = feedbackSource.indexOf("if (rejection) {")
-    const end = feedbackSource.indexOf(
-      "return { accepted: false, reportId: null, reason: rejection }",
-    )
+    const end = feedbackSource.indexOf("const title = truncate(", start)
     expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
     const block = feedbackSource.slice(start, end)
     expect(block).toContain('title: ""')
     expect(block).toContain('description: ""')
@@ -241,5 +260,105 @@ describe("retention is actually scheduled", () => {
     const deleteRow = block.indexOf("ctx.db.delete")
     expect(deleteFile).toBeGreaterThan(-1)
     expect(deleteRow).toBeGreaterThan(deleteFile)
+  })
+})
+
+describe("an abandoned upload is reclaimable", () => {
+  test("minting an upload URL writes a row that can be found later", () => {
+    // Without this row the file is unreachable: `sweepExpiredReports` walks
+    // `feedbackReports` and can only delete a `screenshotId` it finds on a row,
+    // so an upload with no report was never deleted by anything, ever.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const generateScreenshotUploadUrl"),
+      feedbackSource.indexOf("async function claimScreenshot"),
+    )
+    expect(block).toContain('ctx.db.insert("feedbackUploads"')
+  })
+
+  test("the orphan sweep exists, is scheduled, and deletes file before row", () => {
+    const block = feedbackSource.slice(feedbackSource.indexOf("export const sweepOrphanedUploads"))
+    expect(block).toContain("feedbackUploads")
+    const deleteFile = block.indexOf("ctx.storage.delete")
+    const deleteRow = block.indexOf("ctx.db.delete")
+    expect(deleteFile).toBeGreaterThan(-1)
+    expect(deleteRow).toBeGreaterThan(deleteFile)
+    // Reached from the retention sweep, so it runs without a second cron.
+    expect(feedbackSource).toContain("internal.feedback.sweepOrphanedUploads")
+  })
+
+  test("the mint gate counts mints, not reports", () => {
+    // The old gate checked the *report* caps, and minting a URL files no
+    // report — so on a quiet deployment it read `0 >= 200` permanently.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const generateScreenshotUploadUrl"),
+      feedbackSource.indexOf("async function claimScreenshot"),
+    )
+    expect(block).toContain("DAILY_CLIENT_UPLOAD_CAP")
+    expect(block).toContain("DAILY_DEPLOYMENT_UPLOAD_CAP")
+    expect(block).not.toContain("clientReportsSince")
+  })
+
+  test("the screenshot size ceiling is enforced server-side", () => {
+    // The client check is a courtesy; the upload URL accepts whatever is
+    // POSTed to it, so the only real enforcement is against stored metadata.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("async function claimScreenshot"),
+      feedbackSource.indexOf("async function markUploadClaimed"),
+    )
+    expect(block).toContain('ctx.db.system.get("_storage"')
+    expect(block).toContain("LIMITS.screenshotBytes")
+    expect(block).toContain("ctx.storage.delete")
+  })
+})
+
+describe("the duplicate search is capped like every other public call", () => {
+  test("findDuplicates consults the budget before reaching GitHub", () => {
+    // It is public, unauthenticated, and spends the deployment's own GitHub
+    // credential. Uncapped, an attacker exhausts the 30/minute search limit and
+    // every genuine reporter's check silently returns [].
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const findDuplicates"),
+      feedbackSource.indexOf("// --- publication"),
+    )
+    expect(block).toContain("withinSearchBudget")
+    // The gate must precede the outbound request.
+    expect(block.indexOf("withinSearchBudget")).toBeLessThan(block.indexOf("await fetch("))
+  })
+})
+
+describe("publishing is idempotent across a retry", () => {
+  test("a failed report is checked for an existing issue before re-POSTing", () => {
+    // A network failure *after* GitHub created the issue marks the row failed;
+    // `republishFailed` then re-queues it and a second identical issue is filed.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const publishReport"),
+      feedbackSource.indexOf("export const republishFailed"),
+    )
+    expect(block).toContain("findIssueForReport")
+    expect(block.indexOf("findIssueForReport")).toBeLessThan(block.indexOf('method: "POST"'))
+  })
+
+  test("the idempotency key is the report id printed in the body", () => {
+    expect(feedbackSource).toMatch(/in:body "\$\{reportId\}"/)
+    expect(read("lib/feedback-issue.ts")).toContain("Report id")
+  })
+})
+
+describe("duplicateCandidates is a real signal", () => {
+  test("recordPublication cannot overwrite it", () => {
+    // Every one of its call sites passed `[]`, so the column was emptied the
+    // moment a report was published — the schema documented a triage signal
+    // that did not exist.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const recordPublication"),
+      feedbackSource.indexOf("export const publishReport"),
+    )
+    expect(block).not.toContain("duplicateCandidates")
+  })
+
+  test("the widget sends what the reporter was actually shown", () => {
+    const widget = read("components/feedback-widget.tsx")
+    expect(widget).toContain("duplicateCandidates: duplicates.map")
+    expect(feedbackSource).toContain("duplicateCandidates: args.duplicateCandidates")
   })
 })
