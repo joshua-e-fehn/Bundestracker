@@ -131,6 +131,27 @@ const DAILY_CLIENT_UPLOAD_CAP = 20
 const DAILY_DEPLOYMENT_UPLOAD_CAP = 500
 
 /**
+ * Outbound GitHub duplicate searches one browser, and the deployment, may spend
+ * in a rolling day.
+ *
+ * The per-client figure is generous: the check fires on every "Continue" press,
+ * and a reporter who rewords a title three times must not be refused. The
+ * deployment figure is the one that matters — GitHub allows an authenticated
+ * token **30 searches a minute**, so 2000 a day is far above any plausible
+ * organic volume while still bounding a caller who rotates `clientKey` to
+ * defeat the per-client bound. Hitting it degrades duplicate detection, never
+ * report filing: `findDuplicates` returns `[]` and the reporter files as usual.
+ */
+const DAILY_CLIENT_SEARCH_CAP = 30
+const DAILY_DEPLOYMENT_SEARCH_CAP = 2000
+
+/** How long a search record is kept. It exists only to be counted inside the
+ * rolling 24-hour window, so anything older is bookkeeping nobody reads. Two
+ * days rather than one, so a row is never reaped while still inside the window
+ * some in-flight call is measuring. */
+const SEARCH_RETENTION_MS = 2 * 24 * 60 * 60 * 1000
+
+/**
  * How long an unclaimed upload lives before the sweep reclaims it.
  *
  * An hour is far longer than the seconds between minting a URL and submitting
@@ -286,6 +307,10 @@ const submissionArgs = {
   locale: v.string(),
   diagnostics: v.union(v.null(), safeDiagnostics),
   screenshotId: v.union(v.null(), v.id("_storage")),
+  /** The mint row `generateScreenshotUploadUrl` returned, so the file can be
+   * bound to its record exactly rather than guessed at. Untrusted, like every
+   * argument here — see `bindUpload`. */
+  uploadId: v.union(v.null(), v.id("feedbackUploads")),
   /** The random per-browser identifier. See the field note in convex/schema.ts
    * for why this is not an IP and what it does and does not stop. */
   clientKey: v.string(),
@@ -412,7 +437,7 @@ export const submitReport = mutation({
       // Not `args.screenshotId` directly: the file is size-checked against
       // `LIMITS.screenshotBytes` server-side and its mint row is claimed, so an
       // oversized upload degrades to no screenshot instead of being stored.
-      screenshotId: await claimScreenshot(ctx, args.screenshotId),
+      screenshotId: await claimScreenshot(ctx, args.screenshotId, args.uploadId),
       status: "pending",
       githubIssueNumber: null,
       githubIssueUrl: null,
@@ -488,10 +513,17 @@ function resanitize(diagnostics: SafeDiagnostics): SafeDiagnostics {
  * caps, and minting a URL files no report — so on a quiet deployment the
  * deployment gate read `0 >= 200` permanently and bounded nothing at all. Mint
  * volume is what is capped now, which is the quantity an attacker consumes.
+ *
+ * ## The returned `uploadId` is how the file gets bound to its record
+ *
+ * A mint row cannot know its `storageId`: the id does not exist until the
+ * client has POSTed to the URL. Returning the row's own id and taking it back
+ * at submission is what closes that gap **exactly**, rather than guessing which
+ * unclaimed row a file belongs to — see `bindUpload`.
  */
 export const generateScreenshotUploadUrl = mutation({
   args: { clientKey: v.string() },
-  returns: v.union(v.null(), v.string()),
+  returns: v.union(v.null(), v.object({ url: v.string(), uploadId: v.id("feedbackUploads") })),
   handler: async (ctx, args) => {
     const now = Date.now()
     const since = now - DAY_MS
@@ -511,15 +543,16 @@ export const generateScreenshotUploadUrl = mutation({
       .take(DAILY_DEPLOYMENT_UPLOAD_CAP + 1)
     if (deploymentMints.length >= DAILY_DEPLOYMENT_UPLOAD_CAP) return null
 
-    await ctx.db.insert("feedbackUploads", {
-      // Null until the client uploads and names the id at submission. The row
-      // exists from *minting* precisely so that gap is accounted for.
+    const uploadId = await ctx.db.insert("feedbackUploads", {
+      // Null until the client uploads and hands the id back at submission,
+      // alongside the `uploadId` returned here. The row exists from *minting*
+      // precisely so that gap is accounted for rather than invisible.
       storageId: null,
       clientKey,
       claimed: false,
       createdAt: now,
     })
-    return await ctx.storage.generateUploadUrl()
+    return { url: await ctx.storage.generateUploadUrl(), uploadId }
   },
 })
 
@@ -539,47 +572,92 @@ export const generateScreenshotUploadUrl = mutation({
 async function claimScreenshot(
   ctx: MutationCtx,
   storageId: Id<"_storage"> | null,
+  uploadId: Id<"feedbackUploads"> | null,
 ): Promise<Id<"_storage"> | null> {
   if (!storageId) return null
 
   const metadata = await ctx.db.system.get("_storage", storageId)
   if (!metadata || metadata.size > LIMITS.screenshotBytes) {
     await ctx.storage.delete(storageId).catch(() => {})
-    await markUploadClaimed(ctx, storageId)
+    // Bound even on refusal, so the row is claimed rather than left for the
+    // orphan sweep to reap an hour later — the file is already gone.
+    await bindUpload(ctx, uploadId, storageId)
     return null
   }
 
-  await markUploadClaimed(ctx, storageId)
+  await bindUpload(ctx, uploadId, storageId)
   return storageId
 }
 
 /**
- * Marks the mint row for a file as claimed, so the orphan sweep leaves it to
- * the report's own retention.
+ * Binds an uploaded file to the mint row that produced its URL.
  *
- * A mint row is created with `storageId: null` — the id does not exist until
- * the client has uploaded — so where no row names this file, the newest
- * unclaimed row is adopted instead. Imprecise by construction and harmless: the
- * rows are indistinguishable, and the only consequence of adopting a different
- * one is which row the sweep expires first.
+ * ## Why the caller names the row
+ *
+ * A mint row is written before the file exists — `generateUploadUrl` returns a
+ * URL, and the `storageId` only comes into being when the client POSTs to it —
+ * so at mint time there is nothing to record but `storageId: null`.
+ *
+ * The first attempt at this looked the row up by `storageId` and, failing that,
+ * adopted "the newest unclaimed row". Since no row can ever carry the id on a
+ * first claim, **the fallback was the only path that ever ran**: the indexed
+ * lookup was dead code and the comment presented the guess as the rare branch.
+ * The blast radius was small — under concurrency the wrong row is marked, and a
+ * file is never orphaned because the report holds the reference — but it was a
+ * guess describing itself as a lookup.
+ *
+ * `generateScreenshotUploadUrl` now returns the row's own id and the client
+ * hands it back at submission, so the binding is exact. The id is
+ * caller-supplied and therefore untrusted: a row that does not exist, or one
+ * already claimed, is ignored rather than trusted, and a mismatched id costs
+ * nothing more than an hour's wait for the orphan sweep.
+ *
+ * The `by_storageId` lookup is kept as the fallback it always should have been:
+ * it is what makes a *re*-submission of the same file idempotent.
  */
-async function markUploadClaimed(ctx: MutationCtx, storageId: Id<"_storage">): Promise<void> {
+async function bindUpload(
+  ctx: MutationCtx,
+  uploadId: Id<"feedbackUploads"> | null,
+  storageId: Id<"_storage">,
+): Promise<void> {
+  if (uploadId) {
+    const row = await ctx.db.get(uploadId)
+    // Only an unclaimed row, and only one that has not already been bound to a
+    // different file. Both guards exist because `uploadId` came off the wire.
+    if (row && !row.claimed && row.storageId === null) {
+      await ctx.db.patch(uploadId, { storageId, claimed: true })
+      return
+    }
+  }
+  // No usable id: the same file submitted twice, or a caller that skipped the
+  // mint step entirely. Claim by file where a row already names it.
   const existing = await ctx.db
     .query("feedbackUploads")
     .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
     .first()
-  if (existing) {
+  if (existing && !existing.claimed) {
     await ctx.db.patch(existing._id, { claimed: true })
-    return
   }
-  const unclaimed = await ctx.db
+  // Otherwise nothing is bound, and the orphan sweep reclaims the file on its
+  // own schedule. Silently correct: the report row is what keeps a *claimed*
+  // file alive, and this file has no row pointing at it.
+}
+
+/**
+ * Deletes the mint record for a file whose report has expired.
+ *
+ * The counterpart to `bindUpload`, and the reason a claimed row is not
+ * immortal: `sweepOrphanedUploads` reads only the `claimed: false` range, so
+ * without this the table grew by one permanent row per screenshot ever
+ * uploaded while the schema claimed a claimed row's lifetime belonged to its
+ * report.
+ */
+async function deleteUploadRecord(ctx: MutationCtx, storageId: Id<"_storage">): Promise<void> {
+  const row = await ctx.db
     .query("feedbackUploads")
-    .withIndex("by_claimed_and_createdAt", (q) => q.eq("claimed", false))
-    .order("desc")
+    .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
     .first()
-  if (unclaimed) {
-    await ctx.db.patch(unclaimed._id, { storageId, claimed: true })
-  }
+  if (row) await ctx.db.delete(row._id)
 }
 
 // --- duplicate detection --------------------------------------------------
@@ -593,24 +671,53 @@ const duplicateCandidate = v.object({
 })
 
 /**
- * Whether this browser may spend another outbound GitHub call.
+ * Claims one outbound GitHub search, or refuses.
  *
- * An internal query because `findDuplicates` is an action and an action has no
- * `ctx.db`. Counts *searches* against the same window everything else uses, and
- * counts them by writing nothing — the row it reads is the reporter's own
- * report history, so a caller cannot inflate it.
+ * ## Why this writes, and why it is a mutation
+ *
+ * It counts **searches**, and the only way to count searches is to record them.
+ * The previous version counted *reports* and a search files none — so a caller
+ * rotating `clientKey` always read zero, and on a quiet deployment the
+ * deployment total was permanently below its ceiling. It bounded a persistent
+ * client and nothing else, while its comment claimed it bounded volume. That is
+ * the same flaw the upload gate had, fixed the same way: record the operation,
+ * then count the record.
+ *
+ * The row is written **before** the caller performs its `fetch`, so the budget
+ * cannot be spent without also being consumed. A mutation rather than a query
+ * for exactly that reason — a query could observe the budget but never charge
+ * against it.
+ *
+ * Both bounds apply, and they do different work. The per-client one is
+ * resettable by rotating the key, like every per-client bound here, and stops
+ * an ordinary reporter's repeated "Continue" clicks. The deployment one is not
+ * reachable by the caller at all, and it is the one that protects GitHub's
+ * 30-per-minute search ceiling — past which `response.ok` goes false and every
+ * genuine reporter's duplicate check silently returns nothing.
  */
-export const withinSearchBudget = internalQuery({
+export const claimSearchBudget = internalMutation({
   args: { clientKey: v.string() },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    const since = Date.now() - DAY_MS
+    const now = Date.now()
+    const since = now - DAY_MS
     const clientKey = truncate(args.clientKey.trim(), 64) || "unknown"
-    // The mint table doubles as the per-browser activity record: a browser that
-    // has already filed its daily allowance of reports has no business
-    // spending the deployment's GitHub quota on more searches.
-    if ((await clientReportsSince(ctx, clientKey, since)) >= DAILY_CLIENT_CAP) return false
-    if ((await deploymentReportsSince(ctx, since)) >= DAILY_DEPLOYMENT_CAP) return false
+
+    const clientSearches = await ctx.db
+      .query("feedbackSearches")
+      .withIndex("by_clientKey_and_createdAt", (q) =>
+        q.eq("clientKey", clientKey).gte("createdAt", since),
+      )
+      .take(DAILY_CLIENT_SEARCH_CAP + 1)
+    if (clientSearches.length >= DAILY_CLIENT_SEARCH_CAP) return false
+
+    const deploymentSearches = await ctx.db
+      .query("feedbackSearches")
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
+      .take(DAILY_DEPLOYMENT_SEARCH_CAP + 1)
+    if (deploymentSearches.length >= DAILY_DEPLOYMENT_SEARCH_CAP) return false
+
+    await ctx.db.insert("feedbackSearches", { clientKey, createdAt: now })
     return true
   },
 })
@@ -625,18 +732,25 @@ export const withinSearchBudget = internalQuery({
  * reduced to bare words by `duplicateSearchTerms` so a caller cannot inject
  * GitHub's own search qualifiers and redirect the query.
  *
- * ## Why it is capped, which it was not
+ * ## Why it is capped on *searches*, and what that took to get right
  *
- * This is a public, unauthenticated function that performs an outbound request
- * **on the deployment's own GitHub credential**, and it used to carry no cap at
- * all — no client check, no deployment check, no dwell gate. GitHub allows an
- * authenticated token 30 searches a minute; exhausting that is trivial, and the
- * failure is silent in the worst direction: `response.ok` goes false and every
- * genuine reporter's duplicate check returns `[]` while looking like it ran.
+ * This is a public, unauthenticated function performing an outbound request
+ * **on the deployment's own GitHub credential**. GitHub allows an authenticated
+ * token 30 searches a minute; exhausting that is trivial, and the failure is
+ * silent in the worst direction — `response.ok` goes false and every genuine
+ * reporter's duplicate check returns `[]` while looking like it ran.
  *
- * So it goes through the same gate as its siblings. Refusal returns `[]` rather
- * than throwing, which preserves the "a duplicate check never blocks a report"
- * contract — a refused search and an outage are the same thing to the widget.
+ * It first carried no cap at all. It then carried one that counted **reports**,
+ * which a search does not create: a caller rotating `clientKey` always read
+ * zero, a quiet deployment sat permanently below its ceiling, and the gate
+ * bounded a persistent client and nothing else while its comment claimed
+ * otherwise. `claimSearchBudget` counts searches, by recording each one before
+ * the call goes out — the same shape `feedbackUploads` uses for minting, and
+ * for the same reason.
+ *
+ * Refusal returns `[]` rather than throwing, which preserves the "a duplicate
+ * check never blocks a report" contract — a refused search and a GitHub outage
+ * are the same thing to the widget.
  */
 export const findDuplicates = action({
   args: { title: v.string(), description: v.string(), clientKey: v.string() },
@@ -646,8 +760,10 @@ export const findDuplicates = action({
     const repo = process.env.GITHUB_FEEDBACK_REPO
     if (!token || !repo) return []
 
+    // Charged before the outbound call, not merely observed — see
+    // `claimSearchBudget` for why counting *reports* could never bound this.
     if (
-      !(await ctx.runQuery(internal.feedback.withinSearchBudget, { clientKey: args.clientKey }))
+      !(await ctx.runMutation(internal.feedback.claimSearchBudget, { clientKey: args.clientKey }))
     ) {
       return []
     }
@@ -1025,6 +1141,13 @@ export const sweepExpiredReports = internalMutation({
         // A file already gone is not an error — a previous partial run may have
         // deleted it — so this must not throw and abort the batch.
         await ctx.storage.delete(row.screenshotId).catch(() => {})
+        // …and the mint record with it. `sweepOrphanedUploads` only ever reads
+        // the `claimed: false` range, so without this a claimed row outlived
+        // every other trace of the report and `feedbackUploads` grew by one
+        // permanent row per screenshot ever uploaded. The schema said "a
+        // claimed row's lifetime belongs to the report"; this is the code that
+        // makes that true.
+        await deleteUploadRecord(ctx, row.screenshotId)
       }
       await ctx.db.delete(row._id)
     }
@@ -1086,8 +1209,44 @@ export const sweepOrphanedUploads = internalMutation({
     const hasMore = orphans.length === BATCH
     if (hasMore) {
       await ctx.scheduler.runAfter(0, internal.feedback.sweepOrphanedUploads, {})
+    } else {
+      await ctx.scheduler.runAfter(0, internal.feedback.sweepSearchRecords, {})
     }
     return { deleted: orphans.length, hasMore }
+  },
+})
+
+/**
+ * Reaps duplicate-search records past the window they are counted in.
+ *
+ * `feedbackSearches` rows exist only to be counted by `claimSearchBudget` over
+ * a rolling 24 hours, so a row older than `SEARCH_RETENTION_MS` is bookkeeping
+ * nobody will ever read again. Without this the table grows by one row per
+ * search forever — the same unbounded-growth shape the upload table had, and
+ * worth reaping for the same reason even though the rows carry no content.
+ *
+ * Last in the nightly chain: reports, then orphaned uploads, then these. Each
+ * link runs only once the previous one has drained, so no single transaction
+ * carries two sweeps' writes.
+ */
+export const sweepSearchRecords = internalMutation({
+  args: {},
+  returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - SEARCH_RETENTION_MS
+    const BATCH = 200
+    const stale = await ctx.db
+      .query("feedbackSearches")
+      .withIndex("by_createdAt", (q) => q.lt("createdAt", cutoff))
+      .take(BATCH)
+
+    for (const row of stale) await ctx.db.delete(row._id)
+
+    const hasMore = stale.length === BATCH
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.feedback.sweepSearchRecords, {})
+    }
+    return { deleted: stale.length, hasMore }
   },
 })
 

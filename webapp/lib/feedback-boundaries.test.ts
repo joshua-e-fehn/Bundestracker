@@ -311,8 +311,8 @@ describe("an abandoned upload is reclaimable", () => {
   })
 })
 
-describe("the duplicate search is capped like every other public call", () => {
-  test("findDuplicates consults the budget before reaching GitHub", () => {
+describe("the duplicate search is capped on searches, not on reports", () => {
+  test("findDuplicates charges the budget before reaching GitHub", () => {
     // It is public, unauthenticated, and spends the deployment's own GitHub
     // credential. Uncapped, an attacker exhausts the 30/minute search limit and
     // every genuine reporter's check silently returns [].
@@ -320,9 +320,105 @@ describe("the duplicate search is capped like every other public call", () => {
       feedbackSource.indexOf("export const findDuplicates"),
       feedbackSource.indexOf("// --- publication"),
     )
-    expect(block).toContain("withinSearchBudget")
-    // The gate must precede the outbound request.
-    expect(block.indexOf("withinSearchBudget")).toBeLessThan(block.indexOf("await fetch("))
+    expect(block).toContain("claimSearchBudget")
+    // Charged, not merely observed — and before the outbound request, so the
+    // budget cannot be spent without being consumed.
+    expect(block.indexOf("claimSearchBudget")).toBeLessThan(block.indexOf("await fetch("))
+  })
+
+  test("the budget counts searches rather than reports", () => {
+    // The defect this replaces: the gate called `clientReportsSince` /
+    // `deploymentReportsSince`, and a search files no report — so a caller
+    // rotating `clientKey` always read zero and a quiet deployment sat
+    // permanently below its ceiling. It bounded a persistent client and nothing
+    // else, which is the "counts a quantity this operation does not produce"
+    // flaw the upload gate had.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const claimSearchBudget"),
+      feedbackSource.indexOf("export const findDuplicates"),
+    )
+    expect(block).toContain('ctx.db.insert("feedbackSearches"')
+    expect(block).not.toContain("clientReportsSince")
+    expect(block).not.toContain("deploymentReportsSince")
+  })
+
+  test("both a client bound and a deployment bound apply", () => {
+    // The per-client bound is resettable by rotating the key; only the
+    // deployment bound actually protects GitHub's rate limit.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const claimSearchBudget"),
+      feedbackSource.indexOf("export const findDuplicates"),
+    )
+    expect(block).toContain("DAILY_CLIENT_SEARCH_CAP")
+    expect(block).toContain("DAILY_DEPLOYMENT_SEARCH_CAP")
+  })
+
+  test("it is a mutation, because counting a search means recording it", () => {
+    // A query could observe the budget but never charge against it.
+    expect(feedbackSource).toContain("export const claimSearchBudget = internalMutation")
+  })
+
+  test("search records are reaped rather than accumulating forever", () => {
+    expect(feedbackSource).toContain("export const sweepSearchRecords")
+    expect(feedbackSource).toContain("internal.feedback.sweepSearchRecords")
+  })
+})
+
+describe("an upload record is bound to its file exactly", () => {
+  test("the mint returns its row id so the binding is not a guess", () => {
+    // A mint row cannot know its `storageId` — the file does not exist when the
+    // URL is issued — so the first version looked up by `storageId` and fell
+    // back to "newest unclaimed row". The lookup could never hit on a first
+    // claim, so the fallback was the *only* path that ever ran while the
+    // comment presented it as the exception.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const generateScreenshotUploadUrl"),
+      feedbackSource.indexOf("async function claimScreenshot"),
+    )
+    expect(block).toContain('uploadId: v.id("feedbackUploads")')
+    expect(block).toContain("const uploadId = await ctx.db.insert")
+  })
+
+  test("binding uses the caller's row id, and distrusts it", () => {
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("async function bindUpload"),
+      feedbackSource.indexOf("async function deleteUploadRecord"),
+    )
+    expect(block).toContain("ctx.db.get(uploadId)")
+    // `uploadId` arrives over the wire: an already-claimed row, or one already
+    // bound to a different file, must not be re-bound.
+    expect(block).toContain("!row.claimed")
+    expect(block).toContain("row.storageId === null")
+    // The by-file lookup survives as the genuine fallback it always should
+    // have been — idempotency for a re-submitted file.
+    expect(block).toContain("by_storageId")
+  })
+
+  test("submission carries the upload id", () => {
+    expect(feedbackSource).toContain("claimScreenshot(ctx, args.screenshotId, args.uploadId)")
+    expect(read("components/feedback-widget.tsx")).toContain("uploadId,")
+  })
+})
+
+describe("claimed upload records do not outlive their report", () => {
+  test("report retention deletes the upload record too", () => {
+    // `sweepOrphanedUploads` reads only the `claimed: false` range, so without
+    // this the table grew by one permanent row per screenshot ever uploaded —
+    // while the schema claimed a claimed row's lifetime belonged to its report.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const sweepExpiredReports"),
+      feedbackSource.indexOf("export const sweepOrphanedUploads"),
+    )
+    expect(block).toContain("deleteUploadRecord(ctx, row.screenshotId)")
+    // File first, then the mint record, then the report row.
+    expect(block.indexOf("ctx.storage.delete")).toBeLessThan(block.indexOf("deleteUploadRecord"))
+    expect(block.indexOf("deleteUploadRecord")).toBeLessThan(block.indexOf("ctx.db.delete"))
+  })
+
+  test("the deleter finds the row by the file it names", () => {
+    const block = feedbackSource.slice(feedbackSource.indexOf("async function deleteUploadRecord"))
+    expect(block).toContain("by_storageId")
+    expect(block).toContain("ctx.db.delete(row._id)")
   })
 })
 

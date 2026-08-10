@@ -225,23 +225,39 @@ export function FeedbackWidget() {
     })
   }, [])
 
-  /** Uploads the screenshot, returning its storage id — or null, which is a
-   * complete answer: a report without a picture is still a report. */
-  async function uploadScreenshot(): Promise<Id<"_storage"> | null> {
-    if (!includeScreenshot || !screenshot) return null
+  /**
+   * Uploads the screenshot, returning the stored file **and the mint row it
+   * belongs to** — or nulls, which is a complete answer: a report without a
+   * picture is still a report.
+   *
+   * The `uploadId` matters on the server, not here. A mint row cannot know its
+   * own `storageId` (the file does not exist when the URL is issued), so
+   * carrying the row's id back through submission is what lets the server bind
+   * the two exactly instead of guessing which unclaimed row a file came from.
+   * See `bindUpload` in convex/feedback.ts.
+   */
+  async function uploadScreenshot(): Promise<{
+    storageId: Id<"_storage"> | null
+    uploadId: Id<"feedbackUploads"> | null
+  }> {
+    const none = { storageId: null, uploadId: null }
+    if (!includeScreenshot || !screenshot) return none
     try {
-      const uploadUrl = await generateUploadUrl({ clientKey: clientKey() })
-      if (!uploadUrl) return null
-      const response = await fetch(uploadUrl, {
+      const minted = await generateUploadUrl({ clientKey: clientKey() })
+      if (!minted) return none
+      const response = await fetch(minted.url, {
         method: "POST",
         headers: { "Content-Type": screenshot.blob.type },
         body: screenshot.blob,
       })
-      if (!response.ok) return null
+      // A mint row was written; leaving it unclaimed is correct — the orphan
+      // sweep reclaims it, which is exactly what that sweep is for.
+      if (!response.ok) return none
       const body = (await response.json()) as { storageId?: string }
-      return (body.storageId as Id<"_storage">) ?? null
+      if (!body.storageId) return none
+      return { storageId: body.storageId as Id<"_storage">, uploadId: minted.uploadId }
     } catch {
-      return null
+      return none
     }
   }
 
@@ -278,7 +294,7 @@ export function FeedbackWidget() {
     setSubmitting(true)
     setError(null)
     try {
-      const screenshotId = await uploadScreenshot()
+      const { storageId, uploadId } = await uploadScreenshot()
       const result = await submitReport({
         kind,
         title,
@@ -287,7 +303,8 @@ export function FeedbackWidget() {
         pageUrl: currentPageUrl(),
         locale,
         diagnostics: includeDiagnostics ? diagnostics : null,
-        screenshotId,
+        screenshotId: storageId,
+        uploadId,
         clientKey: clientKey(),
         dwellMs: Date.now() - openedAt.current,
         honeypot,

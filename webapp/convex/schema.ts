@@ -1477,6 +1477,42 @@ const schema = defineSchema({
     // `claimed` leads so the range is exactly the unclaimed rows — the sweep
     // must never scan claimed ones, which outnumber them.
     .index("by_claimed_and_createdAt", ["claimed", "createdAt"]),
+
+  /**
+   * One outbound GitHub duplicate search.
+   *
+   * ## Why searches need their own table
+   *
+   * `findDuplicates` is public, unauthenticated, and performs a `fetch` on the
+   * **deployment's own GitHub credential**. Its first gate counted *reports* —
+   * and a search files none, so a caller rotating `clientKey` (a caller-supplied
+   * argument) always read `0` and a quiet deployment's total was permanently
+   * below its ceiling. The gate bounded a persistent client and nothing else,
+   * while its comments claimed otherwise.
+   *
+   * That is the same "counts a quantity this operation does not produce" flaw
+   * `feedbackUploads` exists to fix for minting, and the answer is the same:
+   * record the operation, then count the record. A row is written *before* the
+   * outbound call, so the budget cannot be spent without also being counted.
+   *
+   * ⚠ The per-client bound is resettable by rotating the key, exactly as
+   * everywhere else here. The deployment bound is not, and it is what actually
+   * protects GitHub's 30-requests-per-minute ceiling — past which every genuine
+   * reporter's duplicate check silently returns nothing.
+   *
+   * Rows are bookkeeping and carry no report content: a key, a timestamp, and
+   * nothing else. They are reaped by `sweepSearchRecords` once past the window
+   * they are counted in.
+   */
+  feedbackSearches: defineTable({
+    /** The same anonymous per-browser key the other two tables carry. */
+    clientKey: v.string(),
+    createdAt: v.number(),
+  })
+    // The deployment-wide budget, and the reaper's cursor.
+    .index("by_createdAt", ["createdAt"])
+    // The per-browser budget.
+    .index("by_clientKey_and_createdAt", ["clientKey", "createdAt"]),
 })
 
 export default schema
