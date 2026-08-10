@@ -4,6 +4,7 @@ import { ExternalLinkIcon } from "lucide-react"
 import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
 import { DataAsOf } from "@/components/data-as-of"
+import { FeedbackWidget } from "@/components/feedback-widget"
 import { LocaleToggle } from "@/components/locale-toggle"
 import { useLocale } from "@/components/providers/locale-provider"
 // Both URLs used to be file-private constants here, which was right while the
@@ -90,6 +91,12 @@ export function SiteFooter() {
               components/data-as-of.tsx for what the timestamp actually is
               and what the "unknown" branch means. */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 shrink-0">
+            {/* The report trigger lives here, beside the provenance line and
+                the source-code link, because that is where a reader who has
+                decided something on this site is wrong already goes looking.
+                It renders nothing when the deployment has no GitHub
+                credentials — see components/feedback-widget.tsx. */}
+            <FeedbackWidget />
             <DataAsOf />
             <p>{t("footer.builtBy")}</p>
           </div>

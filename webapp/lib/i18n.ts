@@ -2225,6 +2225,99 @@ const de = {
   // an einen Ausschuss, nicht eine namentlich benannte Abgeordnete.
   "referrals.caveat":
     "Eine Überweisung nennt einen Ausschuss und ein Dokument, keine Person. Sie ist keine Ausschussmitgliedschaft und kein Beleg für die Ausschussarbeit einzelner Abgeordneter.",
+
+  // --- feedback / Problem melden ---
+  // Der Ton ist bewusst nüchtern und nicht werbend: wer das Formular öffnet,
+  // hat gerade einen Fehler gefunden und will ihn loswerden, nicht umworben
+  // werden. "Problem melden" statt "Feedback geben" — das erste beschreibt,
+  // was die Person tatsächlich tut.
+  "feedback.open": "Problem melden",
+  "feedback.title": "Problem melden",
+  "feedback.description":
+    "Fehler, Wunsch oder falsche Angabe? Die Meldung wird als öffentliches Ticket im Quellcode-Repository angelegt.",
+  "feedback.kind.label": "Worum geht es?",
+  "feedback.kind.bug": "Fehler",
+  "feedback.kind.bugHint": "Etwas funktioniert nicht wie erwartet.",
+  "feedback.kind.feature": "Wunsch",
+  "feedback.kind.featureHint": "Eine Funktion fehlt.",
+  "feedback.kind.data": "Falsche Angabe",
+  "feedback.kind.dataHint": "Eine Zahl oder ein Datensatz stimmt nicht.",
+  "feedback.kind.other": "Sonstiges",
+  "feedback.kind.otherHint": "Alles andere.",
+  "feedback.field.title": "Kurzfassung",
+  "feedback.field.titlePlaceholder": "In einem Satz: was ist passiert?",
+  "feedback.field.description": "Beschreibung",
+  "feedback.field.descriptionPlaceholder":
+    "Was haben Sie gemacht, was haben Sie erwartet, was ist stattdessen passiert?",
+  "feedback.field.contact": "E-Mail für Rückfragen (optional)",
+  "feedback.field.contactHint":
+    "Wird nicht veröffentlicht. Nur gespeichert, damit auf Rückfragen geantwortet werden kann.",
+  "feedback.field.optional": "optional",
+  // Der Honeypot. Für Menschen unsichtbar; das Label existiert nur, weil ein
+  // Eingabefeld ohne Label auch für Screenreader unsichtbar sein muss — die
+  // Anweisung, es leer zu lassen, ist die ehrlichste Lösung.
+  "feedback.field.honeypot": "Dieses Feld bitte leer lassen.",
+
+  "feedback.error.titleMissing": "Bitte beschreiben Sie das Problem in einem Satz.",
+  "feedback.error.titleTooLong": "Die Kurzfassung ist zu lang.",
+  "feedback.error.descriptionTooLong": "Die Beschreibung ist zu lang.",
+  "feedback.error.contactInvalid": "Diese E-Mail-Adresse sieht nicht gültig aus.",
+  "feedback.error.tooMany":
+    "Von diesem Browser sind heute schon mehrere Meldungen eingegangen. Bitte versuchen Sie es morgen erneut.",
+  "feedback.error.tooFast": "Bitte nehmen Sie sich einen Moment für die Beschreibung.",
+  "feedback.error.failed":
+    "Die Meldung konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.",
+  "feedback.error.unavailable": "Meldungen werden auf diesem Deployment gerade nicht angenommen.",
+
+  // --- Was mitgeschickt wird ---
+  // Diese Sektion ist der Kern der Datenschutz-Zusage: sie zeigt vor dem
+  // Absenden, was tatsächlich übertragen wird, und lässt beides einzeln
+  // abwählen. Der Text nennt ausdrücklich, was *nicht* erhoben wird — die
+  // Aussage ist prüfbar (webapp/lib/feedback.ts) und deshalb keine Floskel.
+  "feedback.privacy.heading": "Was mitgeschickt wird",
+  "feedback.privacy.never":
+    "Niemals erhoben: Cookies, Speicherinhalte des Browsers, Anmelde-Header, Inhalte von Anfragen und Antworten, Eingaben in Formularfelder sowie alle URL-Parameter außerhalb einer festen Liste.",
+  "feedback.privacy.reviewHint": "Alles hier lässt sich vor dem Absenden entfernen.",
+  "feedback.diagnostics.label": "Technische Angaben",
+  "feedback.diagnostics.hint": "Browser, Fenstergröße, Sprache, aufgetretene Fehler.",
+  "feedback.diagnostics.remove": "Technische Angaben nicht mitschicken",
+  "feedback.diagnostics.removed": "Technische Angaben werden nicht mitgeschickt.",
+  "feedback.diagnostics.show": "Anzeigen",
+  "feedback.diagnostics.hide": "Verbergen",
+  "feedback.diagnostics.errors": "{count} Fehler",
+  "feedback.diagnostics.requests": "{count} fehlgeschlagene Anfragen",
+  "feedback.diagnostics.breadcrumbs": "{count} Interaktionsschritte",
+  "feedback.screenshot.label": "Bildschirmfoto",
+  "feedback.screenshot.capturing": "Bildschirmfoto wird erstellt …",
+  "feedback.screenshot.remove": "Bildschirmfoto entfernen",
+  "feedback.screenshot.removed": "Kein Bildschirmfoto wird mitgeschickt.",
+  "feedback.screenshot.retake": "Neu aufnehmen",
+  "feedback.screenshot.failed": "Es konnte kein Bildschirmfoto erstellt werden.",
+  "feedback.screenshot.redacted": "{count} Bereiche wurden automatisch geschwärzt.",
+  "feedback.screenshot.redactionNote":
+    "Eingabefelder und Kontodaten werden vor der Aufnahme geschwärzt. Das Bild wird nicht veröffentlicht, sondern nur intern gespeichert.",
+  "feedback.screenshot.alt": "Vorschau des Bildschirmfotos, geschwärzte Bereiche grau hinterlegt",
+
+  // --- Duplikate ---
+  "feedback.duplicates.checking": "Ähnliche Meldungen werden gesucht …",
+  "feedback.duplicates.heading": "Gibt es das schon?",
+  "feedback.duplicates.hint":
+    "Diese Tickets ähneln Ihrer Meldung. Ein Blick dort spart Ihnen vielleicht die Meldung.",
+  "feedback.duplicates.open": "offen",
+  "feedback.duplicates.closed": "geschlossen",
+  "feedback.duplicates.submitAnyway": "Trotzdem melden",
+  "feedback.duplicates.back": "Zurück zum Formular",
+  "feedback.duplicates.none": "Keine ähnliche Meldung gefunden.",
+
+  "feedback.submit": "Meldung senden",
+  "feedback.submitting": "Wird gesendet …",
+  "feedback.cancel": "Abbrechen",
+  "feedback.success.heading": "Danke — die Meldung ist angekommen.",
+  "feedback.success.body":
+    "Sie wird als öffentliches Ticket angelegt. Das kann einen Moment dauern.",
+  "feedback.success.close": "Schließen",
+  "feedback.publicNote":
+    "Kurzfassung und Beschreibung werden öffentlich sichtbar. E-Mail-Adresse und Bildschirmfoto nicht.",
 } as const
 
 /**
@@ -3657,6 +3750,83 @@ const en: Dictionary = {
     "This deployment has not yet ingested committee referrals for this electoral period. That does not mean none were made — it means they have not been fetched here yet.",
   "referrals.caveat":
     "A referral names a committee and a document, not a person. It is not committee membership and not evidence of an individual member's committee work.",
+
+  // --- feedback ---
+  "feedback.open": "Report a problem",
+  "feedback.title": "Report a problem",
+  "feedback.description":
+    "Found a bug, want a feature, or spotted a wrong figure? Your report becomes a public ticket in the source repository.",
+  "feedback.kind.label": "What is this about?",
+  "feedback.kind.bug": "Bug",
+  "feedback.kind.bugHint": "Something does not work as expected.",
+  "feedback.kind.feature": "Feature request",
+  "feedback.kind.featureHint": "Something is missing.",
+  "feedback.kind.data": "Wrong data",
+  "feedback.kind.dataHint": "A figure or record is incorrect.",
+  "feedback.kind.other": "Something else",
+  "feedback.kind.otherHint": "Anything else.",
+  "feedback.field.title": "Summary",
+  "feedback.field.titlePlaceholder": "In one sentence: what happened?",
+  "feedback.field.description": "Details",
+  "feedback.field.descriptionPlaceholder":
+    "What did you do, what did you expect, and what happened instead?",
+  "feedback.field.contact": "Email for follow-up questions (optional)",
+  "feedback.field.contactHint": "Never published. Stored only so a reply is possible.",
+  "feedback.field.optional": "optional",
+  "feedback.field.honeypot": "Please leave this field empty.",
+
+  "feedback.error.titleMissing": "Please describe the problem in one sentence.",
+  "feedback.error.titleTooLong": "The summary is too long.",
+  "feedback.error.descriptionTooLong": "The description is too long.",
+  "feedback.error.contactInvalid": "That email address does not look valid.",
+  "feedback.error.tooMany":
+    "Several reports have already come from this browser today. Please try again tomorrow.",
+  "feedback.error.tooFast": "Please take a moment to describe the problem.",
+  "feedback.error.failed": "The report could not be sent. Please try again later.",
+  "feedback.error.unavailable": "Reports are not being accepted on this deployment right now.",
+
+  "feedback.privacy.heading": "What gets sent",
+  "feedback.privacy.never":
+    "Never collected: cookies, browser storage values, authorization headers, request or response bodies, form-field values, and any URL parameters outside a fixed allowlist.",
+  "feedback.privacy.reviewHint": "Anything here can be removed before sending.",
+  "feedback.diagnostics.label": "Technical details",
+  "feedback.diagnostics.hint": "Browser, window size, language, and any errors that occurred.",
+  "feedback.diagnostics.remove": "Do not send technical details",
+  "feedback.diagnostics.removed": "Technical details will not be sent.",
+  "feedback.diagnostics.show": "Show",
+  "feedback.diagnostics.hide": "Hide",
+  "feedback.diagnostics.errors": "{count} error(s)",
+  "feedback.diagnostics.requests": "{count} failed request(s)",
+  "feedback.diagnostics.breadcrumbs": "{count} interaction step(s)",
+  "feedback.screenshot.label": "Screenshot",
+  "feedback.screenshot.capturing": "Taking a screenshot …",
+  "feedback.screenshot.remove": "Remove screenshot",
+  "feedback.screenshot.removed": "No screenshot will be sent.",
+  "feedback.screenshot.retake": "Retake",
+  "feedback.screenshot.failed": "A screenshot could not be taken.",
+  "feedback.screenshot.redacted": "{count} region(s) were blacked out automatically.",
+  "feedback.screenshot.redactionNote":
+    "Input fields and account details are blacked out before the picture is taken. The image is never published — it is stored privately.",
+  "feedback.screenshot.alt": "Screenshot preview, with redacted regions shown as grey blocks",
+
+  "feedback.duplicates.checking": "Looking for similar reports …",
+  "feedback.duplicates.heading": "Has this been reported?",
+  "feedback.duplicates.hint":
+    "These tickets look similar to your report. One of them may already answer it.",
+  "feedback.duplicates.open": "open",
+  "feedback.duplicates.closed": "closed",
+  "feedback.duplicates.submitAnyway": "Report anyway",
+  "feedback.duplicates.back": "Back to the form",
+  "feedback.duplicates.none": "No similar report found.",
+
+  "feedback.submit": "Send report",
+  "feedback.submitting": "Sending …",
+  "feedback.cancel": "Cancel",
+  "feedback.success.heading": "Thank you — your report arrived.",
+  "feedback.success.body": "It will be filed as a public ticket. That may take a moment.",
+  "feedback.success.close": "Close",
+  "feedback.publicNote":
+    "Your summary and description become publicly visible. Your email address and screenshot do not.",
 }
 
 export const dictionaries: Record<Locale, Dictionary> = { de, en }

@@ -118,6 +118,10 @@ export function SidebarAccount({ expanded }: { expanded: boolean }) {
     <DropdownMenuTrigger asChild>
       <Button
         variant="ghost"
+        // Marks this row as an account surface, which the feedback
+        // screenshot blacks out before rasterising — it renders a signed-in
+        // reader's display name and their avatar. See lib/screenshot.ts.
+        data-feedback-account=""
         // The rail's own hover colours rather than the button's default `muted`,
         // so the row reads as part of the sidebar it sits in.
         className={cn(
@@ -161,7 +165,11 @@ export function SidebarAccount({ expanded }: { expanded: boolean }) {
           rail pinned to the bottom of the viewport, so the default `bottom`
           placement would have Radix flip it every time anyway. */}
       <DropdownMenuContent side="top" align="start" className="min-w-52">
-        <DropdownMenuLabel className="grid gap-0.5">
+        {/* The reader's name and email address — the single most sensitive
+            thing this app puts on screen, and the reason `data-feedback-account`
+            exists. An open account menu at the moment a screenshot is taken
+            would otherwise publish an address. */}
+        <DropdownMenuLabel className="grid gap-0.5" data-feedback-account="">
           <span className="truncate font-medium">{user.name}</span>
           <span className="truncate font-normal text-muted-foreground text-xs">{user.email}</span>
         </DropdownMenuLabel>
