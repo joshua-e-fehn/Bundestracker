@@ -98,6 +98,79 @@ export const preferredLocale: Validator<Locale | null> = v.union(
 )
 
 /**
+ * The diagnostics a feedback report may carry — and, by omission, everything it
+ * may not.
+ *
+ * This validator is the schema-level statement of the privacy rule that
+ * lib/feedback.ts implements. It is written as a closed object of closed
+ * objects, with no `v.any()`, no `v.record()` and no free-form map anywhere in
+ * it, because those are the three shapes through which an unanticipated field
+ * arrives. There is no key here for a cookie, a storage value, a header, a
+ * request body, a response body or a form-field value — so a client that sends
+ * one is rejected by the validator rather than trusted to have behaved.
+ *
+ * ⚠ That property is load-bearing and easy to destroy: widening any member
+ * below to `v.any()` would silently re-open every vector the feature exists to
+ * close. `convex/feedback.test.ts` asserts the shape stays closed.
+ *
+ * The types on the TypeScript side are `SafeEnvironment`, `SafeError`,
+ * `SafeRequest` and `SafeBreadcrumb` in lib/feedback.ts. They are not imported
+ * and annotated here the way `eventType` is annotated `Validator<EventType>`,
+ * because those types carry optionality and numeric bounds that a validator
+ * cannot express — the two are kept in step by convex/feedback.ts, which
+ * assigns a sanitized value into this shape and would fail the typecheck if
+ * they diverged.
+ */
+export const safeDiagnostics = v.object({
+  environment: v.object({
+    userAgent: v.string(),
+    viewport: v.object({ width: v.number(), height: v.number() }),
+    devicePixelRatio: v.number(),
+    locale: v.string(),
+    colorScheme: v.string(),
+    timeZone: v.string(),
+    /** A boolean, never an identity — see the note on the field in
+     * lib/feedback.ts. */
+    signedIn: v.boolean(),
+    appVersion: v.union(v.null(), v.string()),
+  }),
+  errors: v.array(
+    v.object({
+      message: v.string(),
+      stack: v.array(v.string()),
+      url: v.union(v.null(), v.string()),
+      /** Milliseconds since the page session began, not a wall clock. */
+      atMs: v.number(),
+    }),
+  ),
+  /** Metadata only. There is deliberately no `body`, no `headers` and no
+   * `response` member, and adding one would be a schema change a reviewer
+   * would see. */
+  requests: v.array(
+    v.object({
+      method: v.string(),
+      url: v.union(v.null(), v.string()),
+      status: v.union(v.null(), v.number()),
+      durationMs: v.number(),
+      atMs: v.number(),
+    }),
+  ),
+  /** Element shapes, never element contents. */
+  breadcrumbs: v.array(
+    v.object({
+      kind: v.union(
+        v.literal("click"),
+        v.literal("keydown"),
+        v.literal("navigate"),
+        v.literal("resize"),
+      ),
+      target: v.string(),
+      atMs: v.number(),
+    }),
+  ),
+})
+
+/**
  * The seven inputs to an activity score, each weighted independently.
  *
  * Constrained by `SCORE_COMPONENTS` in lib/scoring.ts rather than restated, so
@@ -1244,6 +1317,118 @@ const schema = defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_userId", ["userId"]),
+
+  /**
+   * A report filed through the website's feedback widget.
+   *
+   * The second table a browser writes to, and the second one carrying personal
+   * data — but unlike `userPreferences` above, it is written by *anonymous*
+   * visitors, which changes almost everything about how it is shaped.
+   *
+   * ## The private half never leaves this table
+   *
+   * `contact` and `screenshotId` are stored here and are **never** part of the
+   * GitHub issue. `lib/feedback-issue.ts` enforces that structurally — the type
+   * its body renderer accepts has no field for either — and this table is where
+   * they live instead. A maintainer who needs to reply, or to see the picture,
+   * looks the row up by the id printed in the issue.
+   *
+   * ## Everything typed by a stranger is bounded before it arrives
+   *
+   * The validators here are the backstop rather than the first line: the widget
+   * truncates, and `convex/feedback.ts` re-truncates on the way in, because the
+   * caller is an anonymous HTTP request rather than this app's own form. The
+   * ceilings are `LIMITS` in lib/feedback.ts.
+   *
+   * ## Why `status` rather than deleting a published row
+   *
+   * A report whose GitHub issue could not be created must be retryable, and a
+   * report that was rejected as abuse must stay long enough to inform the rate
+   * limiter. So the row's life is a state machine — `pending` → `published` or
+   * `failed`, or `rejected` before it ever reaches GitHub — and
+   * `feedbackRetention` in convex/feedback.ts is what eventually removes it.
+   */
+  feedbackReports: defineTable({
+    /** Which of the four kinds the reporter chose. Not a free string: it
+     * selects a GitHub label, and an unknown value would silently produce an
+     * unlabelled issue. */
+    kind: v.union(
+      v.literal("bug"),
+      v.literal("feature"),
+      v.literal("data"),
+      v.literal("other"),
+    ),
+    title: v.string(),
+    description: v.string(),
+    /** The reporter's reply address, or null. **Private.** Never rendered into
+     * an issue body — see the header note. */
+    contact: v.union(v.null(), v.string()),
+    /** The sanitized page URL (`sanitizeUrl` in lib/feedback.ts): origin, path
+     * and an allowlisted query only, never the hash. */
+    pageUrl: v.union(v.null(), v.string()),
+    /** The app's display language when the report was filed. */
+    locale: preferredLocale,
+    /** Collected diagnostics, or null when the reporter switched them off.
+     * Null is a distinct fact from an empty object and is reported as such. */
+    diagnostics: v.union(v.null(), safeDiagnostics),
+    /** The redacted screenshot. **Private**, like `contact`. Convex file
+     * storage rather than a field, because it is ~100 kB of binary and a
+     * document has a 1 MB ceiling. */
+    screenshotId: v.union(v.null(), v.id("_storage")),
+    /**
+     * Where the report is in its life.
+     *
+     * `rejected` rows are kept deliberately: they are what makes the daily cap
+     * meaningful, since a limiter that forgets what it refused refuses nothing.
+     */
+    status: v.union(
+      v.literal("pending"),
+      v.literal("published"),
+      v.literal("failed"),
+      v.literal("rejected"),
+    ),
+    /** The issue this became, once it is one. */
+    githubIssueNumber: v.union(v.null(), v.number()),
+    githubIssueUrl: v.union(v.null(), v.string()),
+    /** Why publication failed, for an operator reading the table. Never shown
+     * to the reporter, who gets a generic message — an upstream error string is
+     * not something to render to the public. */
+    failureReason: v.union(v.null(), v.string()),
+    /** Candidate duplicates found before filing, as issue numbers. Recorded
+     * even when the reporter filed anyway: "they were shown these three and
+     * filed regardless" is the useful signal for triage. */
+    duplicateCandidates: v.array(v.number()),
+    /**
+     * The Better Auth user id, when the reporter happened to be signed in.
+     *
+     * Optional in the strong sense: signing in is not required, not requested,
+     * and not encouraged by the widget. It is recorded only because a signed-in
+     * reporter who asks "what did I send you?" can then be answered, and
+     * because it is a far better abuse key than anything available for an
+     * anonymous caller.
+     */
+    userId: v.union(v.null(), v.string()),
+    /**
+     * The anonymous rate-limit key — a random per-browser identifier, not an
+     * IP address and not a fingerprint.
+     *
+     * ⚠ Convex mutations cannot see the client IP (there is no request object),
+     * so this is what the daily cap is keyed on. It is trivially resettable by
+     * clearing storage, which is stated plainly rather than papered over: it
+     * stops accidental double-submits and casual repetition, not a determined
+     * attacker. The per-deployment cap in convex/feedback.ts is what bounds
+     * that case.
+     */
+    clientKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    // The rate-limit read: this browser's reports, newest first.
+    .index("by_clientKey_and_createdAt", ["clientKey", "createdAt"])
+    // The per-deployment daily cap, and the retention sweep's cursor.
+    .index("by_createdAt", ["createdAt"])
+    // The publisher's retry queue.
+    .index("by_status_and_createdAt", ["status", "createdAt"]),
 })
 
 export default schema

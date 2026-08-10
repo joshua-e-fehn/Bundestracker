@@ -11,7 +11,8 @@ import { internal } from "./_generated/api"
  * parsing, and XML parsing. Convex's crons handle only in-Convex aggregation
  * over data that has already landed.
  *
- * So there is exactly one job here: recomputing activity scores.
+ * So there are two jobs here: recomputing activity scores, and expiring
+ * feedback reports. Both are in-Convex work over rows that already landed.
  */
 
 const crons = cronJobs()
@@ -33,6 +34,25 @@ crons.daily(
   "recompute activity scores",
   { hourUTC: 3, minuteUTC: 15 },
   internal.scoreSweep.startNightlySweep,
+  {},
+)
+
+/**
+ * Deletes feedback reports past their retention window.
+ *
+ * 04:40 UTC — after the scoring sweep has finished, and off the hour for the
+ * reason above. This is the enforcement half of a promise the widget makes to
+ * every reporter: a report is kept for 90 days and then removed, screenshot
+ * included. Without a scheduled sweep that promise is a comment.
+ *
+ * Cheap on the overwhelming majority of days — the index range is empty until
+ * something is actually old enough — and self-rescheduling when it is not. See
+ * convex/feedback.ts.
+ */
+crons.daily(
+  "expire feedback reports",
+  { hourUTC: 4, minuteUTC: 40 },
+  internal.feedback.sweepExpiredReports,
   {},
 )
 
