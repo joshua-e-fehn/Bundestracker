@@ -139,13 +139,40 @@ const VALUE_REDACTED_QUERY_KEYS: readonly string[] = []
  * from route segments that are public identifiers. Neither claim holds for
  * somebody else's server.
  *
- * `NEXT_PUBLIC_SITE_URL` is the deployed origin. It is read defensively: in a
- * Convex action `process.env` exists but that variable does not, and a missing
- * value must mean "treat everything as foreign" — the conservative direction.
+ * ## ⚠ Two variables, because this module runs in two runtimes
+ *
+ * `sanitizeUrl` is deliberately re-run on the server (convex/feedback.ts), on
+ * the assumption that the caller skipped the browser. So `isFirstParty` has to
+ * answer the same question in the **Convex** runtime as in the browser — and
+ * `NEXT_PUBLIC_SITE_URL` alone cannot, because it is a Next.js *build-time*
+ * variable inlined into the browser bundle and set on Vercel. It does not exist
+ * on the Convex deployment.
+ *
+ * Reading only that name therefore classified the app's own URL as foreign on
+ * every server-side pass, and the second pass is the one whose output is stored
+ * and published: every report lost its path and its allowlisted query — the
+ * difference `ALLOWED_QUERY_KEYS` itself calls "a reproduction" versus "not a
+ * reproduction". It failed safe (over-redaction, never a leak) and it failed
+ * silently, and no test saw it because the suite set the browser variable and
+ * localhost is matched in development regardless.
+ *
+ * `SITE_URL` is the same origin under the name the **Convex** deployment
+ * already carries it: Better Auth requires it, `.env.example` documents it as
+ * "the real deployed origin in production", and `betterAuth/auth.ts` uses it as
+ * the trusted CORS origin. Consulting both is what makes one rule hold in both
+ * places.
+ *
+ * Both absent still means "treat everything as foreign" — the conservative
+ * direction, and now a configuration error rather than the default state.
  */
+export function firstPartyOrigins(): string[] {
+  return [process.env.NEXT_PUBLIC_SITE_URL, process.env.SITE_URL].filter((value): value is string =>
+    Boolean(value),
+  )
+}
+
 function isFirstParty(url: URL): boolean {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL
-  if (configured) {
+  for (const configured of firstPartyOrigins()) {
     try {
       if (url.origin === new URL(configured).origin) return true
     } catch {

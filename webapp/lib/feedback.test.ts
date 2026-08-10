@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   ALLOWED_QUERY_KEYS,
   describeElement,
+  firstPartyOrigins,
   isPlausibleEmail,
   LIMITS,
   sanitizeBreadcrumb,
@@ -41,10 +42,14 @@ const SECRET = "s3cr3t-token-value"
  * testing the branch. Assigned before any import-time work runs — `sanitizeUrl`
  * reads `process.env` per call, not at module load, so this is sufficient.
  *
- * ⚠ A deployment with this variable unset treats *everything* as foreign, which
- * is the conservative direction: reports keep their origin and lose their path
- * rather than the reverse. `lib/convex-url.ts` documents the same preference
- * for failing closed on missing configuration.
+ * ⚠ Setting it here is also how this suite once hid a production regression,
+ * which is why the `runtime configuration` block below exists. `sanitizeUrl`
+ * runs in **two** runtimes — the browser and the Convex server, which re-runs it
+ * on the assumption the caller skipped the browser — and `NEXT_PUBLIC_SITE_URL`
+ * is a Next.js build-time variable that exists in only one of them. A suite that
+ * sets it at module scope runs in a world the server never inhabits, and
+ * `isFirstParty`'s localhost fallback meant development passed too. Every report
+ * silently lost its path in production and nothing failed.
  */
 process.env.NEXT_PUBLIC_SITE_URL = "https://bundestracker.de"
 
@@ -159,6 +164,110 @@ describe("sanitizeUrl", () => {
       const url = sanitizeUrl(`https://localhost.evil.com/steal/${SECRET}`)
       expect(url).not.toContain(SECRET)
       expect(url).toBe("https://localhost.evil.com/…")
+    })
+  })
+
+  /**
+   * The runtime this suite does not otherwise simulate.
+   *
+   * `sanitizeUrl` is re-run on the Convex server (convex/feedback.ts) over
+   * values the browser already sanitized, and the server's output is what gets
+   * stored and published. But the Convex deployment has no
+   * `NEXT_PUBLIC_SITE_URL` — that is a Next.js build-time variable inlined into
+   * the browser bundle — so the server pass classified the app's own URL as
+   * foreign and stripped the path from every report. Silently, and in the safe
+   * direction, which is why nothing noticed.
+   *
+   * These tests manipulate `process.env` directly and restore it, so they
+   * assert the configuration each runtime actually has rather than the one the
+   * suite happens to set at module scope.
+   */
+  describe("runtime configuration", () => {
+    const saved = {
+      next: process.env.NEXT_PUBLIC_SITE_URL,
+      site: process.env.SITE_URL,
+    }
+    const restore = () => {
+      process.env.NEXT_PUBLIC_SITE_URL = saved.next
+      if (saved.site === undefined) delete process.env.SITE_URL
+      else process.env.SITE_URL = saved.site
+    }
+
+    test("the Convex runtime keeps first-party paths via SITE_URL", () => {
+      // THE regression. Only `SITE_URL` is set — exactly the Convex
+      // deployment's configuration, where Better Auth already requires it.
+      delete process.env.NEXT_PUBLIC_SITE_URL
+      process.env.SITE_URL = "https://bundestracker.de"
+      try {
+        expect(sanitizeUrl("https://bundestracker.de/rankings?wp=20&metric=speeches")).toBe(
+          "https://bundestracker.de/rankings?wp=20&metric=speeches",
+        )
+        // …and a stranger is still reduced, so the fix does not widen the rule.
+        expect(sanitizeUrl(`https://api.example.com/v1/session/${SECRET}`)).toBe(
+          "https://api.example.com/…",
+        )
+      } finally {
+        restore()
+      }
+    })
+
+    test("error text keeps first-party URLs on the server too", () => {
+      // `stripUrlsFromText` routes through the same check, so the regression
+      // reached error messages by the same path.
+      delete process.env.NEXT_PUBLIC_SITE_URL
+      process.env.SITE_URL = "https://bundestracker.de"
+      try {
+        expect(stripUrlsFromText("Cannot load https://bundestracker.de/mps/bt-0007 in list")).toBe(
+          "Cannot load https://bundestracker.de/mps/bt-0007 in list",
+        )
+      } finally {
+        restore()
+      }
+    })
+
+    test("the browser runtime keeps first-party paths via NEXT_PUBLIC_SITE_URL", () => {
+      delete process.env.SITE_URL
+      process.env.NEXT_PUBLIC_SITE_URL = "https://bundestracker.de"
+      try {
+        expect(sanitizeUrl("https://bundestracker.de/mps?wp=21")).toBe(
+          "https://bundestracker.de/mps?wp=21",
+        )
+      } finally {
+        restore()
+      }
+    })
+
+    test("sanitizing twice is stable, as the two-runtime design requires", () => {
+      // The browser sanitizes, the server sanitizes again. A first-party URL
+      // must survive both passes unchanged — the regression showed up precisely
+      // as the second pass disagreeing with the first.
+      process.env.NEXT_PUBLIC_SITE_URL = "https://bundestracker.de"
+      process.env.SITE_URL = "https://bundestracker.de"
+      try {
+        const once = sanitizeUrl("https://bundestracker.de/rankings?wp=20&q=klima")
+        expect(sanitizeUrl(once)).toBe(once)
+        expect(once).toContain("/rankings")
+      } finally {
+        restore()
+      }
+    })
+
+    test("with neither variable set, everything is foreign", () => {
+      // The conservative default, asserted rather than assumed: a deployment
+      // that forgot to configure an origin over-redacts, never under-redacts.
+      delete process.env.NEXT_PUBLIC_SITE_URL
+      delete process.env.SITE_URL
+      try {
+        expect(sanitizeUrl("https://bundestracker.de/rankings?wp=20")).toBe(
+          "https://bundestracker.de/…",
+        )
+      } finally {
+        restore()
+      }
+    })
+
+    test("the two variables are independent — either alone is enough", () => {
+      expect(firstPartyOrigins().length).toBeGreaterThan(0)
     })
   })
 })
