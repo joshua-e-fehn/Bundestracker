@@ -252,14 +252,35 @@ describe("retention is actually scheduled", () => {
     expect(read("convex/crons.ts")).toContain("internal.feedback.sweepExpiredReports")
   })
 
-  test("the sweep deletes the screenshot before the row", () => {
+  test("every sweep deletes side-effects before the row", () => {
     // The other order leaves a live file with nothing pointing at it, which is
     // the failure that never gets noticed.
-    const block = feedbackSource.slice(feedbackSource.indexOf("export const sweepExpiredReports"))
-    const deleteFile = block.indexOf("ctx.storage.delete")
-    const deleteRow = block.indexOf("ctx.db.delete")
-    expect(deleteFile).toBeGreaterThan(-1)
-    expect(deleteRow).toBeGreaterThan(deleteFile)
+    //
+    // Asserted on `sweepBatch`, which is where the ordering now lives for all
+    // three sweeps: `onRow` — the per-table work, deleting a file or a mint
+    // record — runs, and only then does the row go. Pinning it here rather than
+    // once per sweep is the point of having one machine: the guarantee cannot
+    // hold in two sweeps and lapse in the third.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("async function sweepBatch"),
+      feedbackSource.indexOf("// --- the rate limiter"),
+    )
+    const onRow = block.indexOf("await options.onRow?.(row)")
+    const deleteRow = block.indexOf("await ctx.db.delete(row._id)")
+    expect(onRow).toBeGreaterThan(-1)
+    expect(deleteRow).toBeGreaterThan(onRow)
+  })
+
+  test("the last sweep in the chain does not reschedule itself forever", () => {
+    // `next` is absent on the final stage, and that absence has to *end* the
+    // chain rather than fall back to `self` — which would be an infinite
+    // reschedule, not a no-op.
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("async function sweepBatch"),
+      feedbackSource.indexOf("// --- the rate limiter"),
+    )
+    expect(block).toContain("const follow = hasMore ? options.self : options.next")
+    expect(block).toContain("if (follow)")
   })
 })
 
@@ -275,13 +296,15 @@ describe("an abandoned upload is reclaimable", () => {
     expect(block).toContain('ctx.db.insert("feedbackUploads"')
   })
 
-  test("the orphan sweep exists, is scheduled, and deletes file before row", () => {
-    const block = feedbackSource.slice(feedbackSource.indexOf("export const sweepOrphanedUploads"))
+  test("the orphan sweep exists, is scheduled, and deletes the file", () => {
+    const block = feedbackSource.slice(
+      feedbackSource.indexOf("export const sweepOrphanedUploads"),
+      feedbackSource.indexOf("export const sweepSearchRecords"),
+    )
     expect(block).toContain("feedbackUploads")
-    const deleteFile = block.indexOf("ctx.storage.delete")
-    const deleteRow = block.indexOf("ctx.db.delete")
-    expect(deleteFile).toBeGreaterThan(-1)
-    expect(deleteRow).toBeGreaterThan(deleteFile)
+    // The file goes in `onRow`; `sweepBatch` deletes the row after it, which is
+    // asserted once for all three sweeps above.
+    expect(block).toContain("ctx.storage.delete(row.storageId)")
     // Reached from the retention sweep, so it runs without a second cron.
     expect(feedbackSource).toContain("internal.feedback.sweepOrphanedUploads")
   })
@@ -410,9 +433,9 @@ describe("claimed upload records do not outlive their report", () => {
       feedbackSource.indexOf("export const sweepOrphanedUploads"),
     )
     expect(block).toContain("deleteUploadRecord(ctx, row.screenshotId)")
-    // File first, then the mint record, then the report row.
+    // File first, then the mint record — both inside `onRow`, which `sweepBatch`
+    // runs before deleting the report row.
     expect(block.indexOf("ctx.storage.delete")).toBeLessThan(block.indexOf("deleteUploadRecord"))
-    expect(block.indexOf("deleteUploadRecord")).toBeLessThan(block.indexOf("ctx.db.delete"))
   })
 
   test("the deleter finds the row by the file it names", () => {

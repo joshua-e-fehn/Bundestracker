@@ -1,3 +1,4 @@
+import type { FunctionReference } from "convex/server"
 import { v } from "convex/values"
 import {
   isFeedbackKind,
@@ -168,6 +169,86 @@ const RETENTION_DAYS = 90
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// --- shared shapes --------------------------------------------------------
+
+/**
+ * The anonymous per-browser key, normalised.
+ *
+ * Three public entry points take this argument and all three bounded it the
+ * same way inline. Stated once because it is a *rule* rather than a
+ * convenience: the empty-string fallback is what stops a caller omitting the
+ * key from landing in an unbounded bucket of its own, and a 64-character
+ * ceiling is what stops the key itself being a payload. A copy that drifted
+ * would be a limiter with a hole in exactly one entry point.
+ */
+function normalizeClientKey(raw: string): string {
+  return truncate(raw.trim(), 64) || "unknown"
+}
+
+/** The start of the rolling window every cap in this file measures over. One
+ * expression rather than three, so "a day" cannot come to mean two things. */
+function windowStart(now: number): number {
+  return now - DAY_MS
+}
+
+/**
+ * Counts rows in an index range, stopping one past the cap.
+ *
+ * Every cap here asks the same question — "are there already N of these?" — and
+ * answering it by collecting the range would read the whole window to learn
+ * something a bounded read settles. `take(cap + 1)` is the shape that was
+ * repeated at six call sites; the `+ 1` is load-bearing (it distinguishes "at
+ * the cap" from "past it") and is the part a copy would most easily lose.
+ */
+async function countUpTo<T>(query: { take: (n: number) => Promise<T[]> }, cap: number) {
+  return (await query.take(cap + 1)).length
+}
+
+/** The three tables a sweep deletes from. */
+type SweptId = Id<"feedbackReports"> | Id<"feedbackUploads"> | Id<"feedbackSearches">
+
+/** A sweep stage: an internal mutation taking no arguments. */
+type SweepRef = FunctionReference<"mutation", "internal", Record<string, never>>
+
+/**
+ * Runs one batch of a sweep and schedules whatever comes next.
+ *
+ * The three sweeps in this file are the same machine with different tables:
+ * read a bounded batch, delete each row, and either come back for more or hand
+ * on to the next stage. Convex's write limit is why they are batched at all
+ * (the reason convex/scoreSweep.ts gives), and re-deriving that control flow per
+ * sweep is how one of them ends up without its reschedule — a sweep that
+ * silently stops halfway is indistinguishable from one that had nothing to do.
+ *
+ * `onRow` does the per-table work: deleting a file, deleting a mint record.
+ * `next` is the stage to start once this one has drained, which is what keeps
+ * two sweeps' writes out of one transaction.
+ */
+async function sweepBatch<Row extends { _id: SweptId }>(
+  ctx: MutationCtx,
+  options: {
+    rows: Row[]
+    batchSize: number
+    /** Re-entered while rows remain. */
+    self: SweepRef
+    /** Started once this stage has drained. Absent on the last stage — and the
+     * absence must stay meaningful: scheduling `self` when there is nothing
+     * left would be an infinite loop, not a no-op. */
+    next?: SweepRef
+    /** Per-table work before the row goes: a stored file, a mint record. */
+    onRow?: (row: Row) => Promise<void>
+  },
+): Promise<{ deleted: number; hasMore: boolean }> {
+  for (const row of options.rows) {
+    await options.onRow?.(row)
+    await ctx.db.delete(row._id)
+  }
+  const hasMore = options.rows.length === options.batchSize
+  const follow = hasMore ? options.self : options.next
+  if (follow) await ctx.scheduler.runAfter(0, follow, {})
+  return { deleted: options.rows.length, hasMore }
+}
+
 // --- the rate limiter -----------------------------------------------------
 
 /** Why a submission was refused, or null. Exported for the unit tests, which
@@ -283,11 +364,14 @@ export function consumesDeploymentQuota(status: string): boolean {
 async function deploymentReportsSince(ctx: QueryCtx, since: number): Promise<number> {
   let total = 0
   for (const status of CAP_CONSUMING_STATUSES) {
-    const rows = await ctx.db
-      .query("feedbackReports")
-      .withIndex("by_status_and_createdAt", (q) => q.eq("status", status).gte("createdAt", since))
-      .take(DAILY_DEPLOYMENT_CAP + 1)
-    total += rows.length
+    total += await countUpTo(
+      ctx.db
+        .query("feedbackReports")
+        .withIndex("by_status_and_createdAt", (q) =>
+          q.eq("status", status).gte("createdAt", since),
+        ),
+      DAILY_DEPLOYMENT_CAP,
+    )
     // Short-circuit: the answer is only ever compared against the cap.
     if (total > DAILY_DEPLOYMENT_CAP) return total
   }
@@ -353,8 +437,8 @@ export const submitReport = mutation({
   }),
   handler: async (ctx, args) => {
     const now = Date.now()
-    const since = now - DAY_MS
-    const clientKey = truncate(args.clientKey.trim(), 64) || "unknown"
+    const since = windowStart(now)
+    const clientKey = normalizeClientKey(args.clientKey)
 
     const rejection = rejectionFor({
       clientReportsToday: await clientReportsSince(ctx, clientKey, since),
@@ -526,22 +610,24 @@ export const generateScreenshotUploadUrl = mutation({
   returns: v.union(v.null(), v.object({ url: v.string(), uploadId: v.id("feedbackUploads") })),
   handler: async (ctx, args) => {
     const now = Date.now()
-    const since = now - DAY_MS
-    const clientKey = truncate(args.clientKey.trim(), 64) || "unknown"
+    const since = windowStart(now)
+    const clientKey = normalizeClientKey(args.clientKey)
 
-    const clientMints = await ctx.db
-      .query("feedbackUploads")
-      .withIndex("by_clientKey_and_createdAt", (q) =>
-        q.eq("clientKey", clientKey).gte("createdAt", since),
-      )
-      .take(DAILY_CLIENT_UPLOAD_CAP + 1)
-    if (clientMints.length >= DAILY_CLIENT_UPLOAD_CAP) return null
+    const clientMints = await countUpTo(
+      ctx.db
+        .query("feedbackUploads")
+        .withIndex("by_clientKey_and_createdAt", (q) =>
+          q.eq("clientKey", clientKey).gte("createdAt", since),
+        ),
+      DAILY_CLIENT_UPLOAD_CAP,
+    )
+    if (clientMints >= DAILY_CLIENT_UPLOAD_CAP) return null
 
-    const deploymentMints = await ctx.db
-      .query("feedbackUploads")
-      .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
-      .take(DAILY_DEPLOYMENT_UPLOAD_CAP + 1)
-    if (deploymentMints.length >= DAILY_DEPLOYMENT_UPLOAD_CAP) return null
+    const deploymentMints = await countUpTo(
+      ctx.db.query("feedbackUploads").withIndex("by_createdAt", (q) => q.gte("createdAt", since)),
+      DAILY_DEPLOYMENT_UPLOAD_CAP,
+    )
+    if (deploymentMints >= DAILY_DEPLOYMENT_UPLOAD_CAP) return null
 
     const uploadId = await ctx.db.insert("feedbackUploads", {
       // Null until the client uploads and hands the id back at submission,
@@ -700,22 +786,24 @@ export const claimSearchBudget = internalMutation({
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const now = Date.now()
-    const since = now - DAY_MS
-    const clientKey = truncate(args.clientKey.trim(), 64) || "unknown"
+    const since = windowStart(now)
+    const clientKey = normalizeClientKey(args.clientKey)
 
-    const clientSearches = await ctx.db
-      .query("feedbackSearches")
-      .withIndex("by_clientKey_and_createdAt", (q) =>
-        q.eq("clientKey", clientKey).gte("createdAt", since),
-      )
-      .take(DAILY_CLIENT_SEARCH_CAP + 1)
-    if (clientSearches.length >= DAILY_CLIENT_SEARCH_CAP) return false
+    const clientSearches = await countUpTo(
+      ctx.db
+        .query("feedbackSearches")
+        .withIndex("by_clientKey_and_createdAt", (q) =>
+          q.eq("clientKey", clientKey).gte("createdAt", since),
+        ),
+      DAILY_CLIENT_SEARCH_CAP,
+    )
+    if (clientSearches >= DAILY_CLIENT_SEARCH_CAP) return false
 
-    const deploymentSearches = await ctx.db
-      .query("feedbackSearches")
-      .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
-      .take(DAILY_DEPLOYMENT_SEARCH_CAP + 1)
-    if (deploymentSearches.length >= DAILY_DEPLOYMENT_SEARCH_CAP) return false
+    const deploymentSearches = await countUpTo(
+      ctx.db.query("feedbackSearches").withIndex("by_createdAt", (q) => q.gte("createdAt", since)),
+      DAILY_DEPLOYMENT_SEARCH_CAP,
+    )
+    if (deploymentSearches >= DAILY_DEPLOYMENT_SEARCH_CAP) return false
 
     await ctx.db.insert("feedbackSearches", { clientKey, createdAt: now })
     return true
@@ -1128,16 +1216,21 @@ export const listFailedReports = internalQuery({
 export const sweepExpiredReports = internalMutation({
   args: {},
   returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{ deleted: number; hasMore: boolean }> => {
     const cutoff = Date.now() - RETENTION_DAYS * DAY_MS
     const BATCH = 100
-    const expired = await ctx.db
-      .query("feedbackReports")
-      .withIndex("by_createdAt", (q) => q.lt("createdAt", cutoff))
-      .take(BATCH)
-
-    for (const row of expired) {
-      if (row.screenshotId) {
+    return await sweepBatch(ctx, {
+      rows: await ctx.db
+        .query("feedbackReports")
+        .withIndex("by_createdAt", (q) => q.lt("createdAt", cutoff))
+        .take(BATCH),
+      batchSize: BATCH,
+      self: internal.feedback.sweepExpiredReports,
+      // Only once the report backlog is clear, so a long retention run does not
+      // also carry the orphan sweep's writes in the same transaction.
+      next: internal.feedback.sweepOrphanedUploads,
+      onRow: async (row) => {
+        if (!row.screenshotId) return
         // A file already gone is not an error — a previous partial run may have
         // deleted it — so this must not throw and abort the batch.
         await ctx.storage.delete(row.screenshotId).catch(() => {})
@@ -1148,19 +1241,8 @@ export const sweepExpiredReports = internalMutation({
         // claimed row's lifetime belongs to the report"; this is the code that
         // makes that true.
         await deleteUploadRecord(ctx, row.screenshotId)
-      }
-      await ctx.db.delete(row._id)
-    }
-
-    const hasMore = expired.length === BATCH
-    if (hasMore) {
-      await ctx.scheduler.runAfter(0, internal.feedback.sweepExpiredReports, {})
-    } else {
-      // Only once the report backlog is clear, so a long retention run does not
-      // also carry the orphan sweep's writes in the same transaction.
-      await ctx.scheduler.runAfter(0, internal.feedback.sweepOrphanedUploads, {})
-    }
-    return { deleted: expired.length, hasMore }
+      },
+    })
   },
 })
 
@@ -1188,31 +1270,26 @@ export const sweepExpiredReports = internalMutation({
 export const sweepOrphanedUploads = internalMutation({
   args: {},
   returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{ deleted: number; hasMore: boolean }> => {
     const cutoff = Date.now() - UPLOAD_ORPHAN_TTL_MS
     const BATCH = 100
-    const orphans = await ctx.db
-      .query("feedbackUploads")
-      .withIndex("by_claimed_and_createdAt", (q) => q.eq("claimed", false).lt("createdAt", cutoff))
-      .take(BATCH)
-
-    for (const row of orphans) {
-      if (row.storageId) {
+    return await sweepBatch(ctx, {
+      rows: await ctx.db
+        .query("feedbackUploads")
+        .withIndex("by_claimed_and_createdAt", (q) =>
+          q.eq("claimed", false).lt("createdAt", cutoff),
+        )
+        .take(BATCH),
+      batchSize: BATCH,
+      self: internal.feedback.sweepOrphanedUploads,
+      next: internal.feedback.sweepSearchRecords,
+      onRow: async (row) => {
         // File first, row second — the same ordering and the same reason as the
         // report sweep: a crash between the two must not leave a live file with
         // nothing pointing at it.
-        await ctx.storage.delete(row.storageId).catch(() => {})
-      }
-      await ctx.db.delete(row._id)
-    }
-
-    const hasMore = orphans.length === BATCH
-    if (hasMore) {
-      await ctx.scheduler.runAfter(0, internal.feedback.sweepOrphanedUploads, {})
-    } else {
-      await ctx.scheduler.runAfter(0, internal.feedback.sweepSearchRecords, {})
-    }
-    return { deleted: orphans.length, hasMore }
+        if (row.storageId) await ctx.storage.delete(row.storageId).catch(() => {})
+      },
+    })
   },
 })
 
@@ -1232,21 +1309,19 @@ export const sweepOrphanedUploads = internalMutation({
 export const sweepSearchRecords = internalMutation({
   args: {},
   returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{ deleted: number; hasMore: boolean }> => {
     const cutoff = Date.now() - SEARCH_RETENTION_MS
     const BATCH = 200
-    const stale = await ctx.db
-      .query("feedbackSearches")
-      .withIndex("by_createdAt", (q) => q.lt("createdAt", cutoff))
-      .take(BATCH)
-
-    for (const row of stale) await ctx.db.delete(row._id)
-
-    const hasMore = stale.length === BATCH
-    if (hasMore) {
-      await ctx.scheduler.runAfter(0, internal.feedback.sweepSearchRecords, {})
-    }
-    return { deleted: stale.length, hasMore }
+    // No `next`: this is the last stage of the nightly chain, and the absence
+    // is what ends it.
+    return await sweepBatch(ctx, {
+      rows: await ctx.db
+        .query("feedbackSearches")
+        .withIndex("by_createdAt", (q) => q.lt("createdAt", cutoff))
+        .take(BATCH),
+      batchSize: BATCH,
+      self: internal.feedback.sweepSearchRecords,
+    })
   },
 })
 
