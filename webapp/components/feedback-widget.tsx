@@ -85,6 +85,61 @@ type Step = "form" | "duplicates" | "sent"
 
 type Duplicate = { number: number; title: string; url: string; state: string }
 
+/** Everything the reporter typed or chose. */
+type Draft = {
+  kind: FeedbackKind
+  title: string
+  description: string
+  contact: string
+  /** The honeypot. Part of the draft because it is a form field like the rest;
+   * it is simply one no human ever sees. */
+  honeypot: string
+}
+
+const EMPTY_DRAFT: Draft = {
+  kind: "bug",
+  title: "",
+  description: "",
+  contact: "",
+  honeypot: "",
+}
+
+/**
+ * The reporter's answers, as one value.
+ *
+ * Five `useState` calls for five fields of one form left `FeedbackWidget` with
+ * eighteen of them — against three to nine in the largest components this repo
+ * already has — and "clear the form" as five statements that had to be kept in
+ * step with the five declarations. A field added to one list and forgotten in
+ * the other is a field that survives a submission.
+ *
+ * One object, one setter per field, and a reset that cannot go stale because it
+ * is the initial value rather than a re-listing of it.
+ */
+function useDraft() {
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
+  const set = useCallback(
+    <K extends keyof Draft>(field: K, value: Draft[K]) =>
+      setDraft((previous) => ({ ...previous, [field]: value })),
+    [],
+  )
+  /**
+   * Clears the four typed fields and **keeps `kind`**.
+   *
+   * That asymmetry is what the code this replaces did: `resetForm` listed
+   * `setTitle`/`setDescription`/`setContact`/`setHoneypot` and never `setKind`,
+   * so the radio group survived a reset. Changing it here would be a behaviour
+   * change smuggled into a refactor, so it is reproduced exactly — and it also
+   * happens to be the better behaviour, since a reporter filing a second report
+   * is usually filing the same kind and would not expect their choice undone.
+   */
+  const reset = useCallback(
+    () => setDraft((previous) => ({ ...EMPTY_DRAFT, kind: previous.kind })),
+    [],
+  )
+  return { draft, set, reset }
+}
+
 export function FeedbackWidget() {
   const { t, locale } = useLocale()
   const configured = useQuery(api.feedback.isConfigured, {})
@@ -95,11 +150,8 @@ export function FeedbackWidget() {
 
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<Step>("form")
-  const [kind, setKind] = useState<FeedbackKind>("bug")
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [contact, setContact] = useState("")
-  const [honeypot, setHoneypot] = useState("")
+  const { draft, set: setField, reset: resetDraft } = useDraft()
+  const { kind, title, description, contact, honeypot } = draft
   const [includeDiagnostics, setIncludeDiagnostics] = useState(true)
   const [includeScreenshot, setIncludeScreenshot] = useState(true)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
@@ -184,10 +236,7 @@ export function FeedbackWidget() {
   }, [screenshot])
 
   const resetForm = useCallback(() => {
-    setTitle("")
-    setDescription("")
-    setContact("")
-    setHoneypot("")
+    resetDraft()
     setDuplicates([])
     setStep("form")
     setError(null)
@@ -195,7 +244,10 @@ export function FeedbackWidget() {
       if (previous) URL.revokeObjectURL(previous.url)
       return null
     })
-  }, [])
+    // `resetDraft` is itself a `useCallback` with an empty dependency list, so
+    // naming it here does not change how often this callback is rebuilt — it
+    // just stops the dependency array from lying about what the body reads.
+  }, [resetDraft])
 
   /**
    * Uploads the screenshot, returning the stored file **and the mint row it
@@ -379,7 +431,7 @@ export function FeedbackWidget() {
                           name={`${formId}-kind`}
                           value={option}
                           checked={kind === option}
-                          onChange={() => setKind(option)}
+                          onChange={() => setField("kind", option)}
                           className="size-3.5 accent-primary"
                         />
                         {t(`feedback.kind.${option}`)}
@@ -398,7 +450,7 @@ export function FeedbackWidget() {
                   id={`${formId}-title`}
                   value={title}
                   maxLength={LIMITS.title}
-                  onChange={(event) => setTitle(event.target.value)}
+                  onChange={(event) => setField("title", event.target.value)}
                   placeholder={t("feedback.field.titlePlaceholder")}
                   aria-invalid={Boolean(error && !title.trim())}
                   required
@@ -411,7 +463,7 @@ export function FeedbackWidget() {
                   id={`${formId}-description`}
                   value={description}
                   maxLength={LIMITS.description}
-                  onChange={(event) => setDescription(event.target.value)}
+                  onChange={(event) => setField("description", event.target.value)}
                   placeholder={t("feedback.field.descriptionPlaceholder")}
                   rows={4}
                 />
@@ -424,7 +476,7 @@ export function FeedbackWidget() {
                   type="email"
                   value={contact}
                   maxLength={LIMITS.contact}
-                  onChange={(event) => setContact(event.target.value)}
+                  onChange={(event) => setField("contact", event.target.value)}
                   aria-describedby={`${formId}-contact-hint`}
                 />
                 <p id={`${formId}-contact-hint`} className="text-muted-foreground text-xs">
@@ -448,7 +500,7 @@ export function FeedbackWidget() {
                   tabIndex={-1}
                   autoComplete="off"
                   value={honeypot}
-                  onChange={(event) => setHoneypot(event.target.value)}
+                  onChange={(event) => setField("honeypot", event.target.value)}
                 />
               </div>
 
