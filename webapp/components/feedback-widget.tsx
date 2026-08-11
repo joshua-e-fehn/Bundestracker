@@ -29,6 +29,7 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { authClient } from "@/lib/auth-client"
 import {
   clearDiagnostics,
+  clientKey,
   collectDiagnostics,
   currentPageUrl,
   installDiagnostics,
@@ -79,35 +80,6 @@ import { cn } from "@/lib/utils"
  * that silently queues into a deployment which will never publish is worse than
  * offering nothing, because the reporter believes they have been heard.
  */
-
-/** Where the anonymous rate-limit key lives. Not a cookie: a cookie is sent on
- * every request to this origin, and this value has no business travelling with
- * anything but a report. See the `clientKey` note in convex/schema.ts for what
- * it does and does not stop. */
-const CLIENT_KEY_STORAGE = "bundestrack.feedback.client"
-
-/**
- * A stable random identifier for this browser.
- *
- * Created on first use and reused after. Deliberately random rather than
- * derived from anything about the device: a fingerprint would be both more
- * effective as a limiter and a tracking identifier, which is not a trade this
- * feature is entitled to make on a reader's behalf.
- */
-function clientKey(): string {
-  if (typeof window === "undefined") return "server"
-  try {
-    const existing = window.localStorage.getItem(CLIENT_KEY_STORAGE)
-    if (existing) return existing
-    const minted = crypto.randomUUID()
-    window.localStorage.setItem(CLIENT_KEY_STORAGE, minted)
-    return minted
-  } catch {
-    // Private mode, or storage disabled. A per-session key still bounds a
-    // runaway loop, and the deployment cap covers the rest.
-    return "ephemeral"
-  }
-}
 
 type Step = "form" | "duplicates" | "sent"
 

@@ -332,3 +332,47 @@ export function clearDiagnostics(): void {
   requests.clear()
   breadcrumbs.clear()
 }
+
+// --- the anonymous client key --------------------------------------------
+
+/** Where the anonymous rate-limit key lives. Not a cookie: a cookie is sent on
+ * every request to this origin, and this value has no business travelling with
+ * anything but a report. See the `clientKey` note in convex/schema.ts for what
+ * it does and does not stop. */
+const CLIENT_KEY_STORAGE = "bundestrack.feedback.client"
+
+/**
+ * A stable random identifier for this browser.
+ *
+ * Created on first use and reused after. Deliberately random rather than
+ * derived from anything about the device: a fingerprint would be both more
+ * effective as a limiter and a tracking identifier, which is not a trade this
+ * feature is entitled to make on a reader's behalf.
+ *
+ * Lives here rather than in the widget because it is not rendering. It reads
+ * and writes `localStorage`, mints a UUID, and decides what this browser is
+ * called to three separate backend functions — a browser-side *capability*,
+ * which is what this module holds, sitting beside the collectors that answer
+ * the same kind of question. A component that owns identity storage is a
+ * component that has to be mounted before anything else can ask.
+ *
+ * ⚠ The one thing this module does that no other collector does: it **writes**
+ * to `localStorage`. That is deliberate and is why `lib/feedback-boundaries.test.ts`
+ * scopes its "no storage access" assertion to the collectors above rather than
+ * to the file — a rule about what is *read* from the reader's browser, not
+ * about a key this feature mints for itself.
+ */
+export function clientKey(): string {
+  if (typeof window === "undefined") return "server"
+  try {
+    const existing = window.localStorage.getItem(CLIENT_KEY_STORAGE)
+    if (existing) return existing
+    const minted = crypto.randomUUID()
+    window.localStorage.setItem(CLIENT_KEY_STORAGE, minted)
+    return minted
+  } catch {
+    // Private mode, or storage disabled. A per-session key still bounds a
+    // runaway loop, and the deployment cap covers the rest.
+    return "ephemeral"
+  }
+}

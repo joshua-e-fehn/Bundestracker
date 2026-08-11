@@ -93,11 +93,35 @@ describe("the collectors never read a forbidden surface", () => {
   test("nothing in the browser collectors touches cookies or storage", () => {
     // The strongest of the protections: a sanitizer can only remove what was
     // collected, so a collector that never reads `document.cookie` has nothing
-    // to remove. `localStorage` appears in the widget (for the rate-limit key
-    // it *writes*) but must not appear here, where the reading happens.
-    expect(diagnosticsCode).not.toContain("document.cookie")
-    expect(diagnosticsCode).not.toContain("localStorage")
-    expect(diagnosticsCode).not.toContain("sessionStorage")
+    // to remove.
+    //
+    // Scoped to the collectors — everything above the client-key section —
+    // rather than to the whole file. `clientKey` lives at the bottom of the
+    // module and *writes* `localStorage`, minting an identifier this feature
+    // invents for itself. The rule being asserted is about what is read **from
+    // the reader's browser**, and a key we generate is not that. Widening the
+    // scan to the file would either fail on correct code or force the rule to
+    // be dropped, and dropping it is the outcome worth avoiding.
+    //
+    // Split on the constant rather than the section comment: `code()` strips
+    // comments before this sees the source.
+    const collectors = diagnosticsCode.slice(0, diagnosticsCode.indexOf("const CLIENT_KEY_STORAGE"))
+    expect(collectors.length).toBeGreaterThan(0)
+    expect(collectors).not.toContain("document.cookie")
+    expect(collectors).not.toContain("localStorage")
+    expect(collectors).not.toContain("sessionStorage")
+  })
+
+  test("the client key is the only storage writer, and reads nothing else", () => {
+    // The complement of the rule above, so moving `clientKey` here did not
+    // quietly buy a licence to read storage: it touches exactly its own key.
+    const section = diagnosticsCode.slice(diagnosticsCode.indexOf("const CLIENT_KEY_STORAGE"))
+    expect(section).toContain("CLIENT_KEY_STORAGE")
+    expect(section).not.toContain("document.cookie")
+    expect(section).not.toContain("sessionStorage")
+    // Only the one key, by name — no enumeration of what else is in storage.
+    expect(section).not.toContain("localStorage.key")
+    expect(section).not.toContain("Object.keys(window.localStorage")
   })
 
   test("the fetch wrapper never reads headers or bodies", () => {
