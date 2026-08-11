@@ -16,6 +16,7 @@ import type * as committeeReferrals from "../committeeReferrals.js";
 import type * as committees from "../committees.js";
 import type * as crons from "../crons.js";
 import type * as feed from "../feed.js";
+import type * as feedback from "../feedback.js";
 import type * as http from "../http.js";
 import type * as inquiry from "../inquiry.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   committees: typeof committees;
   crons: typeof crons;
   feed: typeof feed;
+  feedback: typeof feedback;
   http: typeof http;
   inquiry: typeof inquiry;
   "lib/auth": typeof lib_auth;
