@@ -7,6 +7,7 @@ import {
   InfoIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
+  MessageSquareWarningIcon,
   ScaleIcon,
   SearchIcon,
   SettingsIcon,
@@ -90,9 +91,40 @@ import type { TranslationKey } from "@/lib/i18n"
  * to replace it.
  */
 
-/** A leaf: something a reader can navigate to. */
-export type NavItem = {
-  href: string
+/**
+ * A leaf: something a reader can navigate to — or, for exactly one entry, do.
+ *
+ * `href` and `action` are mutually exclusive and exactly one is present. A row
+ * either goes somewhere or does something; an entry with both would leave the
+ * two renderers deciding which wins, and an entry with neither would be a row
+ * that does nothing. The union is what makes both states unrepresentable rather
+ * than merely discouraged, so `NAV_FEEDBACK` cannot acquire a route by a later
+ * edit without the compiler asking what happened to its action.
+ */
+export type NavItem = NavDestination | NavAction
+
+/**
+ * The ordinary case: a row that navigates.
+ *
+ * Exported because it is the useful type for everything that walks the
+ * navigation *as routes* — `allNavItems()` returns these, the renderers' link
+ * halves take these, and lib/navigation.test.ts asserts over these. Only the
+ * two places that render a row from either kind mention `NavItem` itself.
+ */
+export type NavDestination = NavItemBase & { href: string; action?: never }
+
+/**
+ * The exception: a row that opens something in place.
+ *
+ * A closed union of one rather than a callback, because this data is imported by
+ * `lib/navigation.test.ts` in a Node process with no React — a function here
+ * would make the navigation model hold behaviour, and the renderers are where
+ * behaviour belongs. The string names an intent; components/nav-sidebar.tsx and
+ * components/nav-mobile.tsx map it to the provider that performs it.
+ */
+type NavAction = NavItemBase & { href?: never; action: "feedback" }
+
+type NavItemBase = {
   labelKey: TranslationKey
   /** The glyph for this destination. Not optional — see the note above: the
    * collapsed rail renders nothing else, so an entry without one would be a
@@ -105,14 +137,14 @@ export type NavItem = {
   descriptionKey?: TranslationKey
   /** Narrower cuts of this entry's subject. Rendered indented under their
    * parent; the parent stays a link in its own right. */
-  children?: readonly NavItem[]
+  children?: readonly NavDestination[]
 }
 
 /** A named set of items. `labelKey` titles it in the menus and the drawer. */
 export type NavGroup = {
   id: "people" | "decisions" | "context"
   labelKey: TranslationKey
-  items: readonly NavItem[]
+  items: readonly NavDestination[]
 }
 
 /**
@@ -122,7 +154,7 @@ export type NavGroup = {
  * is singled out here: `/` is the narrative page, so this is where a reader who
  * wants today's figures rather than the argument goes, from any page.
  */
-export const NAV_PRIMARY: NavItem = {
+export const NAV_PRIMARY: NavDestination = {
   href: "/dashboard",
   labelKey: "nav.dashboard",
   icon: LayoutDashboardIcon,
@@ -231,7 +263,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
  * but the rail has room for the glyph and a reader scanning the rail should not
  * have to look elsewhere for the one destination missing from it.
  */
-export const NAV_SEARCH: NavItem = {
+export const NAV_SEARCH: NavDestination = {
   href: "/search",
   labelKey: "search.title",
   icon: SearchIcon,
@@ -260,18 +292,56 @@ export const NAV_SEARCH: NavItem = {
  * and this is the third; `isActiveGroup` must keep answering `false` for all
  * three, or a route outside the groups would light one of them up.
  */
-export const NAV_ACCOUNT: NavItem = {
+export const NAV_ACCOUNT: NavDestination = {
   href: "/settings",
   labelKey: "settings.title",
   icon: SettingsIcon,
   descriptionKey: "nav.settingsHint",
 }
 
+/**
+ * Report a problem: an action, not a destination.
+ *
+ * The one entry in this file that has no `href`, and it is the reason `NavItem`
+ * gained an optional `action` at all. A report is filed *about the page you are
+ * on* — components/feedback-widget.tsx opens with the argument — so a `/feedback`
+ * route would lose the context for the reporter, who can no longer see the thing
+ * they are describing, and for the diagnostic collectors, whose breadcrumb trail
+ * would end with "navigated to /feedback" and whose screenshot would be of the
+ * form. So this opens the sheet in place, from wherever the reader is.
+ *
+ * ## Why it is here rather than in a group
+ *
+ * The grouping rule above sorts entries by the *question* they answer, and every
+ * group's question has a parliamentary subject — who, what they decided, what it
+ * means. This one's subject is the site itself, which is the same reason
+ * `NAV_ACCOUNT` sits outside the groups. It is rendered beside it, in the shell's
+ * account slot: the reader's own two concerns, adjacent.
+ *
+ * ## It renders only for a signed-in reader on a configured deployment
+ *
+ * Unlike every other entry here, which is public. `components/use-feedback-
+ * available.ts` decides, both surfaces consult it, and the server enforces the
+ * same rule in convex/feedback.ts — this is a rendering decision on top of a
+ * gate, never the gate itself.
+ *
+ * ⚠ It is deliberately **not** in `allNavItems()`. That list is walked by
+ * lib/navigation.test.ts against the filesystem to assert every route in `app/`
+ * is reachable, and an entry with no route is not a route — including it would
+ * mean asserting that a page exists for a sheet.
+ */
+export const NAV_FEEDBACK: NavItem = {
+  labelKey: "feedback.open",
+  icon: MessageSquareWarningIcon,
+  descriptionKey: "nav.feedbackHint",
+  action: "feedback",
+}
+
 /** Every leaf in the tree, flattened — children included. The order is the
  * reading order of the navigation itself, so a test that walks this walks what
  * a reader sees. */
-export function allNavItems(): NavItem[] {
-  const out: NavItem[] = [NAV_PRIMARY]
+export function allNavItems(): NavDestination[] {
+  const out: NavDestination[] = [NAV_PRIMARY]
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
       out.push(item)

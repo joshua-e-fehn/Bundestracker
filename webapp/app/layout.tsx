@@ -4,6 +4,7 @@ import { cookies } from "next/headers"
 import { AppShell } from "@/components/app-shell"
 import { NavSidebar } from "@/components/nav-sidebar"
 import { AuthGuard } from "@/components/providers/auth-guard"
+import { FeedbackProvider } from "@/components/providers/feedback-provider"
 import { LocaleProvider } from "@/components/providers/locale-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { SavedLocaleSync } from "@/components/providers/saved-locale"
@@ -207,22 +208,30 @@ export default async function RootLayout({
                       Header, sidebar and footer sit inside LocaleProvider —
                       they are translated — but outside AuthGuard, so the chrome
                       stays on screen if a future private route redirects. */}
-                  <SidebarProvider defaultExpanded={expanded}>
-                    {/* Full-width, above the sidebar rather than beside it —
+                  {/* Above the shell because all three of its consumers are
+                      inside it and none is an ancestor of the others: the
+                      sidebar's row, the mobile drawer's row, and the sheet
+                      itself, which the footer mounts. One report sheet, three
+                      controls that open it — see
+                      components/providers/feedback-provider.tsx. */}
+                  <FeedbackProvider>
+                    <SidebarProvider defaultExpanded={expanded}>
+                      {/* Full-width, above the sidebar rather than beside it —
                         see the note in components/app-shell.tsx. */}
-                    <SiteHeader />
+                      <SiteHeader />
 
-                    {/* The sidebar is a sibling of the column it makes room
+                      {/* The sidebar is a sibling of the column it makes room
                         for, not a child of it: it is `fixed` to the viewport's
                         left edge, and nesting it inside the element whose
                         padding exists to avoid it would be circular. */}
-                    <NavSidebar />
+                      <NavSidebar />
 
-                    <AppShell>
-                      <AuthGuard>{children}</AuthGuard>
-                      <SiteFooter />
-                    </AppShell>
-                  </SidebarProvider>
+                      <AppShell>
+                        <AuthGuard>{children}</AuthGuard>
+                        <SiteFooter />
+                      </AppShell>
+                    </SidebarProvider>
+                  </FeedbackProvider>
                   <Toaster />
                 </TooltipProvider>
               </LocaleProvider>

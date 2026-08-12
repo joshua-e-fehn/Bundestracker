@@ -2,16 +2,20 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useFeedback } from "@/components/providers/feedback-provider"
 import { useLocale } from "@/components/providers/locale-provider"
 import { useSidebar } from "@/components/providers/sidebar-provider"
 import { SidebarAccount } from "@/components/sidebar-account"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useFeedbackAvailable } from "@/components/use-feedback-available"
 import {
   isActivePath,
   NAV_ACCOUNT,
+  NAV_FEEDBACK,
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
+  type NavDestination,
   type NavItem,
   navCurrent,
 } from "@/lib/navigation"
@@ -217,6 +221,19 @@ export function NavSidebar() {
           or they all announce as "navigation". */}
       <div className="border-border/60 border-t p-2">
         <nav aria-label={t("nav.accountArea")} className="grid gap-1">
+          {/* Report a problem, above settings. In this slot for the reason
+              settings is: its subject is the site and the reader rather than the
+              Bundestag. It renders only for a signed-in reader on a deployment
+              that can publish — see components/use-feedback-available.ts — which
+              is what makes it the *discoverable* entry point the footer button
+              never was, sitting in the chrome on every page rather than at the
+              bottom of one.
+
+              A `<button>` rather than a `<Link>`: it opens the report sheet in
+              place, because a report is filed about the page you are on and
+              navigating away to file it would lose exactly the context being
+              reported. See `NAV_FEEDBACK`. */}
+          <SidebarAction item={NAV_FEEDBACK} expanded={expanded} />
           <SidebarLink item={NAV_ACCOUNT} pathname={pathname} expanded={expanded} />
           <SidebarAccount expanded={expanded} />
         </nav>
@@ -253,7 +270,10 @@ function SidebarLink({
   expanded,
   nested = false,
 }: {
-  item: NavItem
+  // A destination, never the action row: this renders a `<Link>`, and an entry
+  // with no `href` has nowhere to send anyone. `SidebarAction`/`DrawerAction`
+  // render the other arm.
+  item: NavDestination
   pathname: string
   expanded: boolean
   nested?: boolean
@@ -331,6 +351,61 @@ function SidebarLink({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/**
+ * A rail row that *does* something rather than going somewhere.
+ *
+ * The one instance is "Report a problem". Visually identical to `SidebarLink` —
+ * same height, same glyph, same collapsed tooltip — because to a reader scanning
+ * the rail it is a peer of the rows around it, and a control that looked
+ * different would read as a different kind of thing.
+ *
+ * What differs is everything semantic. It is a `<button>`, so it announces as a
+ * button and responds to Space as well as Enter; it carries no `aria-current`,
+ * because it is never "the current page"; and it has no active state at all,
+ * since there is no route for the reader to be inside of.
+ *
+ * It renders nothing at all unless `useFeedbackAvailable()` — a signed-in reader
+ * on a deployment that can publish. That check is here rather than at the call
+ * site so the row cannot be added to another slot without it.
+ */
+function SidebarAction({ item, expanded }: { item: NavItem; expanded: boolean }) {
+  const { t } = useLocale()
+  const { openFeedback } = useFeedback()
+  const available = useFeedbackAvailable()
+  const label = t(item.labelKey)
+  const Icon = item.icon
+
+  if (!available) return null
+
+  const button = (
+    <button
+      type="button"
+      onClick={openFeedback}
+      aria-label={expanded ? undefined : label}
+      data-feedback-id="open-feedback-sidebar"
+      className={cn(
+        "relative flex h-9 min-w-0 items-center gap-2.5 rounded-md text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+        expanded ? "px-2.5" : "justify-center px-0",
+        "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+      )}
+    >
+      <Icon aria-hidden className="size-4 shrink-0" />
+      {expanded && <span className="truncate">{label}</span>}
+    </button>
+  )
+
+  if (expanded) return button
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}>
         {label}
       </TooltipContent>

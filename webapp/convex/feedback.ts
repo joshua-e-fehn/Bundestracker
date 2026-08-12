@@ -32,23 +32,35 @@ import {
   type QueryCtx,
   query,
 } from "./_generated/server"
-import { getUserId } from "./lib/auth"
+import { getUserId, requireUserId } from "./lib/auth"
+import { credentialFor, isPublishConfigured } from "./lib/githubToken"
 import { preferredLocale, safeDiagnostics } from "./schema"
 
 /**
- * The feedback intake: an anonymous stranger's bug report, on its way to a
- * public GitHub issue.
+ * The feedback intake: a signed-in reader's bug report, on its way to a public
+ * GitHub issue.
  *
- * ## The trust model, which is unlike every other file here
+ * ## The trust model
  *
- * Every other write path in this deployment is either the Python pipeline
- * holding a shared key (convex/http.ts) or a signed-in reader touching their
- * own preferences (convex/userPreferences.ts). This one is **an unauthenticated
- * public mutation**, which is the only one in the codebase, and it is therefore
- * written against a caller assumed to be a hand-written HTTP request rather
- * than this app's widget.
+ * Every write path in this deployment is either the Python pipeline holding a
+ * shared key (convex/http.ts) or a signed-in reader (convex/userPreferences.ts).
+ * This one is the second kind: **every public function here requires a Better
+ * Auth session**, enforced in the handler by `requireUserId` rather than by the
+ * widget choosing not to render a button.
  *
- * That assumption is what dictates the shape:
+ * That distinction is the whole point of where the check lives. A Convex public
+ * function is an HTTP endpoint that anyone can call with `convex.mutation(...)`
+ * and the deployment URL, which is public by construction — it is in the
+ * browser bundle. A control that is merely hidden is not gated at all; it is
+ * gated in the one place the caller does not control, and the UI's hiding of it
+ * is a courtesy on top.
+ *
+ * ## What did *not* relax when the door was locked
+ *
+ * A session is not a warrant. Accounts are free, OAuth makes them cheap in bulk,
+ * and a signed-in caller can still hand-write requests — so every bound below
+ * stayed exactly where it was, and the caller is still assumed to be a
+ * hand-written HTTP request rather than this app's widget:
  *
  *  - Every free-text field is re-truncated here even though the widget already
  *    truncated it. The widget's limits are a courtesy to the reader; these are
@@ -73,8 +85,13 @@ import { preferredLocale, safeDiagnostics } from "./schema"
  * exists — so the usual key is unavailable. What is here instead, in order of
  * how much it actually stops:
  *
- *  1. **A per-deployment daily cap.** The only control that holds against a
- *     determined attacker, because it does not depend on the caller
+ *  0. **A session.** The one control a caller cannot mint for free, and the
+ *     reason the rest can stay as loose as they are: a determined attacker now
+ *     needs a Google or GitHub account per identity rather than a fresh random
+ *     string per request. It bounds *who*, never *how much* — which is why
+ *     nothing below was removed when it was added.
+ *  1. **A per-deployment daily cap.** The control that holds regardless of how
+ *     many accounts an attacker has, because it does not depend on the caller
  *     cooperating. Once `DAILY_DEPLOYMENT_CAP` reports exist in 24 hours,
  *     everything is rejected until the window rolls.
  *
@@ -90,8 +107,8 @@ import { preferredLocale, safeDiagnostics } from "./schema"
  *  3. **A minimum dwell time.** A report submitted less than
  *     `MIN_DWELL_MS` after the form was opened was not typed by a person.
  *  4. **A honeypot field**, filled only by something that fills every field.
- *  5. **A kill switch** — unset `GITHUB_FEEDBACK_TOKEN` and nothing publishes,
- *     while reports still queue.
+ *  5. **A kill switch** — unset the publishing credentials and nothing
+ *     publishes, while reports still queue. See convex/lib/githubToken.ts.
  *
  * None of these is a captcha and none pretends to be. The honest summary is in
  * docs/verification/feedback-reporting.md, including what to turn on if the
@@ -436,6 +453,17 @@ export const submitReport = mutation({
     reason: v.union(v.null(), v.string()),
   }),
   handler: async (ctx, args) => {
+    // ⚠ First, and before anything is read, written, or deleted.
+    //
+    // Throws for an anonymous caller rather than returning `{accepted: false}`
+    // like the abuse rejections below, and the difference is deliberate: those
+    // are answers to a legitimate reporter whose submission was refused, and
+    // the widget renders them as prose. This is not a refusal, it is a caller
+    // that has no business here at all — the widget never issues this call
+    // without a session, so the only way to reach it is to have hand-written
+    // the request.
+    const userId = await requireUserId(ctx)
+
     const now = Date.now()
     const since = windowStart(now)
     const clientKey = normalizeClientKey(args.clientKey)
@@ -533,8 +561,11 @@ export const submitReport = mutation({
         .map((n) => Math.trunc(Number(n)))
         .filter((n) => Number.isFinite(n) && n > 0),
       // Read from the session, never accepted as an argument — the rule
-      // convex/userPreferences.ts states and for the same reason.
-      userId: await getUserId(ctx),
+      // convex/userPreferences.ts states and for the same reason. It is the id
+      // `requireUserId` already resolved at the top rather than a second
+      // lookup: two reads of one session could not disagree, but re-deriving it
+      // would leave the column looking optional when it is now guaranteed.
+      userId,
       clientKey,
       createdAt: now,
       updatedAt: now,
@@ -609,6 +640,13 @@ export const generateScreenshotUploadUrl = mutation({
   args: { clientKey: v.string() },
   returns: v.union(v.null(), v.object({ url: v.string(), uploadId: v.id("feedbackUploads") })),
   handler: async (ctx, args) => {
+    // Before the URL is minted, not after: an upload URL is a write capability
+    // against this deployment's file storage, and handing one to an anonymous
+    // caller would let them store bytes here whether or not any report ever
+    // arrived. The orphan sweep would reclaim it an hour later, which makes it
+    // bounded rather than harmless.
+    await requireUserId(ctx)
+
     const now = Date.now()
     const since = windowStart(now)
     const clientKey = normalizeClientKey(args.clientKey)
@@ -844,9 +882,24 @@ export const findDuplicates = action({
   args: { title: v.string(), description: v.string(), clientKey: v.string() },
   returns: v.array(duplicateCandidate),
   handler: async (ctx, args) => {
-    const token = process.env.GITHUB_FEEDBACK_TOKEN
+    // ⚠ Before the budget is charged and before GitHub is reached.
+    //
+    // This is the function on which an anonymous caller cost the most: it
+    // performs an outbound request on the deployment's *own* GitHub credential,
+    // so an unauthenticated caller could spend a shared 30-per-minute search
+    // quota that every genuine reporter's duplicate check depends on. Charging
+    // the budget first and checking the session second would let a refused
+    // caller consume quota on the way out.
+    await requireUserId(ctx)
+
     const repo = process.env.GITHUB_FEEDBACK_REPO
-    if (!token || !repo) return []
+    if (!repo) return []
+    const credential = await credentialFor(Date.now())
+    // A duplicate check never blocks a report, so an unconfigured or broken
+    // credential is the same as finding nothing. The reason is not surfaced to
+    // the browser: it names which operator variable is wrong.
+    if ("failure" in credential) return []
+    const token = credential.token
 
     // Charged before the outbound call, not merely observed — see
     // `claimSearchBudget` for why counting *reports* could never bound this.
@@ -1060,21 +1113,32 @@ export const publishReport = internalAction({
     })
     if (!report || report.status === "published") return null
 
-    const token = process.env.GITHUB_FEEDBACK_TOKEN
     const repo = process.env.GITHUB_FEEDBACK_REPO
-    if (!token || !repo) {
-      // The kill switch, and the un-configured state. Both leave the report
-      // stored and unpublished, which is the safe direction: nothing is lost,
-      // and nothing is posted from a deployment that was never wired up.
+    const credential = repo
+      ? await credentialFor(Date.now())
+      : { failure: "not-configured" as const }
+    if (!repo || "failure" in credential) {
+      // The kill switch, the un-configured state, and a misconfigured GitHub
+      // App all land here. All leave the report stored and unpublished, which
+      // is the safe direction: nothing is lost, and nothing is posted from a
+      // deployment that was never wired up.
+      //
+      // The reason names *which* credential is at fault — `app-id-invalid`,
+      // `private-key-unparseable`, `installation-token-refused` — because the
+      // operator reading this column is the person who set the variable, and
+      // "github-not-configured" for all seven distinct mistakes is what makes a
+      // misconfigured App indistinguishable from a deliberate kill switch.
+      // These are fixed strings from a closed union: no value is ever quoted.
       await ctx.runMutation(internal.feedback.recordPublication, {
         reportId: args.reportId,
         status: "failed",
         githubIssueNumber: null,
         githubIssueUrl: null,
-        failureReason: "github-not-configured",
+        failureReason: !repo ? "github-not-configured" : `github-${credential.failure}`,
       })
       return null
     }
+    const token = credential.token
 
     // ⚠ A retry must not file a second issue for the same report.
     //
@@ -1370,17 +1434,41 @@ export const getPrivateReport = internalQuery({
 })
 
 /**
- * Whether the feedback form should offer itself at all.
+ * Whether the feedback form should offer itself, and to this reader.
  *
- * Public, and the one thing about this feature a browser may ask. It reports
- * only whether publication is configured — never the token, never the repo — so
- * the widget can say "reports are not being accepted right now" instead of
- * accepting one into a deployment that will never publish it.
+ * Public, unauthenticated, and the one thing about this feature a browser may
+ * ask without a session. It reports two booleans and nothing else — never the
+ * token, never the repo, never which credential mode is in use — so the widget
+ * can tell the two "no" answers apart:
+ *
+ *  - `configured: false` — the deployment cannot publish. The trigger does not
+ *    render at all, for anyone, signed in or not. Offering a form that queues
+ *    into a deployment which will never publish is worse than offering nothing.
+ *  - `signedIn: false` — the deployment is fine and this reader is not signed
+ *    in. The trigger does not render either, but the reason is different and
+ *    recoverable, and the navigation entry that *does* render for a signed-in
+ *    reader is what makes the feature discoverable at all.
+ *
+ * ## Why the session is reported by a query rather than read from the client
+ *
+ * The widget already holds `authClient.useSession()`, so this is not the only
+ * way it could know. It is the *server's* answer to the same question, which is
+ * what makes the two agree: a session that Better Auth's browser store believes
+ * is live but Convex does not accept would otherwise render a working control
+ * whose every call throws. Rendering from this means the control appears exactly
+ * when the calls behind it will be authorised.
+ *
+ * ⚠ This is a **hint for rendering, not a gate**. The gate is `requireUserId` in
+ * each handler. A caller who ignores this query entirely reaches exactly the
+ * same wall.
  */
 export const isConfigured = query({
   args: {},
-  returns: v.boolean(),
-  handler: async () => {
-    return Boolean(process.env.GITHUB_FEEDBACK_TOKEN && process.env.GITHUB_FEEDBACK_REPO)
+  returns: v.object({ configured: v.boolean(), signedIn: v.boolean() }),
+  handler: async (ctx) => {
+    return {
+      configured: isPublishConfigured(),
+      signedIn: (await getUserId(ctx)) !== null,
+    }
   },
 })

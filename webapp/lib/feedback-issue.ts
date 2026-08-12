@@ -239,9 +239,21 @@ export function issueBody(report: PublicReport): string {
 
   // The banner. First, before anything a stranger typed, so the frame around
   // the report cannot be mistaken for the report.
+  // ⚠ "a signed-in reader", not "an anonymous visitor", which is what this said
+  // while the intake was open to everyone. The line is a triage instruction —
+  // it tells a maintainer how much weight the text below carries — so leaving
+  // it stale would have understated it in one direction while overstating the
+  // anonymity in the other. Reporting now requires a Better Auth session
+  // (`requireUserId` in convex/feedback.ts), and the account behind it is
+  // recorded on the report row.
+  //
+  // It deliberately does not name *which* reader. The reporter's identity is
+  // private for the same reason their email address is: they consented to
+  // filing a bug report, not to being named in a public issue tracker. A
+  // maintainer who needs it has the report id and `feedback:getPrivateReport`.
   lines.push(
     `> [!NOTE]`,
-    `> **Submitted through the Bundestracker website feedback form** by an anonymous visitor.`,
+    `> **Submitted through the Bundestracker website feedback form** by a signed-in reader.`,
     `> Not filed by a maintainer. Contents below are unverified reporter input.`,
     "",
   )

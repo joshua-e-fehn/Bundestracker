@@ -1148,6 +1148,7 @@ const de = {
   // "Einstellungen" on a site with no account requirement does not say what
   // there could be to set.
   "nav.settingsHint": "Eigene Gewichtungen, Sprache und gefolgte Abgeordnete.",
+  "nav.feedbackHint": "Fehler oder falsche Angabe auf dieser Seite melden.",
 
   // The desktop sidebar's landmark name. `nav.expandGroup` and `nav.overview`
   // were here too and are gone: the overview row reuses `nav.dashboard` rather
@@ -3032,6 +3033,7 @@ const en: Dictionary = {
   "nav.inquiryHint": "Who reaches the quarter under Art. 44 GG — and who does not.",
   "nav.searchHint": "Full-text search across members and documents.",
   "nav.settingsHint": "Your own weightings, language and followed members.",
+  "nav.feedbackHint": "Report a bug or an incorrect figure on this page.",
 
   "nav.primary": "Main navigation",
   "nav.accountArea": "Account and settings",

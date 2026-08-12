@@ -8,6 +8,7 @@ import {
   isActiveGroup,
   isActivePath,
   NAV_ACCOUNT,
+  NAV_FEEDBACK,
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
@@ -407,6 +408,61 @@ describe("isActiveGroup", () => {
           active: false,
         })
       }
+    }
+  })
+})
+
+/**
+ * The one entry that is an action rather than a destination.
+ *
+ * Every assertion in this file above here is about routes: that each has a page,
+ * that each page has a way in. `NAV_FEEDBACK` has neither and must not — a
+ * report is filed about the page you are on, so opening a route to file it would
+ * discard the context being reported. These pin the ways that could go wrong.
+ */
+describe("the report entry is an action, not a route", () => {
+  test("it carries an action and no href", () => {
+    expect(NAV_FEEDBACK.action).toBe("feedback")
+    expect(NAV_FEEDBACK.href).toBeUndefined()
+  })
+
+  test("it is absent from the route list the filesystem checks walk", () => {
+    // ⚠ The reason it is excluded from `allNavItems()`. That list is asserted
+    // against `app/` in both directions, so including an entry with no route
+    // would fail "every nav entry is a route with a page" — correctly, since it
+    // is not one. Excluding it is what keeps that assertion meaningful for the
+    // fourteen entries that *are* routes.
+    expect(allNavItems()).not.toContain(NAV_FEEDBACK)
+    for (const item of allNavItems()) expect(typeof item.href).toBe("string")
+  })
+
+  test("its label and hint exist in both languages", () => {
+    // The bilingual rule applies to it like any other row; it is simply not
+    // covered by the `allNavItems()` loop above, so it is checked here.
+    for (const locale of LOCALES) {
+      const dict = dictionaries[locale]
+      expect({ locale, label: (dict[NAV_FEEDBACK.labelKey]?.length ?? 0) > 0 }).toEqual({
+        locale,
+        label: true,
+      })
+      const hint = NAV_FEEDBACK.descriptionKey
+      if (!hint) throw new Error("the report entry should carry a hint")
+      expect({ locale, hint: (dict[hint]?.length ?? 0) > 0 }).toEqual({ locale, hint: true })
+      expect(/\{\w+\}/.test(dict[hint] ?? "")).toBe(false)
+    }
+  })
+
+  test("it carries an icon, like every row that can appear in the collapsed rail", () => {
+    // The rail renders nothing but the glyph at 3.5 rem. A row without one
+    // would be a blank 16 px square that does something.
+    expect(NAV_FEEDBACK.icon).toBeDefined()
+  })
+
+  test("no group claims it, and no route makes it look active", () => {
+    // It has no href, so `isActivePath` has nothing to match — but a future
+    // edit giving it one would silently put a second active marker on screen.
+    for (const group of NAV_GROUPS) {
+      expect(group.items).not.toContain(NAV_FEEDBACK)
     }
   })
 })
