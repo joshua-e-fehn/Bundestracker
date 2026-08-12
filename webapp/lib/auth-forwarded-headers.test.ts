@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs"
 import {
   CONVEX_INGRESS_UNSAFE_HEADERS,
   convexAuthForwardHeaders,
   convexAuthRouteHandlers,
+  stripConvexIngressUnsafeHeaders,
 } from "./auth-forwarded-headers"
 
 /**
@@ -180,15 +182,212 @@ describe("convexAuthRouteHandlers", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true })
   })
+
+  test("does not follow the OAuth 302 — the browser must", async () => {
+    // The sign-in leg answers with a redirect that belongs to the reader. If
+    // this hop followed it, the provider's HTML would be returned in its place
+    // and the sign-in would resolve server-side, which is the "stuck on
+    // Redirecting" symptom wearing a different hat.
+    const original = globalThis.fetch
+    let sawInit: RequestInit | undefined
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      sawInit = init
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://accounts.google.com/o/oauth2/v2/auth?x=1" },
+      })
+    }) as typeof globalThis.fetch
+    try {
+      const response = await convexAuthRouteHandlers(SITE).GET(
+        incomingRequest("/api/auth/callback/google?code=abc"),
+      )
+      expect(sawInit?.redirect).toBe("manual")
+      expect(response.status).toBe(302)
+      expect(response.headers.get("location")).toBe(
+        "https://accounts.google.com/o/oauth2/v2/auth?x=1",
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test("passes Set-Cookie through — the callback leg's whole point", async () => {
+    // Better Auth mints the session cookie on the callback. It reaches the
+    // reader only if this hop returns the upstream response with its headers
+    // intact; dropping it would sign nobody in while every status looked fine.
+    const original = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(null, {
+        status: 302,
+        headers: {
+          location: "/",
+          "set-cookie": "better-auth.session_token=tok; Path=/; HttpOnly; SameSite=Lax",
+        },
+      })) as unknown as typeof globalThis.fetch
+    try {
+      const response = await convexAuthRouteHandlers(SITE).GET(
+        incomingRequest("/api/auth/callback/google?code=abc"),
+      )
+      expect(response.headers.get("set-cookie")).toContain("better-auth.session_token=tok")
+      // No `Domain`: the browser sees this as same-origin on the public host,
+      // which is what makes the proxy worth having.
+      expect(response.headers.get("set-cookie")).not.toContain("Domain=")
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test("sends the session cookie upstream", async () => {
+    const { outbound } = await runHandler(
+      "GET",
+      incomingRequest("/api/auth/get-session", {
+        headers: { cookie: "better-auth.session_token=tok" },
+      }),
+    )
+    expect(outbound.headers.get("cookie")).toBe("better-auth.session_token=tok")
+  })
 })
 
 /**
- * The live half — the assertion that actually failed in production.
+ * The SSR token path — the half that survived the first fix.
+ *
+ * `lib/auth-server.ts`'s `getToken` sanitizes Next's inbound headers with this
+ * function before handing them to the library. It cannot be imported here (it
+ * reads `next/headers` and validates env at module load), so the contract is
+ * pinned on the shared helper both paths use.
+ *
+ * Measured against production, `GET /api/auth/convex/token` with a cookie:
+ *
+ *   x-forwarded-host: www.bundestracker.de → 404 (refused at ingress)
+ *   pair stripped                          → 401 {"code":"UNAUTHORIZED"}
+ *
+ * 401 is Better Auth rejecting a fake cookie — the auth layer answering. 404 is
+ * it never being reached, which `betterFetch` reports as no `data` and the
+ * library returns as `token: undefined`: indistinguishable from signed out.
+ */
+describe("stripConvexIngressUnsafeHeaders", () => {
+  test("removes the pair Convex's edge router rejects", () => {
+    const headers = new Headers({
+      "x-forwarded-host": "www.bundestracker.de",
+      "x-forwarded-proto": "https",
+    })
+    stripConvexIngressUnsafeHeaders(headers)
+    expect(headers.get("x-forwarded-host")).toBeNull()
+    expect(headers.get("x-forwarded-proto")).toBeNull()
+  })
+
+  test("keeps the session cookie — the point of the token request", () => {
+    // Stripping this would turn every signed-in render signed-out just as
+    // surely as the 404 did, and just as silently.
+    const headers = new Headers({
+      cookie: "better-auth.session_token=tok",
+      "x-forwarded-host": "www.bundestracker.de",
+    })
+    stripConvexIngressUnsafeHeaders(headers)
+    expect(headers.get("cookie")).toBe("better-auth.session_token=tok")
+  })
+
+  test("leaves x-forwarded-for intact", () => {
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.7" })
+    stripConvexIngressUnsafeHeaders(headers)
+    expect(headers.get("x-forwarded-for")).toBe("203.0.113.7")
+  })
+
+  test("is what the hop uses, so both paths cannot diverge", () => {
+    // The first fix sanitized the hop and left the token path unsanitized.
+    // Sharing one helper is what makes that class of gap impossible.
+    const viaHop = convexAuthForwardHeaders(
+      new Headers({ "x-forwarded-host": "www.bundestracker.de" }),
+      new URL(`${PUBLIC_ORIGIN}/api/auth/ok`),
+      SITE,
+    )
+    expect(viaHop.get("x-forwarded-host")).toBeNull()
+  })
+})
+
+/**
+ * The drift guard the reimplementation is justified by.
+ *
+ * `auth-forwarded-headers.ts` transcribes the library's forwarding rather than
+ * wrapping it, and the stated price is that a change to the library will not
+ * arrive here on its own. This is the assertion that makes that price payable:
+ * it invokes the *installed* handler, captures what it really sends, and diffs
+ * it against ours. It runs offline, so CI enforces it.
+ *
+ * Previously this contract was a hand-copied literal inside the opt-in live
+ * block — a copy of the library's headers could not detect the library
+ * changing them.
+ */
+describe("library drift", () => {
+  /** What the installed `convexBetterAuthNextJs` handler really sends. */
+  async function librarysOutboundHeaders(): Promise<Headers> {
+    const { handler } = convexBetterAuthNextJs({
+      convexUrl: SITE.replace(".convex.site", ".convex.cloud"),
+      convexSiteUrl: SITE,
+    })
+    let captured: Headers | undefined
+    const original = globalThis.fetch
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      captured = new Headers(init?.headers)
+      return new Response("{}", { status: 200 })
+    }) as typeof globalThis.fetch
+    try {
+      await handler.GET(new Request(`${PUBLIC_ORIGIN}/api/auth/ok`))
+    } finally {
+      globalThis.fetch = original
+    }
+    if (!captured) throw new Error("library handler did not call fetch")
+    return captured
+  }
+
+  const names = (headers: Headers) => [...headers.keys()].sort()
+
+  test("ours is the library's header set minus exactly the unsafe pair", async () => {
+    const librarys = names(await librarysOutboundHeaders())
+    const ours = names(
+      convexAuthForwardHeaders(new Headers(), new URL(`${PUBLIC_ORIGIN}/api/auth/ok`), SITE),
+    )
+    // The whole claim, as an equation. A fifth header, a renamed channel, or a
+    // dropped one fails here — on the day it is installed, not in production.
+    expect(ours).toEqual(librarys.filter((n) => !CONVEX_INGRESS_UNSAFE_HEADERS.includes(n as never)))
+  })
+
+  test("the library still sends the header that caused the outage", async () => {
+    // If this ever fails, the library fixed it upstream and this whole
+    // reimplementation can be reconsidered — a failure worth reading, not a
+    // tautology.
+    const librarys = await librarysOutboundHeaders()
+    expect(librarys.get("x-forwarded-host")).toBe("www.bundestracker.de")
+  })
+
+  test("the values we do send match the library's", async () => {
+    const librarys = await librarysOutboundHeaders()
+    const ours = convexAuthForwardHeaders(
+      new Headers(),
+      new URL(`${PUBLIC_ORIGIN}/api/auth/ok`),
+      SITE,
+    )
+    for (const name of names(ours)) {
+      expect(`${name}=${ours.get(name)}`).toBe(`${name}=${librarys.get(name)}`)
+    }
+  })
+})
+
+/**
+ * The live half — the 404-vs-200 matrix that actually failed in production.
  *
  * Opt-in via CONVEX_LIVE_AUTH_TEST=1: it depends on the deployment being up and
  * on outbound network.
  *
  *   CONVEX_LIVE_AUTH_TEST=1 bun test lib/auth-forwarded-headers.test.ts
+ *
+ * ⚠ State the consequence plainly: **CI does not set this**, so the only tests
+ * that observe a real 404 do not run there. What CI does enforce is the
+ * `library drift` block above — it needs no network and fails if our header set
+ * stops matching the library's minus the unsafe pair, which is the shape the
+ * outage took. The offline assertions elsewhere in this file are change
+ * detectors: they pin the contract, but they cannot observe the production
+ * failure, and it would be dishonest to read them as if they could.
  */
 const LIVE = process.env.CONVEX_LIVE_AUTH_TEST === "1"
 
@@ -239,6 +438,31 @@ describe.if(LIVE)("against the live Convex deployment", () => {
     })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true })
+  }, 30_000)
+
+  test("the SSR token endpoint: 404 with the header, 401 without", async () => {
+    // Finding 1 of the adversarial review, as an assertion. This is the path
+    // `getToken` takes on every server render, and the difference between the
+    // two statuses is the difference between "refused at the edge" and "Better
+    // Auth answering". Both are non-2xx for a fake cookie, which is exactly why
+    // the bug survived the first fix — only the status tells them apart.
+    const url = `${SITE}/api/auth/convex/token`
+    const cookie = "better-auth.session_token=fake-token-for-probe"
+
+    const poisoned = await fetch(url, {
+      headers: { cookie, "x-forwarded-host": "www.bundestracker.de" },
+      redirect: "manual",
+    })
+    expect(poisoned.status).toBe(404)
+
+    const sanitized = await fetch(url, {
+      headers: stripConvexIngressUnsafeHeaders(
+        new Headers({ cookie, "x-forwarded-host": "www.bundestracker.de" }),
+      ),
+      redirect: "manual",
+    })
+    expect(sanitized.status).toBe(401)
+    expect(await sanitized.json()).toMatchObject({ code: "UNAUTHORIZED" })
   }, 30_000)
 
   test("get-session is answered rather than 404ing", async () => {

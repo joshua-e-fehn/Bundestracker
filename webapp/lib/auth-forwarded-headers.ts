@@ -83,10 +83,18 @@
  *
  * So this forwards the request itself. It is a transcription of
  * dist/nextjs/index.js:26-51 minus the two headers, which is a real cost — a
- * change to the library's forwarding semantics will not arrive here on its own,
- * and `lib/auth-forwarded-headers.test.ts` pins the header set the library
- * builds so that divergence shows up as a failing test rather than as a second
- * outage. The alternative was owning a global mutation with a known race.
+ * change to the library's forwarding semantics will not arrive here on its own.
+ * The `library drift` block in `lib/auth-forwarded-headers.test.ts` pays that
+ * cost: it invokes the *installed* handler with a stubbed `fetch` and asserts
+ * our header set equals the library's minus exactly
+ * `CONVEX_INGRESS_UNSAFE_HEADERS`, offline, so CI enforces it. The alternative
+ * was owning a global mutation with a known race.
+ *
+ * ⚠ The SSR token path is *not* this hop. `getToken` reaches Convex on every
+ * server render through `betterFetch`, and the library never strips these
+ * headers there either — see `lib/auth-server.ts`, which sanitizes it with
+ * `stripConvexIngressUnsafeHeaders` below. The first version of this fix missed
+ * that path entirely and it failed silently as "signed out".
  *
  * `x-forwarded-for` is deliberately not touched: Convex's router does not
  * resolve deployments from it (it names the client, not the host), and Better
@@ -114,6 +122,22 @@ export const CONVEX_INGRESS_UNSAFE_HEADERS = ["x-forwarded-host", "x-forwarded-p
 const HOP_BY_HOP_HEADERS = ["transfer-encoding", "content-length", "connection"] as const
 
 /**
+ * Removes the headers Convex's edge router rejects, in place.
+ *
+ * Shared by both paths that leave this app for the deployment — the
+ * `/api/auth/*` hop below and the SSR token fetch in `lib/auth-server.ts`.
+ * One definition of "unsafe", so a fix to one is a fix to both: the first
+ * version of this fix sanitized only the hop, and the token path kept 404ing
+ * silently on every server render.
+ */
+export function stripConvexIngressUnsafeHeaders(headers: Headers): Headers {
+  for (const name of CONVEX_INGRESS_UNSAFE_HEADERS) {
+    headers.delete(name)
+  }
+  return headers
+}
+
+/**
  * The headers to send to Convex for a request that arrived at `requestUrl`.
  *
  * Exported for the test, which asserts both halves of the contract: the
@@ -128,14 +152,27 @@ export function convexAuthForwardHeaders(incoming: Headers, requestUrl: URL, sit
   }
   // Deleted rather than never-set: the inbound request may carry its own pair
   // from Vercel's proxy, naming the public origin exactly as the library would.
-  for (const name of CONVEX_INGRESS_UNSAFE_HEADERS) {
-    headers.delete(name)
-  }
+  stripConvexIngressUnsafeHeaders(headers)
 
+  // ⚠ `application/json` is a MIME type in a content-coding slot, so it
+  // negotiates no compression at all. Transcribed verbatim from the library
+  // (dist/nextjs/index.js:34) and deliberately left wrong: this hop's job is to
+  // match the library's behaviour minus two headers, and quietly "fixing" an
+  // unrelated field here would be a second, untested change riding along.
   headers.set("accept-encoding", "application/json")
   headers.set("host", new URL(siteUrl).host)
   // The library's own channel for the public origin, restored onto
   // `x-forwarded-*` inside the Convex runtime, past the edge router.
+  //
+  // ⚠ `requestUrl.host` traces back to a client-supplied `Host` on Vercel, so
+  // this value is influenceable, and it becomes what Better Auth believes its
+  // own origin is — feeding `trustedOrigins` and the OAuth `redirect_uri`. The
+  // check that makes that safe is not here and cannot be: `trustedOrigins` is
+  // `[process.env.SITE_URL]`, evaluated inside Convex (convex/betterAuth/
+  // auth.ts), so a forged origin is rejected there rather than trusted here.
+  // `set` rather than `append` so an inbound forgery is overwritten, not added
+  // to. This is the library's own derivation (dist/nextjs/index.js:37-38);
+  // it is noted because the fix moved it into first-party code.
   headers.set("x-better-auth-forwarded-host", requestUrl.host)
   headers.set("x-better-auth-forwarded-proto", requestUrl.protocol.replace(/:$/, ""))
 
