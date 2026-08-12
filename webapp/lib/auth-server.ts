@@ -23,8 +23,22 @@ const { cloudUrl, siteUrl } = requireConvexUrls({
   NEXT_PUBLIC_CONVEX_SITE_URL: process.env.NEXT_PUBLIC_CONVEX_SITE_URL,
 })
 
+/**
+ * The Convex site URL this build proxies auth to, validated above.
+ *
+ * Exported so `app/api/auth/[...all]/route.ts` can bind its hop to the same
+ * checked value rather than reading `process.env` a second time — the check is
+ * what makes it trustworthy, and a second read would skip it.
+ */
+export const convexSiteUrl = siteUrl
+
+// `handler` is deliberately not re-exported. It is the library's own
+// `/api/auth/*` forwarder, and it is the thing that caused the production 404:
+// it sets `x-forwarded-host` to the public origin, which Convex's edge router
+// rejects at ingress. The route handler uses `lib/auth-forwarded-headers.ts`
+// instead. Leaving the export in place would leave a one-import path back to
+// the outage. The rest of this object is still the library's.
 export const {
-  handler,
   preloadAuthQuery,
   isAuthenticated,
   getToken,
