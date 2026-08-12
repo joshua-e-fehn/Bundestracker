@@ -234,13 +234,39 @@ describe("the publishing path cannot read the private half", () => {
     const argsEnd = feedbackSource.indexOf("honeypot: v.string()", argsStart)
     expect(argsStart).toBeGreaterThan(-1)
     expect(feedbackSource.slice(argsStart, argsEnd)).not.toContain("userId")
-    expect(feedbackSource).toContain("userId: await getUserId(ctx)")
+
+    // It now comes from `requireUserId` at the top of the handler rather than
+    // from `getUserId` at the point of insert — a strictly stronger form of the
+    // same guarantee, since the id is not merely session-derived but is proof a
+    // session exists. Asserted as the binding actually written into the row, so
+    // a future edit that reintroduced an argument would still fail here.
+    // The *accepted* insert, not the rejection one above it — that writes a
+    // blank row with `userId: null` by design (see the rejection test), and
+    // anchoring on the first match would assert about the wrong statement.
+    const insertStart = feedbackSource.indexOf(
+      'await ctx.db.insert("feedbackReports", {',
+      feedbackSource.indexOf("const title = truncate("),
+    )
+    expect(insertStart).toBeGreaterThan(-1)
+    const insertEnd = feedbackSource.indexOf("})", insertStart)
+    const insert = feedbackSource.slice(insertStart, insertEnd)
+    expect(insert).toContain("userId,")
+    expect(insert).not.toContain("userId: args.")
+    expect(feedbackSource).toContain("const userId = await requireUserId(ctx)")
   })
 
   test("the GitHub repository is never taken from the caller", () => {
     // `findDuplicates` interpolates a `repo:` qualifier. It must come from the
     // environment, or a caller could redirect the search.
-    expect(feedbackSource).toContain("process.env.GITHUB_FEEDBACK_REPO")
+    //
+    // Read through `readRepo()` rather than from `process.env` directly: the
+    // value is also interpolated into a URL path, where an unvalidated
+    // traversal escapes the `/repos/` prefix. The environment is still the only
+    // source — that is what this test is about — but there is now one validator
+    // between it and every use. See convex/lib/githubToken.ts.
+    expect(feedbackSource).toContain("readRepo()")
+    expect(feedbackSource).not.toContain("process.env.GITHUB_FEEDBACK_REPO")
+    expect(read("convex/lib/githubToken.ts")).toContain("process.env.GITHUB_FEEDBACK_REPO")
     const dupStart = feedbackSource.indexOf("export const findDuplicates")
     const dupEnd = feedbackSource.indexOf("// --- publication")
     const block = feedbackSource.slice(dupStart, dupEnd)

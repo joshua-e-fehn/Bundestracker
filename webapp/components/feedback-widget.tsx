@@ -1,6 +1,6 @@
 "use client"
 
-import { useAction, useMutation, useQuery } from "convex/react"
+import { useAction, useMutation } from "convex/react"
 import {
   AlertTriangleIcon,
   CheckIcon,
@@ -10,6 +10,7 @@ import {
   ShieldCheckIcon,
 } from "lucide-react"
 import { useCallback, useEffect, useId, useRef, useState } from "react"
+import { useFeedback } from "@/components/providers/feedback-provider"
 import { useLocale } from "@/components/providers/locale-provider"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -24,6 +25,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
+import { useFeedbackAvailable } from "@/components/use-feedback-available"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { authClient } from "@/lib/auth-client"
@@ -142,13 +144,15 @@ function useDraft() {
 
 export function FeedbackWidget() {
   const { t, locale } = useLocale()
-  const configured = useQuery(api.feedback.isConfigured, {})
+  const available = useFeedbackAvailable()
   const submitReport = useMutation(api.feedback.submitReport)
   const generateUploadUrl = useMutation(api.feedback.generateScreenshotUploadUrl)
   const findDuplicates = useAction(api.feedback.findDuplicates)
   const session = authClient.useSession()
 
-  const [open, setOpen] = useState(false)
+  // Shared with the two navigation rows, which open this same sheet rather than
+  // mounting one of their own — see components/providers/feedback-provider.tsx.
+  const { open, setOpen } = useFeedback()
   const [step, setStep] = useState<Step>("form")
   const { draft, set: setField, reset: resetDraft } = useDraft()
   const { kind, title, description, contact, honeypot } = draft
@@ -178,13 +182,12 @@ export function FeedbackWidget() {
    * — which walks this directory and fails on any component reading
    * `authClient.useSession()` without the flag.
    *
-   * It is load-bearing here for two independent reasons. The session is read to
-   * fill `environment.signedIn`, and Better Auth can resolve it before React
-   * hydrates. And `isConfigured` is a Convex query that is `undefined` on the
-   * server and may be `true` by the client's first paint — returning `null`
-   * from one and a `<button>` from the other is a differing element type at the
-   * same position, which throws React #418, regenerates the tree, and in React
-   * 19 detaches `<head>`.
+   * The half of this that gated rendering now lives in `useFeedbackAvailable`,
+   * which the two navigation rows share; what stays here is the session read
+   * that fills `environment.signedIn`, because Better Auth can resolve a session
+   * before React hydrates. `mounted` keeps that value out of the first render,
+   * so the diagnostics collected from a pre-hydration session cannot differ from
+   * what the server rendered.
    */
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -216,16 +219,42 @@ export function FeedbackWidget() {
     }
   }, [])
 
-  const openWidget = useCallback(() => {
+  /**
+   * The opening sequence, driven by `open` rather than by the trigger's click.
+   *
+   * It used to hang off the footer button's own handler, which was correct while
+   * that button was the only way in. It is now one of three — the sidebar row
+   * and the mobile drawer row open the same sheet through the provider — and a
+   * handler on one of them cannot run the other two's setup. Hanging it on the
+   * *state* instead means every route into the sheet gets the dwell clock
+   * started, the diagnostics collected, and the screenshot taken, including any
+   * future fourth control.
+   *
+   * ⚠ `openedAt` is what `MIN_DWELL_MS` is measured against on the server. A
+   * route into the sheet that did not set it would leave it at its previous
+   * value — and on a first open, at `0`, making `dwellMs` about fifty-six years
+   * and passing. Not a security hole (the dwell check only ever rejects), but it
+   * would silently disable one of the abuse controls for two of the three
+   * controls, which is the kind of thing that is only noticed when it is needed.
+   */
+  // `capture`, `locale` and `session.data` are read at the moment the sheet
+  // opens and must not re-run this: a locale change or a session refresh while
+  // the reporter is typing would re-take the screenshot of a page now covered by
+  // the form, and reset the dwell clock they have already spent. `open` going
+  // true is the event; the rest are values sampled when it does.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opening is the event; see above
+  useEffect(() => {
+    if (!open) return
     openedAt.current = Date.now()
     setStep("form")
     setError(null)
-    setOpen(true)
     // Collected at open time so the snapshot reflects the moment the reporter
-    // decided something was wrong.
-    setDiagnostics(collectDiagnostics({ locale, signedIn: Boolean(session.data) }))
+    // decided something was wrong. `mounted &&` for the hydration contract
+    // above: before hydration commits the session is reported as absent, which
+    // is what the server rendered.
+    setDiagnostics(collectDiagnostics({ locale, signedIn: mounted && Boolean(session.data) }))
     void capture()
-  }, [capture, locale, session.data])
+  }, [open])
 
   // Object URLs are a leak if they are not revoked, and this one outlives the
   // component only if the reader navigates away mid-report.
@@ -353,17 +382,28 @@ export function FeedbackWidget() {
     }
   }
 
-  // `undefined` is "still loading" and `false` is "not configured". Neither
-  // renders a trigger; only an affirmative answer does — and not before mount,
-  // so the server's HTML and the client's first render agree. See `mounted`.
-  if (!mounted || configured !== true) return null
+  // A deployment that cannot publish, a reader with no session, or a query that
+  // has not resolved: none renders a control. See `useFeedbackAvailable`, which
+  // the two navigation rows consult too so all three appear together.
+  //
+  // The signed-out case renders nothing here rather than a "sign in to report"
+  // prompt, because there is one: `components/nav-sidebar.tsx` and
+  // `components/nav-mobile.tsx` carry the navigation entry, which is where a
+  // reader discovers the feature. A second prompt in the footer would be the
+  // same invitation twice, and the footer is not where anyone looks for it.
+  //
+  // ⚠ The sheet is inside this branch, so it unmounts if the session ends while
+  // it is open. That is the correct direction — a form whose submit call is
+  // guaranteed to throw should not stay on screen — and it is why the provider
+  // holds only a boolean: nothing here survives to be reopened into.
+  if (!available) return null
 
   return (
     <>
       <Button
         variant="outline"
         size="sm"
-        onClick={openWidget}
+        onClick={() => setOpen(true)}
         data-feedback-id="open-feedback"
         className="gap-1.5"
       >

@@ -3,17 +3,21 @@
 import { MenuIcon } from "lucide-react"
 import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
+import { useFeedback } from "@/components/providers/feedback-provider"
 import { useLocale } from "@/components/providers/locale-provider"
 import { SearchBar } from "@/components/search-bar"
 import { SidebarAccount } from "@/components/sidebar-account"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { useFeedbackAvailable } from "@/components/use-feedback-available"
 import {
   isActivePath,
   NAV_ACCOUNT,
+  NAV_FEEDBACK,
   NAV_GROUPS,
   NAV_PRIMARY,
   NAV_SEARCH,
+  type NavDestination,
   type NavItem,
   navCurrent,
 } from "@/lib/navigation"
@@ -176,6 +180,17 @@ export function NavMobile({ className }: { className?: string }) {
             surfaces — see components/nav-sidebar.tsx. */}
         <div className="sticky bottom-0 mt-auto border-border/60 border-t bg-background p-3">
           <nav aria-label={t("nav.accountArea")} className="grid gap-1">
+            {/* Report a problem, above settings — the same slot and the same
+                order as the rail, so the two surfaces stay one navigation
+                rendered twice rather than two that drift. Signed-in readers on a
+                configured deployment only; see components/use-feedback-
+                available.ts.
+
+                It closes the drawer as well as opening the sheet: the report
+                sheet slides in over the same edge this panel occupies, and
+                leaving the drawer open would stack one overlay on another and
+                trap focus behind the form. */}
+            <DrawerAction item={NAV_FEEDBACK} onOpen={() => setOpen(false)} />
             <DrawerLink item={NAV_ACCOUNT} pathname={pathname} />
             <SidebarAccount expanded />
           </nav>
@@ -185,12 +200,66 @@ export function NavMobile({ className }: { className?: string }) {
   )
 }
 
+/**
+ * A drawer row that opens the report sheet instead of navigating.
+ *
+ * The mobile counterpart of `SidebarAction`, and styled as its neighbours are —
+ * same 44 px touch floor, same glyph-and-description layout — because it is a
+ * peer of the rows around it to anyone reading the panel.
+ *
+ * `<button>` rather than `<Link>`, with no `aria-current`: there is no route to
+ * be on. `useDismissOnNavigate` therefore cannot close the drawer for this row
+ * the way it does for every other one — nothing navigates — which is why the
+ * caller passes `onOpen` to close it explicitly. That is the one case the
+ * "one rule rather than an `onClick` per row" note in `NavMobile` does not
+ * reach, and it is deliberate rather than an omission.
+ *
+ * Renders nothing unless `useFeedbackAvailable()`. The check is inside the
+ * component, as in the rail, so the row cannot be placed anywhere without it.
+ */
+function DrawerAction({ item, onOpen }: { item: NavItem; onOpen: () => void }) {
+  const { t } = useLocale()
+  const { openFeedback } = useFeedback()
+  const available = useFeedbackAvailable()
+  const Icon = item.icon
+
+  if (!available) return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onOpen()
+        openFeedback()
+      }}
+      data-feedback-id="open-feedback-drawer"
+      className={cn(
+        "flex min-h-11 items-center gap-3 rounded-md border-l-2 border-transparent px-3 py-2 text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+        "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+      )}
+    >
+      <Icon aria-hidden className="mt-0.5 size-4 shrink-0 self-start" />
+      <span className="grid min-w-0 gap-0.5">
+        <span className="font-medium text-sm">{t(item.labelKey)}</span>
+        {item.descriptionKey && (
+          <span className="text-muted-foreground text-xs leading-snug">
+            {t(item.descriptionKey)}
+          </span>
+        )}
+      </span>
+    </button>
+  )
+}
+
 function DrawerLink({
   item,
   pathname,
   nested = false,
 }: {
-  item: NavItem
+  // A destination, never the action row: this renders a `<Link>`, and an entry
+  // with no `href` has nowhere to send anyone. `SidebarAction`/`DrawerAction`
+  // render the other arm.
+  item: NavDestination
   pathname: string
   nested?: boolean
 }) {

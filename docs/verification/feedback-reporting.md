@@ -1,8 +1,28 @@
 # Website feedback reporting — verification report
 
-**Branch:** `website-feedback-intake`
-**Date:** 2026-08-10 (revised after independent review)
+**Branch:** `website-feedback-intake`, then `feedback-auth-gate`
+**Date:** 2026-08-10; revised 2026-08-12 for the sign-in gate and GitHub App
 **Verified by:** running the feature, not by reading it.
+
+> [!IMPORTANT]
+> **What changed on 2026-08-12, and what it means for everything below.**
+>
+> Two things, both of which alter statements made further down:
+>
+> 1. **Reporting is signed-in only.** `submitReport`,
+>    `generateScreenshotUploadUrl` and `findDuplicates` each call `requireUserId`
+>    as their first statement. Sections below describing the intake as "the only
+>    unauthenticated public mutation in the codebase" describe the *previous*
+>    design; the abuse controls they document are all still present and
+>    unchanged, because a session bounds *who* and never *how much*.
+> 2. **Publication authenticates as a GitHub App.** A fine-grained PAT still
+>    works and is now the fallback. See
+>    [Operator setup](#operator-setup--the-one-genuinely-manual-step).
+>
+> A third addition is procedural rather than behavioural:
+> [Live production acceptance](#live-production-acceptance) is the runbook for
+> checking this against the real deployment, which nothing in this document's
+> original verification could do.
 
 Every claim below is followed by the command that produced it and the output
 that came back. Where something was **not** verified, or cannot be done without
@@ -35,10 +55,14 @@ omitted.
 
 ## What was built
 
-A "Problem melden" / "Report a problem" control in the site footer opens a sheet
-that collects a report, shows the reporter exactly what will be sent, checks
-GitHub for likely duplicates, and files a public issue — with the reporter's
-email address and the screenshot deliberately excluded from that issue.
+A "Problem melden" / "Report a problem" control — in the sidebar, the mobile
+drawer and the footer — opens a sheet that collects a report, shows the reporter
+exactly what will be sent, checks GitHub for likely duplicates, and files a
+public issue as a GitHub App, with the reporter's email address and the
+screenshot deliberately excluded from that issue.
+
+It is offered only to a signed-in reader on a deployment that can publish, and
+that is enforced in each handler rather than by hiding the control.
 
 | Layer | File | What it owns |
 | --- | --- | --- |
@@ -46,10 +70,14 @@ email address and the screenshot deliberately excluded from that issue.
 | Public payload | `webapp/lib/feedback-issue.ts` | The issue title, labels and body. Physically cannot render the private half. |
 | Collectors | `webapp/lib/diagnostics.ts` | Errors, failed requests, breadcrumbs. Defined by what it refuses to read. |
 | Screenshot | `webapp/lib/screenshot.ts` | DOM clone → redact → rasterise, in that order. |
-| Backend | `webapp/convex/feedback.ts` | Public mutation, abuse gate, GitHub action, retention sweep. |
+| Backend | `webapp/convex/feedback.ts` | Public functions, the session gate, abuse gate, GitHub action, retention sweep. |
+| Credentials | `webapp/lib/github-app.ts` | PEM parsing and the RS256 app JWT. Pure; reads no environment. |
+| Token | `webapp/convex/lib/github-token.ts` | Installation-token minting, caching and refresh. The only reader of the key. |
 | Schema | `webapp/convex/schema.ts` | `feedbackReports` + the closed `safeDiagnostics` validator. |
 | UI | `webapp/components/feedback-widget.tsx` | The four-step flow. |
-| Strings | `webapp/lib/i18n.ts` | 74 keys, German and English. |
+| Eligibility | `webapp/components/use-feedback-available.ts` | The one rule all three controls render from. |
+| Sheet state | `webapp/components/providers/feedback-provider.tsx` | One sheet, three controls that open it. |
+| Strings | `webapp/lib/i18n.ts` | 75 keys, German and English. |
 
 ---
 
@@ -460,42 +488,93 @@ Zero new paid infrastructure and no new npm dependency.
 
 ## Operator setup — the one genuinely manual step
 
-Publication needs a GitHub token. **This cannot be completed from this branch**:
-minting one requires an interactive login as the repository owner, and a token
-must never be committed. The `gh` CLI in this environment is authenticated as
-`joshua-e-fehn`, but its token is a user PAT that should not be copied into a
-Convex deployment as a long-lived publishing credential.
+Publication needs a GitHub credential. **This cannot be completed from a
+branch**: creating one requires an interactive login as the repository owner,
+and it must never be committed.
 
-### Step 1 — create a fine-grained PAT
+Two modes are supported. **A GitHub App is the preferred production mode**; the
+fine-grained PAT is a fallback, kept so an existing configuration does not break
+during the change that introduces its replacement.
 
-<https://github.com/settings/personal-access-tokens/new>
+| | GitHub App *(preferred)* | Fine-grained PAT *(fallback)* |
+|---|---|---|
+| Stored secret | a private key | a token |
+| On the wire | an installation token, expiring in 1 h | the token itself |
+| Expiry work | none — minted on demand | rotate every ≤90 days, by hand |
+| Issue author | the App (a bot account) | whoever minted the token |
 
-- **Repository access**: Only select repositories → `joshua-e-fehn/Bundestracker`
-- **Permissions**: `Issues: Read and write`. Nothing else.
-- **Expiry**: 90 days or less; rotation is the point of a fine-grained token.
+### Step 1 — create a GitHub App
 
-A GitHub App installation token is the better long-term answer (no expiry
-babysitting, tighter attribution) and the code is compatible with one — it
-sends `Authorization: Bearer <token>`, which both accept. It is not required to
-ship, so the PAT is the documented path.
+<https://github.com/settings/apps/new> — or reuse an existing App.
+
+- **Repository permissions**: `Issues: Read and write`, `Metadata: Read only`.
+  Nothing else. It never reads code and never pushes.
+- **Where can this app be installed?** Only on this account.
+- Uncheck **Webhook → Active**; nothing here receives webhooks.
+
+Then **Install** it on `joshua-e-fehn/Bundestracker` only, and **generate a
+private key** (Settings → the App → Private keys → Generate). GitHub downloads a
+PKCS#1 `.pem` — the `-----BEGIN RSA PRIVATE KEY-----` kind — and shows it once.
+
+Three values come out of this:
+
+- **App ID** — on the App's settings page.
+- **Installation ID** — the number at the end of the URL after installing:
+  `https://github.com/settings/installations/<INSTALLATION_ID>`.
+- **The private key** — the downloaded `.pem`.
 
 ### Step 2 — set the deployment variables
 
 ```bash
 cd webapp
-bunx convex env set --prod GITHUB_FEEDBACK_TOKEN "github_pat_…"
-bunx convex env set --prod GITHUB_FEEDBACK_REPO  "joshua-e-fehn/Bundestracker"
-# GITHUB_API_BASE is optional — unset means api.github.com.
+bunx convex env set --prod GITHUB_APP_ID              "<numeric app id>"
+bunx convex env set --prod GITHUB_APP_INSTALLATION_ID "<numeric installation id>"
+bunx convex env set --prod GITHUB_APP_PRIVATE_KEY     "$(cat ~/Downloads/…private-key.pem)"
+bunx convex env set --prod GITHUB_FEEDBACK_REPO       "joshua-e-fehn/Bundestracker"
+# GITHUB_API_BASE is optional — unset means api.github.com. It must be https,
+# unless the host is loopback (which is what a local stub is): it redirects the
+# signed-JWT token mint as well as the issue POST, so a leftover value from a
+# stub run would send a live installation-token request wherever it points.
+# A disallowed value fails closed as `github-api-base-invalid`.
 
 # Already set for Better Auth. Verify it, because the feedback feature now
 # reads it too:
 bunx convex env get --prod SITE_URL      # → https://bundestracker.de
 ```
 
-Until the first two are set, `feedback:isConfigured` returns `false` and **the
-trigger does not render at all**. Offering a form that queues into a deployment
-which will never publish is worse than offering nothing, so the widget hides
-itself.
+**The key's formatting does not matter.** Real newlines, escaped `\n`, or every
+run of whitespace collapsed to single spaces all decode to the same bytes — a
+secret store that reformats on save is not an operator error, and
+`lib/github-app.test.ts` verifies a signature made from each encoding against the
+matching public key. What *does* matter is that it is the private key rather
+than the public one: that is reported as `private-key-wrong-type` rather than
+being guessed at.
+
+Then delete the downloaded `.pem`. The deployment is the only place it belongs.
+
+> [!CAUTION]
+> **A partial App configuration does not fall back to the PAT.** The fallback
+> applies only when *no* App variable is set at all. Setting two of the three,
+> or a malformed key, is an operator error and is reported as one — falling back
+> would publish under a different identity than was configured and *succeed*,
+> which hides the mistake instead of surfacing it.
+
+Until a credential **and** the repo are set, `feedback:isConfigured` reports
+`configured: false` and **no control renders at all**, for anyone. Offering a
+form that queues into a deployment which will never publish is worse than
+offering nothing.
+
+### Step 2b — reporting is signed-in only
+
+Nothing above affects who may file. Every public function in
+`convex/feedback.ts` calls `requireUserId`, so an anonymous caller is refused by
+the server — the hidden control is a courtesy, not the gate. A signed-in reader
+finds the control in the sidebar and the mobile drawer (above Settings) as well
+as in the footer.
+
+This means **Google or GitHub OAuth must already work on the deployment**, which
+it does for the existing account features. If sign-in is broken, feedback is
+unavailable rather than anonymous, which is the safe direction.
 
 > [!IMPORTANT]
 > **`SITE_URL` must name the real deployed origin, or every report loses its
@@ -542,8 +621,174 @@ Returns the contact address and a short-lived screenshot URL.
 
 ### Turning it off
 
-`bunx convex env remove --prod GITHUB_FEEDBACK_TOKEN`. The widget disappears,
-and anything already queued stays queued.
+Remove whichever credential is set — `GITHUB_APP_PRIVATE_KEY` (or
+`GITHUB_FEEDBACK_TOKEN` on the fallback). Every control disappears, and anything
+already queued stays queued.
+
+### Diagnosing a report that did not publish
+
+`failureReason` on the row names the cause, and the App arm is specific about
+which variable is at fault. No reason ever quotes a value.
+
+| Reason | What it means |
+|---|---|
+| `github-not-configured` | No `GITHUB_FEEDBACK_REPO` — the kill switch, or a deployment never wired up. |
+| `github-repo-invalid` | `GITHUB_FEEDBACK_REPO` is not `owner/name`. A trailing `?x=1`, an extra path segment, or a `..` — all of which would otherwise produce a valid request against the wrong resource. |
+| `github-api-base-invalid` | `GITHUB_API_BASE` is not a URL, or is plaintext `http:` to something other than loopback. Usually a stub value left behind after a verification run. One validated reader in `convex/lib/githubToken.ts` builds every outbound URL, so this refuses the token mint and the issue POST alike rather than depending on which runs first. |
+| `github-not-configured` *(via credential)* | Repo set, no credential of either kind. |
+| `github-app-id-invalid` / `github-installation-id-invalid` | Not a bare integer. A stray character is the usual cause. |
+| `github-private-key-unparseable` | Not a PEM, or not an RSA key. Also what a *truncated* key produces, since the failure surfaces at import rather than at parse. |
+| `github-private-key-wrong-type` | A public key or certificate was pasted instead. |
+| `github-installation-token-refused` | GitHub rejected the JWT — wrong App ID, key not this App's, or the App is not installed on the repo. Retried at most once a minute while it keeps failing, so a broken credential cannot hammer GitHub's token endpoint. |
+| `github-installation-token-unreachable` | Network failure reaching GitHub. |
+| `github-http-404` | The App is installed but lacks `Issues: Read and write`, or the repo name is wrong. |
+
+Rotating `GITHUB_APP_PRIVATE_KEY` takes effect on the next request: the token
+cache is keyed on the App id, the installation id and a SHA-256 of the key, so a
+new key is a different cache entry rather than something to wait out. Re-pasting
+the *same* key in a different encoding is not a rotation and costs nothing.
+
+Re-queue everything that failed once the cause is fixed:
+
+```bash
+bunx convex run --prod feedback:republishFailed '{}'
+```
+
+---
+
+## Live production acceptance
+
+**Local tests and stubs do not establish that this works in production.** They
+establish that the logic is right; whether the deployment's own credentials,
+session cookies and GitHub installation agree is a different question, and only
+production answers it.
+
+This is the runbook for that check. It is written to be performed **after
+merge and deploy**, by a maintainer, and it deliberately requires **no test
+hook, no bypass flag, and no relaxation of the gate** — every step below is a
+real user action or a normal operator command. There is nothing to remember to
+turn off afterwards, which is the point: a verification switch left enabled in
+production is a worse outcome than an unverified deployment.
+
+Prerequisites: Step 1–3 above completed on the **prod** deployment, and the two
+labels created.
+
+### 1. Anonymous access is refused — by the server
+
+In a private window, signed out, on the deployed site:
+
+- **No report control** in the footer, the sidebar, or the mobile drawer.
+
+That is the UI half, and it is the weaker half. The gate itself:
+
+```bash
+# The deployment URL is public (it is in the browser bundle); this is exactly
+# the request a hand-written caller would make.
+curl -s -X POST "$CONVEX_URL/api/mutation" \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"feedback:submitReport","args":{
+        "kind":"bug","title":"anon probe","description":"","contact":"",
+        "pageUrl":null,"locale":"de","diagnostics":null,"screenshotId":null,
+        "uploadId":null,"clientKey":"probe","dwellMs":60000,"honeypot":"",
+        "duplicateCandidates":[]},"format":"json"}'
+```
+
+**Expect** `{"status":"error", ...}` naming `Not authenticated`. Repeat for
+`feedback:generateScreenshotUploadUrl` and `feedback:findDuplicates` — both must
+refuse the same way. A `success` from any of the three means the gate is not
+deployed, and the verification has failed.
+
+Then confirm the refusal cost nothing: no new `feedbackReports`,
+`feedbackUploads` or `feedbackSearches` row was written.
+
+```bash
+bunx convex data --prod feedbackSearches --limit 5
+```
+
+### 2. A signed-in user can discover and complete the flow
+
+Sign in with Google or GitHub, then **without using the footer**:
+
+- **Desktop** — the sidebar's account slot (above Settings) shows *Problem
+  melden*. Collapse the rail: the row becomes a glyph with a tooltip carrying
+  the same label.
+- **Mobile** (≤1024 px) — the drawer's foot shows the same row. Tapping it
+  closes the drawer and opens the sheet; the drawer must not remain behind it.
+
+Both open the same sheet, over the page you were on.
+
+### 3. Duplicate search reaches GitHub through the App
+
+Fill in a title matching an existing issue and press *Weiter*. Candidates
+appearing proves the outbound search was authenticated — an unauthenticated or
+refused search returns an empty list, which is indistinguishable from "no
+duplicates", so **a run that finds nothing has not verified this step**. Pick a
+title you know matches.
+
+### 4. A synthetic submission, authored by the App
+
+File a report titled exactly:
+
+```
+[verification] synthetic report — safe to close
+```
+
+with a description saying so, **a contact address filled in**, and the
+screenshot and diagnostics left enabled. Then check the issue GitHub created:
+
+- **Author** is the App (a `[bot]` account) — not a person. This is what
+  distinguishes App auth from the PAT fallback, and it is visible in the issue
+  header.
+- **Labels** are `via-website` and the kind label.
+- **Body contains** the report id, the page URL, and the diagnostics table.
+- **Body does NOT contain** the contact address, anywhere. It should say a
+  contact was supplied (`hasContact`), never what it was.
+- **Body has no screenshot** and no image link. The picture is stored in Convex,
+  not published.
+
+The absence of the address is the assertion that matters most, and it is worth
+searching the raw body for it explicitly rather than skimming.
+
+### 5. The private half is retrievable by a maintainer
+
+Take the report id from the issue body:
+
+```bash
+cd webapp
+bunx convex run --prod feedback:getPrivateReport '{"reportId":"<id from the issue>"}'
+```
+
+**Expect** the contact address and a short-lived screenshot URL — the data
+deliberately kept out of the public issue. Open the URL and confirm the
+screenshot is the page the report was filed from, with input values redacted.
+
+This is an `internalQuery`: it is reachable from the CLI and the dashboard with
+deploy credentials, and **not** from any browser. Confirm that too — the same
+`curl` shape as step 1, with `feedback:getPrivateReport`, must fail with "Could
+not find public function".
+
+### 6. Clean up
+
+```bash
+gh issue close <number> --repo joshua-e-fehn/Bundestracker \
+  --comment "Synthetic verification report; closing."
+```
+
+Deleting it outright is also fine (`gh issue delete`), and is the better choice
+if the repository's issue numbering is public-facing. The Convex row may be left
+alone — the 90-day retention sweep removes it, along with the screenshot.
+
+### What a failure at each step means
+
+| Step | Failure | Almost certainly |
+|---|---|---|
+| 1 | `curl` succeeds | The deployed Convex build predates the gate. Redeploy. |
+| 2 | No row in the chrome | Not signed in, or `configured: false` — check step 2 of setup. |
+| 3 | Never any candidates | Credential refused; check `failureReason` on a filed report. |
+| 4 | Issue authored by a person | The PAT fallback is in use — an App variable is missing. |
+| 4 | Issue never appears | Read `failureReason`; the table above names each cause. |
+| 4 | Labels missing | The labels were not created first — GitHub silently drops unknown ones. |
+| 5 | Query not found | Expected from a browser; from the CLI it means the deploy is stale. |
 
 ---
 
@@ -551,13 +796,28 @@ and anything already queued stays queued.
 
 Stated plainly rather than left to be discovered.
 
-1. **No GitHub token is set on any deployment.** Steps 1–3 above are manual and
-   have not been performed. The feature is inert in production until they are.
-2. **Not verified against the real GitHub API.** Every GitHub interaction was
-   verified against a local stub, deliberately — the alternative was filing junk
-   issues in a public repository. The request shape (path, method, headers,
-   body, API version) is pinned by tests, but the first real call will be the
-   first real call.
+1. **No GitHub credential is set on any deployment by this branch.** Steps 1–3
+   above are manual and cannot be performed from a worktree. The feature is
+   inert in production until an operator performs them.
+2. **Not verified against the real GitHub API, and this branch cannot be.**
+   Every GitHub interaction is verified against a local stub and against
+   `openssl` — `lib/github-app.test.ts` checks that the App JWT's signature
+   verifies with the matching public key, and `lib/github-token.test.ts` pins
+   the mint request, the cache, the refresh margin and each failure mode. What
+   none of that establishes is that *GitHub accepts this deployment's
+   credentials*, which is a fact about production and not about the code.
+   [Live production acceptance](#live-production-acceptance) is the runbook for
+   settling it, and it must be run before this is called done.
+2b. **The authorization gate is asserted from source, not by calling a handler.**
+   `bun test` has no Convex runtime, so an anonymous caller cannot be simulated
+   in-process — the constraint `convex/feedback.test.ts` already works under.
+   `lib/feedback-authorization.test.ts` therefore asserts that each public
+   handler calls `requireUserId` *before* any read, write, fetch or scheduler
+   call, and that the set of public functions is exactly the four it knows
+   about. Those assertions were checked against deliberate mutants (gate
+   deleted, gate moved after the budget charge, a new ungated public mutation
+   added) and each failed as intended. The behavioural proof is step 1 of the
+   live runbook, which is a real HTTP request to the real deployment.
 3. **The per-browser rate limit is resettable.** It is keyed on a random
    identifier in `localStorage`, because a Convex mutation cannot see the client
    IP — there is no request object. Clearing storage resets it. This is stated in

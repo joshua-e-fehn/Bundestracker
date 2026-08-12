@@ -327,3 +327,101 @@ describe("there is one desktop navigation", () => {
     expect(layout).toMatch(/sidebarExpanded\(cookieStore\.get\(SIDEBAR_COOKIE\)\?\.value\)/)
   })
 })
+
+/**
+ * The report row: an action in a list of links, in both surfaces.
+ *
+ * The failure this guards against is a row that renders for someone the server
+ * will refuse — a control that appears, looks live, and throws "Not
+ * authenticated" when pressed. It is invisible to a typecheck (the eligibility
+ * check is a hook call, and removing it typechecks), and reproducing it needs a
+ * signed-out browser against a configured deployment, which is the one
+ * combination easiest to miss by hand.
+ */
+describe("the report row is gated and behaves as an action", () => {
+  const drawer = strip(readFileSync(new URL("./nav-mobile.tsx", import.meta.url).pathname, "utf8"))
+
+  test("both surfaces render it", () => {
+    // Desktop and mobile, or the feature is discoverable on one device only.
+    expect(sidebar).toContain("NAV_FEEDBACK")
+    expect(drawer).toContain("NAV_FEEDBACK")
+  })
+
+  test("both gate it on the shared availability rule", () => {
+    for (const source of [sidebar, drawer]) {
+      expect(source).toContain("useFeedbackAvailable()")
+      expect(source).toContain("if (!available) return null")
+    }
+  })
+
+  /**
+   * One function's body, bounded by the next `function` declaration.
+   *
+   * ⚠ Not a `[\s\S]*?` reach from the function's name, which is how the first
+   * version of this was written and why it failed: the lazy match simply ran on
+   * into `DrawerLink`, so "the action row has no `aria-current`" was really
+   * asserting that *no function after it* did — and the link row correctly does.
+   */
+  const body = (source: string, name: string) => {
+    const start = source.indexOf(`function ${name}(`)
+    expect(start).toBeGreaterThan(-1)
+    const next = source.indexOf("\nfunction ", start + 1)
+    return source.slice(start, next === -1 ? source.length : next)
+  }
+
+  test("it is a button, not a link", () => {
+    // ⚠ A `<Link>` here would need an `href`, and the only honest one would be
+    // a route — which is the thing that loses the reporter's context. It also
+    // announces as a link, promising navigation that never happens.
+    for (const action of [body(sidebar, "SidebarAction"), body(drawer, "DrawerAction")]) {
+      expect(action).toContain('type="button"')
+      expect(action).toContain("<button")
+      expect(action).not.toContain("<Link")
+    }
+  })
+
+  test("it claims no active state", () => {
+    // `aria-current` says "this is the current page". There is no page.
+    for (const action of [body(sidebar, "SidebarAction"), body(drawer, "DrawerAction")]) {
+      expect(action).not.toContain("aria-current")
+      expect(action).not.toContain("isActivePath")
+    }
+  })
+
+  test("the collapsed rail still names it", () => {
+    // At 3.5 rem the label is not rendered, so without these the row announces
+    // as an unnamed button and a sighted reader has only an unexplained glyph.
+    const action = body(sidebar, "SidebarAction")
+    expect(action).toContain("aria-label={expanded ? undefined : label}")
+    expect(action).toContain("TooltipContent")
+  })
+
+  test("the drawer row closes the drawer as well as opening the sheet", () => {
+    // ⚠ `useDismissOnNavigate` closes the drawer when the *route* changes, and
+    // this row changes no route. Without an explicit close, the report sheet
+    // opens behind the still-open drawer: two overlays, focus trapped in the
+    // wrong one.
+    expect(drawer).toMatch(/DrawerAction[\s\S]{0,120}onOpen=\{\(\) => setOpen\(false\)\}/)
+    expect(drawer).toMatch(/function DrawerAction[\s\S]*?onOpen\(\)[\s\S]*?openFeedback\(\)/)
+  })
+
+  test("it sits in a labelled nav landmark, like the settings row beside it", () => {
+    // A control outside every `<nav>` is in no navigation as far as assistive
+    // technology is concerned — the correction `NAV_ACCOUNT` documents, which
+    // applies to the row added above it.
+    for (const source of [sidebar, drawer]) {
+      const slot = source.slice(source.indexOf('aria-label={t("nav.accountArea")}'))
+      expect(slot.indexOf("NAV_FEEDBACK")).toBeGreaterThan(-1)
+      expect(slot.indexOf("NAV_FEEDBACK")).toBeLessThan(slot.indexOf("</nav>"))
+    }
+  })
+
+  test("one sheet, opened by three controls", () => {
+    // Mounting a second `<FeedbackWidget />` in the sidebar would give the page
+    // two report forms, two screenshot captures on open, and two dwell clocks.
+    // The provider is what keeps it one.
+    expect(sidebar).not.toContain("<FeedbackWidget")
+    expect(drawer).not.toContain("<FeedbackWidget")
+    expect(layout).toContain("FeedbackProvider")
+  })
+})

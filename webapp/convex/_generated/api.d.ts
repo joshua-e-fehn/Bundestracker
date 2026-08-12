@@ -20,6 +20,7 @@ import type * as feedback from "../feedback.js";
 import type * as http from "../http.js";
 import type * as inquiry from "../inquiry.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_githubToken from "../lib/githubToken.js";
 import type * as lib_ingest from "../lib/ingest.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as motions from "../motions.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   inquiry: typeof inquiry;
   "lib/auth": typeof lib_auth;
+  "lib/githubToken": typeof lib_githubToken;
   "lib/ingest": typeof lib_ingest;
   "lib/validators": typeof lib_validators;
   motions: typeof motions;
