@@ -117,6 +117,41 @@ describe("every public feedback function requires a session", () => {
     }
   })
 
+  test("⚠ findDuplicates charges the budget before it mints a token", () => {
+    // The budget must precede **every** outbound request, not merely the search.
+    //
+    // `credentialFor` used to run first, and the comment on the budget charge
+    // claiming it came "before the outbound call" was true of the search and
+    // false of the token mint that preceded it by seven lines. A caller who had
+    // exhausted their search budget still cost a full `POST /access_tokens` on
+    // every cold isolate — and, with a broken credential, on every call — which
+    // is the opposite of what a budget is for.
+    //
+    // Asserted by position rather than by behaviour because the ordering is not
+    // observable from the function's return value: both orders return `[]`.
+    const body = functionBody(feedbackCode, "findDuplicates")
+    const gate = body.indexOf("requireUserId(ctx)")
+    const budget = body.indexOf("claimSearchBudget")
+    const credential = body.indexOf("credentialFor(")
+
+    expect(gate).toBeGreaterThan(-1)
+    expect(budget).toBeGreaterThan(-1)
+    expect(credential).toBeGreaterThan(-1)
+    // Session, then budget, then anything that leaves the deployment.
+    expect(gate).toBeLessThan(budget)
+    expect(budget).toBeLessThan(credential)
+  })
+
+  test("the repository is read through its validator, never raw", () => {
+    // A raw `process.env.GITHUB_FEEDBACK_REPO` interpolated into `/repos/${…}`
+    // lets a path traversal in the variable escape the prefix and reach another
+    // endpoint — `../../user/repos` resolves to `/user/repos/issues`. Nobody
+    // untrusted can set it, but it fails silently, and `readRepo` is the one
+    // place that decides what the value may look like.
+    expect(feedbackCode).not.toContain("process.env.GITHUB_FEEDBACK_REPO")
+    expect(feedbackCode).toContain("readRepo()")
+  })
+
   test("no public function takes a userId argument", () => {
     // A caller-supplied id would let a signed-in user file under someone else's
     // name — the rule convex/userPreferences.ts states, restated here because

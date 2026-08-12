@@ -258,7 +258,15 @@ describe("the publishing path cannot read the private half", () => {
   test("the GitHub repository is never taken from the caller", () => {
     // `findDuplicates` interpolates a `repo:` qualifier. It must come from the
     // environment, or a caller could redirect the search.
-    expect(feedbackSource).toContain("process.env.GITHUB_FEEDBACK_REPO")
+    //
+    // Read through `readRepo()` rather than from `process.env` directly: the
+    // value is also interpolated into a URL path, where an unvalidated
+    // traversal escapes the `/repos/` prefix. The environment is still the only
+    // source — that is what this test is about — but there is now one validator
+    // between it and every use. See convex/lib/githubToken.ts.
+    expect(feedbackSource).toContain("readRepo()")
+    expect(feedbackSource).not.toContain("process.env.GITHUB_FEEDBACK_REPO")
+    expect(read("convex/lib/githubToken.ts")).toContain("process.env.GITHUB_FEEDBACK_REPO")
     const dupStart = feedbackSource.indexOf("export const findDuplicates")
     const dupEnd = feedbackSource.indexOf("// --- publication")
     const block = feedbackSource.slice(dupStart, dupEnd)

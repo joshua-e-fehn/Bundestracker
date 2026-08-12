@@ -102,7 +102,23 @@ export function parsePem(raw: string): ParsedPem | null {
   if (!match) return null
 
   // The BEGIN and END labels must agree. A block that opens as one kind of key
-  // and closes as another is truncated or spliced, not merely oddly formatted.
+  // and closes as another has been spliced from two different files.
+  //
+  // ⚠ This does **not** catch a truncated key, and an earlier version of this
+  // comment implied it did. A key cut in half whose `END` line survives still
+  // has matching labels and a body that happens to decode, so it reaches
+  // `importKey` — which throws, and is reduced to `private-key-unparseable`
+  // at the bottom of `importPrivateKey`. That is the right outcome (it fails
+  // closed, nothing is published, and the operator is told the key is
+  // unusable) but it is caught one layer lower than here, and the message is
+  // less specific than a length check could give.
+  //
+  // Detecting it properly means attempting the import, which would make this
+  // function async and impure and cost the property this module's header is
+  // built on. Accepted deliberately.
+  //
+  // The regex is also non-greedy, so a file holding several PEM blocks yields
+  // the first. That is what most PEM readers do and is left as is.
   const label = match[1].replace(/\s+/g, " ").trim()
   if (label !== match[3].replace(/\s+/g, " ").trim()) return null
 
@@ -191,15 +207,34 @@ export function readCredentials(input: {
 }
 
 /**
- * How long an app JWT is valid for.
+ * How long an app JWT is valid for, measured forward from *now*.
  *
  * GitHub rejects anything over ten minutes. Nine leaves a minute of headroom,
  * and the JWT is used immediately to mint an installation token rather than
  * being held, so its lifetime is a bound on clock skew rather than a cache
  * window — the caching that matters is of the *installation token*, in
  * convex/lib/githubToken.ts.
+ *
+ * ⚠ "From now", not from the backdated `iat`, and the distinction is the whole
+ * of the headroom. Writing `exp = issuedAt + TTL` adds the sixty seconds of
+ * backdating straight back on, so `exp - iat` came to exactly **600** — the
+ * documented maximum, with nothing spare, while this comment claimed nine
+ * minutes. Whether GitHub rejects `> 600` or `>= 600` is not worth depending
+ * on: under the strict reading every mint fails, and the error it produces
+ * (`installation-token-refused`) names the credential rather than the TTL,
+ * sending an operator to check an App id and key that are both correct.
+ *
+ * ⚠ The span GitHub measures is `exp - iat`, and `iat` is backdated — so the
+ * budget this constant spends is `TTL + CLOCK_SKEW`, not `TTL`. At nine minutes
+ * that is exactly 600 however `exp` is computed, which is why moving the base
+ * to `nowMs` was necessary but not sufficient. Eight minutes puts the span at
+ * 540 with a full minute spare.
+ *
+ * The JWT is spent immediately on a token mint and never held, so a shorter
+ * life costs nothing: the caching that matters is of the *installation token*,
+ * in convex/lib/githubToken.ts. lib/github-app.test.ts pins the span.
  */
-const JWT_TTL_SECONDS = 9 * 60
+const JWT_TTL_SECONDS = 8 * 60
 
 /**
  * Backdating on `iat`.
@@ -209,6 +244,33 @@ const JWT_TTL_SECONDS = 9 * 60
  * future is rejected outright. Sixty seconds is what GitHub suggests.
  */
 const CLOCK_SKEW_SECONDS = 60
+
+/**
+ * A non-reversible fingerprint of a private key, as hex.
+ *
+ * For deciding whether a cached installation token was minted under *this*
+ * credential. The cache used to compare only the installation id, so rotating
+ * `GITHUB_APP_PRIVATE_KEY` — the documented response to a suspected compromise —
+ * left a warm isolate serving a token minted under the old key for up to
+ * fifty-five minutes, while the operator believed rotation was complete.
+ *
+ * A SHA-256 over the *normalized DER* rather than over the supplied string, so
+ * the three accepted encodings of one key produce one fingerprint: re-pasting
+ * the same key in a different format must not read as a rotation and force a
+ * needless mint.
+ *
+ * ⚠ It is a digest, not the key. Comparing digests never materialises key bytes,
+ * which is what lets the cache identity live in convex/lib/githubToken.ts
+ * without that module holding the PEM — the "never leaves this module"
+ * invariant in this file's header stays true. It is not a secret, but it is not
+ * published either: nothing returns it to a caller or writes it to a row.
+ */
+export async function keyFingerprint(pem: string): Promise<string> {
+  const parsed = parsePem(pem)
+  if (!parsed) throw new Error("private-key-unparseable")
+  const digest = await crypto.subtle.digest("SHA-256", parsed.der.slice().buffer as ArrayBuffer)
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
 
 /**
  * A signed app JWT — the credential that buys an installation token.
@@ -224,12 +286,17 @@ const CLOCK_SKEW_SECONDS = 60
  */
 export async function appJwt(credentials: AppCredentials, nowMs: number): Promise<string> {
   const key = await importPrivateKey(credentials.privateKeyPem)
-  const issuedAt = Math.floor(nowMs / 1000) - CLOCK_SKEW_SECONDS
+  const seconds = Math.floor(nowMs / 1000)
 
   const signingInput = `${base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64Url(
     JSON.stringify({
-      iat: issuedAt,
-      exp: issuedAt + CLOCK_SKEW_SECONDS + JWT_TTL_SECONDS,
+      // Backdated, so a deployment clock running slightly fast does not present
+      // a token GitHub reads as issued in the future.
+      iat: seconds - CLOCK_SKEW_SECONDS,
+      // From `seconds`, deliberately not from the backdated value — see the
+      // note on JWT_TTL_SECONDS. The backdating buys tolerance on one end; it
+      // must not spend the whole budget on the other.
+      exp: seconds + JWT_TTL_SECONDS,
       iss: credentials.appId,
     }),
   )}`

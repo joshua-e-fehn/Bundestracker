@@ -3,7 +3,13 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { credentialFor, isPublishConfigured, resetTokenCache } from "../convex/lib/githubToken"
+import {
+  apiBaseIsAllowed,
+  credentialFor,
+  isPublishConfigured,
+  readRepo,
+  resetTokenCache,
+} from "../convex/lib/githubToken"
 
 /**
  * Minting, caching and refusing the GitHub credential.
@@ -205,6 +211,59 @@ describe("credentialFor: the App path", () => {
     expect(calls).toHaveLength(2)
   })
 
+  test("⚠ a rotated private key invalidates the cache", async () => {
+    // The failure this exists for: the cache used to compare `installationId`
+    // alone. An operator responding to a suspected compromise replaces the key
+    // and leaves the installation the same — which is the normal case, since it
+    // *is* the same installation — and every warm isolate went on serving a
+    // token minted under the old key for up to fifty-five minutes, while the
+    // operator believed the rotation was complete.
+    execFileSync("openssl", ["genrsa", "-traditional", "-out", join(dir, "rotated.pem"), "2048"], {
+      stdio: "ignore",
+    })
+    stubFetch((n) => tokenResponse(n === 0 ? "ghs_old_key" : "ghs_new_key", NOW, 60))
+
+    expect(await credentialFor(NOW)).toEqual({ token: "ghs_old_key", mode: "app" })
+    process.env.GITHUB_APP_PRIVATE_KEY = readFileSync(join(dir, "rotated.pem"), "utf8")
+    expect(await credentialFor(NOW + 1000)).toEqual({ token: "ghs_new_key", mode: "app" })
+    expect(calls).toHaveLength(2)
+  })
+
+  test("re-pasting the same key in another encoding is not a rotation", async () => {
+    // The fingerprint is taken over the normalized DER, so the three accepted
+    // encodings of one key are one identity. Otherwise an operator tidying the
+    // formatting of a working key would force a needless mint.
+    stubFetch((n) => tokenResponse(n === 0 ? "ghs_first" : "ghs_second", NOW, 60))
+
+    expect(await credentialFor(NOW)).toEqual({ token: "ghs_first", mode: "app" })
+    process.env.GITHUB_APP_PRIVATE_KEY = PRIVATE_KEY.replace(/\n/g, "\\n")
+    expect(await credentialFor(NOW + 1000)).toEqual({ token: "ghs_first", mode: "app" })
+    process.env.GITHUB_APP_PRIVATE_KEY = PRIVATE_KEY.replace(/\s+/g, " ").trim()
+    expect(await credentialFor(NOW + 2000)).toEqual({ token: "ghs_first", mode: "app" })
+    expect(calls).toHaveLength(1)
+  })
+
+  test("a corrected app id invalidates the cache", async () => {
+    // Same class as the key rotation: the App id is part of the signed JWT, so a
+    // token minted under the wrong one is not this App's token.
+    stubFetch((n) => tokenResponse(n === 0 ? "ghs_wrong_app" : "ghs_right_app", NOW, 60))
+    expect(await credentialFor(NOW)).toEqual({ token: "ghs_wrong_app", mode: "app" })
+    process.env.GITHUB_APP_ID = "9999999"
+    expect(await credentialFor(NOW + 1000)).toEqual({ token: "ghs_right_app", mode: "app" })
+    expect(calls).toHaveLength(2)
+  })
+
+  test("the cached identity never holds the key itself", async () => {
+    // The digest is what lets the cache identity live in convex/ without that
+    // module holding a PEM. A cache that stored the key would put it one
+    // `JSON.stringify` away from a log line.
+    stubFetch(() => tokenResponse("ghs_minted", NOW, 60))
+    await credentialFor(NOW)
+    const source = readFileSync(new URL("../convex/lib/githubToken.ts", import.meta.url), "utf8")
+    expect(source).toContain("keyFingerprint")
+    expect(source).not.toContain("privateKeyPem:")
+  })
+
   test("does not serve a cached token to a different installation", async () => {
     stubFetch((n) => tokenResponse(n === 0 ? "ghs_one" : "ghs_two", NOW, 60))
     await credentialFor(NOW)
@@ -267,11 +326,48 @@ describe("credentialFor: failures name the cause and leak nothing", () => {
     expect(await credentialFor(NOW)).toEqual({ failure: "app-id-invalid" })
   })
 
-  test("a failed mint is not cached", async () => {
-    // Otherwise a transient outage would be remembered as a credential.
+  test("a failure is never cached as a credential", async () => {
+    // A transient outage must not be remembered as a *token* — the next
+    // successful mint has to be picked up. It is remembered as a failure, which
+    // is a different thing and is tested below.
     stubFetch((n) => (n === 0 ? json({}, 500) : tokenResponse("ghs_recovered", NOW, 60)))
     expect(await credentialFor(NOW)).toEqual({ failure: "installation-token-refused" })
-    expect(await credentialFor(NOW + 1000)).toEqual({ token: "ghs_recovered", mode: "app" })
+    // Past the backoff floor, so the retry actually goes out.
+    expect(await credentialFor(NOW + 61_000)).toEqual({ token: "ghs_recovered", mode: "app" })
+  })
+
+  test("⚠ a broken credential is not re-minted on every call", async () => {
+    // The cost of *not* having this: a misconfigured App — the exact state this
+    // module exists to report — issued a fresh `POST /access_tokens` for every
+    // call that reached it, forever, because a failure stored nothing. GitHub
+    // rate-limits token creation, so sustained calls against a broken App could
+    // throttle it and take down publishing for reports that had nothing wrong
+    // with them.
+    stubFetch(() => json({ message: "Bad credentials" }, 401))
+
+    expect(await credentialFor(NOW)).toEqual({ failure: "installation-token-refused" })
+    expect(calls).toHaveLength(1)
+
+    // Inside the floor: same answer, no second request.
+    expect(await credentialFor(NOW + 1000)).toEqual({ failure: "installation-token-refused" })
+    expect(await credentialFor(NOW + 59_000)).toEqual({ failure: "installation-token-refused" })
+    expect(calls).toHaveLength(1)
+
+    // Past it: tried again, so an operator's fix is picked up within a minute.
+    await credentialFor(NOW + 61_000)
+    expect(calls).toHaveLength(2)
+  })
+
+  test("a corrected credential is retried immediately, not after the backoff", async () => {
+    // ⚠ The backoff must not punish the fix. An operator who mistyped the key,
+    // saw the failure, and corrected it would otherwise wait out a minute
+    // wondering whether the correction took.
+    stubFetch((n) => (n === 0 ? json({}, 401) : tokenResponse("ghs_after_fix", NOW, 60)))
+    expect(await credentialFor(NOW)).toEqual({ failure: "installation-token-refused" })
+
+    process.env.GITHUB_APP_INSTALLATION_ID = "987654"
+    expect(await credentialFor(NOW + 1000)).toEqual({ token: "ghs_after_fix", mode: "app" })
+    expect(calls).toHaveLength(2)
   })
 
   test("no failure reason contains key material or a token", async () => {
@@ -310,8 +406,124 @@ describe("credentialFor: the static fallback, and when it is refused", () => {
     expect(await credentialFor(NOW)).toEqual({ failure: "installation-id-missing" })
   })
 
-  test("nothing configured", async () => {
-    expect(await credentialFor(NOW)).toEqual({ failure: "not-configured" })
+  test("nothing configured at all reports the repository first", async () => {
+    // `repo-missing` rather than `not-configured`: the repository is checked
+    // before any credential work, because a deployment with nowhere to publish
+    // cannot publish however good its credentials are. `publishReport` maps this
+    // one back to `github-not-configured`, so the operator-facing string for a
+    // deliberate kill switch is unchanged.
+    expect(await credentialFor(NOW)).toEqual({ failure: "repo-missing" })
+  })
+})
+
+describe("the repository is validated, not merely present", () => {
+  beforeEach(() => {
+    Object.assign(process.env, APP_ENV)
+    stubFetch(() => tokenResponse("ghs_minted", NOW, 60))
+  })
+
+  test("accepts an ordinary owner/name", () => {
+    expect(readRepo()).toEqual({ repo: "joshua-e-fehn/Bundestracker" })
+  })
+
+  test("accepts the punctuation GitHub actually allows", () => {
+    for (const repo of ["a/b", "owner/my.repo", "owner/my-repo", "owner/my_repo", "a-b.c/d_e.f"]) {
+      process.env.GITHUB_FEEDBACK_REPO = repo
+      expect(readRepo()).toEqual({ repo })
+    }
+  })
+
+  test("⚠ refuses a value that would escape the /repos/ prefix", async () => {
+    // Measured against the real interpolation: `../../user/repos` in this
+    // variable resolves to `https://api.github.com/user/repos/issues` — a
+    // different endpoint entirely, reached silently. Nobody untrusted can set
+    // this, so the realistic cause is a paste error; what makes it worth
+    // catching is that every one of these failures looks like a working request.
+    for (const repo of [
+      "../../user/repos",
+      "a/b/../../../user",
+      "owner/../../orgs/evil/repos",
+      "owner/name?x=1",
+      "owner/name#frag",
+      "owner/name/extra",
+      "owner",
+      "/name",
+      "owner/",
+      "owner name/x",
+      "owner/%2e%2e",
+      "../x",
+      "./x",
+      "x/..",
+      "x/.",
+    ]) {
+      process.env.GITHUB_FEEDBACK_REPO = repo
+      expect({ repo, result: readRepo() }).toEqual({ repo, result: { problem: "repo-invalid" } })
+    }
+  })
+
+  test("a malformed repository fails before any credential work", async () => {
+    process.env.GITHUB_FEEDBACK_REPO = "../../user/repos"
+    expect(await credentialFor(NOW)).toEqual({ failure: "repo-invalid" })
+    // No token was minted for a request that could never have been published.
+    expect(calls).toHaveLength(0)
+  })
+
+  test("and the widget is not offered for it either", () => {
+    // Otherwise the form renders, accepts reports, and every publish fails —
+    // the state `isPublishConfigured` exists to prevent, reached by a different
+    // route.
+    process.env.GITHUB_FEEDBACK_REPO = "owner/name?x=1"
+    expect(isPublishConfigured()).toBe(false)
+  })
+})
+
+describe("the API base is validated", () => {
+  beforeEach(() => {
+    Object.assign(process.env, APP_ENV)
+    stubFetch(() => tokenResponse("ghs_minted", NOW, 60))
+  })
+
+  test("unset is fine and means api.github.com", () => {
+    delete process.env.GITHUB_API_BASE
+    expect(apiBaseIsAllowed()).toBe(true)
+  })
+
+  test("https is fine, including GitHub Enterprise", () => {
+    for (const base of ["https://api.github.com", "https://ghe.example.com/api/v3"]) {
+      process.env.GITHUB_API_BASE = base
+      expect(apiBaseIsAllowed()).toBe(true)
+    }
+  })
+
+  test("loopback over http is allowed, because that is what a local stub is", () => {
+    for (const base of ["http://127.0.0.1:8787", "http://localhost:8787"]) {
+      process.env.GITHUB_API_BASE = base
+      expect(apiBaseIsAllowed()).toBe(true)
+    }
+  })
+
+  test("⚠ plaintext to a non-loopback host is refused", async () => {
+    // This variable redirects the **signed-JWT token mint** as well as the
+    // issue POST, and the verification runbook tells operators to set it for
+    // stub runs — so a leftover value is a documented workflow rather than a
+    // hypothetical. A live installation-token request must not go out in the
+    // clear to somebody else's host.
+    for (const base of [
+      "http://evil.example.com",
+      "http://10.0.0.5:8787",
+      "ftp://x/y",
+      "not a url",
+    ]) {
+      process.env.GITHUB_API_BASE = base
+      expect({ base, allowed: apiBaseIsAllowed() }).toEqual({ base, allowed: false })
+    }
+  })
+
+  test("a refused base stops the mint and hides the widget", async () => {
+    process.env.GITHUB_API_BASE = "http://evil.example.com"
+    expect(await credentialFor(NOW)).toEqual({ failure: "api-base-invalid" })
+    expect(calls).toHaveLength(0)
+    expect(isPublishConfigured()).toBe(false)
   })
 })
 

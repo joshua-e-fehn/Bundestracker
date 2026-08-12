@@ -33,7 +33,7 @@ import {
   query,
 } from "./_generated/server"
 import { getUserId, requireUserId } from "./lib/auth"
-import { credentialFor, isPublishConfigured } from "./lib/githubToken"
+import { credentialFor, isPublishConfigured, readRepo } from "./lib/githubToken"
 import { preferredLocale, safeDiagnostics } from "./schema"
 
 /**
@@ -892,22 +892,35 @@ export const findDuplicates = action({
     // caller consume quota on the way out.
     await requireUserId(ctx)
 
-    const repo = process.env.GITHUB_FEEDBACK_REPO
-    if (!repo) return []
+    // ⚠ The budget is charged before **any** outbound request, including the
+    // token mint.
+    //
+    // It used to sit after `credentialFor`, and the comment below claiming it
+    // came "before the outbound call" was true of the search and false of the
+    // mint that preceded it by seven lines. A caller who had exhausted their
+    // search budget still cost a full `POST /access_tokens` on every cold
+    // isolate — and with a broken credential, on every call — which is the
+    // opposite of what a budget is for. `claimSearchBudget` is a local
+    // transaction; `credentialFor` may reach GitHub. Cheapest and most
+    // authoritative first.
+    if (
+      !(await ctx.runMutation(internal.feedback.claimSearchBudget, { clientKey: args.clientKey }))
+    ) {
+      return []
+    }
+
     const credential = await credentialFor(Date.now())
     // A duplicate check never blocks a report, so an unconfigured or broken
     // credential is the same as finding nothing. The reason is not surfaced to
     // the browser: it names which operator variable is wrong.
     if ("failure" in credential) return []
     const token = credential.token
-
-    // Charged before the outbound call, not merely observed — see
-    // `claimSearchBudget` for why counting *reports* could never bound this.
-    if (
-      !(await ctx.runMutation(internal.feedback.claimSearchBudget, { clientKey: args.clientKey }))
-    ) {
-      return []
-    }
+    // Validated rather than read raw — see `readRepo`. `credentialFor` has
+    // already refused a malformed value, so this cannot fail here; it is
+    // destructured this way so the raw environment variable is not reachable.
+    const repoResult = readRepo()
+    if ("problem" in repoResult) return []
+    const repo = repoResult.repo
 
     const terms = duplicateSearchTerms(
       truncate(args.title, LIMITS.title),
@@ -1113,31 +1126,40 @@ export const publishReport = internalAction({
     })
     if (!report || report.status === "published") return null
 
-    const repo = process.env.GITHUB_FEEDBACK_REPO
-    const credential = repo
-      ? await credentialFor(Date.now())
-      : { failure: "not-configured" as const }
-    if (!repo || "failure" in credential) {
-      // The kill switch, the un-configured state, and a misconfigured GitHub
-      // App all land here. All leave the report stored and unpublished, which
-      // is the safe direction: nothing is lost, and nothing is posted from a
-      // deployment that was never wired up.
+    // One call decides all of it: the repository's shape, the API base, and the
+    // credential. `credentialFor` refuses a missing or malformed repo before it
+    // does any credential work, so the two-branch dance this used to perform —
+    // read the raw variable, then conditionally ask for a credential — is gone
+    // along with the chance of the two disagreeing.
+    const credential = await credentialFor(Date.now())
+    if ("failure" in credential) {
+      // The kill switch, the un-configured state, a malformed repository, a
+      // disallowed API base, and a misconfigured GitHub App all land here. All
+      // leave the report stored and unpublished, which is the safe direction:
+      // nothing is lost, and nothing is posted from a deployment that was never
+      // wired up.
       //
-      // The reason names *which* credential is at fault — `app-id-invalid`,
-      // `private-key-unparseable`, `installation-token-refused` — because the
-      // operator reading this column is the person who set the variable, and
-      // "github-not-configured" for all seven distinct mistakes is what makes a
-      // misconfigured App indistinguishable from a deliberate kill switch.
-      // These are fixed strings from a closed union: no value is ever quoted.
+      // The reason names *which* variable is at fault — `repo-invalid`,
+      // `app-id-invalid`, `private-key-unparseable`, `installation-token-refused`
+      // — because the operator reading this column is the person who set it, and
+      // one string for every distinct mistake is what makes a misconfiguration
+      // indistinguishable from a deliberate kill switch. These are fixed strings
+      // from a closed union: no value is ever quoted.
       await ctx.runMutation(internal.feedback.recordPublication, {
         reportId: args.reportId,
         status: "failed",
+        failureReason:
+          credential.failure === "repo-missing"
+            ? "github-not-configured"
+            : `github-${credential.failure}`,
         githubIssueNumber: null,
         githubIssueUrl: null,
-        failureReason: !repo ? "github-not-configured" : `github-${credential.failure}`,
       })
       return null
     }
+    const repoResult = readRepo()
+    if ("problem" in repoResult) return null
+    const repo = repoResult.repo
     const token = credential.token
 
     // ⚠ A retry must not file a second issue for the same report.

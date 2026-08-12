@@ -257,10 +257,34 @@ describe("appJwt signs a real, verifiable RS256 assertion", () => {
     // outright, and the deployment's clock is not GitHub's.
     expect(payload.iat).toBe(seconds - 60)
 
-    // GitHub refuses anything more than ten minutes out. The margin is what
-    // stops a clock a few seconds fast from making every mint fail.
-    expect(payload.exp - payload.iat).toBeLessThanOrEqual(600)
+    // ⚠ GitHub documents ten minutes as the maximum, and this used to sit
+    // exactly on it: `exp` was computed from the *backdated* `iat`, which added
+    // the sixty seconds of backdating straight back on, so `exp - iat` was 600
+    // with nothing spare — while the code's comment described nine minutes.
+    // Whether GitHub's check is `>` or `>=` is not worth depending on: under the
+    // strict reading every mint fails with `installation-token-refused`, an
+    // error that names the credential rather than the TTL and sends an operator
+    // to check an App id and key that are both correct.
+    //
+    // 570 rather than 600, so the assertion fails on a *regression* rather than
+    // only on an outright violation.
+    expect(payload.exp - payload.iat).toBeLessThanOrEqual(570)
+    // 480 forward + 60 backdated = 540, a full minute under the ceiling.
+    expect(payload.exp - payload.iat).toBe(540)
+    // Measured forward from now, not from the backdated instant.
+    expect(payload.exp).toBe(seconds + 480)
     expect(payload.exp).toBeGreaterThan(seconds)
+  })
+
+  test("the backdating buys tolerance without spending the TTL budget", async () => {
+    // Both ends stated together, because the bug was in their *relationship*
+    // rather than in either value: `iat` must be behind now, `exp` must be
+    // ahead of now, and the span between them must stay under GitHub's ceiling.
+    const { payload } = decodeJwt(await appJwt({ ...CREDENTIALS, privateKeyPem: keys.pkcs1 }, NOW))
+    const seconds = Math.floor(NOW / 1000)
+    expect(seconds - payload.iat).toBe(60)
+    expect(payload.exp - seconds).toBe(480)
+    expect(payload.exp - payload.iat).toBeLessThan(600)
   })
 
   test("is base64url, with no padding that would break the wire format", async () => {

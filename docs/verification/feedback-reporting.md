@@ -531,7 +531,11 @@ bunx convex env set --prod GITHUB_APP_ID              "<numeric app id>"
 bunx convex env set --prod GITHUB_APP_INSTALLATION_ID "<numeric installation id>"
 bunx convex env set --prod GITHUB_APP_PRIVATE_KEY     "$(cat ~/Downloads/…private-key.pem)"
 bunx convex env set --prod GITHUB_FEEDBACK_REPO       "joshua-e-fehn/Bundestracker"
-# GITHUB_API_BASE is optional — unset means api.github.com.
+# GITHUB_API_BASE is optional — unset means api.github.com. It must be https,
+# unless the host is loopback (which is what a local stub is): it redirects the
+# signed-JWT token mint as well as the issue POST, so a leftover value from a
+# stub run would send a live installation-token request wherever it points.
+# A disallowed value fails closed as `github-api-base-invalid`.
 
 # Already set for Better Auth. Verify it, because the feedback feature now
 # reads it too:
@@ -628,14 +632,21 @@ which variable is at fault. No reason ever quotes a value.
 
 | Reason | What it means |
 |---|---|
-| `github-not-configured` | No `GITHUB_FEEDBACK_REPO`. |
+| `github-not-configured` | No `GITHUB_FEEDBACK_REPO` — the kill switch, or a deployment never wired up. |
+| `github-repo-invalid` | `GITHUB_FEEDBACK_REPO` is not `owner/name`. A trailing `?x=1`, an extra path segment, or a `..` — all of which would otherwise produce a valid request against the wrong resource. |
+| `github-api-base-invalid` | `GITHUB_API_BASE` is not a URL, or is plaintext `http:` to something other than loopback. Usually a stub value left behind after a verification run. |
 | `github-not-configured` *(via credential)* | Repo set, no credential of either kind. |
 | `github-app-id-invalid` / `github-installation-id-invalid` | Not a bare integer. A stray character is the usual cause. |
-| `github-private-key-unparseable` | Not a PEM, or not an RSA key. |
+| `github-private-key-unparseable` | Not a PEM, or not an RSA key. Also what a *truncated* key produces, since the failure surfaces at import rather than at parse. |
 | `github-private-key-wrong-type` | A public key or certificate was pasted instead. |
-| `github-installation-token-refused` | GitHub rejected the JWT — wrong App ID, key not this App's, or the App is not installed on the repo. |
+| `github-installation-token-refused` | GitHub rejected the JWT — wrong App ID, key not this App's, or the App is not installed on the repo. Retried at most once a minute while it keeps failing, so a broken credential cannot hammer GitHub's token endpoint. |
 | `github-installation-token-unreachable` | Network failure reaching GitHub. |
 | `github-http-404` | The App is installed but lacks `Issues: Read and write`, or the repo name is wrong. |
+
+Rotating `GITHUB_APP_PRIVATE_KEY` takes effect on the next request: the token
+cache is keyed on the App id, the installation id and a SHA-256 of the key, so a
+new key is a different cache entry rather than something to wait out. Re-pasting
+the *same* key in a different encoding is not a rotation and costs nothing.
 
 Re-queue everything that failed once the cause is fixed:
 
