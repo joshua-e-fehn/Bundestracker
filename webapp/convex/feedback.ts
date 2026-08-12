@@ -33,7 +33,7 @@ import {
   query,
 } from "./_generated/server"
 import { getUserId, requireUserId } from "./lib/auth"
-import { credentialFor, isPublishConfigured, readRepo } from "./lib/githubToken"
+import { credentialFor, githubApiBase, isPublishConfigured, readRepo } from "./lib/githubToken"
 import { preferredLocale, safeDiagnostics } from "./schema"
 
 /**
@@ -928,13 +928,19 @@ export const findDuplicates = action({
     )
     if (terms.length === 0) return []
 
+    // Cannot be null here — `credentialFor` above already refused a disallowed
+    // base — but the branch is what makes that structural rather than a fact
+    // about the order of these two calls.
+    const apiBase = githubApiBase()
+    if (!apiBase) return []
+
     // `repo:` is supplied here from an environment variable, never from the
     // caller. The caller's contribution is `terms`, which cannot contain a
     // colon — see `duplicateSearchTerms`.
     const query = `repo:${repo} is:issue ${terms.join(" ")}`
     try {
       const response = await fetch(
-        `${githubApiBase()}/search/issues?per_page=5&q=${encodeURIComponent(query)}`,
+        `${apiBase}/search/issues?per_page=5&q=${encodeURIComponent(query)}`,
         { headers: githubHeaders(token) },
       )
       if (!response.ok) return []
@@ -958,21 +964,26 @@ export const findDuplicates = action({
 // --- publication ----------------------------------------------------------
 
 /**
- * The GitHub API root.
+ * ## Where the GitHub API root comes from
  *
- * Overridable so this integration can be exercised against a stub — the
- * public/private split and the issue payload are the two things most worth
- * verifying end to end, and neither can be verified by pointing at the real
- * API and filing junk issues in a public repository.
+ * `githubApiBase()` is imported from convex/lib/githubToken.ts rather than
+ * defined here. This file held its own copy, reading `process.env.GITHUB_API_BASE`
+ * raw: not exploitable, because every caller runs after `credentialFor` has
+ * already refused a disallowed base — but the guarantee was **call ordering**,
+ * which is a convention, while the identical problem for `GITHUB_FEEDBACK_REPO`
+ * was fixed by construction. A new function calling the local copy without first
+ * asking for a credential would have reintroduced the unvalidated read with
+ * nothing to catch it.
  *
- * It doubles as GitHub Enterprise support (`https://ghe.example.com/api/v3`),
- * which is the reason it is a documented operator variable rather than a test
- * seam. Unset, it is `api.github.com` — a deployment that sets nothing talks to
- * GitHub, which is the only safe default.
+ * The variable is still overridable — that is what lets this integration be
+ * exercised against a stub, and it doubles as GitHub Enterprise support
+ * (`https://ghe.example.com/api/v3`). What changed is that it is validated in
+ * one place and returns `null` when it may not be used, so every call site has
+ * to have a branch for the refusal instead of silently talking to the default.
+ *
+ * `lib/feedback-authorization.test.ts` asserts this module contains no raw read
+ * of the variable, the same way it does for the repository.
  */
-function githubApiBase(): string {
-  return (process.env.GITHUB_API_BASE ?? "https://api.github.com").replace(/\/+$/, "")
-}
 
 /** Headers every GitHub call carries. The API version is pinned: an unpinned
  * call silently follows whatever GitHub makes current, and this code parses the
@@ -1004,10 +1015,15 @@ async function findIssueForReport(
   token: string,
   reportId: string,
 ): Promise<{ number: number; url: string } | null> {
+  // Null is the same as an unavailable search here: the caller proceeds to POST,
+  // which is the pre-existing behaviour rather than a new failure mode.
+  const apiBase = githubApiBase()
+  if (!apiBase) return null
+
   try {
     const query = `repo:${repo} is:issue in:body "${reportId}"`
     const response = await fetch(
-      `${githubApiBase()}/search/issues?per_page=1&q=${encodeURIComponent(query)}`,
+      `${apiBase}/search/issues?per_page=1&q=${encodeURIComponent(query)}`,
       { headers: githubHeaders(token) },
     )
     if (!response.ok) return null
@@ -1188,6 +1204,21 @@ export const publishReport = internalAction({
       }
     }
 
+    // Unreachable while `credentialFor` above is the only way in — it refuses a
+    // disallowed base before minting — but recorded rather than assumed away, so
+    // the row names the cause if a future edit ever reaches here without it.
+    const apiBase = githubApiBase()
+    if (!apiBase) {
+      await ctx.runMutation(internal.feedback.recordPublication, {
+        reportId: args.reportId,
+        status: "failed",
+        githubIssueNumber: null,
+        githubIssueUrl: null,
+        failureReason: "github-api-base-invalid",
+      })
+      return null
+    }
+
     const publicReport: PublicReport = {
       kind: report.kind,
       title: report.title,
@@ -1202,7 +1233,7 @@ export const publishReport = internalAction({
     }
 
     try {
-      const response = await fetch(`${githubApiBase()}/repos/${repo}/issues`, {
+      const response = await fetch(`${apiBase}/repos/${repo}/issues`, {
         method: "POST",
         headers: githubHeaders(token),
         body: JSON.stringify({

@@ -152,6 +152,38 @@ describe("every public feedback function requires a session", () => {
     expect(feedbackCode).toContain("readRepo()")
   })
 
+  test("⚠ the API base is read through its validator too, never raw", () => {
+    // The same rule as the repository, and it was not always so: this module
+    // kept its own `githubApiBase()` reading the variable directly. That was
+    // never exploitable — every caller runs after `credentialFor`, which
+    // refuses a disallowed base before minting — but it held by **call
+    // ordering**, and a new function calling the local copy without asking for
+    // a credential first would have reintroduced the unvalidated read with
+    // nothing to catch it.
+    //
+    // The variable redirects the signed-JWT token mint as well as the issue
+    // POST, so "protected by convention" is the wrong strength for it. One
+    // exported reader, imported here.
+    expect(feedbackCode).not.toContain("process.env.GITHUB_API_BASE")
+    expect(feedbackCode).toMatch(/import \{[^}]*githubApiBase[^}]*\} from "\.\/lib\/githubToken"/)
+    // And it is not redefined locally under the same name, which would satisfy
+    // the import assertion above while shadowing it.
+    expect(feedbackCode).not.toMatch(/function githubApiBase\(/)
+  })
+
+  test("the validated reader is the only place either variable is read", () => {
+    // Both halves of the rule stated against the module that owns them, so a
+    // future edit that moves a read *out* of the validator fails here rather
+    // than only failing the negative assertions above.
+    const tokenCode = code("convex/lib/githubToken.ts")
+    expect(tokenCode).toContain("process.env.GITHUB_FEEDBACK_REPO")
+    expect(tokenCode).toContain("process.env.GITHUB_API_BASE")
+    // Returning null rather than falling back to api.github.com: a deployment
+    // that set the variable meant to redirect these calls, and quietly sending
+    // them to GitHub instead is a different wrong answer, not a recovery.
+    expect(tokenCode).toContain("export function githubApiBase(): string | null")
+  })
+
   test("no public function takes a userId argument", () => {
     // A caller-supplied id would let a signed-in user file under someone else's
     // name — the rule convex/userPreferences.ts states, restated here because
@@ -213,14 +245,20 @@ describe("the credential never becomes reachable from a public caller", () => {
     expect(code("lib/github-app.ts")).not.toMatch(/console\./)
   })
 
-  test("the two GitHub API roots agree", () => {
-    // The token mint and the calls it authenticates must reach the same host,
-    // or a stubbed verification run would authenticate against one and publish
-    // to the other. Duplicated deliberately (see the note on `githubApiBase`);
-    // this is what keeps the duplicate honest.
-    const shape = /process\.env\.GITHUB_API_BASE \?\? "https:\/\/api\.github\.com"/
-    expect(feedbackCode).toMatch(shape)
-    expect(code("convex/lib/githubToken.ts")).toMatch(shape)
+  test("the token mint and the calls it authenticates share one API root", () => {
+    // The property this has always been about: a stubbed verification run must
+    // not authenticate against one host and publish to another.
+    //
+    // It used to be asserted by checking that two *copies* of the reader were
+    // textually identical. There is now one reader, exported from the module
+    // that validates it, so the two cannot disagree by construction — and this
+    // asserts that shape instead, because a re-introduced copy would satisfy a
+    // text-equality check while being exactly the regression it was watching
+    // for.
+    const tokenCode = code("convex/lib/githubToken.ts")
+    const readers = [...tokenCode.matchAll(/process\.env\.GITHUB_API_BASE/g)]
+    expect(readers).toHaveLength(1)
+    expect(feedbackCode).not.toContain("process.env.GITHUB_API_BASE")
   })
 
   test("a failure reason is a fixed string, never an interpolated value", () => {

@@ -6,6 +6,7 @@ import { join } from "node:path"
 import {
   apiBaseIsAllowed,
   credentialFor,
+  githubApiBase,
   isPublishConfigured,
   readRepo,
   resetTokenCache,
@@ -358,6 +359,46 @@ describe("credentialFor: failures name the cause and leak nothing", () => {
     expect(calls).toHaveLength(2)
   })
 
+  test("a network blip is held for the same minute as a bad credential", async () => {
+    // ⚠ Documenting an accepted trade-off, not asserting an ideal.
+    //
+    // The backoff applies to every failure class uniformly, including
+    // `installation-token-unreachable` — a thrown `fetch`, which is a network
+    // blip rather than anything the operator got wrong. So a single connection
+    // reset suppresses retries for a full minute even if the network recovers
+    // a second later, and the 60s constant is justified by GitHub's
+    // token-endpoint rate limit, which a failed connection never reached.
+    //
+    // Accepted because the cost is bounded and self-healing: `publishReport`
+    // records `failed` and `republishFailed` re-queues, so no report is lost —
+    // it publishes up to a minute later. `findDuplicates` degrades to `[]`,
+    // which is the documented "a duplicate check never blocks a report"
+    // contract. What this test buys is that the behaviour is *pinned*: a future
+    // change to per-class floors has to come here and say so, rather than
+    // altering recovery timing silently.
+    let networkDown = true
+    stubFetch(() => {
+      if (networkDown) throw new TypeError("fetch failed")
+      return tokenResponse("ghs_back", NOW, 60)
+    })
+
+    expect(await credentialFor(NOW)).toEqual({ failure: "installation-token-unreachable" })
+    expect(calls).toHaveLength(1)
+
+    // The network recovers immediately — and is not consulted, because the
+    // failure is held like any other.
+    networkDown = false
+    expect(await credentialFor(NOW + 1000)).toEqual({ failure: "installation-token-unreachable" })
+    expect(await credentialFor(NOW + 30_000)).toEqual({ failure: "installation-token-unreachable" })
+    expect(calls).toHaveLength(1)
+
+    // Past the floor: recovered, and the token is cached from there.
+    expect(await credentialFor(NOW + 61_000)).toEqual({ token: "ghs_back", mode: "app" })
+    expect(calls).toHaveLength(2)
+    expect(await credentialFor(NOW + 62_000)).toEqual({ token: "ghs_back", mode: "app" })
+    expect(calls).toHaveLength(2)
+  })
+
   test("a corrected credential is retried immediately, not after the backoff", async () => {
     // ⚠ The backoff must not punish the fix. An operator who mistyped the key,
     // saw the failure, and corrected it would otherwise wait out a minute
@@ -516,6 +557,28 @@ describe("the API base is validated", () => {
     ]) {
       process.env.GITHUB_API_BASE = base
       expect({ base, allowed: apiBaseIsAllowed() }).toEqual({ base, allowed: false })
+    }
+  })
+
+  test("the validated reader returns a usable base, or null — never a fallback", () => {
+    // Every outbound call is built from this one function, in both modules.
+    // Falling back to api.github.com on a bad value would be worse than
+    // refusing: an operator who set the variable meant to redirect these calls,
+    // and quietly sending them to GitHub instead is a different wrong answer.
+    delete process.env.GITHUB_API_BASE
+    expect(githubApiBase()).toBe("https://api.github.com")
+
+    process.env.GITHUB_API_BASE = "https://ghe.example.com/api/v3"
+    expect(githubApiBase()).toBe("https://ghe.example.com/api/v3")
+
+    // Trailing slashes stripped, or a caller appending `/repos/…` produces a
+    // double slash that GitHub does not route.
+    process.env.GITHUB_API_BASE = "http://127.0.0.1:8787/"
+    expect(githubApiBase()).toBe("http://127.0.0.1:8787")
+
+    for (const base of ["http://evil.example.com", "ftp://x/y", "not a url"]) {
+      process.env.GITHUB_API_BASE = base
+      expect({ base, value: githubApiBase() }).toEqual({ base, value: null })
     }
   })
 

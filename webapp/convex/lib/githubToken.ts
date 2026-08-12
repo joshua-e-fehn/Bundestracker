@@ -99,17 +99,55 @@ export function readRepo(): { repo: string } | { problem: CredentialFailure } {
  * stub is and which cannot be reached from outside the deployment anyway.
  */
 export function apiBaseIsAllowed(): boolean {
+  return githubApiBase() !== null
+}
+
+/** GitHub's own API root, and the value a deployment that sets nothing uses. */
+const DEFAULT_API_BASE = "https://api.github.com"
+
+/**
+ * The API root every outbound GitHub call must be built from, or `null` when the
+ * configured one may not be used.
+ *
+ * ## Why this is the only reader, and why it returns null rather than a default
+ *
+ * `convex/feedback.ts` used to keep its own copy of this function, reading the
+ * raw variable. That copy was not exploitable — every one of its callers runs
+ * after `credentialFor` has already refused a disallowed base — but it held by
+ * **call ordering**, which is a convention, while the same class of problem for
+ * `GITHUB_FEEDBACK_REPO` was fixed by construction. A new function that called
+ * the local copy without first asking for a credential, or a reordering of one
+ * that does, would have reintroduced the unvalidated read with nothing to catch
+ * it. One exported reader makes the guarantee structural in both variables.
+ *
+ * Falling back to `api.github.com` on a bad value would be worse than refusing:
+ * an operator who set the variable meant to redirect these calls, and quietly
+ * sending them to GitHub instead is a different wrong answer, not a recovery.
+ * `null` forces every caller to have a branch for it, which is what makes the
+ * refusal visible as `api-base-invalid` rather than silent.
+ *
+ * The trailing-slash strip stays here: it is the reason the value is normalised
+ * at all, and a caller appending `/repos/…` to a base ending in `/` would
+ * otherwise produce a double slash that GitHub does not route.
+ */
+export function githubApiBase(): string | null {
   const raw = process.env.GITHUB_API_BASE
-  if (!raw) return true
+  if (!raw) return DEFAULT_API_BASE
+
   let url: URL
   try {
     url = new URL(raw)
   } catch {
-    return false
+    return null
   }
+  // Loopback is what a local stub is, and it cannot be reached from outside the
+  // deployment — so `http:` is allowed there and nowhere else. `URL` lowercases
+  // the hostname, so `LOCALHOST` matches.
   const loopback =
     url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]"
-  return url.protocol === "https:" || (url.protocol === "http:" && loopback)
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return null
+
+  return raw.replace(/\/+$/, "")
 }
 
 /**
@@ -349,9 +387,16 @@ async function mintInstallationToken(
     }
   }
 
+  // Re-read rather than passed in: `credentialFor` has already refused a
+  // disallowed base, so this cannot be null here — but reading it through the
+  // one validated accessor means that stays true if this function is ever
+  // called from somewhere else.
+  const apiBase = githubApiBase()
+  if (!apiBase) return { failure: "api-base-invalid" }
+
   try {
     const response = await fetch(
-      `${githubApiBase()}/app/installations/${credentials.installationId}/access_tokens`,
+      `${apiBase}/app/installations/${credentials.installationId}/access_tokens`,
       {
         method: "POST",
         headers: {
@@ -377,18 +422,4 @@ async function mintInstallationToken(
   } catch {
     return { failure: "installation-token-unreachable" }
   }
-}
-
-/**
- * The GitHub API root.
- *
- * Duplicated from convex/feedback.ts rather than imported, because importing it
- * would make that module and this one mutually dependent for one line. Kept
- * byte-identical deliberately; `lib/feedback-boundaries.test.ts` asserts the two
- * agree, so a change to either that leaves the other behind fails a test rather
- * than silently pointing the token mint at a different host from the calls it
- * authenticates.
- */
-function githubApiBase(): string {
-  return (process.env.GITHUB_API_BASE ?? "https://api.github.com").replace(/\/+$/, "")
 }

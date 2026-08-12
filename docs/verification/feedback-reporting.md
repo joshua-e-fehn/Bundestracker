@@ -634,7 +634,7 @@ which variable is at fault. No reason ever quotes a value.
 |---|---|
 | `github-not-configured` | No `GITHUB_FEEDBACK_REPO` — the kill switch, or a deployment never wired up. |
 | `github-repo-invalid` | `GITHUB_FEEDBACK_REPO` is not `owner/name`. A trailing `?x=1`, an extra path segment, or a `..` — all of which would otherwise produce a valid request against the wrong resource. |
-| `github-api-base-invalid` | `GITHUB_API_BASE` is not a URL, or is plaintext `http:` to something other than loopback. Usually a stub value left behind after a verification run. |
+| `github-api-base-invalid` | `GITHUB_API_BASE` is not a URL, or is plaintext `http:` to something other than loopback. Usually a stub value left behind after a verification run. One validated reader in `convex/lib/githubToken.ts` builds every outbound URL, so this refuses the token mint and the issue POST alike rather than depending on which runs first. |
 | `github-not-configured` *(via credential)* | Repo set, no credential of either kind. |
 | `github-app-id-invalid` / `github-installation-id-invalid` | Not a bare integer. A stray character is the usual cause. |
 | `github-private-key-unparseable` | Not a PEM, or not an RSA key. Also what a *truncated* key produces, since the failure surfaces at import rather than at parse. |
