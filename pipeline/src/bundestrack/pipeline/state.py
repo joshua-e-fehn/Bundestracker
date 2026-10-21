@@ -233,7 +233,10 @@ class SyncState(BaseModel):
         current = _parse(self.watermark(wahlperiode, stream))
         if current is not None and current >= _aware(newest):
             return
-        self.watermarks[self._key(wahlperiode, stream)] = newest.isoformat()
+        # Stored aware: the mark is sent back to DIP as `f.aktualisiert.start`,
+        # and how DIP reads an offset-less value is unverified. An aware source
+        # value keeps its own offset unchanged.
+        self.watermarks[self._key(wahlperiode, stream)] = _aware(newest).isoformat()
 
     def repair_future_watermarks(self, now: datetime) -> list[tuple[str, str, str | None]]:
         """Rewind every stored watermark that lies after `now`.

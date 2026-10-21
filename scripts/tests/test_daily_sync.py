@@ -214,31 +214,6 @@ def test_an_unlocked_writer_process_skips_the_tick(host) -> None:
     assert not host["calls"].exists()
 
 
-def _default_pattern_env(host) -> dict[str, str]:
-    """Drop the test-only pattern override, so the shipped default is used."""
-    return {"BUNDESTRACK_WRITER_PATTERN": ""}
-
-
-def test_a_real_pipeline_process_makes_the_tick_skip(host, tmp_path) -> None:
-    package = tmp_path / "fakepkg" / "bundestrack"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("")
-    (package / "cli.py").write_text("import time\ntime.sleep(30)\n")
-    writer = subprocess.Popen(
-        ["python3", "-m", "bundestrack.cli", "sync"],
-        env={"PYTHONPATH": str(tmp_path / "fakepkg"), "PATH": "/usr/bin:/bin"},
-    )
-    try:
-        subprocess.run(["sleep", "0.3"])
-        result = run(host, **_default_pattern_env(host))
-    finally:
-        writer.kill()
-        writer.wait()
-
-    assert result.returncode == 75
-    assert not host["calls"].exists()
-
-
 def _default_writer_pattern() -> str:
     text = SCRIPT.read_text()
     marker = 'WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-'
@@ -246,22 +221,57 @@ def _default_writer_pattern() -> str:
     return text[start : text.index('}"', start)]
 
 
-def test_a_shell_that_merely_mentions_the_pipeline_is_not_a_writer() -> None:
-    """Asserted on the shipped pattern against one bystander's own PID rather
-    than by running the wrapper: on a host where a real sync is running (as
-    during a catch-up) the wrapper rightly skips, and that must not fail this."""
-    bystander = subprocess.Popen(
-        ["bash", "-c", "sleep 30; echo python -m bundestrack.cli sync run-enrichment.py"]
-    )
-    try:
-        matched = subprocess.run(
-            ["pgrep", "-f", _default_writer_pattern()], capture_output=True, text=True
-        ).stdout.split()
-    finally:
-        bystander.kill()
-        bystander.wait()
+def _is_writer(command_line: str) -> bool:
+    """Whether the shipped pattern classes `command_line` as a pipeline writer.
 
-    assert str(bystander.pid) not in matched
+    Offline on purpose: `grep -E` speaks the same POSIX ERE `pgrep -f` matches
+    against `/proc/<pid>/cmdline`, so the classification is tested without
+    reading the host's process table. A test that called `pgrep` would pass or
+    fail depending on whether a real sync happened to be running — which, on
+    the production host, it legitimately may be.
+    """
+    result = subprocess.run(
+        ["grep", "-Eq", _default_writer_pattern()], input=command_line + "\n", text=True
+    )
+    return result.returncode == 0
+
+
+#: Real command lines of every production writer. The pixi env's interpreter is
+#: an absolute path; `historical-backfill.sh` runs `"$PYTHON" -m bundestrack.cli`.
+WRITERS = [
+    "/opt/data/workspace/Bundestrack/.pixi/envs/default/bin/python -m bundestrack.cli sync",
+    "python -m bundestrack.cli backfill --wp 20",
+    "python3 -u -m bundestrack.cli init",
+    "python -m bundestrack.cli -v sync",
+    "python -m bundestrack.cli -v backfill --wp 19",
+    "python -m bundestrack.cli --verbose --dry-run sync",
+    "python -m bundestrack.cli backfill-vote-vorgang --wp 21",
+    # The console script, as the kernel records it: shebang interpreter first.
+    "/opt/data/workspace/Bundestrack/.pixi/envs/default/bin/python3.13 "
+    "/opt/data/workspace/Bundestrack/.pixi/envs/default/bin/bundestrack -v sync",
+    "python3 scripts/run-enrichment.py",
+    "/usr/bin/python3.12 /opt/data/workspace/Bundestrack/scripts/score-period.py --wp 19",
+]
+
+#: Processes whose command lines mention a writer without being one.
+BYSTANDERS = [
+    "bash -c sleep 30; echo python -m bundestrack.cli sync run-enrichment.py",
+    "vim scripts/run-enrichment.py",
+    "grep -E bundestrack.cli sync daily-sync.log",
+    "python -m bundestrack.cli status",
+    "python -m bundestrack.cli scores --wp 21",
+    "tail -f /opt/data/workspace/Bundestrack/.logs/daily-sync.log",
+]
+
+
+@pytest.mark.parametrize("command_line", WRITERS)
+def test_every_production_writer_form_is_detected(command_line: str) -> None:
+    assert _is_writer(command_line)
+
+
+@pytest.mark.parametrize("command_line", BYSTANDERS)
+def test_a_command_that_merely_mentions_a_writer_is_not_one(command_line: str) -> None:
+    assert not _is_writer(command_line)
 
 
 def test_a_run_past_its_bound_is_stopped_and_recorded_as_a_timeout(host) -> None:

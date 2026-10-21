@@ -153,7 +153,9 @@ fi
 # Anchored to a Python interpreter at the start of the command line, so a shell
 # or an editor whose command line merely *mentions* one of these does not make
 # the scheduled run skip.
-WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-^[^ ]*python[0-9.]*( -[A-Za-z]+)* (-m bundestrack\.cli (sync|init|backfill)|[^ ]*/bin/bundestrack (sync|init|backfill)|[^ ]*(run-enrichment|score-period)\.py)}"
+# `( -[-A-Za-z]+)*` after the CLI admits its global options (`-v`, `--dry-run`)
+# before the command: a verbose backfill is still a writer.
+WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-^[^ ]*python[0-9.]*( -[A-Za-z]+)* (-m bundestrack\.cli|[^ ]*/bin/bundestrack)( -[-A-Za-z]+)* (sync|init|backfill)|^[^ ]*python[0-9.]*( -[A-Za-z]+)* [^ ]*(run-enrichment|score-period)\.py}"
 if pgrep -f "$WRITER_PATTERN" >/dev/null 2>&1; then
   echo "$(date -Is) daily-sync: an unlocked pipeline writer is running — skipping this tick." \
     | tee -a "$LOG_FILE" >&2

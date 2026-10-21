@@ -1014,7 +1014,9 @@ def test_a_naive_record_timestamp_is_read_as_utc_rather_than_failing() -> None:
         ceiling=datetime.fromisoformat("2026-10-21T04:17:00+00:00"),
     )
 
-    assert state.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T09:00:00"
+    # Stored with an explicit offset, so `since()` never sends DIP a naive value.
+    assert state.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T09:00:00+00:00"
+    assert state.since(21, STREAM_ACTIVITIES) == "2026-10-20T08:00:00+00:00"
 
 
 def test_a_naive_stored_watermark_does_not_stop_the_run(tmp_path) -> None:
