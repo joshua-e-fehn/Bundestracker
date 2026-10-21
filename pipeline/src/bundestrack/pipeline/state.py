@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -86,6 +87,12 @@ STREAM_REFERRALS = "committee-referrals"
 #: a week of DIP updates is a few thousand idempotent upserts; guessing the
 #: rewind short loses records that no later run asks for again.
 POISONED_WATERMARK_REWIND = timedelta(days=7)
+
+#: How far past the run's start a record's `aktualisiert` may be before
+#: `advance` logs it as a warning rather than routine. A stage running hours
+#: into a sync legitimately reads records amended after the run began; a
+#: timestamp days ahead is a source anomaly.
+FUTURE_TIMESTAMP_WARNING = timedelta(days=1)
 
 #: How long a fetched contact block stays fresh.
 #:
@@ -151,9 +158,8 @@ class SyncState(BaseModel):
         stored = self.watermark(wahlperiode, stream)
         if not stored:
             return None
-        try:
-            parsed = datetime.fromisoformat(stored)
-        except ValueError:
+        parsed = _parse(stored)
+        if parsed is None:
             logger.warning(
                 "Ignoring unparseable %s watermark %r for WP%d", stream, stored, wahlperiode
             )
@@ -164,7 +170,7 @@ class SyncState(BaseModel):
         self,
         wahlperiode: int,
         stream: str,
-        seen: datetime | None,
+        seen: datetime | Iterable[datetime] | None,
         *,
         ceiling: datetime | None = None,
     ) -> None:
@@ -175,39 +181,59 @@ class SyncState(BaseModel):
         period — must not move it backwards, or the next sync would re-read
         everything since.
 
-        **Never past `ceiling`** — the run's start, or now when the caller has
-        none. DIP serves the occasional record whose `aktualisiert` lies in the
-        future (WP21 carried one stamped 2026-11-12 in July 2026), and storing
-        that as the mark made every later sync ask for "changes since
-        November": DIP answered `numFound = 0` and the activity stream ingested
-        nothing for three months while exiting 0. Clamping is safe because the
-        query that produced `seen` had no upper bound — every record updated
-        between the window's start and `ceiling` was in it — so the next run
-        re-reading from `ceiling` loses nothing, and re-upserts the
-        future-dated record, which is idempotent. The record itself keeps its
-        source timestamp; only the cutoff derived from it is bounded.
+        `seen` is every `aktualisiert` the stage read (or one of them). The mark
+        becomes the newest that is **not after `ceiling`** — the run's start, or
+        now when the caller has none. DIP serves the occasional record whose
+        `aktualisiert` lies in the future (WP21 carried one stamped 2026-11-12
+        in July 2026), and storing that as the mark made every later sync ask
+        for "changes since November": DIP answered `numFound = 0` and the
+        activity stream ingested nothing for three months while exiting 0.
+
+        A future record is simply not evidence. The mark stays a timestamp DIP
+        actually published — never the run's own clock, which no source
+        observed and which would hide any record DIP indexes late. A batch of
+        nothing but future records does not move the mark at all; the next run
+        re-reads the same window and re-upserts them, which is idempotent. The
+        records keep their source timestamps; only the cutoff ignores them.
+
+        Naive timestamps are read as UTC (`_aware`), so one malformed value
+        cannot turn into a comparison error that fails every later run.
         """
         if seen is None:
             return
-        bound = ceiling or datetime.now(UTC)
-        if seen > bound:
-            logger.warning(
-                "WP%d %s: newest aktualisiert %s is after the run started (%s) — "
-                "the watermark stops at the run start",
+        observed = [seen] if isinstance(seen, datetime) else list(seen)
+        if not observed:
+            return
+        bound = _aware(ceiling or datetime.now(UTC))
+        usable = [stamp for stamp in observed if _aware(stamp) <= bound]
+        future = len(observed) - len(usable)
+        if future:
+            newest_future = max(observed, key=_aware)
+            # Seconds past the run start are routine — a stage hours into a run
+            # reads records amended since it began. Days past it are the anomaly
+            # this guard exists for, and worth a warning in the log.
+            level = (
+                logging.WARNING
+                if _aware(newest_future) - bound > FUTURE_TIMESTAMP_WARNING
+                else logging.INFO
+            )
+            logger.log(
+                level,
+                "WP%d %s: %d record(s) updated after the run started (%s), newest %s — "
+                "not used as the watermark",
                 wahlperiode,
                 stream,
-                seen.isoformat(),
+                future,
                 bound.isoformat(),
+                newest_future.isoformat(),
             )
-            seen = bound.astimezone(seen.tzinfo)
-        current = self.watermark(wahlperiode, stream)
-        if current:
-            try:
-                if datetime.fromisoformat(current) >= seen:
-                    return
-            except ValueError:
-                pass
-        self.watermarks[self._key(wahlperiode, stream)] = seen.isoformat()
+        if not usable:
+            return
+        newest = max(usable, key=_aware)
+        current = _parse(self.watermark(wahlperiode, stream))
+        if current is not None and current >= _aware(newest):
+            return
+        self.watermarks[self._key(wahlperiode, stream)] = newest.isoformat()
 
     def repair_future_watermarks(self, now: datetime) -> list[tuple[str, str, str | None]]:
         """Rewind every stored watermark that lies after `now`.
@@ -233,26 +259,33 @@ class SyncState(BaseModel):
         Returns `(key, poisoned value, replacement)` for each repair, so the run
         can report it.
         """
+        now = _aware(now)
+        # Evidence is taken from the state as it was *before* any repair. A mark
+        # rewound a moment ago is synthetic — derived from evidence, not
+        # evidence itself — and letting it vouch for the next poisoned key
+        # makes the result depend on key order (two poisoned streams would
+        # rewind the second a further week from the first's guess).
+        trusted: dict[str, list[datetime]] = {}
+        for key, value in self.watermarks.items():
+            parsed = _parse(value)
+            if parsed is not None and parsed <= now:
+                trusted.setdefault(key.split(":", 1)[0], []).append(parsed)
+        last_run = _parse(self.last_run)
+        trusted_run = last_run if last_run is not None and last_run <= now else None
+
         repairs: list[tuple[str, str, str | None]] = []
         for key, value in sorted(self.watermarks.items()):
             stored = _parse(value)
             if stored is None or stored <= now:
                 continue
-            period = key.split(":", 1)[0]
-            evidence = [
-                parsed
-                for other_key, other in self.watermarks.items()
-                if other_key.startswith(f"{period}:")
-                and (parsed := _parse(other)) is not None
-                and parsed <= now
-            ]
-            last_run = _parse(self.last_run)
-            if last_run is not None and last_run <= now:
-                evidence.append(last_run)
+            evidence = list(trusted.get(key.split(":", 1)[0], []))
+            if trusted_run is not None:
+                evidence.append(trusted_run)
             if evidence:
-                trusted = min(evidence)
                 replacement = (
-                    (trusted - POISONED_WATERMARK_REWIND).astimezone(stored.tzinfo).isoformat()
+                    (min(evidence) - POISONED_WATERMARK_REWIND)
+                    .astimezone(stored.tzinfo)
+                    .isoformat()
                 )
                 self.watermarks[key] = replacement
             else:
@@ -406,12 +439,24 @@ class SyncState(BaseModel):
         self.last_run = datetime.now(UTC).isoformat()
 
 
+def _aware(moment: datetime) -> datetime:
+    """`moment`, read as UTC when it carries no offset.
+
+    DIP stamps every record with `+01:00`/`+02:00`, and every mark this module
+    writes keeps that offset — but the models accept a naive `datetime`, and
+    one naive value compared against an aware one raises `TypeError`. Before
+    any stage runs, that would fail every sync until the state file was edited
+    by hand, so a naive value is given a reading instead of an error.
+    """
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
 def _parse(value: str | None) -> datetime | None:
-    """An ISO timestamp from the state file, or None when absent or unreadable."""
+    """An aware ISO timestamp from the state file, or None when absent or unreadable."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        return _aware(datetime.fromisoformat(value))
     except ValueError:
         return None
 

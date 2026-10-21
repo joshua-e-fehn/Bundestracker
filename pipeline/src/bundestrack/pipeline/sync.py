@@ -659,9 +659,7 @@ class Pipeline:
         stage.notes.append(
             f"{named} named-vote steps indexed by (sitting, tally) for the ballot join"
         )
-        self.state.advance(
-            self.wahlperiode, STREAM_REFERRALS, max(seen) if seen else None, ceiling=self.started_at
-        )
+        self.state.advance(self.wahlperiode, STREAM_REFERRALS, seen, ceiling=self.started_at)
 
     # -- stage 5: activities ----------------------------------------------
 
@@ -762,7 +760,7 @@ class Pipeline:
         self.state.advance(
             self.wahlperiode,
             STREAM_ACTIVITIES,
-            max(seen) if seen else None,
+            seen,
             ceiling=self.started_at,
         )
 
@@ -838,9 +836,7 @@ class Pipeline:
                 f"{deferred} motions' sponsorships reference a procedure outside this run — "
                 "they attach when that motion is next fetched"
             )
-        self.state.advance(
-            self.wahlperiode, STREAM_MOTIONS, max(seen) if seen else None, ceiling=self.started_at
-        )
+        self.state.advance(self.wahlperiode, STREAM_MOTIONS, seen, ceiling=self.started_at)
 
     # -- stage 7: speeches -------------------------------------------------
 
@@ -909,9 +905,7 @@ class Pipeline:
         stage.notes.append(str(events))
         if skipped_unchanged:
             stage.notes.append(f"{skipped_unchanged} protocols unchanged since the last sync")
-        self.state.advance(
-            self.wahlperiode, STREAM_PROTOCOLS, max(seen) if seen else None, ceiling=self.started_at
-        )
+        self.state.advance(self.wahlperiode, STREAM_PROTOCOLS, seen, ceiling=self.started_at)
 
     # -- stage 8: votes ----------------------------------------------------
 
@@ -1506,7 +1500,10 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     later stages are independent of each other, so one source being down should
     not cost the rest of the run.
     """
-    _repair_watermarks(run, report)
+    # Guarded like a stage: a state file this cannot read must cost the repair,
+    # not the run. Unguarded, one bad value would fail every sync before the
+    # roster, every day, until someone edited the file by hand.
+    _guard(report, "watermark-repair", lambda: _repair_watermarks(run, report))
     _guard(report, "roster", lambda: run.load_roster(report))
     if run.resolver is None or not run.resolver.roster():
         # Guarded like the rest, but *not* continued past: nothing else can be
