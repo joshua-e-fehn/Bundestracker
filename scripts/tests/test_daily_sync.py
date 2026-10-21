@@ -149,6 +149,50 @@ def test_an_unlocked_writer_process_skips_the_tick(host) -> None:
     assert not host["calls"].exists()
 
 
+def _default_pattern_env(host) -> dict[str, str]:
+    """Drop the test-only pattern override, so the shipped default is used."""
+    return {"BUNDESTRACK_WRITER_PATTERN": ""}
+
+
+def test_a_real_pipeline_process_makes_the_tick_skip(host, tmp_path) -> None:
+    package = tmp_path / "fakepkg" / "bundestrack"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "cli.py").write_text("import time\ntime.sleep(30)\n")
+    writer = subprocess.Popen(
+        ["python3", "-m", "bundestrack.cli", "sync"],
+        env={"PYTHONPATH": str(tmp_path / "fakepkg"), "PATH": "/usr/bin:/bin"},
+    )
+    try:
+        subprocess.run(["sleep", "0.3"])
+        result = run(host, **_default_pattern_env(host))
+    finally:
+        writer.kill()
+        writer.wait()
+
+    assert result.returncode == 75
+    assert not host["calls"].exists()
+
+
+def test_a_shell_that_merely_mentions_the_pipeline_does_not_make_the_tick_skip(
+    host,
+) -> None:
+    bystander = subprocess.Popen(
+        [
+            "bash",
+            "-c",
+            "sleep 30; echo python -m bundestrack.cli sync run-enrichment.py",
+        ]
+    )
+    try:
+        result = run(host, **_default_pattern_env(host))
+    finally:
+        bystander.kill()
+        bystander.wait()
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_a_run_past_its_bound_is_stopped_and_recorded_as_a_timeout(host) -> None:
     result = run(host, STUB_SLEEP="20", BUNDESTRACK_SYNC_TIMEOUT="1s")
 

@@ -29,7 +29,10 @@ set -euo pipefail
 #              how production runs a pinned export of a reviewed commit
 #              (ops/systemd/README.md) against the live checkout's state —
 #              rather than whatever happens to be uncommitted in that checkout.
-CODE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+#
+# `pwd -P`: resolved through the release's `current` symlink once, here, so a
+# release flipped mid-run cannot change which code a running sync imports.
+CODE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 REPO_ROOT="${BUNDESTRACK_REPO_ROOT:-$CODE_ROOT}"
 LOG_DIR="${BUNDESTRACK_LOG_DIR:-$REPO_ROOT/.logs}"
 LOG_FILE="$LOG_DIR/daily-sync.log"
@@ -136,7 +139,10 @@ fi
 # Writers that do not take the lock — a bare `python -m bundestrack.cli
 # backfill` or `scripts/run-enrichment.py` — are refused too. Two runs against
 # one deployment overwrite each other's roster columns silently.
-WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-bundestrack\.cli (sync|init|backfill)|run-enrichment\.py|score-period\.py}"
+# Anchored to a Python interpreter at the start of the command line, so a shell
+# or an editor whose command line merely *mentions* one of these does not make
+# the scheduled run skip.
+WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-^[^ ]*python[0-9.]*( -[A-Za-z]+)* (-m bundestrack\.cli (sync|init|backfill)|[^ ]*/bin/bundestrack (sync|init|backfill)|[^ ]*(run-enrichment|score-period)\.py)}"
 if pgrep -f "$WRITER_PATTERN" >/dev/null 2>&1; then
   echo "$(date -Is) daily-sync: an unlocked pipeline writer is running — skipping this tick." \
     | tee -a "$LOG_FILE" >&2
