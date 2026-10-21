@@ -77,6 +77,16 @@ STREAM_PROTOCOLS = "protocols"
 #: a stage that succeeded advance past the window a failed stage still needs.
 STREAM_REFERRALS = "committee-referrals"
 
+#: How much further back than the earliest trusted evidence a poisoned
+#: watermark is rewound — see `SyncState.repair_future_watermarks`.
+#:
+#: A week, because the trusted evidence is only a *bound* on what the poisoned
+#: stream had fetched, not a record of it: `last_run` and the sibling streams'
+#: marks say when *some* stage last succeeded, not when this one did. Re-reading
+#: a week of DIP updates is a few thousand idempotent upserts; guessing the
+#: rewind short loses records that no later run asks for again.
+POISONED_WATERMARK_REWIND = timedelta(days=7)
+
 #: How long a fetched contact block stays fresh.
 #:
 #: Unlike the protocol XML, which publishes an `xml_hash` that makes "has this
@@ -150,16 +160,46 @@ class SyncState(BaseModel):
             return None
         return (parsed - OVERLAP).isoformat()
 
-    def advance(self, wahlperiode: int, stream: str, seen: datetime | None) -> None:
+    def advance(
+        self,
+        wahlperiode: int,
+        stream: str,
+        seen: datetime | None,
+        *,
+        ceiling: datetime | None = None,
+    ) -> None:
         """Move one stream's watermark forward to a timestamp actually observed.
 
         Monotonic: a batch whose newest record is older than the stored
         watermark — a re-read of the overlap window, or a backfill of an older
         period — must not move it backwards, or the next sync would re-read
         everything since.
+
+        **Never past `ceiling`** — the run's start, or now when the caller has
+        none. DIP serves the occasional record whose `aktualisiert` lies in the
+        future (WP21 carried one stamped 2026-11-12 in July 2026), and storing
+        that as the mark made every later sync ask for "changes since
+        November": DIP answered `numFound = 0` and the activity stream ingested
+        nothing for three months while exiting 0. Clamping is safe because the
+        query that produced `seen` had no upper bound — every record updated
+        between the window's start and `ceiling` was in it — so the next run
+        re-reading from `ceiling` loses nothing, and re-upserts the
+        future-dated record, which is idempotent. The record itself keeps its
+        source timestamp; only the cutoff derived from it is bounded.
         """
         if seen is None:
             return
+        bound = ceiling or datetime.now(UTC)
+        if seen > bound:
+            logger.warning(
+                "WP%d %s: newest aktualisiert %s is after the run started (%s) — "
+                "the watermark stops at the run start",
+                wahlperiode,
+                stream,
+                seen.isoformat(),
+                bound.isoformat(),
+            )
+            seen = bound.astimezone(seen.tzinfo)
         current = self.watermark(wahlperiode, stream)
         if current:
             try:
@@ -168,6 +208,65 @@ class SyncState(BaseModel):
             except ValueError:
                 pass
         self.watermarks[self._key(wahlperiode, stream)] = seen.isoformat()
+
+    def repair_future_watermarks(self, now: datetime) -> list[tuple[str, str, str | None]]:
+        """Rewind every stored watermark that lies after `now`.
+
+        The repair for state written before `advance` was bounded. A mark in
+        the future is not evidence of anything fetched — it is one bad source
+        timestamp — so it cannot simply be clamped to `now`: that would skip
+        every record updated between the stream's last real fetch and today,
+        which for the July 2026 poisoning was three months of WP21 activity.
+
+        It is rewound instead to the earliest *trusted* evidence of when the
+        state last moved — `last_run` and the same period's marks that are not
+        in the future — less `POISONED_WATERMARK_REWIND`, because that evidence
+        bounds the poisoned stream's last fetch rather than recording it. With
+        no trusted evidence at all the mark is dropped, which makes the stream a
+        full fetch: the same trade `load_state` makes for a corrupt file.
+
+        Persisted by the caller *before* any stage runs, rather than recomputed
+        from `last_run` on every read: `last_run` advances on every run, failed
+        stages included, so a recovery point derived from it afresh would creep
+        forward past records a failed stream never fetched.
+
+        Returns `(key, poisoned value, replacement)` for each repair, so the run
+        can report it.
+        """
+        repairs: list[tuple[str, str, str | None]] = []
+        for key, value in sorted(self.watermarks.items()):
+            stored = _parse(value)
+            if stored is None or stored <= now:
+                continue
+            period = key.split(":", 1)[0]
+            evidence = [
+                parsed
+                for other_key, other in self.watermarks.items()
+                if other_key.startswith(f"{period}:")
+                and (parsed := _parse(other)) is not None
+                and parsed <= now
+            ]
+            last_run = _parse(self.last_run)
+            if last_run is not None and last_run <= now:
+                evidence.append(last_run)
+            if evidence:
+                trusted = min(evidence)
+                replacement = (
+                    (trusted - POISONED_WATERMARK_REWIND).astimezone(stored.tzinfo).isoformat()
+                )
+                self.watermarks[key] = replacement
+            else:
+                replacement = None
+                del self.watermarks[key]
+            logger.warning(
+                "Watermark %s was %s, after the run started (%s) — rewound to %s",
+                key,
+                value,
+                now.isoformat(),
+                replacement or "(none: full fetch)",
+            )
+            repairs.append((key, value, replacement))
+        return repairs
 
     def restore_watermark(self, wahlperiode: int, stream: str, value: str | None) -> None:
         """Set a stream's watermark to a prior value, moving it backwards if needed.
@@ -305,6 +404,16 @@ class SyncState(BaseModel):
 
     def finish(self) -> None:
         self.last_run = datetime.now(UTC).isoformat()
+
+
+def _parse(value: str | None) -> datetime | None:
+    """An ISO timestamp from the state file, or None when absent or unreadable."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def load_state(path: Path) -> SyncState:

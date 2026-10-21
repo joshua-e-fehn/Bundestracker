@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from bundestrack.api.abgeordnetenwatch import (
@@ -207,6 +207,12 @@ class Pipeline:
         #: did not already reach" — see `_window`.
         self.full = full
         self.state = state if state is not None else load_state(self.settings.state_path)
+        #: When this run began — the ceiling every watermark it advances is
+        #: clamped to (`SyncState.advance`). Fixed once rather than read per
+        #: stage, because a stage finishing at 05:00 must not let a record
+        #: stamped 04:30 by a clock that runs ahead pass for one already seen
+        #: by a run that started at 04:00.
+        self.started_at = datetime.now(UTC)
 
         self.dip = dip or DIPClient(
             self.settings.bundestag_api_key or None,
@@ -653,7 +659,9 @@ class Pipeline:
         stage.notes.append(
             f"{named} named-vote steps indexed by (sitting, tally) for the ballot join"
         )
-        self.state.advance(self.wahlperiode, STREAM_REFERRALS, max(seen) if seen else None)
+        self.state.advance(
+            self.wahlperiode, STREAM_REFERRALS, max(seen) if seen else None, ceiling=self.started_at
+        )
 
     # -- stage 5: activities ----------------------------------------------
 
@@ -751,7 +759,12 @@ class Pipeline:
             )
             logger.warning(note)
             stage.notes.append(note)
-        self.state.advance(self.wahlperiode, STREAM_ACTIVITIES, max(seen) if seen else None)
+        self.state.advance(
+            self.wahlperiode,
+            STREAM_ACTIVITIES,
+            max(seen) if seen else None,
+            ceiling=self.started_at,
+        )
 
     def _collect_sponsorships(self, batch: Sequence[Aktivitaet], resolver: MPResolver) -> None:
         """Fold a batch of activities into the pending sponsorship map.
@@ -825,7 +838,9 @@ class Pipeline:
                 f"{deferred} motions' sponsorships reference a procedure outside this run — "
                 "they attach when that motion is next fetched"
             )
-        self.state.advance(self.wahlperiode, STREAM_MOTIONS, max(seen) if seen else None)
+        self.state.advance(
+            self.wahlperiode, STREAM_MOTIONS, max(seen) if seen else None, ceiling=self.started_at
+        )
 
     # -- stage 7: speeches -------------------------------------------------
 
@@ -894,7 +909,9 @@ class Pipeline:
         stage.notes.append(str(events))
         if skipped_unchanged:
             stage.notes.append(f"{skipped_unchanged} protocols unchanged since the last sync")
-        self.state.advance(self.wahlperiode, STREAM_PROTOCOLS, max(seen) if seen else None)
+        self.state.advance(
+            self.wahlperiode, STREAM_PROTOCOLS, max(seen) if seen else None, ceiling=self.started_at
+        )
 
     # -- stage 8: votes ----------------------------------------------------
 
@@ -1489,6 +1506,7 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     later stages are independent of each other, so one source being down should
     not cost the rest of the run.
     """
+    _repair_watermarks(run, report)
     _guard(report, "roster", lambda: run.load_roster(report))
     if run.resolver is None or not run.resolver.roster():
         # Guarded like the rest, but *not* continued past: nothing else can be
@@ -1521,6 +1539,26 @@ def _run_stages(run: Pipeline, report: RunReport, *, since: str | None, incremen
     # UI can state, where an aborted run would leave every later stage undone.
     _guard(report, "dissent", lambda: run.backfill_dissent(report))
     _guard(report, "seating", lambda: run.generate_seating(report))
+
+
+def _repair_watermarks(run: Pipeline, report: RunReport) -> None:
+    """Rewind any stored watermark that lies after this run's start.
+
+    Before every stage, and saved at once rather than at `_finish`: the repaired
+    mark is the recovery point, and a run killed mid-stage must not leave the
+    poisoned one on disk for the next run to re-derive from a `last_run` that
+    has meanwhile moved on. See `SyncState.repair_future_watermarks`.
+    """
+    repairs = run.state.repair_future_watermarks(run.started_at)
+    if not repairs:
+        return
+    stage = report.stage("watermark-repair")
+    for key, poisoned, replacement in repairs:
+        stage.notes.append(
+            f"{key}: {poisoned} is in the future — rewound to {replacement or '(none: full fetch)'}"
+        )
+    if not run.dry_run:
+        save_state(run.settings.state_path, run.state)
 
 
 def _guard(report: RunReport, name: str, stage: Any) -> None:
