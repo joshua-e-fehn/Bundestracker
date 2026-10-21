@@ -12,7 +12,7 @@
 # ops/systemd/README.md for install and verification.
 #
 # Exit code is the pipeline's own: non-zero when any stage failed, so the
-# timer's OnFailure= and the status file see a broken source rather than
+# systemd unit's state and the status file see a broken source rather than
 # silence. See pipeline/src/bundestrack/cli.py — a run where most stages
 # worked still fails, which is what keeps a broken source from staying broken.
 #
@@ -109,18 +109,28 @@ fi
 
 command -v "$PIXI" >/dev/null 2>&1 || fail_config "pixi not on PATH (looked in $PATH)"
 
-# Resolve the target the pipeline will actually use — the environment first,
+# Resolve the targets the pipeline will actually use — the environment first,
 # then pipeline/.env, which is exactly pydantic-settings' precedence — and
-# refuse anything but the expected deployment. Only the host is compared; the
-# value itself is never logged beyond it.
-convex_url="${CONVEX_URL:-}"
-if [ -z "$convex_url" ] && [ -r "$REPO_ROOT/pipeline/.env" ]; then
-  convex_url="$(sed -n 's/^CONVEX_URL=//p' "$REPO_ROOT/pipeline/.env" | tail -n 1 | tr -d '"'"'"' ')"
-fi
-convex_host="${convex_url#https://}"
-convex_host="${convex_host%%/*}"
+# refuse anything but the expected deployment. Both hosts: reads go to
+# CONVEX_URL, but every *write* goes to CONVEX_HTTP_URL when it is set
+# (config.py `require_convex_http_url`), so pinning only the first would let a
+# wrong `.convex.site` through. Only hosts are compared; nothing else is logged.
+env_value() {
+  local name="$1" value="${!1:-}"
+  if [ -z "$value" ] && [ -r "$REPO_ROOT/pipeline/.env" ]; then
+    value="$(sed -n "s/^$name=//p" "$REPO_ROOT/pipeline/.env" | tail -n 1 | tr -d '"'"'"' ')"
+  fi
+  value="${value#https://}"
+  echo "${value%%/*}"
+}
+convex_host="$(env_value CONVEX_URL)"
 [ "$convex_host" = "$EXPECTED_CONVEX_DEPLOYMENT.convex.cloud" ] \
   || fail_config "CONVEX_URL host is '${convex_host:-unset}', expected $EXPECTED_CONVEX_DEPLOYMENT.convex.cloud — refusing to write"
+convex_site="$(env_value CONVEX_HTTP_URL)"
+# Unset is fine: the pipeline then derives the site host from CONVEX_URL,
+# which has just been pinned.
+[ -z "$convex_site" ] || [ "$convex_site" = "$EXPECTED_CONVEX_DEPLOYMENT.convex.site" ] \
+  || fail_config "CONVEX_HTTP_URL host is '$convex_site', expected $EXPECTED_CONVEX_DEPLOYMENT.convex.site — refusing to write"
 
 # Never two writers at once. Not politeness: every *.bundestag.de host sits
 # behind a WAF that IP-blocks *all* of them when it sees concurrent requests,
@@ -174,16 +184,22 @@ status=0
 # the checkout (pipeline/src/bundestrack/config.py). Losing it turns the next
 # sync into a full backfill against that same WAF.
 #
-# `timeout` sends TERM, then KILL a minute later. Every write is an upsert and
-# the state file is written atomically, so a stopped run is resumed by the next
-# tick rather than repaired.
+# `timeout` sends TERM, then KILL a minute later. TERM unwinds the pipeline
+# through its own `finally` (bundestrack.cli `Terminated`), which saves the marks
+# of every stage that finished; the interrupted stage is re-read next tick.
+# Every write is an upsert, so a stopped run is resumed rather than repaired.
+#
+# `--frozen`: run the environment pixi.lock already pins, never re-solve it. A
+# re-solve at 02:17 can hang for many minutes or quietly change a dependency
+# under a production writer. The env is the checkout's (the release pins code,
+# not dependencies); `pixi install --frozen` there is the deliberate update.
 timeout --kill-after=60 "$SYNC_TIMEOUT" \
-  "$PIXI" run --manifest-path "$REPO_ROOT/pixi.toml" pipeline sync >>"$LOG_FILE" 2>&1 || status=$?
+  "$PIXI" run --frozen --manifest-path "$REPO_ROOT/pixi.toml" pipeline sync >>"$LOG_FILE" 2>&1 || status=$?
 
 FINISHED="$(date -Is)"
 if [ "$status" -eq 0 ]; then
   write_status success 0 "$STARTED" "$FINISHED"
-elif [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+elif [ "$status" -eq 124 ] || [ "$status" -eq 137 ] || [ "$status" -eq 143 ]; then
   write_status timeout "$status" "$STARTED" "$FINISHED"
 else
   write_status failure "$status" "$STARTED" "$FINISHED"

@@ -12,14 +12,25 @@ VPS host (srv1608974, Etc/UTC)
   bundestrack-daily-sync.timer      02:17 UTC daily, Persistent=true
   └─ bundestrack-daily-sync.service docker exec into the Hermes container
        └─ /opt/data/bundestrack-release/current/scripts/daily-sync.sh
-            ├─ refuses any Convex target but whimsical-bandicoot-307   (exit 78)
+            ├─ refuses any Convex read/write host but whimsical-bandicoot-307 (exit 78)
             ├─ flock .daily-sync.lock + pgrep for unlocked writers     (exit 75, skipped)
             ├─ timeout 6h (TERM, KILL +60 s)                           (exit 124)
-            ├─ pixi run pipeline sync   ← code: current/pipeline/src
+            ├─ pixi run --frozen pipeline sync ← code: current/pipeline/src
             │                            ← env/state: /opt/data/workspace/Bundestrack
             ├─ log    /opt/data/workspace/Bundestrack/.logs/daily-sync.log
             └─ status /opt/data/workspace/Bundestrack/.logs/daily-sync.status.json
 ```
+
+If the container is not answering (e.g. right after a boot), `ExecStartPre`
+waits up to 10 minutes for it before the run is attempted. A timeout sends
+SIGTERM; the pipeline then saves the marks of every completed stage before
+exiting 143, so the next tick resumes rather than restarts.
+
+**Failure visibility.** Every attempt is recorded in the status file, and a
+failed or timed-out run leaves the unit `failed` (`systemctl --failed`). There
+is no push alert yet. The host's existing alerters (`camsocs-alert@`,
+`mya-backup-alert`) belong to other projects, so wiring one in is left to the
+operator: add `OnFailure=` to the service.
 
 The host never sees a secret: `pipeline/.env` stays in the container's
 checkout. The timeout lives in the wrapper, not only in systemd, because

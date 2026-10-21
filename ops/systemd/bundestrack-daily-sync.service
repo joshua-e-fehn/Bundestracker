@@ -22,6 +22,10 @@ After=network-online.target docker.service
 
 [Service]
 Type=oneshot
+# After a boot, Persistent=true fires a missed tick while Docker may still be
+# starting the container; `docker exec` would then fail at once and the status
+# file would never record why. Wait up to 10 minutes for it to answer first.
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do docker exec hermes-agent-vspa-hermes-agent-1 true >/dev/null 2>&1 && exit 0; sleep 10; done; echo "hermes container not running" >&2; exit 1'
 ExecStart=/usr/bin/docker exec \
   -e BUNDESTRACK_REPO_ROOT=/opt/data/workspace/Bundestrack \
   -e BUNDESTRACK_SYNC_TIMEOUT=6h \
@@ -32,5 +36,5 @@ ExecStart=/usr/bin/docker exec \
 SuccessExitStatus=75
 # Above the wrapper's own 6 h bound plus its 60 s kill grace, so the wrapper
 # always ends the run and records why before systemd would.
-TimeoutStartSec=6h15min
-Nice=10
+# Plus the 10-minute container wait above.
+TimeoutStartSec=6h30min

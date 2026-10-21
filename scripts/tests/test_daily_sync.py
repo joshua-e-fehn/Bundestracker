@@ -4,7 +4,8 @@ Hermetic: `pixi` is a stub script on PATH that records how it was called and
 exits with whatever the test asks for, and every path the wrapper writes is a
 temp dir. Nothing here reaches a network or a deployment.
 
-Run with the pipeline suite: `pytest ../scripts/tests` from `pipeline/`.
+Collected by the pipeline suite (`pipeline/pyproject.toml` testpaths), so
+`pixi run test` runs it.
 """
 
 from __future__ import annotations
@@ -77,7 +78,7 @@ def test_a_successful_run_records_last_success_and_runs_the_shipped_code(host) -
     assert "last_failure" not in recorded
     pythonpath, args = host["calls"].read_text().strip().split("|")
     assert pythonpath.startswith(str(SCRIPT.parents[1] / "pipeline" / "src"))
-    assert args == f"run --manifest-path {host['repo']}/pixi.toml pipeline sync"
+    assert args == f"run --frozen --manifest-path {host['repo']}/pixi.toml pipeline sync"
     log = (host["logs"] / "daily-sync.log").read_text()
     assert f"target={TARGET}.convex.cloud" in log
     assert "stub pipeline output" in log
@@ -114,6 +115,27 @@ def test_the_environment_target_wins_over_the_env_file_and_is_checked_too(host) 
     assert not host["calls"].exists()
 
 
+def test_a_wrong_write_host_is_refused_even_when_the_read_host_is_right(host) -> None:
+    """Writes go to CONVEX_HTTP_URL when it is set — pin that one too (review S1)."""
+    (host["repo"] / "pipeline" / ".env").write_text(
+        f"CONVEX_URL=https://{TARGET}.convex.cloud\n"
+        "CONVEX_HTTP_URL=https://intent-goshawk-405.convex.site\n"
+    )
+
+    result = run(host)
+
+    assert result.returncode == 78
+    assert not host["calls"].exists()
+
+
+def test_a_matching_write_host_is_accepted(host) -> None:
+    (host["repo"] / "pipeline" / ".env").write_text(
+        f"CONVEX_URL=https://{TARGET}.convex.cloud\nCONVEX_HTTP_URL=https://{TARGET}.convex.site\n"
+    )
+
+    assert run(host).returncode == 0
+
+
 def test_a_held_lock_skips_the_tick_without_running(host) -> None:
     lock = host["repo"] / ".daily-sync.lock"
     holder = subprocess.Popen(["flock", str(lock), "sleep", "30"])
@@ -136,9 +158,7 @@ def test_a_held_lock_skips_the_tick_without_running(host) -> None:
 
 
 def test_an_unlocked_writer_process_skips_the_tick(host) -> None:
-    sleeper = subprocess.Popen(
-        ["bash", "-c", "exec -a fake-run-enrichment.py sleep 30"]
-    )
+    sleeper = subprocess.Popen(["bash", "-c", "exec -a fake-run-enrichment.py sleep 30"])
     try:
         result = run(host, BUNDESTRACK_WRITER_PATTERN="fake-run-enrichment\\.py")
     finally:
@@ -174,23 +194,29 @@ def test_a_real_pipeline_process_makes_the_tick_skip(host, tmp_path) -> None:
     assert not host["calls"].exists()
 
 
-def test_a_shell_that_merely_mentions_the_pipeline_does_not_make_the_tick_skip(
-    host,
-) -> None:
+def _default_writer_pattern() -> str:
+    text = SCRIPT.read_text()
+    marker = 'WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-'
+    start = text.index(marker) + len(marker)
+    return text[start : text.index('}"', start)]
+
+
+def test_a_shell_that_merely_mentions_the_pipeline_is_not_a_writer() -> None:
+    """Asserted on the shipped pattern against one bystander's own PID rather
+    than by running the wrapper: on a host where a real sync is running (as
+    during a catch-up) the wrapper rightly skips, and that must not fail this."""
     bystander = subprocess.Popen(
-        [
-            "bash",
-            "-c",
-            "sleep 30; echo python -m bundestrack.cli sync run-enrichment.py",
-        ]
+        ["bash", "-c", "sleep 30; echo python -m bundestrack.cli sync run-enrichment.py"]
     )
     try:
-        result = run(host, **_default_pattern_env(host))
+        matched = subprocess.run(
+            ["pgrep", "-f", _default_writer_pattern()], capture_output=True, text=True
+        ).stdout.split()
     finally:
         bystander.kill()
         bystander.wait()
 
-    assert result.returncode == 0, result.stderr
+    assert str(bystander.pid) not in matched
 
 
 def test_a_run_past_its_bound_is_stopped_and_recorded_as_a_timeout(host) -> None:
