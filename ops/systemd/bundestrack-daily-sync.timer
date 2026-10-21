@@ -1,0 +1,17 @@
+# Daily at 02:17 UTC (03:17 CET / 04:17 CEST).
+#
+# Before Convex's own nightly score sweep (convex/crons.ts, 03:15 UTC), so the
+# sweep scores what this run ingested rather than the day before. A normal day
+# takes minutes; the 6 h bound only matters for a catch-up, which then simply
+# lands in the next night's sweep.
+[Unit]
+Description=Bundestrack daily ingestion, 02:17 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 UTC
+# A tick missed while the host was down runs once at the next boot.
+Persistent=true
+Unit=bundestrack-daily-sync.service
+
+[Install]
+WantedBy=timers.target
