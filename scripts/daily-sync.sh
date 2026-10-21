@@ -109,28 +109,29 @@ fi
 
 command -v "$PIXI" >/dev/null 2>&1 || fail_config "pixi not on PATH (looked in $PATH)"
 
-# Resolve the targets the pipeline will actually use — the environment first,
-# then pipeline/.env, which is exactly pydantic-settings' precedence — and
-# refuse anything but the expected deployment. Both hosts: reads go to
-# CONVEX_URL, but every *write* goes to CONVEX_HTTP_URL when it is set
-# (config.py `require_convex_http_url`), so pinning only the first would let a
-# wrong `.convex.site` through. Only hosts are compared; nothing else is logged.
-env_value() {
-  local name="$1" value="${!1:-}"
-  if [ -z "$value" ] && [ -r "$REPO_ROOT/pipeline/.env" ]; then
-    value="$(sed -n "s/^$name=//p" "$REPO_ROOT/pipeline/.env" | tail -n 1 | tr -d '"'"'"' ')"
-  fi
-  value="${value#https://}"
-  echo "${value%%/*}"
-}
-convex_host="$(env_value CONVEX_URL)"
-[ "$convex_host" = "$EXPECTED_CONVEX_DEPLOYMENT.convex.cloud" ] \
-  || fail_config "CONVEX_URL host is '${convex_host:-unset}', expected $EXPECTED_CONVEX_DEPLOYMENT.convex.cloud — refusing to write"
-convex_site="$(env_value CONVEX_HTTP_URL)"
-# Unset is fine: the pipeline then derives the site host from CONVEX_URL,
-# which has just been pinned.
-[ -z "$convex_site" ] || [ "$convex_site" = "$EXPECTED_CONVEX_DEPLOYMENT.convex.site" ] \
-  || fail_config "CONVEX_HTTP_URL host is '$convex_site', expected $EXPECTED_CONVEX_DEPLOYMENT.convex.site — refusing to write"
+# The deployment pin is enforced by the pipeline itself, on the URL every write
+# is sent to (`Settings.require_convex_http_url`, bundestrack/config.py): this
+# wrapper only exports it. A shell cannot reliably predict which of
+# CONVEX_URL / CONVEX_HTTP_URL, environment / .env, or a differently-cased key
+# pydantic-settings will settle on — so it does not try.
+export BUNDESTRACK_EXPECTED_DEPLOYMENT="$EXPECTED_CONVEX_DEPLOYMENT"
+
+# Preflight through the same code, before the lock and before any fetch: a
+# refusal here is a config error the status file records, rather than a stage
+# failure discovered after the roster download. Prints the resolved host only.
+convex_site="$(cd "$REPO_ROOT/pipeline" && PYTHONPATH="$CODE_ROOT/pipeline/src${PYTHONPATH:+:$PYTHONPATH}" \
+  "$PIXI" run --frozen --manifest-path "$REPO_ROOT/pixi.toml" python -c '
+from urllib.parse import urlsplit
+from bundestrack.config import ConfigError, get_settings
+try:
+    print(urlsplit(get_settings().require_convex_http_url()).hostname)
+except ConfigError as error:
+    print(f"REFUSED: {error}")
+' 2>>"$LOG_FILE" | tail -n 1)" || true
+case "$convex_site" in
+  "$EXPECTED_CONVEX_DEPLOYMENT.convex.site") ;;
+  *) fail_config "write target check failed: ${convex_site:-no output} — refusing to write" ;;
+esac
 
 # Never two writers at once. Not politeness: every *.bundestag.de host sits
 # behind a WAF that IP-blocks *all* of them when it sees concurrent requests,
@@ -171,7 +172,7 @@ fi
 
 {
   echo "──────────────────────────────────────────────────────────────"
-  log "starting pid=$$ code=$CODE_ROOT@$code_rev state=$REPO_ROOT/pipeline target=$convex_host timeout=$SYNC_TIMEOUT"
+  log "starting pid=$$ code=$CODE_ROOT@$code_rev state=$REPO_ROOT/pipeline target=$convex_site timeout=$SYNC_TIMEOUT"
 } >>"$LOG_FILE"
 
 # Run the pipeline this script shipped with. Ahead of the editable install on

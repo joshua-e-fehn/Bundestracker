@@ -105,3 +105,67 @@ def test_require_pipeline_api_key_names_the_missing_variable() -> None:
 
     with pytest.raises(ConfigError, match="PIPELINE_API_KEY"):
         settings.require_pipeline_api_key()
+
+
+# --- the deployment pin -----------------------------------------------------
+
+
+def test_a_pinned_run_refuses_a_write_host_for_another_deployment() -> None:
+    """The scheduled run pins whimsical-bandicoot-307; a correct read host must
+    not vouch for a wrong write host (scheduler review B1)."""
+    settings = Settings(
+        _env_file=None,
+        CONVEX_URL="https://whimsical-bandicoot-307.convex.cloud",
+        CONVEX_HTTP_URL="https://intent-goshawk-405.convex.site",
+        BUNDESTRACK_EXPECTED_DEPLOYMENT="whimsical-bandicoot-307",
+    )
+
+    with pytest.raises(ConfigError, match="intent-goshawk-405"):
+        settings.require_convex_http_url()
+
+
+def test_a_pinned_run_refuses_a_lowercase_env_key_naming_another_deployment(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pydantic-settings matches `.env` keys case-insensitively, so a shell grep
+    for the uppercase name cannot be the guard — the resolved value has to be."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "CONVEX_URL=https://whimsical-bandicoot-307.convex.cloud\n"
+        "convex_http_url=https://intent-goshawk-405.convex.site\n"
+    )
+    monkeypatch.setenv("BUNDESTRACK_EXPECTED_DEPLOYMENT", "whimsical-bandicoot-307")
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.convex_http_url == "https://intent-goshawk-405.convex.site"
+    with pytest.raises(ConfigError, match="Refusing"):
+        settings.require_convex_http_url()
+
+
+def test_a_pinned_run_refuses_a_derived_write_host_for_another_deployment() -> None:
+    settings = Settings(
+        _env_file=None,
+        CONVEX_URL="https://festive-monitor-280.convex.cloud",
+        BUNDESTRACK_EXPECTED_DEPLOYMENT="whimsical-bandicoot-307",
+    )
+
+    with pytest.raises(ConfigError, match="festive-monitor-280"):
+        settings.require_convex_http_url()
+
+
+def test_a_pinned_run_accepts_its_own_deployment() -> None:
+    settings = Settings(
+        _env_file=None,
+        CONVEX_URL="https://whimsical-bandicoot-307.convex.cloud",
+        CONVEX_HTTP_URL="https://whimsical-bandicoot-307.convex.site",
+        BUNDESTRACK_EXPECTED_DEPLOYMENT="whimsical-bandicoot-307",
+    )
+
+    assert settings.require_convex_http_url() == "https://whimsical-bandicoot-307.convex.site"
+
+
+def test_an_unpinned_run_keeps_the_custom_domain_escape_hatch() -> None:
+    settings = Settings(_env_file=None, CONVEX_HTTP_URL="https://ingest.example.org")
+
+    assert settings.require_convex_http_url() == "https://ingest.example.org"

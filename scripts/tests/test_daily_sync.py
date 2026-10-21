@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -32,8 +33,15 @@ def host(tmp_path: Path) -> dict[str, Path]:
     bin_dir.mkdir()
     calls = tmp_path / "pixi-calls"
     pixi = bin_dir / "pixi"
+    # `pixi run … python -c …` is the wrapper's target preflight: run it for
+    # real, with this interpreter and the shipped `bundestrack.config`, so the
+    # pin under test is the pipeline's own. `pixi run … pipeline sync` is the
+    # sync itself, which is stubbed.
     pixi.write_text(
         "#!/usr/bin/env bash\n"
+        'if [ "${@: -2:1}" = "-c" ]; then\n'
+        f'  exec "{sys.executable}" -c "${{@: -1}}"\n'
+        "fi\n"
         f'echo "$PYTHONPATH|$*" >> "{calls}"\n'
         'if [ -n "${STUB_SLEEP:-}" ]; then sleep "$STUB_SLEEP"; fi\n'
         'echo "stub pipeline output"\n'
@@ -80,7 +88,7 @@ def test_a_successful_run_records_last_success_and_runs_the_shipped_code(host) -
     assert pythonpath.startswith(str(SCRIPT.parents[1] / "pipeline" / "src"))
     assert args == f"run --frozen --manifest-path {host['repo']}/pixi.toml pipeline sync"
     log = (host["logs"] / "daily-sync.log").read_text()
-    assert f"target={TARGET}.convex.cloud" in log
+    assert f"target={TARGET}.convex.site" in log, "the log names the host writes go to"
     assert "stub pipeline output" in log
     assert "secret-not-logged" not in log
 
@@ -116,10 +124,32 @@ def test_the_environment_target_wins_over_the_env_file_and_is_checked_too(host) 
 
 
 def test_a_wrong_write_host_is_refused_even_when_the_read_host_is_right(host) -> None:
-    """Writes go to CONVEX_HTTP_URL when it is set — pin that one too (review S1)."""
+    """Writes go to CONVEX_HTTP_URL when it is set (scheduler review B1)."""
     (host["repo"] / "pipeline" / ".env").write_text(
         f"CONVEX_URL=https://{TARGET}.convex.cloud\n"
         "CONVEX_HTTP_URL=https://intent-goshawk-405.convex.site\n"
+    )
+
+    result = run(host)
+
+    assert result.returncode == 78
+    assert not host["calls"].exists()
+    assert "intent-goshawk-405" in (host["logs"] / "daily-sync.log").read_text()
+
+
+def test_a_wrong_write_host_in_the_environment_is_refused(host) -> None:
+    result = run(host, CONVEX_HTTP_URL="https://intent-goshawk-405.convex.site")
+
+    assert result.returncode == 78
+    assert not host["calls"].exists()
+
+
+def test_a_lowercase_env_key_naming_another_deployment_is_refused(host) -> None:
+    """pydantic-settings reads `.env` keys case-insensitively; a shell grep for
+    the uppercase name would not see this one, the pipeline's own check does."""
+    (host["repo"] / "pipeline" / ".env").write_text(
+        f"CONVEX_URL=https://{TARGET}.convex.cloud\n"
+        "convex_http_url=https://intent-goshawk-405.convex.site\n"
     )
 
     result = run(host)
@@ -134,6 +164,21 @@ def test_a_matching_write_host_is_accepted(host) -> None:
     )
 
     assert run(host).returncode == 0
+
+
+def test_the_pin_reaches_the_pipeline_process(host) -> None:
+    """The wrapper's preflight is a courtesy; the pin that guards each write is
+    the pipeline's, so the variable must reach the sync's environment."""
+    probe = host["bin"] / "pixi"
+    probe.write_text(
+        probe.read_text().replace(
+            'echo "stub pipeline output"',
+            f'echo "pin=$BUNDESTRACK_EXPECTED_DEPLOYMENT" >> "{host["calls"]}"',
+        )
+    )
+
+    assert run(host).returncode == 0
+    assert f"pin={TARGET}" in host["calls"].read_text()
 
 
 def test_a_held_lock_skips_the_tick_without_running(host) -> None:

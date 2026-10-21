@@ -40,6 +40,7 @@ def _clear_environment(monkeypatch: pytest.MonkeyPatch):
         "BUNDESTAG_API_BASE_URL",
         "PIPELINE_API_KEY",
         "BUNDESTRACK_STATE_PATH",
+        "BUNDESTRACK_EXPECTED_DEPLOYMENT",
     ):
         monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()
