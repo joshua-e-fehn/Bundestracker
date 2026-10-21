@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -82,6 +83,16 @@ class Settings(BaseSettings):
             "ingestion API. Must match `PIPELINE_API_KEY` on the deployment."
         ),
     )
+    expected_deployment: str = Field(
+        default="",
+        validation_alias="BUNDESTRACK_EXPECTED_DEPLOYMENT",
+        description=(
+            "When set, the only Convex deployment this process may write to, e.g. "
+            "whimsical-bandicoot-307. Checked against the resolved ingestion URL — "
+            "the one every write actually goes to — so no spelling of "
+            "CONVEX_HTTP_URL can point a pinned run at another deployment."
+        ),
+    )
     state_path: Path = Field(
         default=DEFAULT_STATE_PATH,
         validation_alias="BUNDESTRACK_STATE_PATH",
@@ -104,16 +115,39 @@ class Settings(BaseSettings):
         custom domain where the suffix swap does not apply.
         """
         if self.convex_http_url:
-            return self.convex_http_url
+            return self._pinned(self.convex_http_url)
         convex_url = self.require_convex_url()
         if convex_url.endswith(CONVEX_API_HOST_SUFFIX):
-            return convex_url[: -len(CONVEX_API_HOST_SUFFIX)] + CONVEX_SITE_HOST_SUFFIX
+            return self._pinned(
+                convex_url[: -len(CONVEX_API_HOST_SUFFIX)] + CONVEX_SITE_HOST_SUFFIX
+            )
         raise ConfigError(
             f"CONVEX_HTTP_URL is not set and {convex_url!r} does not end in "
             f"{CONVEX_API_HOST_SUFFIX}, so the site URL cannot be derived from it. "
             "Set CONVEX_HTTP_URL to the deployment's HTTP endpoint, e.g. "
             "https://<deployment>.convex.site"
         )
+
+    def _pinned(self, ingestion_url: str) -> str:
+        """`ingestion_url`, or a refusal when it names the wrong deployment.
+
+        The check sits here — on the URL every write is sent to — rather than
+        in the scheduler wrapper, because the wrapper can only guess which of
+        `CONVEX_URL`, `CONVEX_HTTP_URL`, the environment, `.env`, or a
+        differently-cased key pydantic-settings will settle on. Several
+        deployments share credentials on the production host, another app's
+        among them, and a wrong-but-valid one answers every write with success.
+        """
+        if not self.expected_deployment:
+            return ingestion_url
+        expected = f"{self.expected_deployment}{CONVEX_SITE_HOST_SUFFIX}"
+        host = urlsplit(ingestion_url).hostname or ""
+        if host != expected:
+            raise ConfigError(
+                f"The ingestion URL's host is {host!r}, but BUNDESTRACK_EXPECTED_DEPLOYMENT "
+                f"pins writes to {expected!r}. Refusing to write to another deployment."
+            )
+        return ingestion_url
 
     def require_pipeline_api_key(self) -> str:
         """The ingestion key, or a readable error when it is unset.

@@ -1,0 +1,40 @@
+# One Bundestrack daily ingestion run (WP21: roster, enrichment, committees,
+# referrals, activities, motions, speeches, named votes, dissent, seating).
+# Started by bundestrack-daily-sync.timer, or by hand:
+#   systemctl start --no-block bundestrack-daily-sync.service
+#
+# Runs inside the Hermes container because that is where the checkout, the
+# pixi environment and pipeline/.env (the Convex key) live; no secret is copied
+# onto the host. The code is the pinned release export behind `current`, not the
+# live checkout's working tree — see ops/systemd/README.md.
+#
+# The wrapper owns every guarantee that matters: the Convex target pin
+# (whimsical-bandicoot-307 only), the flock + process check against any other
+# pipeline writer, the 6 h runtime bound, the log, and the status file. They are
+# inside the container on purpose: stopping `docker exec` on the host does not
+# stop the process it started, so a host-side timeout alone would leave an
+# orphaned writer holding the lock.
+[Unit]
+Description=Bundestrack daily ingestion (WP21 incremental sync)
+Documentation=file:/docker/hermes-agent-vspa/data/workspace/Bundestrack/ops/systemd/README.md
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# After a boot, Persistent=true fires a missed tick while Docker may still be
+# starting the container; `docker exec` would then fail at once and the status
+# file would never record why. Wait up to 10 minutes for it to answer first.
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do docker exec hermes-agent-vspa-hermes-agent-1 true >/dev/null 2>&1 && exit 0; sleep 10; done; echo "hermes container not running" >&2; exit 1'
+ExecStart=/usr/bin/docker exec \
+  -e BUNDESTRACK_REPO_ROOT=/opt/data/workspace/Bundestrack \
+  -e BUNDESTRACK_SYNC_TIMEOUT=6h \
+  hermes-agent-vspa-hermes-agent-1 \
+  /opt/data/bundestrack-release/current/scripts/daily-sync.sh
+# 75 = another writer held the lock or was running; the tick is skipped, which
+# is the designed outcome, not a failure of this unit.
+SuccessExitStatus=75
+# Above the wrapper's own 6 h bound plus its 60 s kill grace, so the wrapper
+# always ends the run and records why before systemd would.
+# Plus the 10-minute container wait above.
+TimeoutStartSec=6h30min

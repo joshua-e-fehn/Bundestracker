@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -76,6 +77,22 @@ STREAM_PROTOCOLS = "protocols"
 #: motions one, for the reason in the module docstring: a shared watermark lets
 #: a stage that succeeded advance past the window a failed stage still needs.
 STREAM_REFERRALS = "committee-referrals"
+
+#: How much further back than the earliest trusted evidence a poisoned
+#: watermark is rewound — see `SyncState.repair_future_watermarks`.
+#:
+#: A week, because the trusted evidence is only a *bound* on what the poisoned
+#: stream had fetched, not a record of it: `last_run` and the sibling streams'
+#: marks say when *some* stage last succeeded, not when this one did. Re-reading
+#: a week of DIP updates is a few thousand idempotent upserts; guessing the
+#: rewind short loses records that no later run asks for again.
+POISONED_WATERMARK_REWIND = timedelta(days=7)
+
+#: How far past the run's start a record's `aktualisiert` may be before
+#: `advance` logs it as a warning rather than routine. A stage running hours
+#: into a sync legitimately reads records amended after the run began; a
+#: timestamp days ahead is a source anomaly.
+FUTURE_TIMESTAMP_WARNING = timedelta(days=1)
 
 #: How long a fetched contact block stays fresh.
 #:
@@ -141,33 +158,151 @@ class SyncState(BaseModel):
         stored = self.watermark(wahlperiode, stream)
         if not stored:
             return None
-        try:
-            parsed = datetime.fromisoformat(stored)
-        except ValueError:
+        parsed = _parse(stored)
+        if parsed is None:
             logger.warning(
                 "Ignoring unparseable %s watermark %r for WP%d", stream, stored, wahlperiode
             )
             return None
         return (parsed - OVERLAP).isoformat()
 
-    def advance(self, wahlperiode: int, stream: str, seen: datetime | None) -> None:
+    def advance(
+        self,
+        wahlperiode: int,
+        stream: str,
+        seen: datetime | Iterable[datetime] | None,
+        *,
+        ceiling: datetime | None = None,
+    ) -> None:
         """Move one stream's watermark forward to a timestamp actually observed.
 
         Monotonic: a batch whose newest record is older than the stored
         watermark — a re-read of the overlap window, or a backfill of an older
         period — must not move it backwards, or the next sync would re-read
         everything since.
+
+        `seen` is every `aktualisiert` the stage read (or one of them). The mark
+        becomes the newest that is **not after `ceiling`** — the run's start, or
+        now when the caller has none. DIP serves the occasional record whose
+        `aktualisiert` lies in the future (WP21 carried one stamped 2026-11-12
+        in July 2026), and storing that as the mark made every later sync ask
+        for "changes since November": DIP answered `numFound = 0` and the
+        activity stream ingested nothing for three months while exiting 0.
+
+        A future record is simply not evidence. The mark stays a timestamp DIP
+        actually published — never the run's own clock, which no source
+        observed and which would hide any record DIP indexes late. A batch of
+        nothing but future records does not move the mark at all; the next run
+        re-reads the same window and re-upserts them, which is idempotent. The
+        records keep their source timestamps; only the cutoff ignores them.
+
+        Naive timestamps are read as UTC (`_aware`), so one malformed value
+        cannot turn into a comparison error that fails every later run.
         """
         if seen is None:
             return
-        current = self.watermark(wahlperiode, stream)
-        if current:
-            try:
-                if datetime.fromisoformat(current) >= seen:
-                    return
-            except ValueError:
-                pass
-        self.watermarks[self._key(wahlperiode, stream)] = seen.isoformat()
+        observed = [seen] if isinstance(seen, datetime) else list(seen)
+        if not observed:
+            return
+        bound = _aware(ceiling or datetime.now(UTC))
+        usable = [stamp for stamp in observed if _aware(stamp) <= bound]
+        future = len(observed) - len(usable)
+        if future:
+            newest_future = max(observed, key=_aware)
+            # Seconds past the run start are routine — a stage hours into a run
+            # reads records amended since it began. Days past it are the anomaly
+            # this guard exists for, and worth a warning in the log.
+            level = (
+                logging.WARNING
+                if _aware(newest_future) - bound > FUTURE_TIMESTAMP_WARNING
+                else logging.INFO
+            )
+            logger.log(
+                level,
+                "WP%d %s: %d record(s) updated after the run started (%s), newest %s — "
+                "not used as the watermark",
+                wahlperiode,
+                stream,
+                future,
+                bound.isoformat(),
+                newest_future.isoformat(),
+            )
+        if not usable:
+            return
+        newest = max(usable, key=_aware)
+        current = _parse(self.watermark(wahlperiode, stream))
+        if current is not None and current >= _aware(newest):
+            return
+        # Stored aware: the mark is sent back to DIP as `f.aktualisiert.start`,
+        # and how DIP reads an offset-less value is unverified. An aware source
+        # value keeps its own offset unchanged.
+        self.watermarks[self._key(wahlperiode, stream)] = _aware(newest).isoformat()
+
+    def repair_future_watermarks(self, now: datetime) -> list[tuple[str, str, str | None]]:
+        """Rewind every stored watermark that lies after `now`.
+
+        The repair for state written before `advance` was bounded. A mark in
+        the future is not evidence of anything fetched — it is one bad source
+        timestamp — so it cannot simply be clamped to `now`: that would skip
+        every record updated between the stream's last real fetch and today,
+        which for the July 2026 poisoning was three months of WP21 activity.
+
+        It is rewound instead to the earliest *trusted* evidence of when the
+        state last moved — `last_run` and the same period's marks that are not
+        in the future — less `POISONED_WATERMARK_REWIND`, because that evidence
+        bounds the poisoned stream's last fetch rather than recording it. With
+        no trusted evidence at all the mark is dropped, which makes the stream a
+        full fetch: the same trade `load_state` makes for a corrupt file.
+
+        Persisted by the caller *before* any stage runs, rather than recomputed
+        from `last_run` on every read: `last_run` advances on every run, failed
+        stages included, so a recovery point derived from it afresh would creep
+        forward past records a failed stream never fetched.
+
+        Returns `(key, poisoned value, replacement)` for each repair, so the run
+        can report it.
+        """
+        now = _aware(now)
+        # Evidence is taken from the state as it was *before* any repair. A mark
+        # rewound a moment ago is synthetic — derived from evidence, not
+        # evidence itself — and letting it vouch for the next poisoned key
+        # makes the result depend on key order (two poisoned streams would
+        # rewind the second a further week from the first's guess).
+        trusted: dict[str, list[datetime]] = {}
+        for key, value in self.watermarks.items():
+            parsed = _parse(value)
+            if parsed is not None and parsed <= now:
+                trusted.setdefault(key.split(":", 1)[0], []).append(parsed)
+        last_run = _parse(self.last_run)
+        trusted_run = last_run if last_run is not None and last_run <= now else None
+
+        repairs: list[tuple[str, str, str | None]] = []
+        for key, value in sorted(self.watermarks.items()):
+            stored = _parse(value)
+            if stored is None or stored <= now:
+                continue
+            evidence = list(trusted.get(key.split(":", 1)[0], []))
+            if trusted_run is not None:
+                evidence.append(trusted_run)
+            if evidence:
+                replacement = (
+                    (min(evidence) - POISONED_WATERMARK_REWIND)
+                    .astimezone(stored.tzinfo)
+                    .isoformat()
+                )
+                self.watermarks[key] = replacement
+            else:
+                replacement = None
+                del self.watermarks[key]
+            logger.warning(
+                "Watermark %s was %s, after the run started (%s) — rewound to %s",
+                key,
+                value,
+                now.isoformat(),
+                replacement or "(none: full fetch)",
+            )
+            repairs.append((key, value, replacement))
+        return repairs
 
     def restore_watermark(self, wahlperiode: int, stream: str, value: str | None) -> None:
         """Set a stream's watermark to a prior value, moving it backwards if needed.
@@ -305,6 +440,28 @@ class SyncState(BaseModel):
 
     def finish(self) -> None:
         self.last_run = datetime.now(UTC).isoformat()
+
+
+def _aware(moment: datetime) -> datetime:
+    """`moment`, read as UTC when it carries no offset.
+
+    DIP stamps every record with `+01:00`/`+02:00`, and every mark this module
+    writes keeps that offset — but the models accept a naive `datetime`, and
+    one naive value compared against an aware one raises `TypeError`. Before
+    any stage runs, that would fail every sync until the state file was edited
+    by hand, so a naive value is given a reading instead of an error.
+    """
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+def _parse(value: str | None) -> datetime | None:
+    """An aware ISO timestamp from the state file, or None when absent or unreadable."""
+    if not value:
+        return None
+    try:
+        return _aware(datetime.fromisoformat(value))
+    except ValueError:
+        return None
 
 
 def load_state(path: Path) -> SyncState:

@@ -24,6 +24,7 @@ stays broken for a week.
 from __future__ import annotations
 
 import logging
+import signal
 import sys
 
 import click
@@ -348,9 +349,31 @@ def _run(
         )
 
 
+class Terminated(BaseException):
+    """SIGTERM, raised where the run happens to be.
+
+    A `BaseException` so the per-stage `_guard`, which catches `Exception`,
+    does not swallow it and carry on to the next stage: a stop request ends the
+    run. It does unwind through `sync`'s `finally`, which saves the state — the
+    marks of the stages that *finished*. Python's default SIGTERM action skips
+    that `finally`, so a scheduler timeout used to discard every completed
+    stage's progress and the next tick redid all of it. The stage that was cut
+    off never advanced its mark, so it is re-read, which is the safe direction.
+    """
+
+
+def _terminate(signum: int, _frame: object) -> None:
+    raise Terminated(f"signal {signum}")
+
+
 def main() -> None:
     """Console-script entry point (`bundestrack`, `python -m bundestrack.cli`)."""
-    cli(obj={})
+    signal.signal(signal.SIGTERM, _terminate)
+    try:
+        cli(obj={})
+    except Terminated:
+        logger.error("Stopped by SIGTERM — completed stages were saved; the rest re-run next time")
+        sys.exit(143)
 
 
 if __name__ == "__main__":

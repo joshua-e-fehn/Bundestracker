@@ -27,6 +27,7 @@ from bundestrack.pipeline.join import QuarantinedName
 from bundestrack.pipeline.load import ConvexLoader
 from bundestrack.pipeline.state import (
     OVERLAP,
+    POISONED_WATERMARK_REWIND,
     STREAM_ACTIVITIES,
     STREAM_MOTIONS,
     STREAM_PROTOCOLS,
@@ -859,6 +860,332 @@ def test_a_failed_stage_does_not_lose_its_window_to_a_successful_one(
     assert pipeline.state.watermark(21, STREAM_ACTIVITIES) == "2026-07-25T09:00:00+02:00"
     # …and the blocked stream kept its window, so tomorrow re-reads it.
     assert pipeline.state.watermark(21, STREAM_PROTOCOLS) == "2026-07-01T00:00:00+02:00"
+
+
+# --- future-dated source timestamps ---------------------------------------
+#
+# DIP served a WP21 activity stamped `aktualisiert = 2026-11-12T14:52:32+01:00`
+# during a July 2026 backfill. Stored as the mark, it made every later sync ask
+# for "changes since November": DIP answered `numFound = 0`, and the activity
+# stream would have ingested nothing until November while exiting 0. These pin
+# both halves of the repair — no run stores a future cutoff, and a cutoff stored
+# before that rule existed is rewound to trusted evidence rather than to now.
+
+#: The poisoned production state, verbatim from `.bundestrack-state.json` as
+#: found on 2026-10-21.
+POISONED = "2026-11-12T14:52:32+01:00"
+
+
+class LinkedDIP(StubDIP):
+    """DIP whose `/person` names the fixture MP, so activities resolve.
+
+    `StubDIP.iter_personen` is empty by design, which leaves every activity
+    unresolved and skipped — so an assertion on what reached the loader would
+    pass vacuously. Same person record as `link_bilger` below.
+
+    `/aktivitaet` filters on the window like DIP does: only records updated at
+    or after `updated_since` come back, which is what makes a poisoned window
+    visibly lose them.
+    """
+
+    def iter_personen(self, wahlperiode=None, *, updated_since=None, **extra):
+        from bundestrack.models.dip import Person
+
+        return iter(
+            [
+                Person.model_validate(
+                    {
+                        "id": "1013",
+                        "vorname": "Steffen",
+                        "nachname": "Bilger",
+                        "typ": "Person",
+                        "titel": "Steffen Bilger, MdB",
+                        "aktualisiert": "2026-07-24T12:03:00+02:00",
+                        "wahlperiode": [21],
+                        "funktion": ["MdB"],
+                    }
+                )
+            ]
+        )
+
+    def iter_aktivitaeten(self, wahlperiode=None, *, updated_since=None, **extra):
+        self.since.append(updated_since)
+        start = datetime.fromisoformat(updated_since) if updated_since else None
+        return iter([a for a in self.aktivitaeten if start is None or a.aktualisiert >= start])
+
+
+def test_a_future_dated_record_does_not_become_the_watermark(tmp_path) -> None:
+    """The mark is the newest *non-future* timestamp DIP actually published.
+
+    Not the run's start: the run's own clock is a time no source observed, and
+    storing it would hide any record DIP indexes late (review F1).
+    """
+    dip = StubDIP(
+        aktivitaeten=[
+            aktivitaet("2026-10-20T09:00:00+02:00"),
+            aktivitaet(POISONED),
+        ]
+    )
+    pipeline, _ = build(dip=dip, tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T04:17:00+00:00")
+
+    sync(21, pipeline=pipeline)
+
+    assert pipeline.state.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T09:00:00+02:00"
+
+
+def test_a_batch_of_only_future_records_leaves_the_watermark_where_it_was(tmp_path) -> None:
+    state = SyncState(watermarks={f"21:{STREAM_ACTIVITIES}": "2026-10-19T08:00:00+02:00"})
+    pipeline, _ = build(dip=StubDIP(aktivitaeten=[aktivitaet(POISONED)]), state=state)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T04:17:00+00:00")
+
+    sync(21, pipeline=pipeline)
+
+    assert pipeline.state.watermark(21, STREAM_ACTIVITIES) == "2026-10-19T08:00:00+02:00"
+
+
+def test_a_first_fetch_of_only_future_records_stores_no_watermark() -> None:
+    state = SyncState()
+    state.advance(
+        21,
+        STREAM_ACTIVITIES,
+        [datetime.fromisoformat(POISONED)],
+        ceiling=datetime.fromisoformat("2026-10-21T04:17:00+00:00"),
+    )
+
+    assert state.watermark(21, STREAM_ACTIVITIES) is None
+
+
+def test_every_watermarked_stream_ignores_a_future_record(tmp_path) -> None:
+    """The clamp is one call shape at four sites; pin each, not only activities."""
+    from bundestrack.models.dip import Plenarprotokoll, Vorgang
+
+    def stamped(model, fixture, when):
+        document = dict(fixture_json("dip", fixture)["documents"][0])
+        document["aktualisiert"] = when
+        return model.model_validate(document)
+
+    real, future = "2026-10-20T09:00:00+02:00", POISONED
+
+    class EveryStream(StubDIP):
+        def iter_vorgangspositionen(self, wahlperiode=None, *, updated_since=None, **extra):
+            return iter(
+                [
+                    stamped(Vorgangsposition, "vorgangsposition_page.json", real),
+                    stamped(Vorgangsposition, "vorgangsposition_page.json", future),
+                ]
+            )
+
+        def iter_vorgaenge(self, wahlperiode=None, *, updated_since=None, **extra):
+            return iter(
+                [
+                    stamped(Vorgang, "vorgang_page.json", real),
+                    stamped(Vorgang, "vorgang_page.json", future),
+                ]
+            )
+
+        def iter_plenarprotokolle(self, wahlperiode=None, *, updated_since=None, **extra):
+            # No XML URL, so the speech stage records the timestamp and fetches
+            # nothing — the watermark is what is under test, not the parser.
+            protocols = [
+                stamped(Plenarprotokoll, "plenarprotokoll_page.json", when)
+                for when in (real, future)
+            ]
+            for protocol in protocols:
+                protocol.fundstelle = None
+            return iter(protocols)
+
+    pipeline, _ = build(dip=EveryStream(aktivitaeten=[aktivitaet(real), aktivitaet(future)]))
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T04:17:00+00:00")
+
+    sync(21, pipeline=pipeline)
+
+    for stream in (STREAM_REFERRALS, STREAM_ACTIVITIES, STREAM_MOTIONS, STREAM_PROTOCOLS):
+        assert pipeline.state.watermark(21, stream) == real, stream
+
+
+def test_a_naive_record_timestamp_is_read_as_utc_rather_than_failing() -> None:
+    state = SyncState(watermarks={f"21:{STREAM_ACTIVITIES}": "2026-10-19T08:00:00+02:00"})
+
+    state.advance(
+        21,
+        STREAM_ACTIVITIES,
+        [datetime(2026, 10, 20, 9, 0)],
+        ceiling=datetime.fromisoformat("2026-10-21T04:17:00+00:00"),
+    )
+
+    # Stored with an explicit offset, so `since()` never sends DIP a naive value.
+    assert state.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T09:00:00+00:00"
+    assert state.since(21, STREAM_ACTIVITIES) == "2026-10-20T08:00:00+00:00"
+
+
+def test_a_naive_stored_watermark_does_not_stop_the_run(tmp_path) -> None:
+    """Review F3: a naive mark must not raise before the roster, every day."""
+    state = SyncState(
+        watermarks={
+            f"21:{STREAM_ACTIVITIES}": "2026-12-01T00:00:00",
+            f"21:{STREAM_MOTIONS}": "2026-10-19T08:00:00",
+        }
+    )
+    dip = StubDIP()
+    pipeline, _ = build(dip=dip, state=state, tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T15:00:00+00:00")
+
+    report = sync(21, pipeline=pipeline)
+
+    assert report.ok, report.summary()
+    # The future naive mark was repaired from the past naive one, read as UTC.
+    assert dip.since[0].startswith("2026-10-12T07:00:00")
+
+
+def test_two_poisoned_streams_rewind_from_the_same_real_evidence() -> None:
+    """Review F2: a mark rewound a moment ago is not evidence for the next."""
+    state = SyncState(
+        watermarks={
+            f"21:{STREAM_ACTIVITIES}": POISONED,
+            f"21:{STREAM_MOTIONS}": "2026-12-24T00:00:00+01:00",
+            f"21:{STREAM_PROTOCOLS}": "2026-07-27T16:56:04+02:00",
+        }
+    )
+
+    state.repair_future_watermarks(datetime.fromisoformat("2026-10-21T15:00:00+00:00"))
+
+    expected = datetime.fromisoformat("2026-07-27T16:56:04+02:00") - POISONED_WATERMARK_REWIND
+    assert datetime.fromisoformat(state.watermark(21, STREAM_ACTIVITIES)) == expected
+    assert datetime.fromisoformat(state.watermark(21, STREAM_MOTIONS)) == expected
+
+
+def test_a_future_dated_record_keeps_its_source_timestamp(tmp_path) -> None:
+    """Only the cutoff is bounded. The record is posted as DIP published it —
+    the watermark clamp must not rewrite what the source said."""
+    future = aktivitaet(POISONED)
+    pipeline, loader = build(dip=LinkedDIP(aktivitaeten=[future]), tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T04:17:00+00:00")
+
+    sync(21, pipeline=pipeline)
+
+    assert future.aktualisiert == datetime.fromisoformat(POISONED)
+    assert future.aktualisiert.isoformat() == POISONED
+    posted = [row for batch in loader.posted("activities") for row in batch["activities"]]
+    assert [row["dipAktivitaetId"] for row in posted] == [future.id]
+    assert posted[0]["date"] == future.datum.isoformat()
+
+
+def test_a_poisoned_watermark_is_not_merely_clamped_to_now(tmp_path) -> None:
+    """Resetting a future mark to the clock would skip the backlog it hid.
+
+    The July → October records were never fetched, so the repaired window must
+    start before them — at the earliest trusted evidence less the rewind — not
+    at the moment the repair happens to run.
+    """
+    state = SyncState(
+        watermarks={
+            f"21:{STREAM_ACTIVITIES}": POISONED,
+            f"21:{STREAM_MOTIONS}": "2026-07-29T15:49:53+02:00",
+            f"21:{STREAM_PROTOCOLS}": "2026-07-27T16:56:04+02:00",
+        },
+        last_run="2026-07-31T01:12:01.993514+00:00",
+    )
+    dip = StubDIP()
+    pipeline, _ = build(dip=dip, state=state, tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T15:00:00+00:00")
+
+    sync(21, pipeline=pipeline)
+
+    activities_window = datetime.fromisoformat(dip.since[0])
+    expected = (
+        datetime.fromisoformat("2026-07-27T16:56:04+02:00") - POISONED_WATERMARK_REWIND - OVERLAP
+    )
+    assert activities_window == expected
+    assert activities_window < datetime.fromisoformat("2026-07-31T00:00:00+00:00")
+
+
+def test_a_backlog_hidden_by_a_poisoned_watermark_is_fetched_and_posted(tmp_path) -> None:
+    """The regression the repair exists for, end to end.
+
+    Records updated in August and October — after the last real fetch, before
+    today — must reach the loader. Under the poisoned mark the stub, like DIP,
+    returns only what was updated after the requested window start.
+    """
+    august = aktivitaet("2026-08-14T10:00:00+02:00")
+    october = aktivitaet("2026-10-20T13:29:22+02:00")
+    august.id, october.id = "backlog-august", "backlog-october"
+    dip = LinkedDIP(aktivitaeten=[august, october])
+    state = SyncState(
+        watermarks={
+            f"21:{STREAM_ACTIVITIES}": POISONED,
+            f"21:{STREAM_PROTOCOLS}": "2026-07-27T16:56:04+02:00",
+        },
+        last_run="2026-07-31T01:12:01.993514+00:00",
+    )
+    pipeline, loader = build(dip=dip, state=state, tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T15:00:00+00:00")
+
+    report = sync(21, pipeline=pipeline)
+
+    posted = {
+        row["dipAktivitaetId"] for b in loader.posted("activities") for row in b["activities"]
+    }
+    assert posted == {"backlog-august", "backlog-october"}
+    assert pipeline.state.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T13:29:22+02:00"
+    repair = next(stage for stage in report.stages if stage.name == "watermark-repair")
+    assert POISONED in repair.notes[0]
+
+
+def test_a_poisoned_watermark_with_no_trusted_evidence_becomes_a_full_fetch(
+    tmp_path,
+) -> None:
+    state = SyncState(watermarks={f"21:{STREAM_ACTIVITIES}": POISONED})
+    dip = StubDIP()
+    pipeline, _ = build(dip=dip, state=state, tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T15:00:00+00:00")
+
+    sync(21, pipeline=pipeline)
+
+    assert dip.since[0] is None
+
+
+def test_the_repaired_watermark_is_saved_before_any_stage_runs(tmp_path) -> None:
+    """A run killed mid-stage must leave the recovery point, not the poison.
+
+    Otherwise the next run re-derives the rewind from a `last_run` this run has
+    already moved forward, and the window creeps past the unfetched backlog.
+    """
+
+    class RosterDies(StubStammdaten):
+        def fetch(self):
+            state = load_state(tmp_path / "state.json")
+            observed.append(state.watermark(21, STREAM_ACTIVITIES))
+            raise BundestagAPIError("the WAF is blocking us")
+
+    observed: list[str | None] = []
+    state = SyncState(
+        watermarks={
+            f"21:{STREAM_ACTIVITIES}": POISONED,
+            f"21:{STREAM_PROTOCOLS}": "2026-07-27T16:56:04+02:00",
+        }
+    )
+    pipeline, _ = build(state=state, tmp_path=tmp_path)
+    pipeline.dry_run = False
+    pipeline.stammdaten = RosterDies()
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T15:00:00+00:00")
+
+    report = sync(21, pipeline=pipeline)
+
+    assert not report.ok
+    assert observed and observed[0] is not None
+    assert datetime.fromisoformat(observed[0]) < datetime.fromisoformat("2026-07-27T16:56:04+02:00")
+
+
+def test_an_ordinary_past_watermark_is_left_alone(tmp_path) -> None:
+    state = SyncState(watermarks={f"21:{STREAM_ACTIVITIES}": "2026-10-20T09:00:00+02:00"})
+    pipeline, _ = build(state=state, tmp_path=tmp_path)
+    pipeline.started_at = datetime.fromisoformat("2026-10-21T15:00:00+00:00")
+
+    report = sync(21, pipeline=pipeline)
+
+    assert "watermark-repair" not in [stage.name for stage in report.stages]
+    assert pipeline.state.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T09:00:00+02:00"
 
 
 def test_each_stream_asks_for_its_own_window(tmp_path) -> None:

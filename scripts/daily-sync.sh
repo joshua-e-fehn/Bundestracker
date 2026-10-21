@@ -1,75 +1,211 @@
 #!/usr/bin/env bash
-# Daily incremental sync, for a system cron.
+# Daily incremental sync, for a scheduler.
 #
-# Wraps `pixi run pipeline sync` with the three things cron does not give you:
-# an environment, a lock, and a log. Run it from anywhere — it resolves the
-# repo from its own location rather than the working directory, because cron
-# starts in $HOME.
+# Wraps `pixi run pipeline sync` with what a scheduler does not give you: an
+# environment, a lock, a bounded runtime, a log, and a status record. Run it
+# from anywhere — it resolves the repo from its own location rather than the
+# working directory, because schedulers start in $HOME or /.
 #
-#   crontab -e
-#   17 4 * * * /path/to/bundestrack/scripts/daily-sync.sh
+# Production schedule: `ops/systemd/bundestrack-daily-sync.{service,timer}` on
+# the VPS host, which `docker exec`s this script inside the Hermes container
+# (that is where the checkout, the pixi env and pipeline/.env live). See
+# ops/systemd/README.md for install and verification.
 #
-# Exit code is the pipeline's own: non-zero when any stage failed, so a cron
-# MAILTO or a monitor sees a broken source rather than silence. See
-# pipeline/src/bundestrack/cli.py:246 — a run where most stages worked still
-# fails, which is what keeps a broken source from staying broken.
+# Exit code is the pipeline's own: non-zero when any stage failed, so the
+# systemd unit's state and the status file see a broken source rather than
+# silence. See pipeline/src/bundestrack/cli.py — a run where most stages
+# worked still fails, which is what keeps a broken source from staying broken.
+#
+# Exit codes of its own:
+#   75  EX_TEMPFAIL  another writer holds the lock; nothing was attempted
+#   78  EX_CONFIG    wrong or unreadable configuration; nothing was attempted
+#   124              the run exceeded BUNDESTRACK_SYNC_TIMEOUT and was stopped
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Two roots, usually the same directory:
+#   CODE_ROOT  the tree this script shipped in — its pipeline/src is what runs.
+#   REPO_ROOT  the checkout holding the pixi env, pipeline/.env, the state file
+#              and the logs. BUNDESTRACK_REPO_ROOT points it elsewhere, which is
+#              how production runs a pinned export of a reviewed commit
+#              (ops/systemd/README.md) against the live checkout's state —
+#              rather than whatever happens to be uncommitted in that checkout.
+#
+# `pwd -P`: resolved through the release's `current` symlink once, here, so a
+# release flipped mid-run cannot change which code a running sync imports.
+CODE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+REPO_ROOT="${BUNDESTRACK_REPO_ROOT:-$CODE_ROOT}"
 LOG_DIR="${BUNDESTRACK_LOG_DIR:-$REPO_ROOT/.logs}"
 LOG_FILE="$LOG_DIR/daily-sync.log"
+STATUS_FILE="${BUNDESTRACK_STATUS_FILE:-$LOG_DIR/daily-sync.status.json}"
 LOCK_FILE="${BUNDESTRACK_LOCK_FILE:-$REPO_ROOT/.daily-sync.lock}"
+# The one deployment this repo's pipeline may write to. Several Convex
+# deployments share credentials on this host (another app's among them), and a
+# wrong-but-valid target answers every write with success — so the target is
+# pinned here rather than trusted from whichever .env happens to be present.
+EXPECTED_CONVEX_DEPLOYMENT="${BUNDESTRACK_EXPECTED_DEPLOYMENT:-whimsical-bandicoot-307}"
+# Bounded runtime. A normal day is minutes; a multi-week catch-up is ~1–2 h of
+# paced DIP paging. Six hours covers the largest catch-up measured and still
+# ends long before the next tick, so a hung fetch cannot hold the lock forever.
+SYNC_TIMEOUT="${BUNDESTRACK_SYNC_TIMEOUT:-6h}"
+PIXI="${BUNDESTRACK_PIXI:-pixi}"
 
 mkdir -p "$LOG_DIR"
 
-# cron's PATH is typically /usr/bin:/bin, which has neither pixi nor bun.
-# Prepend the usual install locations; a PATH already containing them is
-# unchanged in effect.
-export PATH="$HOME/.pixi/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+# Schedulers' PATH is typically /usr/bin:/bin, which has neither pixi nor bun.
+export PATH="$HOME/.pixi/bin:$HOME/.bun/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+
+log() { echo "$(date -Is) daily-sync: $*" >>"$LOG_FILE"; }
+
+# One JSON object, rewritten atomically after every attempt. `last_success` and
+# `last_failure` survive the attempts that do not touch them, so "when did this
+# last work?" has an answer without reading the log.
+write_status() {
+  local outcome="$1" code="$2" started="$3" finished="$4"
+  python3 - "$STATUS_FILE" "$outcome" "$code" "$started" "$finished" "$LOG_FILE" <<'PY'
+import json, os, sys
+path, outcome, code, started, finished, log = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as f:
+        status = json.load(f)
+except (OSError, ValueError):
+    status = {}
+attempt = {"outcome": outcome, "exit_code": int(code), "started": started,
+           "finished": finished, "log": log, "pid": os.getppid()}
+status["last_attempt"] = attempt
+if outcome == "success":
+    status["last_success"] = attempt
+    status["consecutive_failures"] = 0
+elif outcome != "skipped":
+    status["last_failure"] = attempt
+    status["consecutive_failures"] = int(status.get("consecutive_failures", 0)) + 1
+tmp = f"{path}.tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    json.dump(status, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+PY
+}
+
+STARTED="$(date -Is)"
+
+fail_config() {
+  echo "daily-sync: $*" >&2
+  log "CONFIG ERROR — $*"
+  write_status config-error 78 "$STARTED" "$(date -Is)"
+  exit 78 # EX_CONFIG
+}
 
 # Secrets live outside the repo — CONVEX_URL, PIPELINE_API_KEY and
 # BUNDESTAG_API_KEY (pipeline/README.md § Configuration). `pipeline/.env` is
 # read by pydantic-settings on its own; this is for hosts that keep them
-# elsewhere, e.g. /etc/bundestrack.env owned by the cron user.
+# elsewhere, e.g. /etc/bundestrack.env owned by the scheduler user.
 if [ -n "${BUNDESTRACK_ENV_FILE:-}" ]; then
-  if [ ! -r "$BUNDESTRACK_ENV_FILE" ]; then
-    echo "daily-sync: BUNDESTRACK_ENV_FILE is set but not readable: $BUNDESTRACK_ENV_FILE" >&2
-    exit 78 # EX_CONFIG
-  fi
+  [ -r "$BUNDESTRACK_ENV_FILE" ] || fail_config "BUNDESTRACK_ENV_FILE is not readable: $BUNDESTRACK_ENV_FILE"
   set -a
   # shellcheck disable=SC1090
   . "$BUNDESTRACK_ENV_FILE"
   set +a
 fi
 
-if ! command -v pixi >/dev/null 2>&1; then
-  echo "daily-sync: pixi not on PATH (looked in $PATH)" >&2
-  exit 127
-fi
+command -v "$PIXI" >/dev/null 2>&1 || fail_config "pixi not on PATH (looked in $PATH)"
 
-# Never two syncs at once. Not politeness: every *.bundestag.de host sits
+# The deployment pin is enforced by the pipeline itself, on the URL every write
+# is sent to (`Settings.require_convex_http_url`, bundestrack/config.py): this
+# wrapper only exports it. A shell cannot reliably predict which of
+# CONVEX_URL / CONVEX_HTTP_URL, environment / .env, or a differently-cased key
+# pydantic-settings will settle on — so it does not try.
+export BUNDESTRACK_EXPECTED_DEPLOYMENT="$EXPECTED_CONVEX_DEPLOYMENT"
+
+# Preflight through the same code, before the lock and before any fetch: a
+# refusal here is a config error the status file records, rather than a stage
+# failure discovered after the roster download. Prints the resolved host only.
+convex_site="$(cd "$REPO_ROOT/pipeline" && PYTHONPATH="$CODE_ROOT/pipeline/src${PYTHONPATH:+:$PYTHONPATH}" \
+  "$PIXI" run --frozen --manifest-path "$REPO_ROOT/pixi.toml" python -c '
+from urllib.parse import urlsplit
+from bundestrack.config import ConfigError, get_settings
+try:
+    print(urlsplit(get_settings().require_convex_http_url()).hostname)
+except ConfigError as error:
+    print(f"REFUSED: {error}")
+' 2>>"$LOG_FILE" | tail -n 1)" || true
+case "$convex_site" in
+  "$EXPECTED_CONVEX_DEPLOYMENT.convex.site") ;;
+  *) fail_config "write target check failed: ${convex_site:-no output} — refusing to write" ;;
+esac
+
+# Never two writers at once. Not politeness: every *.bundestag.de host sits
 # behind a WAF that IP-blocks *all* of them when it sees concurrent requests,
 # and it did not clear across an hour of backoff (docs/api-research.md §2.6).
-# A slow run overlapping the next day's cron would lock this host out of every
-# source. `-n` fails immediately rather than queueing a second full fetch.
+# `-n` fails immediately rather than queueing a second full fetch behind a
+# long one. Only this script takes the lock, so the process check below is what
+# keeps it off a running backfill.
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "$(date -Is) daily-sync: another sync is still running — skipping this tick." \
+  echo "$(date -Is) daily-sync: another pipeline writer holds $LOCK_FILE — skipping this tick." \
     | tee -a "$LOG_FILE" >&2
-  exit 0
+  write_status skipped 75 "$STARTED" "$(date -Is)"
+  exit 75 # EX_TEMPFAIL
+fi
+
+# Writers that do not take the lock — a bare `python -m bundestrack.cli
+# backfill` or `scripts/run-enrichment.py` — are refused too. Two runs against
+# one deployment overwrite each other's roster columns silently.
+# Anchored to a Python interpreter at the start of the command line, so a shell
+# or an editor whose command line merely *mentions* one of these does not make
+# the scheduled run skip.
+# `( -[-A-Za-z]+)*` after the CLI admits its global options (`-v`, `--dry-run`)
+# before the command: a verbose backfill is still a writer.
+WRITER_PATTERN="${BUNDESTRACK_WRITER_PATTERN:-^[^ ]*python[0-9.]*( -[A-Za-z]+)* (-m bundestrack\.cli|[^ ]*/bin/bundestrack)( -[-A-Za-z]+)* (sync|init|backfill)|^[^ ]*python[0-9.]*( -[A-Za-z]+)* [^ ]*(run-enrichment|score-period)\.py}"
+if pgrep -f "$WRITER_PATTERN" >/dev/null 2>&1; then
+  echo "$(date -Is) daily-sync: an unlocked pipeline writer is running — skipping this tick." \
+    | tee -a "$LOG_FILE" >&2
+  pgrep -af "$WRITER_PATTERN" >>"$LOG_FILE" 2>&1 || true
+  write_status skipped 75 "$STARTED" "$(date -Is)"
+  exit 75
+fi
+
+# Which code is about to write production: a release export records its commit
+# in RELEASE (it has no .git); a checkout is asked directly.
+if [ -r "$CODE_ROOT/RELEASE" ]; then
+  code_rev="$(head -n 1 "$CODE_ROOT/RELEASE")"
+else
+  code_rev="$(git -C "$CODE_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
 
 {
   echo "──────────────────────────────────────────────────────────────"
-  echo "$(date -Is) daily-sync: starting (repo: $REPO_ROOT)"
+  log "starting pid=$$ code=$CODE_ROOT@$code_rev state=$REPO_ROOT/pipeline target=$convex_site timeout=$SYNC_TIMEOUT"
 } >>"$LOG_FILE"
+
+# Run the pipeline this script shipped with. Ahead of the editable install on
+# sys.path, so for a plain checkout it is the same code either way.
+export PYTHONPATH="$CODE_ROOT/pipeline/src${PYTHONPATH:+:$PYTHONPATH}"
 
 status=0
 # `pixi run pipeline sync` already runs in pipeline/, which is where the
 # watermark lives — the state file is deliberately relative so it stays with
-# the checkout (pipeline/src/bundestrack/config.py:38). Losing it turns the
-# next sync into a full backfill against that same WAF.
-pixi run --manifest-path "$REPO_ROOT/pixi.toml" pipeline sync >>"$LOG_FILE" 2>&1 || status=$?
+# the checkout (pipeline/src/bundestrack/config.py). Losing it turns the next
+# sync into a full backfill against that same WAF.
+#
+# `timeout` sends TERM, then KILL a minute later. TERM unwinds the pipeline
+# through its own `finally` (bundestrack.cli `Terminated`), which saves the marks
+# of every stage that finished; the interrupted stage is re-read next tick.
+# Every write is an upsert, so a stopped run is resumed rather than repaired.
+#
+# `--frozen`: run the environment pixi.lock already pins, never re-solve it. A
+# re-solve at 02:17 can hang for many minutes or quietly change a dependency
+# under a production writer. The env is the checkout's (the release pins code,
+# not dependencies); `pixi install --frozen` there is the deliberate update.
+timeout --kill-after=60 "$SYNC_TIMEOUT" \
+  "$PIXI" run --frozen --manifest-path "$REPO_ROOT/pixi.toml" pipeline sync >>"$LOG_FILE" 2>&1 || status=$?
 
-echo "$(date -Is) daily-sync: finished with status $status" >>"$LOG_FILE"
+FINISHED="$(date -Is)"
+if [ "$status" -eq 0 ]; then
+  write_status success 0 "$STARTED" "$FINISHED"
+elif [ "$status" -eq 124 ] || [ "$status" -eq 137 ] || [ "$status" -eq 143 ]; then
+  write_status timeout "$status" "$STARTED" "$FINISHED"
+else
+  write_status failure "$status" "$STARTED" "$FINISHED"
+fi
+log "finished with status $status"
 exit "$status"

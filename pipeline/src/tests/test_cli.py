@@ -40,6 +40,7 @@ def _clear_environment(monkeypatch: pytest.MonkeyPatch):
         "BUNDESTAG_API_BASE_URL",
         "PIPELINE_API_KEY",
         "BUNDESTRACK_STATE_PATH",
+        "BUNDESTRACK_EXPECTED_DEPLOYMENT",
     ):
         monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()
@@ -181,3 +182,82 @@ def test_status_reports_the_watermark_and_the_quarantine(
     assert STREAM_ACTIVITIES in result.output
     assert "1777449783" in result.output
     assert "1 unresolved names" in result.output
+
+
+# --- stopping -------------------------------------------------------------
+
+
+def test_sigterm_saves_the_stages_that_finished(tmp_path) -> None:
+    """A scheduler timeout must not discard completed work (review S2).
+
+    A real subprocess and a real SIGTERM: the activities stage finishes and
+    advances its mark, then the motions stage blocks until it is killed. The
+    saved state must carry the activities mark, and the exit must be 143 so the
+    wrapper records a timeout rather than a success.
+    """
+    import os
+    import signal
+    import subprocess
+    import sys
+    import textwrap
+    import time
+    from pathlib import Path
+
+    state_path = tmp_path / "state.json"
+    ready = tmp_path / "ready"
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        textwrap.dedent(
+            f"""
+            import time
+            from datetime import datetime
+            from bundestrack import cli
+            from bundestrack.pipeline import sync as pipeline
+            from bundestrack.pipeline.state import STREAM_ACTIVITIES
+
+            def fake_sync(wahlperiode, *, since=None, settings=None, dry_run=False):
+                run = pipeline.Pipeline(wahlperiode, settings=settings, dry_run=False)
+                report = pipeline.RunReport(wahlperiode, "sync")
+                try:
+                    run.state.advance(
+                        wahlperiode,
+                        STREAM_ACTIVITIES,
+                        [datetime.fromisoformat("2026-10-20T09:00:00+02:00")],
+                        ceiling=run.started_at,
+                    )
+                    open({str(ready)!r}, "w").close()
+                    time.sleep(60)  # the next stage, cut off by the timeout
+                finally:
+                    pipeline._finish(run, report, owned=True)
+                return report
+
+            pipeline.sync = fake_sync
+            cli.main()
+            """
+        )
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        "BUNDESTRACK_STATE_PATH": str(state_path),
+        "BUNDESTAG_API_KEY": "test-key",
+        "CONVEX_URL": "https://example.convex.cloud",
+        "PIPELINE_API_KEY": "test-key",
+    }
+    process = subprocess.Popen(
+        [sys.executable, str(driver), "sync"], env=env, cwd=tmp_path, stderr=subprocess.PIPE
+    )
+    try:
+        for _ in range(200):
+            if ready.exists():
+                break
+            time.sleep(0.05)
+        assert ready.exists(), "the driver never reached the blocking stage"
+        process.send_signal(signal.SIGTERM)
+        _, stderr = process.communicate(timeout=30)
+    finally:
+        process.kill()
+
+    assert process.returncode == 143, stderr.decode()
+    saved = SyncState.model_validate_json(state_path.read_text())
+    assert saved.watermark(21, STREAM_ACTIVITIES) == "2026-10-20T09:00:00+02:00"
